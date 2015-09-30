@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Express 2013 for Windows Desktop
+VisualStudioVersion = 12.0.31101.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "librtmfp", "librtmfp.vcxproj", "{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestClient", "TestClient\TestClient.vcxproj", "{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}"
+	ProjectSection(ProjectDependencies) = postProject
+		{1FF3D6E9-073D-4A6B-A057-547496C0B8EA} = {1FF3D6E9-073D-4A6B-A057-547496C0B8EA}
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}.Debug|Win32.ActiveCfg = Debug|Win32
+		{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}.Debug|Win32.Build.0 = Debug|Win32
+		{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}.Release|Win32.ActiveCfg = Release|Win32
+		{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}.Release|Win32.Build.0 = Release|Win32
+		{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}.Debug|Win32.ActiveCfg = Debug|Win32
+		{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}.Debug|Win32.Build.0 = Debug|Win32
+		{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}.Release|Win32.ActiveCfg = Release|Win32
+		{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
