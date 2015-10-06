@@ -17,6 +17,10 @@ public:
 	virtual void onSocketConnected() {
 		NOTE("Socket is now connected")
 	}
+
+	virtual void onStatusEvent(const char* code,const char* description) {
+		NOTE("Status Event '",code,"' : ", description)
+	}
 };
 
 // Windows CTrl+C handler
@@ -40,7 +44,7 @@ int main(int argc,char* argv[]) {
 	CustomConnection conn;
 	if (!RTMFP_Connect(ex, conn, "127.0.0.1", 1935, "rtmfp://localhost/MonaClients/"))
 		INFO("Connection error : ", ex.error())
-	
+
 	signal.wait();
 	INFO("Closing connection...")
 	RTMFP_Close(conn);
