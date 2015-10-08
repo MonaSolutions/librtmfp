@@ -2,6 +2,7 @@
 #include "Mona/SocketManager.h"
 #include "Mona/PoolThreads.h"
 #include "Mona/PoolBuffers.h"
+#include "RTMFPConnection.h"
 
 class Invoker : public virtual Mona::Object {
 public:
@@ -22,7 +23,18 @@ public:
 			((Mona::SocketManager&)sockets).stop();
 	}
 
-	const Mona::SocketManager	sockets;
-	Mona::PoolThreads			poolThreads;
-	const Mona::PoolBuffers		poolBuffers;
+	unsigned int addConnection(std::shared_ptr<RTMFPConnection> pConn) {
+		_mapConnections.push_back(pConn);
+		return _mapConnections.size(); // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
+	}
+
+	std::shared_ptr<RTMFPConnection>	getConnection(unsigned int index) {
+		return _mapConnections.at(index-1); // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
+	}
+
+	const Mona::SocketManager				sockets;
+	Mona::PoolThreads						poolThreads;
+	const Mona::PoolBuffers					poolBuffers;
+private:
+	std::vector<std::shared_ptr<RTMFPConnection>>	_mapConnections;
 };

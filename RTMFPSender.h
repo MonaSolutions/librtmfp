@@ -1,3 +1,6 @@
+
+#pragma once
+
 #include "Mona/Mona.h"
 #include "Mona/UDPSender.h"
 #include "Mona/PacketWriter.h"

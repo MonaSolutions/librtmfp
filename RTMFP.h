@@ -1,3 +1,6 @@
+
+#pragma once
+
 #include "Mona/Mona.h"
 #include "Mona/SocketAddress.h"
 #include "Mona/BinaryReader.h"

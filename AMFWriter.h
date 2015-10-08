@@ -1,4 +1,6 @@
 
+#pragma once
+
 #include "Mona/Mona.h"
 #include "AMF.h"
 #include "DataWriter.h"
