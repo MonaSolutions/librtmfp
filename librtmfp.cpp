@@ -10,19 +10,22 @@ using namespace std;
 
 extern "C" {
 
-static Invoker GlobalInvoker(0);
+static std::shared_ptr<Invoker> GlobalInvoker;
 
 unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*, const char*)) {
 	Exception ex;
 	// Start Socket Manager if needed
-	if(!GlobalInvoker.start(ex)) {
-		ERROR(ex.error())
-		return 0;
+	if(!GlobalInvoker) {
+		GlobalInvoker.reset(new Invoker(0));
+		if(!GlobalInvoker->start(ex)) {
+			ERROR(ex.error())
+			return 0;
+		}
 	}
 
 	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(onSocketError, onStatusEvent));
-	unsigned int index = GlobalInvoker.addConnection(pConn);
-	if(!pConn->connect(ex,&GlobalInvoker,host,port,url)) {
+	unsigned int index = GlobalInvoker->addConnection(pConn);
+	if(!pConn->connect(ex,GlobalInvoker.get(),host,port,url)) {
 		ERROR(ex.error())
 		return 0;
 	}
@@ -32,17 +35,14 @@ unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__
 
 void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 	Exception ex;
-	shared_ptr<RTMFPConnection> pConn(GlobalInvoker.getConnection(RTMFPcontext));
+	shared_ptr<RTMFPConnection> pConn(GlobalInvoker->getConnection(RTMFPcontext));
 	pConn->playStream(ex, streamName);
 }
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
-	shared_ptr<RTMFPConnection> pConn(GlobalInvoker.getConnection(RTMFPcontext));
-	pConn->close();
-}
-
-void RTMFP_Terminate() {
-	GlobalInvoker.stop();
+	GlobalInvoker->removeConnection(RTMFPcontext);
+	if (!GlobalInvoker->count()) // delete if no more connections
+		GlobalInvoker.reset();
 }
 
 }

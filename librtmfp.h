@@ -9,8 +9,6 @@ void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 
 void RTMFP_Close(unsigned int RTMFPcontext);
 
-void RTMFP_Terminate();
-
 #ifdef __cplusplus
 }
 #endif

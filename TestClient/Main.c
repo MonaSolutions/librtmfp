@@ -28,19 +28,15 @@ int main(int argc,char* argv[]) {
 
 	signal(SIGINT, ConsoleCtrlHandler);
 
-	/*Exception ex;
-	CustomConnection conn;*/
 	context = RTMFP_Connect("127.0.0.1", 1935, "rtmfp://localhost/MonaClients/", onSocketError, onStatusEvent);
 
 	if(context) {
 		isWorking = 1;
 		while(isWorking) {
-			//printf("test");
+
 		}
 		printf("Closing connection...\n");
 		RTMFP_Close(context);
-
-		RTMFP_Terminate();
 	}
 	system("pause");
 }
