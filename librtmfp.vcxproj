@@ -80,26 +80,39 @@
     <ClInclude Include="AMF.h" />
     <ClInclude Include="AMFReader.h" />
     <ClInclude Include="AMFWriter.h" />
+    <ClInclude Include="BandWriter.h" />
     <ClInclude Include="DataReader.h" />
     <ClInclude Include="DataWriter.h" />
+    <ClInclude Include="FlashConnection.h" />
+    <ClInclude Include="FlashStream.h" />
+    <ClInclude Include="FlashWriter.h" />
     <ClInclude Include="Invoker.h" />
     <ClInclude Include="librtmfp.h" />
-    <ClInclude Include="ParametersWriter.h" />
+    <ClInclude Include="ParameterWriter.h" />
     <ClInclude Include="ReferableReader.h" />
     <ClInclude Include="RTMFP.h" />
     <ClInclude Include="RTMFPConnection.h" />
+    <ClInclude Include="RTMFPFlow.h" />
+    <ClInclude Include="RTMFPMessage.h" />
     <ClInclude Include="RTMFPSender.h" />
+    <ClInclude Include="RTMFPWriter.h" />
     <ClInclude Include="StringWriter.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AMFReader.cpp" />
     <ClCompile Include="AMFWriter.cpp" />
     <ClCompile Include="DataReader.cpp" />
+    <ClCompile Include="FlashConnection.cpp" />
+    <ClCompile Include="FlashStream.cpp" />
+    <ClCompile Include="FlashWriter.cpp" />
+    <ClCompile Include="Invoker.cpp" />
     <ClCompile Include="librtmfp.cpp" />
     <ClCompile Include="ReferableReader.cpp" />
     <ClCompile Include="RTMFP.cpp" />
     <ClCompile Include="RTMFPConnection.cpp" />
+    <ClCompile Include="RTMFPFlow.cpp" />
     <ClCompile Include="RTMFPSender.cpp" />
+    <ClCompile Include="RTMFPWriter.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

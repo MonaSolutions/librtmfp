@@ -13,16 +13,15 @@ extern "C" {
 static std::shared_ptr<Invoker> GlobalInvoker;
 
 unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*, const char*)) {
-	Exception ex;
 	// Start Socket Manager if needed
 	if(!GlobalInvoker) {
 		GlobalInvoker.reset(new Invoker(0));
-		if(!GlobalInvoker->start(ex)) {
-			ERROR(ex.error())
+		if(!GlobalInvoker->start()) {
 			return 0;
 		}
 	}
 
+	Exception ex;
 	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(onSocketError, onStatusEvent));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
 	if(!pConn->connect(ex,GlobalInvoker.get(),host,port,url)) {
