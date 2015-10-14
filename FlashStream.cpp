@@ -188,6 +188,7 @@ void FlashStream::audioHandler(UInt32 time,PacketReader& packet, double lostRate
 		return;
 	}
 	_pPublication->pushAudio(time,packet,peer.ping(),lostRate);*/
+	OnMedia::raise(time, packet, lostRate, true);
 }
 
 void FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate) {
@@ -196,6 +197,7 @@ void FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate
 		return;
 	}
 	_pPublication->pushVideo(time,packet,peer.ping(),lostRate);*/
+	OnMedia::raise(time, packet, lostRate, false);
 }
 
 void FlashStream::connect(FlashWriter& writer,const string& url,Mona::UInt16 port) {

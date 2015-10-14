@@ -12,7 +12,8 @@ extern "C" {
 
 static std::shared_ptr<Invoker> GlobalInvoker;
 
-unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*, const char*)) {
+unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__cdecl * onSocketError)(const char*), 
+						   void (__cdecl * onStatusEvent)(const char*, const char*), void (__cdecl * onMedia)(unsigned int, const char*, unsigned int, int)) {
 	// Start Socket Manager if needed
 	if(!GlobalInvoker) {
 		GlobalInvoker.reset(new Invoker(0));
@@ -22,7 +23,7 @@ unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__
 	}
 
 	Exception ex;
-	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(onSocketError, onStatusEvent));
+	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(onSocketError, onStatusEvent, onMedia));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
 	if(!pConn->connect(ex,GlobalInvoker.get(),host,port,url)) {
 		ERROR(ex.error())

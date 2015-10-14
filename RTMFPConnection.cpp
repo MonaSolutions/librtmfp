@@ -10,17 +10,16 @@
 using namespace Mona;
 using namespace std;
 
-RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*,const char*)): 
-		_step(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),	_nonce(0x8B),_timeReceived(0),
+RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*,const char*), void (__cdecl * onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
+		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),	_nonce(0x8B),_timeReceived(0),
 		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0), _pLastWriter(NULL),
 		_pEncoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 		_pDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
-		_onSocketError(onSocketError), _onStatusEvent(onStatusEvent) {
+		_onSocketError(onSocketError), _onStatusEvent(onStatusEvent), _onMedia(onMediaEvent) {
 	onError = [this](const Exception& ex) {
 		_onSocketError(ex.error().c_str());
 	};
 	onPacket = [this](PoolBuffer& pBuffer,const SocketAddress& address) {
-		_step++;
 		_bytesReceived += pBuffer.size();
 
 		// Decode the RTMFP data
@@ -36,11 +35,7 @@ RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), vo
 		pBuffer->clip(reader.position());		
 		_pDecoder->process((UInt8*)pBuffer.data(),pBuffer.size()); // TODO: make a Task
 
-		if (_step == 1)
-			sendNextHandshake(ex, pBuffer.data(), pBuffer.size());
-		else
-			handleMessage(ex, pBuffer);
-		
+		handleMessage(ex, pBuffer);
 		if (ex)
 			_onSocketError(ex.error().c_str());
 	};
@@ -65,10 +60,14 @@ RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), vo
 		pFlow->sendPlay(_streamPlayed);
 		_streamPlayed = "";
 	};
+	onMedia = [this](UInt32 time,PacketReader& packet,double lostRate,bool audio) {
+		_onMedia(time,(const char*)packet.current(),packet.available(), audio);
+	};
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->OnStatus::subscribe(onStatus);
 	_pMainStream->OnStreamCreated::subscribe(onStreamCreated);
+	_pMainStream->OnMedia::subscribe(onMedia);
 	/*_pMainStream->OnStop::subscribe(onStreamStop);*/
 }
 
@@ -91,6 +90,7 @@ RTMFPConnection::~RTMFPConnection() {
 	if(_pMainStream) {
 		_pMainStream->OnStatus::unsubscribe(onStatus);
 		_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
+		_pMainStream->OnMedia::unsubscribe(onMedia);
 		_pMainStream.reset();
 	}
 	
@@ -117,7 +117,7 @@ bool RTMFPConnection::connect(Exception& ex, Invoker* invoker, const char* host,
 		return false;
 
 	_pMainStream->setPort(port);
-	sendNextHandshake(ex);
+	sendHandshake0();
 	return !ex;
 }
 
@@ -140,68 +140,53 @@ void RTMFPConnection::playStream(Exception& ex, const char* streamName) {
 		pFlow->createStream(streamName);
 }
 
-void RTMFPConnection::sendNextHandshake(Exception& ex, const UInt8* data, UInt32 size) {
-	BinaryWriter writer(packet(),RTMFP_MAX_PACKET_SIZE);
-	writer.clear(RTMFP_HEADER_SIZE+3); // header + type and size
-	UInt8 idResponse = 0;
-
-	if(_step==0)
-		idResponse = sendHandshake0(writer);
-	else {		
-		BinaryReader reader(data, size);
-		UInt16 time = reader.read16();
-		UInt8 id = reader.read8();
-		if(id != 0x0B) {
-			ex.set(Exception::PROTOCOL,"Unexpected handshake id : ", id);
-			return;
-		}
-		reader.shrink(reader.read16()); // length
-		idResponse = sendHandshake1(ex, writer, reader);
-	}
-
-	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(idResponse).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
-	//(UInt32&)farId = 0;
-	if(!ex)
-		flush(0x0B, writer.size(), false);
-}
-
 void RTMFPConnection::handleMessage(Exception& ex,const Mona::PoolBuffer& pBuffer) {
-	UInt8 idResponse = 0;
-
 	BinaryReader reader(pBuffer.data(), pBuffer->size());
 	_timeReceived = reader.read16();
 	UInt8 marker = reader.read8();
 	reader.shrink(reader.read16()); // length
 
-	if (_step==2) { // end of handshake
-		if(marker != 0x0B) {
-			ex.set(Exception::PROTOCOL,"Unexpected handshake id : ", marker);
-			return;
-		}
-		sendConnect(ex, reader);
-	} else {
-		// with time echo
-		if(marker == 0x4E) {
-			UInt16 time = RTMFP::TimeNow();
-			UInt16 timeEcho = reader.read16();
-			if(timeEcho>time) {
-				if(timeEcho-time<30)
-					time=0;
-				else
-					time += 0xFFFF-timeEcho;
-				timeEcho = 0;
+	switch(_handshakeStep) {
+		case 0:
+			ERROR("Handshake0 has not been send") // (should not happen)
+			break;
+		case 1:
+		case 2:
+			if(marker != 0x0B) {
+				ex.set(Exception::PROTOCOL,"Unexpected handshake id : ", marker);
+				return;
 			}
-			//peer.setPing((time-timeEcho)*RTMFP_TIMESTAMP_SCALE);
-		}
-		else if(marker != 0x4A)
-			WARN("RTMFPPacket marker unknown : ", Format<UInt8>("%02x",marker));
+			if(_handshakeStep==1)
+				sendHandshake1(ex, reader);
+			else
+				sendConnect(ex, reader);
+			break;
+		default:
+			// with time echo
+			if(marker == 0x4E) {
+				UInt16 time = RTMFP::TimeNow();
+				UInt16 timeEcho = reader.read16();
+				if(timeEcho>time) {
+					if(timeEcho-time<30)
+						time=0;
+					else
+						time += 0xFFFF-timeEcho;
+					timeEcho = 0;
+				}
+				//peer.setPing((time-timeEcho)*RTMFP_TIMESTAMP_SCALE);
+			}
+			else if(marker != 0x4A)
+				WARN("RTMFPPacket marker unknown : ", Format<UInt8>("%02x",marker));
 
-		receive(ex, reader);
+			receive(ex, reader);
+			break;
 	}
 }
 
-UInt8 RTMFPConnection::sendHandshake0(BinaryWriter& writer) {
+void RTMFPConnection::sendHandshake0() {
 	// (First packets are encoded with default key)
+	BinaryWriter writer(packet(),RTMFP_MAX_PACKET_SIZE);
+	writer.clear(RTMFP_HEADER_SIZE+3); // header + type and size
 
 	writer.write16(_url.size()+1);
 	writer.write8(0x0a); // type of handshake
@@ -210,35 +195,37 @@ UInt8 RTMFPConnection::sendHandshake0(BinaryWriter& writer) {
 	Util::Random(_tag.data(), 16); // random serie of 16 bytes
 	writer.write(_tag);
 
-	return 0x30;
+	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x30).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
+	flush(0x0B, writer.size(), false);
+	_handshakeStep=1;
 }
 
-UInt8 RTMFPConnection::sendHandshake1(Exception& ex, BinaryWriter& writer, BinaryReader& reader) {
+void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 
 	// Read & check handshake0's response
 	UInt8 type = reader.read8();
 	if(type != 0x70) {
 		ex.set(Exception::PROTOCOL,"Unexpected handshake type : ", type);
-		return 0;
+		return;
 	}
 	UInt16 size = reader.read16();
 
 	UInt8 tagSize = reader.read8();
 	if(tagSize != 16) {
 		ex.set(Exception::PROTOCOL,"Unexpected tag size : ", tagSize);
-		return 0;
+		return;
 	}
 	string tagReceived;
 	reader.read(16, tagReceived);
 	if(String::ICompare(tagReceived.c_str(),(const char*)_tag.data(),16)!=0) {
 		ex.set(Exception::PROTOCOL,"Unexpected tag received : ", tagReceived);
-		return 0;
+		return;
 	}	
 
 	UInt8 cookieSize = reader.read8();
 	if(cookieSize != 0x40) {
 		ex.set(Exception::PROTOCOL,"Unexpected cookie size : ", cookieSize);
-		return 0;
+		return;
 	}
 	string cookie;
 	reader.read(cookieSize, cookie);
@@ -247,13 +234,16 @@ UInt8 RTMFPConnection::sendHandshake1(Exception& ex, BinaryWriter& writer, Binar
 	reader.read(77, certificat);
 
 	// Write handshake1
+	BinaryWriter writer(packet(),RTMFP_MAX_PACKET_SIZE);
+	writer.clear(RTMFP_HEADER_SIZE+3); // header + type and size
+
 	writer.write32(0x02000000); // id
 
 	writer.write7BitLongValue(cookieSize);
 	writer.write(cookie); // Resend cookie
 
 	if (!_diffieHellman.initialize(ex))
-		return 0;
+		return;
 	_diffieHellman.readPublicKey(ex, _pubKey.data());
 	writer.write7BitLongValue(_pubKey.size()+4);
 	writer.write7BitValue(_pubKey.size()+2);
@@ -264,7 +254,11 @@ UInt8 RTMFPConnection::sendHandshake1(Exception& ex, BinaryWriter& writer, Binar
 	writer.write7BitValue(_nonce.size());
 	writer.write(_nonce);
 
-	return 0x38;
+	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
+	if(!ex) {
+		flush(0x0B, writer.size(), false);
+		_handshakeStep = 2;
+	}
 }
 
 void RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
@@ -303,6 +297,7 @@ void RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 		return;
 	
 	pFlow->sendConnect(_url, _pSocket->address().port());
+	_handshakeStep = 3;
 }
 
 void RTMFPConnection::receive(Exception& ex, BinaryReader& reader) {
@@ -475,14 +470,6 @@ void RTMFPConnection::receive(Exception& ex, BinaryReader& reader) {
 	}
 }
 
-void RTMFPConnection::audioHandler(UInt32 time, PacketReader& message) {
-
-}
-
-void RTMFPConnection::videoHandler(UInt32 time, PacketReader& message) {
-
-}
-
 void RTMFPConnection::close() {
 	if (_pSocket)
 		_pSocket->close();
@@ -648,23 +635,25 @@ RTMFPFlow* RTMFPConnection::createFlow(UInt64 id,const string& signature) {
 		INFO("Creating new Flow (",id,") for NetConnection")
 		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
 	} else if (signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream
-		/*shared_ptr<FlashStream> pStream;
-		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7BitValue());
-		if (!_pMainStream->getStream(idSession,pStream)) {
-			ERROR("RTMFPFlow ",id," indicates a non-existent ",idSession," NetStream on connection")
-			return NULL;
-		}
-		pFlow = new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this);*/
+		shared_ptr<FlashStream> pStream;
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7BitValue());
 		INFO("Creating new Flow (",id,") for NetStream ", idSession)
+
+		// First : search in waiting flows
 		auto it = _waitingFlows.find(idSession);
-		if(it==_waitingFlows.end()) {
-			ERROR("Creating flow impossibe because NetStream ",idSession," does not exists in connection")
+		if(it!=_waitingFlows.end()) {
+			pFlow = it->second;
+			pFlow->setId(id);
+			_waitingFlows.erase(it);
+		}
+		// 2nd : search in mainstream
+		else if (_pMainStream->getStream(idSession,pStream))
+			pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
+		else {
+			ERROR("RTMFPFlow ",id," indicates a non-existent ",idSession," NetStream on connection ");
 			return NULL;
 		}
-		pFlow = it->second;
-		pFlow->setId(id);
-		_waitingFlows.erase(it);
+		
 	} 
 	else {
 		ERROR("Unhandled signature type : ", signature, " , cannot create RTMFPFlow")

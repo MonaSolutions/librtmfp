@@ -13,7 +13,7 @@
 class Invoker;
 class RTMFPConnection : public BandWriter {
 public:
-	RTMFPConnection(void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*,const char*));
+	RTMFPConnection(void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*,const char*), void (__cdecl * onMediaEvent)(unsigned int, const char*, unsigned int,int));
 
 	~RTMFPConnection();
 	
@@ -48,30 +48,22 @@ private:
 	// External Callbacks to link with parent
 	void (__cdecl * _onSocketError)(const char*);
 	void (__cdecl * _onStatusEvent)(const char*,const char*);
-
-	// Send the next handshake
-	void sendNextHandshake(Mona::Exception& ex, const Mona::UInt8* data=NULL, Mona::UInt32 size=0);
+	void (__cdecl * _onMedia)(unsigned int, const char*, unsigned int,int);
 
 	// Handle message (after hanshake is done)
 	void handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer);
 
 	// Send the first handshake message (with rtmfp url + tag)
-	Mona::UInt8 sendHandshake0(Mona::BinaryWriter& writer);
+	void sendHandshake0();
 
 	// Send the second handshake message
-	Mona::UInt8 sendHandshake1(Mona::Exception& ex, Mona::BinaryWriter& writer, Mona::BinaryReader& reader);
+	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Send the third handshake message
 	void sendConnect(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Analyze packets received from the server
 	void receive(Mona::Exception& ex, Mona::BinaryReader& reader);
-
-	// Treat audio received
-	void audioHandler(Mona::UInt32 time, Mona::PacketReader& message);
-
-	// Treat video received 
-	void videoHandler(Mona::UInt32 time, Mona::PacketReader& message);
 
 	// Initialize the packet in the RTMFPSender
 	Mona::UInt8* packet();
@@ -98,7 +90,7 @@ private:
 	// TODO: Create a Startable object for this
 	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& nonce);
 
-	Mona::UInt8							_step;
+	Mona::UInt8							_handshakeStep; // Handshake step (3 possible states)
 	Mona::Time							_lastPing;
 
 	Mona::UInt16						_timeReceived; // last time received
@@ -116,6 +108,7 @@ private:
 
 	FlashConnection::OnStatus::Type						onStatus;
 	FlashConnection::OnStreamCreated::Type				onStreamCreated;
+	FlashConnection::OnMedia::Type						onMedia;
 
 	/*FlashStream::OnStop::Type						onStreamStop;*/
 

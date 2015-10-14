@@ -9,10 +9,12 @@
 
 namespace FlashEvents {
 	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description)> {};
+	struct OnMedia: Mona::Event<void(Mona::UInt32 time,Mona::PacketReader& packet,double lostRate,bool audio)> {};
 };
 
 class FlashStream : public virtual Mona::Object,
-	public FlashEvents::OnStatus {
+	public FlashEvents::OnStatus,
+	public FlashEvents::OnMedia {
 public:
 	enum PlayStreamType {
 		PLAYSTREAM_STOPPED,
