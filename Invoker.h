@@ -23,19 +23,19 @@ class Invoker : public Mona::TaskHandler, private Mona::Startable {
 friend class ConnectionsManager;
 public:
 
-	Invoker(Mona::UInt16 threads) : Mona::Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this) {}
+	Invoker(Mona::UInt16 threads) : Mona::Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this),_lastIndex(0) {}
 	virtual ~Invoker();
 
 	// Start the socket manager if not started
-	bool start();
+	bool			start();
 
-	unsigned int addConnection(std::shared_ptr<RTMFPConnection> pConn);
+	unsigned int	addConnection(std::shared_ptr<RTMFPConnection> pConn);
 
-	std::shared_ptr<RTMFPConnection>	getConnection(unsigned int index);
+	bool			getConnection(unsigned int index, std::shared_ptr<RTMFPConnection>& pConn);
 
-	void removeConnection(unsigned int index);
+	void			removeConnection(unsigned int index);
 
-	unsigned int count();
+	unsigned int	empty();
 
 	const Mona::SocketManager				sockets;
 	Mona::PoolThreads						poolThreads;
@@ -46,5 +46,6 @@ private:
 	void				run(Mona::Exception& exc);
 
 	ConnectionsManager								_manager;
-	std::vector<std::shared_ptr<RTMFPConnection>>	_connections;
+	std::map<int,std::shared_ptr<RTMFPConnection>>	_mapConnections;
+	int												_lastIndex; // last index of connection
 };

@@ -14,6 +14,11 @@ static std::shared_ptr<Invoker> GlobalInvoker;
 
 unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__cdecl * onSocketError)(const char*), 
 						   void (__cdecl * onStatusEvent)(const char*, const char*), void (__cdecl * onMedia)(unsigned int, const char*, unsigned int, int)) {
+	if(!onSocketError || !onStatusEvent) {
+		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
+		return 0;
+	}
+
 	// Start Socket Manager if needed
 	if(!GlobalInvoker) {
 		GlobalInvoker.reset(new Invoker(0));
@@ -35,14 +40,30 @@ unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__
 
 void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 	Exception ex;
-	shared_ptr<RTMFPConnection> pConn(GlobalInvoker->getConnection(RTMFPcontext));
-	pConn->playStream(ex, streamName);
+	shared_ptr<RTMFPConnection> pConn;
+	GlobalInvoker->getConnection(RTMFPcontext,pConn);
+	if(pConn)
+		pConn->playStream(ex, streamName);
 }
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
 	GlobalInvoker->removeConnection(RTMFPcontext);
-	if (!GlobalInvoker->count()) // delete if no more connections
+	if (GlobalInvoker->empty()) // delete if no more connections
 		GlobalInvoker.reset();
+}
+
+int RTMFP_Read(unsigned int RTMFPcontext,char *buf,unsigned int size) {
+	shared_ptr<RTMFPConnection> pConn;
+	GlobalInvoker->getConnection(RTMFPcontext,pConn);
+	if(pConn)
+		return pConn->read((UInt8*)buf, size);
+	else
+		return -1;
+}
+
+int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
+	ERROR("not implemented yet")
+		return -1;
 }
 
 }

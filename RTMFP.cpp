@@ -1,6 +1,8 @@
 #include "RTMFP.h"
 #include "Mona/Crypto.h"
+#include "Mona/Util.h"
 
+using namespace std;
 using namespace Mona;
 
 BinaryWriter& RTMFP::WriteAddress(BinaryWriter& writer,const SocketAddress& address,AddressType type) {
@@ -46,4 +48,19 @@ void RTMFP::ComputeAsymetricKeys(const Buffer& sharedSecret, const UInt8* initia
 	// now doing HMAC-sha256 of both result with the shared secret DH key
 	hmac.compute(EVP_sha256(),sharedSecret.data(),sharedSecret.size(),mdp1,Crypto::HMAC::SIZE,requestKey);
 	hmac.compute(EVP_sha256(),sharedSecret.data(),sharedSecret.size(),mdp2,Crypto::HMAC::SIZE,responseKey);
+}
+
+void RTMFP::Write7BitValue(string& buff,UInt64 value) {
+	UInt8 shift = (Util::Get7BitValueSize(value)-1)*7;
+	bool max = false;
+	if(shift>=21) { // 4 bytes maximum
+		shift = 22;
+		max = true;
+	}
+
+	while(shift>=7) {
+		String::Append(buff, (char)(0x80 | ((value>>shift)&0x7F)));
+		shift -= 7;
+	}
+	String::Append(buff, (char)(max ? value&0xFF : value&0x7F));
 }

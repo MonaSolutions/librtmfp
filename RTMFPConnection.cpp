@@ -10,6 +10,23 @@
 using namespace Mona;
 using namespace std;
 
+RTMFPConnection::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffers,const UInt8* data,UInt32 size,UInt32 time, bool audio): pBuffer(size+15) {
+	BinaryWriter writer(pBuffer.data(), size+15);
+
+	writer.write8(audio? '\x08' : '\x09');
+	// size on 3 bytes
+	writer.write24(size);
+	// time on 3 bytes
+	writer.write24(time);
+	// unknown 4 bytes set to 0
+	writer.write32(0);
+	/// payload
+	writer.write(data, size);
+	/// footer
+	writer.write32(11+size);
+
+}
+
 RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*,const char*), void (__cdecl * onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
 		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),	_nonce(0x8B),_timeReceived(0),
 		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0), _pLastWriter(NULL),
@@ -51,7 +68,7 @@ RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), vo
 		// Stream created, now we create the flow before sending another request
 		string signature;
 		signature.append("\x00\x54\x43\x04", 4);
-		Util::Write7BitValue(signature, idStream);
+		RTMFP::Write7BitValue(signature, idStream);
 		UInt64 id = _flows.size();
 		RTMFPFlow * pFlow = new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this);
 		_waitingFlows[idStream] = pFlow;
@@ -61,7 +78,12 @@ RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), vo
 		_streamPlayed = "";
 	};
 	onMedia = [this](UInt32 time,PacketReader& packet,double lostRate,bool audio) {
-		_onMedia(time,(const char*)packet.current(),packet.available(), audio);
+		if (_onMedia) // Synchronous read
+			_onMedia(time,(const char*)packet.current(),packet.available(), audio);
+		else { // Asynchronous read
+			lock_guard<recursive_mutex> lock(_readMutex);
+			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(),packet.current(),packet.size(), time, audio));
+		}
 	};
 
 	_pMainStream.reset(new FlashConnection());
@@ -138,6 +160,26 @@ void RTMFPConnection::playStream(Exception& ex, const char* streamName) {
 	RTMFPFlow* pFlow = it==_flows.end() ? NULL : it->second;
 	if(pFlow != NULL)
 		pFlow->createStream(streamName);
+}
+
+UInt32 RTMFPConnection::read(UInt8* buf,UInt32 size) {
+	lock_guard<recursive_mutex> lock(_readMutex);
+	if(!_mediaPackets.empty()) {
+		UInt32 nbRead = 0, bufferSize = 0;
+		while(!_mediaPackets.empty() && (nbRead < size)) {
+
+			std::shared_ptr<RTMFPMediaPacket> packet = _mediaPackets.front();
+			bufferSize = packet->pBuffer.size();
+			if(bufferSize > (size-nbRead))
+				return nbRead; // TODO: allow to divide buffers
+
+			memcpy(buf+nbRead, packet->pBuffer.data(), bufferSize);
+			_mediaPackets.pop_front();
+			nbRead += bufferSize;
+		}
+		return nbRead;
+	} else
+		return 0;
 }
 
 void RTMFPConnection::handleMessage(Exception& ex,const Mona::PoolBuffer& pBuffer) {

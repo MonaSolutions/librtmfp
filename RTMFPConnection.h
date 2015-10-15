@@ -21,6 +21,8 @@ public:
 
 	void playStream(Mona::Exception& ex, const char* streamName);
 
+	Mona::UInt32 read(Mona::UInt8* buf, Mona::UInt32 size);
+
 	void close();
 
 	// Called by Invoker every second to manage connection (flush and ping)
@@ -135,4 +137,14 @@ private:
 	Mona::Buffer							_tag;
 	Mona::Buffer							_pubKey;
 	Mona::Buffer							_nonce;
+
+	// Asynchronous read
+	struct RTMFPMediaPacket {
+
+		RTMFPMediaPacket(const Mona::PoolBuffers& poolBuffers,const Mona::UInt8* data,Mona::UInt32 size,Mona::UInt32 time,bool audio);
+
+		Mona::Buffer	pBuffer;
+	};
+	std::deque<std::shared_ptr<RTMFPMediaPacket>>			_mediaPackets;
+	std::recursive_mutex									_readMutex;
 };

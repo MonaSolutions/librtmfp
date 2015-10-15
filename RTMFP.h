@@ -16,6 +16,7 @@
 #define RTMFP_MAX_PACKET_SIZE	1192
 #define RTMFP_TIMESTAMP_SCALE	4
 
+
 class RTMFPEngine : public virtual Mona::Object {
 public:
 	enum Direction {
@@ -66,5 +67,6 @@ public:
 	static Mona::UInt16				TimeNow() { return Time(Mona::Time::Now()); }
 	static Mona::UInt16				Time(Mona::Int64 timeVal) { return (timeVal / RTMFP_TIMESTAMP_SCALE)&0xFFFF; }
 
+	static void						Write7BitValue(std::string& buff,Mona::UInt64 value);
 };
 

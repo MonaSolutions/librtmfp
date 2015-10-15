@@ -14,6 +14,12 @@ void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 // Close the RTMFP connection
 void RTMFP_Close(unsigned int RTMFPcontext);
 
+// Read size bytes of flv data from the current connexion (Asynchronous read, to be called by ffmpeg)
+int RTMFP_Read(unsigned int RTMFPcontext, char *buf, unsigned int size);
+
+// Write size bytes of data into the current connexion
+int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int size);
+
 #ifdef __cplusplus
 }
 #endif

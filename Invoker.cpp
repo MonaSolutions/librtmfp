@@ -39,26 +39,38 @@ bool Invoker::start() {
 }
 
 unsigned int Invoker::addConnection(std::shared_ptr<RTMFPConnection> pConn) {
-	_connections.push_back(pConn);
-	return _connections.size(); // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
+	_mapConnections[++_lastIndex] = pConn;
+	return _lastIndex; // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
 }
 
-std::shared_ptr<RTMFPConnection>	Invoker::getConnection(unsigned int index) {
-	return _connections.at(index-1); // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
+bool	Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPConnection>& pConn) {
+	auto it = _mapConnections.find(index);
+	if(it == _mapConnections.end()) {
+		ERROR("There is no connection at specified index ", index)
+		return false;
+	}
+
+	pConn = it->second;
+	return true;
 }
 
 void Invoker::removeConnection(unsigned int index) {
-	if (index>0 && _connections.size()>=index)
-		_connections.erase(_connections.begin()+(index-1));
+	auto it = _mapConnections.find(index);
+	if(it == _mapConnections.end()) {
+		ERROR("There is no connection at specified index ", index)
+		return;
+	}
+
+	_mapConnections.erase(it);
 }
 
-unsigned int Invoker::count() {
-	return _connections.size();
+unsigned int Invoker::empty() {
+	return _mapConnections.empty();
 }
 
 void Invoker::manage() {
-	for(auto it : _connections) {
-		it->manage();
+	for(auto it : _mapConnections) {
+		it.second->manage();
 	}
 }
 

@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <string.h>
 #include "../librtmfp.h"
+#include <windows.h>
 
 static int isWorking = 0;
 static unsigned int context = 0;
@@ -28,6 +29,7 @@ void onStatusEvent(const char* code,const char* description) {
 		RTMFP_Play(context, "test123");
 }
 
+// Synchronous read
 void onMedia(unsigned int time,const char* buf,unsigned int size,int audio) {
 	if (fileOut) {
 		unsigned int tmp=0;
@@ -47,7 +49,7 @@ int main(int argc,char* argv[]) {
 
 	signal(SIGINT, ConsoleCtrlHandler);
 
-	context = RTMFP_Connect("127.0.0.1", 1935, "rtmfp://localhost/MonaClients/", onSocketError, onStatusEvent, onMedia);
+	context = RTMFP_Connect("127.0.0.1", 1935, "rtmfp://localhost/MonaClients/", onSocketError, onStatusEvent, NULL);
 
 	if(context) {
 		isWorking = 1;
@@ -56,13 +58,14 @@ int main(int argc,char* argv[]) {
 		if((err = fopen_s(&fileOut,"out.flv","wb+"))==0) {
 			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, fileOut);
 
+			unsigned int readed = 0;
+			char buf[20480];
 			while(isWorking) {
-
+				if(readed = RTMFP_Read(context,buf,20480)){ // Asynchronous read
+					fwrite(buf, sizeof(char), readed, fileOut);
+				}
+				Sleep(500);
 			}
-
-			/*unsigned int val = flip24(15);
-			fwrite(&val, 3, 1, fileOut);
-			fwrite(test, sizeof(char), 6, fileOut);*/
    
 			fclose(fileOut);
 			fileOut = NULL;
