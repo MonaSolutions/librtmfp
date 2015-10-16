@@ -85,7 +85,7 @@ RTMFPFlow::~RTMFPFlow() {
 }
 
 void RTMFPFlow::setId(UInt64 idFlow) {
-	((UInt64)id) = idFlow;
+	((UInt64&)id) = idFlow;
 	((UInt64&)_pWriter->flowId) = id;
 }
 

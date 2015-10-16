@@ -34,9 +34,9 @@ private:
 	template<typename ValueType>
 	void append(const ValueType& value) {
 		if (_pString)
-			String::Append(*_pString, value);
+			Mona::String::Append(*_pString, value);
 		else
-			String::Append(packet, value);
+			Mona::String::Append(packet, value);
 	}
 
 	std::string* _pString;

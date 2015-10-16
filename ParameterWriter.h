@@ -32,7 +32,7 @@ private:
 	template <typename ...Args>
 	void set(Args&&... args) {
 		if (!_isProperty)
-			String::Format(_property, _index++);
+			Mona::String::Format(_property, _index++);
 		_parameters.setString(_property,args ...);
 		_isProperty = false;
 		_property.clear();

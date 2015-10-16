@@ -3,7 +3,10 @@
 #include <signal.h>
 #include <string.h>
 #include "../librtmfp.h"
-#include <windows.h>
+#if defined(_WIN32)
+	#define	sleep			Sleep
+	#include <windows.h>
+#endif
 
 static int isWorking = 0;
 static unsigned int context = 0;
@@ -54,8 +57,13 @@ int main(int argc,char* argv[]) {
 	if(context) {
 		isWorking = 1;
 
+#if defined(WIN32)
 		errno_t err;
 		if((err = fopen_s(&fileOut,"out.flv","wb+"))==0) {
+#else
+		if((fileOut = fopen("out.flv","wb+")) != NULL) {
+#endif
+			printf("Output file out.flv opened\n");
 			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, fileOut);
 
 			unsigned int readed = 0;
@@ -64,14 +72,17 @@ int main(int argc,char* argv[]) {
 				if(readed = RTMFP_Read(context,buf,20480)){ // Asynchronous read
 					fwrite(buf, sizeof(char), readed, fileOut);
 				}
-				Sleep(500);
+				sleep(500);
 			}
    
 			fclose(fileOut);
 			fileOut = NULL;
 		} else
-			printf("Unable to open file out.flv : %d", err);
-
+#if defined(WIN32)
+			printf("Unable to open file out.flv : %d\n", err);
+#else
+			printf("Unable to open file out.flv\n");
+#endif
 		printf("Closing connection...\n");
 		RTMFP_Close(context);
 	}

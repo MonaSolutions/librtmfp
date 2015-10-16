@@ -13,7 +13,7 @@
 class Invoker;
 class RTMFPConnection : public BandWriter {
 public:
-	RTMFPConnection(void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*,const char*), void (__cdecl * onMediaEvent)(unsigned int, const char*, unsigned int,int));
+	RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int));
 
 	~RTMFPConnection();
 	
@@ -48,9 +48,9 @@ public:
 private:
 
 	// External Callbacks to link with parent
-	void (__cdecl * _onSocketError)(const char*);
-	void (__cdecl * _onStatusEvent)(const char*,const char*);
-	void (__cdecl * _onMedia)(unsigned int, const char*, unsigned int,int);
+	void (* _onSocketError)(const char*);
+	void (* _onStatusEvent)(const char*,const char*);
+	void (* _onMedia)(unsigned int, const char*, unsigned int,int);
 
 	// Handle message (after hanshake is done)
 	void handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer);

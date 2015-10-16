@@ -12,8 +12,8 @@ extern "C" {
 
 static std::shared_ptr<Invoker> GlobalInvoker;
 
-unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (__cdecl * onSocketError)(const char*), 
-						   void (__cdecl * onStatusEvent)(const char*, const char*), void (__cdecl * onMedia)(unsigned int, const char*, unsigned int, int)) {
+unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (* onSocketError)(const char*), 
+						   void (* onStatusEvent)(const char*, const char*), void (* onMedia)(unsigned int, const char*, unsigned int, int)) {
 	if(!onSocketError || !onStatusEvent) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
 		return 0;

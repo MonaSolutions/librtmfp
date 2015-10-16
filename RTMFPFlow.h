@@ -35,6 +35,7 @@ public:
 
 	const Mona::UInt64		id;
 
+	// Update the Id of session (called when a new NetStream has been created)
 	void				setId(Mona::UInt64 idFlow);
 
 	bool critical() const { return _pWriter->critical; }

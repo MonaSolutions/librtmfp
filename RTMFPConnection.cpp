@@ -27,7 +27,7 @@ RTMFPConnection::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffe
 
 }
 
-RTMFPConnection::RTMFPConnection(void (__cdecl * onSocketError)(const char*), void (__cdecl * onStatusEvent)(const char*,const char*), void (__cdecl * onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
+RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
 		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),	_nonce(0x8B),_timeReceived(0),
 		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0), _pLastWriter(NULL),
 		_pEncoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
