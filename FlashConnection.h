@@ -28,7 +28,7 @@ public:
 	// Send the connect request to the RTMFP server
 	virtual void connect(FlashWriter& writer, const std::string& url, Mona::UInt16 port);
 
-	virtual void createStream(FlashWriter& writer, const std::string& name);
+	virtual void createStream(FlashWriter& writer);
 	
 private:
 	void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);

@@ -7,7 +7,7 @@
 class RTMFPWriter;
 class BandWriter : public virtual Mona::Object {
 public:
-	BandWriter(): connected(false) {}
+	BandWriter(): connected(false), published(false) {}
 
 	virtual const Mona::PoolBuffers&		poolBuffers() = 0;
 	virtual void							initWriter(const std::shared_ptr<RTMFPWriter>& pWriter)=0;
@@ -21,5 +21,6 @@ public:
 	//virtual Mona::UInt16				ping() const = 0;
 
 	bool								connected;
+	bool								published;
 	
 };

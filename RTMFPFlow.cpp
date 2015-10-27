@@ -318,10 +318,14 @@ void RTMFPFlow::sendConnect(const string& url, UInt16 port) {
 	_pStream->connect(*_pWriter, url, port);
 }
 
-void RTMFPFlow::createStream(const string& name) {
-	_pStream->createStream(*_pWriter, name);
+void RTMFPFlow::createStream() {
+	_pStream->createStream(*_pWriter);
 }
 
-void RTMFPFlow::sendPlay(const std::string& name) {
+void RTMFPFlow::sendPlay(const string& name) {
 	_pStream->play(*_pWriter, name);
+}
+
+void RTMFPFlow::sendPublish(const string& name) {
+	_pStream->publish(*_pWriter, name);
 }

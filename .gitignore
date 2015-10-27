@@ -8,3 +8,5 @@
 /TestClient/TestClient.vcxproj.filters
 /librtmfp.vcxproj.filters
 /TestClient/TestClient
+/TestClient/tmp
+/librtmfp.pc

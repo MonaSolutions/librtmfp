@@ -27,9 +27,15 @@ RTMFPConnection::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffe
 
 }
 
+const char RTMFPConnection::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
+  0x05,				/* 0x04 == audio, 0x01 == video */
+  0x00, 0x00, 0x00, 0x09,
+  0x00, 0x00, 0x00, 0x00
+};
+
 RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
 		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),	_nonce(0x8B),_timeReceived(0),
-		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0), _pLastWriter(NULL),
+		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0),_pLastWriter(NULL),_firstRead(true),_publishingStream(0),
 		_pEncoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 		_pDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
 		_onSocketError(onSocketError), _onStatusEvent(onStatusEvent), _onMedia(onMediaEvent) {
@@ -59,6 +65,9 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 	onStatus = [this](const std::string& code, const std::string& description) {
 		if (code == "NetConnection.Connect.Success")
 			connected=true;
+		else if (code == "NetStream.Publish.Start")
+			published=true;
+
 		_onStatusEvent(code.c_str(), description.c_str());
 	};
 	onStreamCreated = [this](UInt16 idStream) {
@@ -73,9 +82,22 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 		RTMFPFlow * pFlow = new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this);
 		_waitingFlows[idStream] = pFlow;
 		
-		// TODO : manage other requests
-		pFlow->sendPlay(_streamPlayed);
-		_streamPlayed = "";
+		// Send createStream command and add command type to waiting commands
+		if (_waitingCommands.empty()) {
+			ERROR("created stream without command")
+			return;
+		}
+		const StreamCommand command = _waitingCommands.back();
+		switch(command.type) {
+			case NETSTREAM_PLAY:
+				pFlow->sendPlay(command.value);
+				break;
+			case NETSTREAM_PUBLISH:
+				pFlow->sendPublish(command.value);
+				_publishingStream = idStream;
+				break;
+		}		
+		_waitingCommands.pop_back();
 	};
 	onMedia = [this](UInt32 time,PacketReader& packet,double lostRate,bool audio) {
 		if (_onMedia) // Synchronous read
@@ -138,12 +160,12 @@ bool RTMFPConnection::connect(Exception& ex, Invoker* invoker, const char* host,
 	if (!_pSocket->connect(ex, _address))
 		return false;
 
-	_pMainStream->setPort(port);
+	_pMainStream->setPort(port); // Record port for setPeerInfo request
 	sendHandshake0();
 	return !ex;
 }
 
-void RTMFPConnection::playStream(Exception& ex, const char* streamName) {
+void RTMFPConnection::sendCommand(CommandType command, const char* streamName) {
 	if(!_pInvoker) {
 		_onSocketError("Can't play stream because RTMFPConnection is not initialized");
 		return;
@@ -153,19 +175,29 @@ void RTMFPConnection::playStream(Exception& ex, const char* streamName) {
 		return;
 	}
 
-	_streamPlayed = streamName;
-
-
 	map<UInt64,RTMFPFlow*>::const_iterator it = _flows.find(2);
 	RTMFPFlow* pFlow = it==_flows.end() ? NULL : it->second;
-	if(pFlow != NULL)
-		pFlow->createStream(streamName);
+	if(pFlow != NULL) {
+		_waitingCommands.emplace_front(command, streamName);
+		pFlow->createStream();
+	} else
+		ERROR("Unable to find the main flow");
 }
 
 UInt32 RTMFPConnection::read(UInt8* buf,UInt32 size) {
+	UInt32 nbRead = 0;
+
+	// First read => send header
+	if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
+		memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
+		_firstRead=false;
+		size-=sizeof(_FlvHeader);
+		nbRead+=sizeof(_FlvHeader);
+	}
+
 	lock_guard<recursive_mutex> lock(_readMutex);
 	if(!_mediaPackets.empty()) {
-		UInt32 nbRead = 0, bufferSize = 0;
+		UInt32 bufferSize = 0;
 		while(!_mediaPackets.empty() && (nbRead < size)) {
 
 			std::shared_ptr<RTMFPMediaPacket> packet = _mediaPackets.front();
@@ -180,6 +212,46 @@ UInt32 RTMFPConnection::read(UInt8* buf,UInt32 size) {
 		return nbRead;
 	} else
 		return 0;
+}
+
+UInt32 RTMFPConnection::write(const UInt8* buf,UInt32 size) {
+	if(!published) {
+		ERROR("Can't write data because NetStream is not published")
+		return 0;
+	}
+	std::shared_ptr<FlashStream> pStream;
+	if(!_pMainStream || !_pMainStream->getStream(_publishingStream,pStream)) {
+		ERROR("Unable to find publishing NetStream ", _publishingStream)
+		return 0;
+	}
+
+	PacketReader packet(buf, size);
+	if(packet.available()<14) {
+		DEBUG("Packet too small")
+		return 0;
+	}
+	
+	string tmp;
+	if (packet.read(3, tmp) == "FLV") // header
+		packet.next(13);
+
+	while(packet.available()) {
+		if (packet.available() < 11) // smaller than flv header
+			break;
+
+		UInt8 type = packet.read8();
+		UInt32 bodySize = packet.read24();
+		UInt32 time = packet.read32();
+
+		if(packet.available() < bodySize+4)
+			break; // we will wait further data
+
+		if (type == AMF::AUDIO || type == AMF::VIDEO)
+			pStream->writeMedia(type, time, packet.current(), bodySize);
+		packet.next(bodySize+15);
+	}
+
+	return size-packet.available();
 }
 
 void RTMFPConnection::handleMessage(Exception& ex,const Mona::PoolBuffer& pBuffer) {
@@ -717,6 +789,7 @@ void RTMFPConnection::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
 }
 
 void RTMFPConnection::manage() {
+	INFO("manage called")
 	if (!_pMainStream)
 		return;
 

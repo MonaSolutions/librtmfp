@@ -93,6 +93,7 @@
     <ClInclude Include="RTMFP.h" />
     <ClInclude Include="RTMFPConnection.h" />
     <ClInclude Include="RTMFPFlow.h" />
+    <ClInclude Include="RTMFPLogger.h" />
     <ClInclude Include="RTMFPMessage.h" />
     <ClInclude Include="RTMFPSender.h" />
     <ClInclude Include="RTMFPWriter.h" />

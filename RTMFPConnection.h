@@ -16,13 +16,28 @@ public:
 	RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int));
 
 	~RTMFPConnection();
+
+	enum CommandType {
+		NETSTREAM_PLAY = 1,
+		NETSTREAM_PUBLISH
+	};
 	
+	// Connect to the specified url, return true if the command succeed
 	bool connect(Mona::Exception& ex, Invoker* invoker, const char* host, int port, const char* url);
 
-	void playStream(Mona::Exception& ex, const char* streamName);
+	// Send a command to the main stream (play/publish)
+	// TODO: See if we should add a createStream function
+	void sendCommand(CommandType command, const char* streamName);
 
+	// Asynchronous read (buffered)
+	// return the number of bytes read
 	Mona::UInt32 read(Mona::UInt8* buf, Mona::UInt32 size);
 
+	// Write media (netstream must be published)
+	// return total amount of treated data
+	Mona::UInt32 write(const Mona::UInt8* buf, Mona::UInt32 size);
+
+	// Close the connection
 	void close();
 
 	// Called by Invoker every second to manage connection (flush and ping)
@@ -41,9 +56,9 @@ public:
 	// Return the size available in the current sender (or max size if there is no current sender)
 	virtual Mona::UInt32					availableToWrite() { return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); }
 	
-	virtual bool canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
+	virtual bool							canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
 
-	virtual bool				failed() const { return false; /* return _failed; */ }
+	virtual bool							failed() const { return false; /* return _failed; */ }
 
 private:
 
@@ -97,25 +112,29 @@ private:
 
 	Mona::UInt16						_timeReceived; // last time received
 	Mona::UInt32						_farId;
-	//double							_idStreamPlayed; // Id of playing stream
-	//Mona::UInt64						_writerId; // writer Id received in acknowledgment
-	//Mona::UInt64						_stage;
 	Mona::UInt64						_nextRTMFPWriterId;
 
 	Mona::UInt64						_bytesReceived; // Number of bytes received
 	Mona::Time							_lastKeepAlive; // last time a keepalive request has been received
 
 	std::string							_url; // RTMFP url of the application
-	std::string							_streamPlayed; // Stream name of the stream to be played
+	//std::string							_streamPlayed; // Stream name of the stream to be played
 
-	FlashConnection::OnStatus::Type						onStatus;
-	FlashConnection::OnStreamCreated::Type				onStreamCreated;
-	FlashConnection::OnMedia::Type						onMedia;
+	// Pool of stream commands
+	struct StreamCommand {
+		StreamCommand(CommandType t, const char* v) : type(t), value(v) {}
 
-	/*FlashStream::OnStop::Type						onStreamStop;*/
+		CommandType		type;
+		std::string		value;
+	};
+	std::deque<StreamCommand> _waitingCommands;
 
-	Mona::UDPSocket::OnError::Type		onError;
-	Mona::UDPSocket::OnPacket::Type		onPacket;
+	// Events
+	FlashConnection::OnStatus::Type						onStatus; // NetConnection or NetStream status event
+	FlashConnection::OnStreamCreated::Type				onStreamCreated; // Received when stream has been created and is waiting for a command
+	FlashConnection::OnMedia::Type						onMedia; // Received when we receive media (audio/video)
+	Mona::UDPSocket::OnError::Type						onError; // TODO: delete this if not needed
+	Mona::UDPSocket::OnPacket::Type						onPacket; // Main input event, received on each raw packet
 
 	std::shared_ptr<FlashConnection>						_pMainStream;
 	std::map<Mona::UInt64,RTMFPFlow*>						_flows;
@@ -147,4 +166,9 @@ private:
 	};
 	std::deque<std::shared_ptr<RTMFPMediaPacket>>			_mediaPackets;
 	std::recursive_mutex									_readMutex;
+	bool													_firstRead;
+	static const char										_FlvHeader[];
+
+	// Write
+	Mona::UInt16											_publishingStream;
 };

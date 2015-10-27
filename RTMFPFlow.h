@@ -38,7 +38,7 @@ public:
 	// Update the Id of session (called when a new NetStream has been created)
 	void				setId(Mona::UInt64 idFlow);
 
-	bool critical() const { return _pWriter->critical; }
+	bool				critical() const { return _pWriter->critical; }
 
 	void				receive(Mona::UInt64 stage,Mona::UInt64 deltaNAck,Mona::PacketReader& fragment,Mona::UInt8 flags);
 	
@@ -52,7 +52,9 @@ public:
 
 	void				sendPlay(const std::string& name);
 
-	void				createStream(const std::string& name);
+	void				sendPublish(const std::string& name);
+
+	void				createStream();
 	
 private:
 	void				onFragment(Mona::UInt64 stage,Mona::PacketReader& fragment,Mona::UInt8 flags);

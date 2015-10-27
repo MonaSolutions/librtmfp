@@ -1,0 +1,12 @@
+prefix=@prefix@
+exec_prefix=${prefix}
+libdir=@libdir@
+incdir=${prefix}/include
+
+Name: librtmfp
+Description: RTMFP client implementation
+Version: @VERSION@
+Requires: @CRYPTO_REQ@
+Libs: -L${libdir} -lrtmfp @PUBLIC_LIBS@
+Libs.private: @PRIVATE_LIBS@
+Cflags: -I${incdir}

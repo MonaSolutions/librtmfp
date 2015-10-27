@@ -158,11 +158,10 @@ void FlashConnection::connect(FlashWriter& writer, const string& url, UInt16 por
 	writer.flush();
 }
 
-void FlashConnection::createStream(FlashWriter& writer, const string& name) {
+void FlashConnection::createStream(FlashWriter& writer) {
 	AMFWriter& amfWriter = writer.writeInvocation("createStream");
 	writer.flush();
 	_creatingStream = true; // TODO: create a list of create stream requests with each operations
-	_streamToPlay = name;
 }
 
 void play(FlashWriter& writer,const std::string& name) {

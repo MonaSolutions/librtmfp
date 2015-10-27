@@ -42,10 +42,16 @@ public:
 	virtual void connect(FlashWriter& writer,const std::string& url,Mona::UInt16 port);
 
 	// Send the createStream request to the RTMFP server
-	virtual void createStream(FlashWriter& writer, const std::string& name);
+	virtual void createStream(FlashWriter& writer);
 
 	// Send the play request to the RTMFP server
 	virtual void play(FlashWriter& writer, const std::string& name);
+
+	// Send the publish request to the RTMFP server
+	virtual void publish(FlashWriter& writer, const std::string& name);
+
+	// Write a media packet
+	virtual void writeMedia(Mona::UInt8 type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 
 /*protected:
 

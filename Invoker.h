@@ -3,6 +3,7 @@
 #include "Mona/SocketManager.h"
 #include "Mona/PoolThreads.h"
 #include "Mona/PoolBuffers.h"
+#include "Mona/TerminateSignal.h"
 #include "RTMFPConnection.h"
 
 #define DELAY_CONNECTIONS_MANAGER	1000 // 1s
@@ -23,7 +24,7 @@ class Invoker : public Mona::TaskHandler, private Mona::Startable {
 friend class ConnectionsManager;
 public:
 
-	Invoker(Mona::UInt16 threads) : Mona::Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this),_lastIndex(0) {}
+	Invoker(Mona::UInt16 threads) : Mona::Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this),_lastIndex(0),_onManage(NULL) {}
 	virtual ~Invoker();
 
 	// Start the socket manager if not started
@@ -37,6 +38,10 @@ public:
 
 	unsigned int	empty();
 
+	void			terminate() { _terminateSignal.set(); }
+	void			wait() { _terminateSignal.wait(); }
+	void			setOnManage(void(*onManage)()) { _onManage = onManage; }
+
 	const Mona::SocketManager				sockets;
 	Mona::PoolThreads						poolThreads;
 	const Mona::PoolBuffers					poolBuffers;
@@ -48,4 +53,7 @@ private:
 	ConnectionsManager								_manager;
 	std::map<int,std::shared_ptr<RTMFPConnection>>	_mapConnections;
 	int												_lastIndex; // last index of connection
+
+	Mona::TerminateSignal							_terminateSignal;
+	void											(*_onManage)();
 };

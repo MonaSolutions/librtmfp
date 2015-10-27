@@ -72,6 +72,8 @@ void Invoker::manage() {
 	for(auto it : _mapConnections) {
 		it.second->manage();
 	}
+	if (_onManage)
+		_onManage();
 }
 
 void Invoker::run(Exception& exc) {

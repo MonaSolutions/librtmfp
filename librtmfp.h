@@ -11,6 +11,9 @@ unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (* 
 // RTMFP NetStream Play function
 void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 
+// RTMFP NetStream Publish function
+void RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName);
+
 // Close the RTMFP connection
 void RTMFP_Close(unsigned int RTMFPcontext);
 
@@ -19,6 +22,21 @@ int RTMFP_Read(unsigned int RTMFPcontext, char *buf, unsigned int size);
 
 // Write size bytes of data into the current connexion
 int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int size);
+
+// Set log callback
+void RTMFP_LogSetCallback(void (* onLog)(int, const char*));
+
+
+// TODO: see if we keep these functions (used for TestClient)
+
+// Set OnManage callback, function is called every second
+void RTMFP_OnManageSetCallback(void (* onManage)());
+
+// Terminate the processes
+void RTMFP_Terminate();
+
+// Wait for termination signal
+void RTMFP_WaitTermination();
 
 #ifdef __cplusplus
 }

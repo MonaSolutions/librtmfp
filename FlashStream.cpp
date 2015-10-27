@@ -204,14 +204,22 @@ void FlashStream::connect(FlashWriter& writer,const string& url,Mona::UInt16 por
 	ERROR("Connection request sent from a FlashStream (only main stream can send connect)")
 }
 
-void FlashStream::createStream(FlashWriter& writer, const string& name) {
-	ERROR("createStream request cannot be sent by Main stream")
+void FlashStream::createStream(FlashWriter& writer) {
+	ERROR("createStream request can only be sent by Main stream")
 }
 
 void FlashStream::play(FlashWriter& writer,const string& name) {
 	AMFWriter& amfWriter = writer.writeInvocation("play");
-
 	amfWriter.writeString(name.c_str(), name.size());
-
 	writer.flush();
+}
+
+void FlashStream::publish(FlashWriter& writer,const string& name) {
+	AMFWriter& amfWriter = writer.writeInvocation("publish");
+	amfWriter.writeString(name.c_str(), name.size());
+	writer.flush();
+}
+
+void FlashStream::writeMedia(UInt8 type,UInt32 time,const UInt8* data,UInt32 size) {
+	ERROR("not implemented yet")
 }
