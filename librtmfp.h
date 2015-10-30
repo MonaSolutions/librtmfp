@@ -5,14 +5,14 @@ extern "C" {
 
 // RTMFP Connection function
 // return : index of the connection's context
-unsigned int RTMFP_Connect(const char* host, int port, const char* url, void (* onSocketError)(const char*), 
-						   void (* onStatusEvent)(const char*,const char*), void (* onMedia)(unsigned int, const char*, unsigned int,int));
+unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
+				void (* onMedia)(unsigned int, const char*, unsigned int,int));
 
-// RTMFP NetStream Play function
+/*// RTMFP NetStream Play function
 void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 
 // RTMFP NetStream Publish function
-void RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName);
+void RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName);*/
 
 // Close the RTMFP connection
 void RTMFP_Close(unsigned int RTMFPcontext);
@@ -26,6 +26,8 @@ int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int size);
 // Set log callback
 void RTMFP_LogSetCallback(void (* onLog)(int, const char*));
 
+// Set log level
+void RTMFP_LogSetLevel(int level);
 
 // TODO: see if we keep these functions (used for TestClient)
 

@@ -20,9 +20,9 @@ RTMFPConnection::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffe
 	writer.write24(time);
 	// unknown 4 bytes set to 0
 	writer.write32(0);
-	/// payload
+	// payload
 	writer.write(data, size);
-	/// footer
+	// footer
 	writer.write32(11+size);
 
 }
@@ -63,9 +63,13 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 			_onSocketError(ex.error().c_str());
 	};
 	onStatus = [this](const std::string& code, const std::string& description) {
-		if (code == "NetConnection.Connect.Success")
-			connected=true;
-		else if (code == "NetStream.Publish.Start")
+		if (code == "NetConnection.Connect.Success") {
+			connected = true;
+			if (_isPublisher)
+				sendCommand(CommandType::NETSTREAM_PUBLISH, _publication.c_str());
+			else
+				sendCommand(CommandType::NETSTREAM_PLAY, _publication.c_str());
+		} else if (code == "NetStream.Publish.Start")
 			published=true;
 
 		_onStatusEvent(code.c_str(), description.c_str());
@@ -129,6 +133,10 @@ RTMFPConnection::~RTMFPConnection() {
 	for(auto& it : _flows)
 		delete it.second;
 	_flows.clear();
+
+	// delete media packets
+	lock_guard<recursive_mutex> lock(_readMutex);
+	_mediaPackets.clear();
 	
 	// to remove OnStart and OnStop, and erase FlashWriters (before to erase flowWriters)
 	if(_pMainStream) {
@@ -147,24 +155,32 @@ RTMFPConnection::~RTMFPConnection() {
 	}
 }
 
-bool RTMFPConnection::connect(Exception& ex, Invoker* invoker, const char* host, int port, const char* url) {
+bool RTMFPConnection::connect(Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher) {
 	_pInvoker = invoker;
 	_url = url;
-	if (!_address.set(ex, host, port))
+	_publication = publication;
+	_isPublisher = isPublisher;
+	string tmpHost = host;
+	if (!strrchr(host, ':'))
+		tmpHost += ":1935"; // default port
+
+	if (!_address.set(ex, tmpHost))
 		return false;
 
 	_pSocket.reset(new UDPSocket(invoker->sockets, true));
 	_pSocket->OnError::subscribe(onError);
 	_pSocket->OnPacket::subscribe(onPacket);
 
+	INFO("Connecting to ", _address.host().toString(), ":", _address.port(), " (url : ",url,")...")
 	if (!_pSocket->connect(ex, _address))
 		return false;
 
-	_pMainStream->setPort(port); // Record port for setPeerInfo request
+	_pMainStream->setPort(_address.port()); // Record port for setPeerInfo request
 	sendHandshake0();
 	return !ex;
 }
 
+// TODO: see if we always need to manage a list of commands
 void RTMFPConnection::sendCommand(CommandType command, const char* streamName) {
 	if(!_pInvoker) {
 		_onSocketError("Can't play stream because RTMFPConnection is not initialized");
@@ -184,34 +200,34 @@ void RTMFPConnection::sendCommand(CommandType command, const char* streamName) {
 		ERROR("Unable to find the main flow");
 }
 
-UInt32 RTMFPConnection::read(UInt8* buf,UInt32 size) {
-	UInt32 nbRead = 0;
-
-	// First read => send header
-	if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
-		memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
-		_firstRead=false;
-		size-=sizeof(_FlvHeader);
-		nbRead+=sizeof(_FlvHeader);
-	}
+bool RTMFPConnection::read(UInt8* buf,UInt32 size, Mona::UInt32& nbRead) {
+	nbRead = 0;
 
 	lock_guard<recursive_mutex> lock(_readMutex);
-	if(!_mediaPackets.empty()) {
+	if (!_mediaPackets.empty()) {
+		// First read => send header
+		if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
+			memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
+			_firstRead = false;
+			size -= sizeof(_FlvHeader);
+			nbRead += sizeof(_FlvHeader);
+		}
+
 		UInt32 bufferSize = 0;
-		while(!_mediaPackets.empty() && (nbRead < size)) {
+		while (!_mediaPackets.empty() && (nbRead < size)) {
 
 			std::shared_ptr<RTMFPMediaPacket> packet = _mediaPackets.front();
 			bufferSize = packet->pBuffer.size();
-			if(bufferSize > (size-nbRead))
-				return nbRead; // TODO: allow to divide buffers
+			if (bufferSize > (size - nbRead))
+				return false;
 
-			memcpy(buf+nbRead, packet->pBuffer.data(), bufferSize);
+			memcpy(buf + nbRead, packet->pBuffer.data(), bufferSize);
 			_mediaPackets.pop_front();
 			nbRead += bufferSize;
 		}
-		return nbRead;
-	} else
-		return 0;
+	}
+
+	return true;
 }
 
 UInt32 RTMFPConnection::write(const UInt8* buf,UInt32 size) {
@@ -302,7 +318,7 @@ void RTMFPConnection::sendHandshake0() {
 	BinaryWriter writer(packet(),RTMFP_MAX_PACKET_SIZE);
 	writer.clear(RTMFP_HEADER_SIZE+3); // header + type and size
 
-	writer.write16(_url.size()+1);
+	writer.write16((UInt16)_url.size()+1);
 	writer.write8(0x0a); // type of handshake
 	writer.write(_url);
 
@@ -685,7 +701,7 @@ bool RTMFPConnection::computeKeys(Exception& ex, const string& farPubKey, const 
 	// Compute Keys
 	UInt8 encryptKey[Crypto::HMAC::SIZE];
 	UInt8 decryptKey[Crypto::HMAC::SIZE];
-	RTMFP::ComputeAsymetricKeys(_sharedSecret,(UInt8*)nonce.data(),nonce.size(),_nonce.data(),_nonce.size(),decryptKey,encryptKey);
+	RTMFP::ComputeAsymetricKeys(_sharedSecret,(UInt8*)nonce.data(),(UInt16)nonce.size(),_nonce.data(),_nonce.size(),decryptKey,encryptKey);
 	_pDecoder.reset(new RTMFPEngine(decryptKey,RTMFPEngine::DECRYPT));
 	_pEncoder.reset(new RTMFPEngine(encryptKey,RTMFPEngine::ENCRYPT));
 
@@ -789,12 +805,11 @@ void RTMFPConnection::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
 }
 
 void RTMFPConnection::manage() {
-	INFO("manage called")
 	if (!_pMainStream)
 		return;
 
 	// Every 25s : ping
-	if (_lastPing.isElapsed(25000)) {
+	if (_lastPing.isElapsed(25000) && connected) {
 		writeMessage(0x01, 0); // TODO: send only if needed
 		flush(false);
 		_lastPing.update();

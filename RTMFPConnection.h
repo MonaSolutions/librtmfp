@@ -23,15 +23,15 @@ public:
 	};
 	
 	// Connect to the specified url, return true if the command succeed
-	bool connect(Mona::Exception& ex, Invoker* invoker, const char* host, int port, const char* url);
+	bool connect(Mona::Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher);
 
 	// Send a command to the main stream (play/publish)
 	// TODO: See if we should add a createStream function
 	void sendCommand(CommandType command, const char* streamName);
 
 	// Asynchronous read (buffered)
-	// return the number of bytes read
-	Mona::UInt32 read(Mona::UInt8* buf, Mona::UInt32 size);
+	// return false if end of buf has been reached
+	bool read(Mona::UInt8* buf, Mona::UInt32 size, Mona::UInt32& nbRead);
 
 	// Write media (netstream must be published)
 	// return total amount of treated data
@@ -117,8 +117,11 @@ private:
 	Mona::UInt64						_bytesReceived; // Number of bytes received
 	Mona::Time							_lastKeepAlive; // last time a keepalive request has been received
 
+	// Connection parameters
+	Mona::SocketAddress					_address;
 	std::string							_url; // RTMFP url of the application
-	//std::string							_streamPlayed; // Stream name of the stream to be played
+	std::string							_publication; // Stream name
+	bool								_isPublisher; // Publisher or Player?
 
 	// Pool of stream commands
 	struct StreamCommand {
@@ -142,7 +145,6 @@ private:
 	std::map<Mona::UInt16,RTMFPFlow*>						_waitingFlows; // Map of id streams to new RTMFP flows (before knowing the 
 	RTMFPWriter*											_pLastWriter;
 	
-	Mona::SocketAddress						_address;
 	std::shared_ptr<Mona::UDPSocket>		_pSocket;
 	std::shared_ptr<RTMFPSender>			_pSender;
 	const Invoker*							_pInvoker;

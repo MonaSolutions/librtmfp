@@ -53,13 +53,6 @@ void onSocketError(const char* error) {
 
 void onStatusEvent(const char* code,const char* description) {
 	printf("Status Event '%s' : %s\n", code, description);
-
-	if(strcmp(code,"NetConnection.Connect.Success")==0) {
-		if (_option==WRITE)
-			RTMFP_Publish(context, "test123");
-		else
-			RTMFP_Play(context, "test123");
-	}
 }
 
 // Synchronous read
@@ -91,8 +84,6 @@ void onManage() {
 
 // Main Function
 int main(int argc,char* argv[]) {
-	char*	host = "127.0.0.1";
-	int		port = 1935;
 	char*	url = "rtmfp://127.0.0.1/";
 	int		i=1;
 
@@ -103,10 +94,10 @@ int main(int argc,char* argv[]) {
 			_option = ASYNC_READ;
 		else if (stricmp(argv[i], "--write")==0)
 			_option = WRITE;
-		else if (strlen(argv[i]) > 5 && strnicmp(argv[i], "host=", 5)==0)
+		/*else if (strlen(argv[i]) > 5 && strnicmp(argv[i], "host=", 5)==0)
 			host = argv[i]+5;
 		else if (strlen(argv[i]) > 5 && strnicmp(argv[i], "port=", 5)==0)
-			port = atoi(argv[i]+5);
+			port = atoi(argv[i]+5);*/
 		else if (strlen(argv[i]) > 4 && strnicmp(argv[i], "url=", 4)==0)
 			url = argv[i]+4;
 		else
@@ -116,7 +107,8 @@ int main(int argc,char* argv[]) {
 	signal(SIGINT, ConsoleCtrlHandler);
 
 	RTMFP_LogSetCallback(onLog);
-	context = RTMFP_Connect(host, port, url, onSocketError, onStatusEvent, (_option == SYNC_READ)? onMedia : NULL);
+	printf("Connection to '%s'\n", url);
+	context = RTMFP_Connect(url, _option==WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ)? onMedia : NULL);
 
 	if(context) {
 

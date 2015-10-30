@@ -153,7 +153,7 @@ UInt64 AMFWriter::beginObject(const char* type) {
 				packet.write8(AMF_BEGIN_OBJECT);
 			else {
 				packet.write8(AMF_BEGIN_TYPED_OBJECT);
-				UInt16 size(strlen(type));
+				UInt32 size(strlen(type));
 				packet.write16(size).write(type,size);
 			}
 			return (++_amf0References)<<1;
