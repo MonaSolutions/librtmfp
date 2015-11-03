@@ -2,7 +2,11 @@ VERSION=0.1
 
 prefix=/usr
 
-LIBDIR=$(prefix)/lib64
+LIBDIR=$(prefix)/lib
+ifeq ($(shell uname -m), x86_64)
+	LIBDIR = $(prefix)/lib64
+endif
+
 CRYPTO_REQ=libssl,libcrypto
 PUBLIC_LIBS=
 PRIVATE_LIBS=
@@ -69,8 +73,8 @@ $(OBJECT): tmp/Release/%.o: %.cpp
 	@$(GPP) $(CFLAGS) -fpic $(INCLUDES) -c -o $(@) $(@:tmp/Release/%.o=%.cpp)
 
 $(OBJECTD): tmp/Debug/%.o: %.cpp
-	@echo compiling $(@:tmp/Debug/%.o=sources/%.cpp)
-	@$(GPP) -g -D_DEBUG $(CFLAGS) -fpic $(INCLUDES) -c -o $(@) $(@:tmp/Release/%.o=%.cpp)
+	@echo compiling $(@:tmp/Debug/%.o=%.cpp)
+	@$(GPP) -g -D_DEBUG $(CFLAGS) -fpic $(INCLUDES) -c -o $(@) $(@:tmp/Debug/%.o=%.cpp)
 
 clean:
 	@echo cleaning project librtmfp

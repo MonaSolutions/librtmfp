@@ -123,7 +123,8 @@ int main(int argc,char* argv[]) {
 		else {
 			if(_option != WRITE) {
 				printf("Output file out.flv opened\n");
-				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, fileOut);
+				if (_option == SYNC_READ)
+					fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, fileOut);
 			}
 
 			RTMFP_OnManageSetCallback(onManage);

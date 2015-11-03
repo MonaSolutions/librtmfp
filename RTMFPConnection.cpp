@@ -108,7 +108,7 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 			_onMedia(time,(const char*)packet.current(),packet.available(), audio);
 		else { // Asynchronous read
 			lock_guard<recursive_mutex> lock(_readMutex);
-			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(),packet.current(),packet.size(), time, audio));
+			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(),packet.current(),packet.available(), time, audio));
 		}
 	};
 
