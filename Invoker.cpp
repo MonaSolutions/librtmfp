@@ -13,6 +13,9 @@ void ConnectionsManager::run(Exception& ex) {
 
 void ConnectionsManager::handle(Exception& ex) { _invoker.manage(); }
 
+Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this), _lastIndex(0), _onManage(NULL) {
+}
+
 Invoker::~Invoker() {
 	Startable::stop();
 }
@@ -69,8 +72,17 @@ unsigned int Invoker::empty() {
 }
 
 void Invoker::manage() {
-	for(auto it : _mapConnections) {
-		it.second->manage();
+	auto it = _mapConnections.begin();
+	while(it != _mapConnections.end()) {
+		it->second->manage();
+
+		if (it->second->died) {
+			int id = it->first;
+			it++;
+			removeConnection(id);
+			continue;
+		}
+		it++;
 	}
 	if (_onManage)
 		_onManage();

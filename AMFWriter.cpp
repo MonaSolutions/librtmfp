@@ -163,15 +163,6 @@ UInt64 AMFWriter::beginObject(const char* type) {
 	}
 	packet.write8(AMF3_OBJECT);
 
-	/* Can be ignored finally!
-	if(externalizable) {
-		// What follows is the value of the “inner” object
-	} else if(hardProperties>0 && !pClassDef) {
-		// The remaining integer-data represents the number of class members that exist.
-		// If there is a class-def reference there are no property names and the number of values is equal to the number of properties in the class-def
-		flags |= (hardProperties<<4);
-	}*/
-
 	// ClassDef always inline (because never hard properties, all is dynamic)
 	// Always dynamic (but can't be externalizable AND dynamic!)
 	packet.write7BitValue(11); // 00001011 => inner object + classdef inline + dynamic

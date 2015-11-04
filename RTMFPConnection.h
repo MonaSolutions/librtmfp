@@ -37,11 +37,10 @@ public:
 	// return total amount of treated data
 	Mona::UInt32 write(const Mona::UInt8* buf, Mona::UInt32 size);
 
-	// Close the connection
-	void close();
-
 	// Called by Invoker every second to manage connection (flush and ping)
 	void manage();
+
+	bool	died; // connection is died
 
 	/******* Internal functions for writers *******/
 

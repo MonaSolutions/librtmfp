@@ -34,7 +34,7 @@ const char RTMFPConnection::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 };
 
 RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
-		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),	_nonce(0x8B),_timeReceived(0),
+		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),_nonce(0x8B),_timeReceived(0), died(false),
 		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0),_pLastWriter(NULL),_firstRead(true),_publishingStream(0),
 		_pEncoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 		_pDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
@@ -71,6 +71,10 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 				sendCommand(CommandType::NETSTREAM_PLAY, _publication.c_str());
 		} else if (code == "NetStream.Publish.Start")
 			published=true;
+		else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed") {
+			died = true;
+			published = false;
+		}
 
 		_onStatusEvent(code.c_str(), description.c_str());
 	};
@@ -116,10 +120,15 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 	_pMainStream->OnStatus::subscribe(onStatus);
 	_pMainStream->OnStreamCreated::subscribe(onStreamCreated);
 	_pMainStream->OnMedia::subscribe(onMedia);
-	/*_pMainStream->OnStop::subscribe(onStreamStop);*/
 }
 
 RTMFPConnection::~RTMFPConnection() {
+	if (_pSocket) {
+		_pSocket->OnPacket::unsubscribe(onPacket);
+		_pSocket->OnError::unsubscribe(onError);
+		_pSocket->close();
+	}
+
 	// Here no new sending must happen except "failSignal"
 	for (auto& it : _flowWriters)
 		it.second->clear();
@@ -148,11 +157,6 @@ RTMFPConnection::~RTMFPConnection() {
 	
 	// delete flowWriters
 	_flowWriters.clear();
-
-	if(_pSocket) {
-		_pSocket->OnPacket::unsubscribe(onPacket);
-		_pSocket->OnError::unsubscribe(onError);
-	}
 }
 
 bool RTMFPConnection::connect(Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher) {
@@ -202,6 +206,8 @@ void RTMFPConnection::sendCommand(CommandType command, const char* streamName) {
 
 bool RTMFPConnection::read(UInt8* buf,UInt32 size, Mona::UInt32& nbRead) {
 	nbRead = 0;
+	if (died)
+		return false; // to stop the parent loop
 
 	lock_guard<recursive_mutex> lock(_readMutex);
 	if (!_mediaPackets.empty()) {
@@ -565,7 +571,7 @@ void RTMFPConnection::receive(Exception& ex, BinaryReader& reader) {
 					flags = message.read8();
 
 				// Process request
-				if (pFlow/* && !_failed*/)
+				if (pFlow && !died)
 					pFlow->receive(stage, deltaNAck, message, flags);
 
 				break;
@@ -598,11 +604,6 @@ void RTMFPConnection::receive(Exception& ex, BinaryReader& reader) {
 			pFlow=NULL;
 		}
 	}
-}
-
-void RTMFPConnection::close() {
-	if (_pSocket)
-		_pSocket->close();
 }
 
 UInt8* RTMFPConnection::packet() {
@@ -641,7 +642,7 @@ void RTMFPConnection::flush(bool echoTime,UInt8 marker) {
 	_pLastWriter=NULL;
 	if(!_pSender)
 		return;
-	if (/*!died && */_pSender->available()) {
+	if (!died && _pSender->available()) {
 		BinaryWriter& packet(_pSender->packet);
 	
 		// After 30 sec, send packet without echo time
@@ -651,7 +652,6 @@ void RTMFPConnection::flush(bool echoTime,UInt8 marker) {
 		if(echoTime)
 			marker+=4;
 		else
-		if(!echoTime)
 			packet.clip(2);
 
 		BinaryWriter writer(packet.data()+6, 5);
@@ -745,10 +745,10 @@ const PoolBuffers&		RTMFPConnection::poolBuffers() {
 }
 
 RTMFPFlow* RTMFPConnection::createFlow(UInt64 id,const string& signature) {
-	/*if(died) {
-		ERROR("Session ", name(), " is died, no more RTMFPFlow creation possible");
+	if(died) {
+		ERROR("Connection is died, no more RTMFPFlow creation possible");
 		return NULL;
-	}*/
+	}
 	if (!_pMainStream)
 		return NULL; // has failed! use FlowNull rather
 

@@ -80,7 +80,7 @@ int RTMFP_Read(unsigned int RTMFPcontext,char *buf,unsigned int size) {
 	if (pConn) {
 		UInt32 total = 0, nbRead = 0;
 		bool running = true;
-		while (/*running && size > 0*/nbRead==0) {
+		while (running && nbRead==0 /*size > 0*/) {
 			running = pConn->read((UInt8*)buf, size, nbRead);
 			if (nbRead > 0) {
 				size -= nbRead;

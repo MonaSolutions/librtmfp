@@ -24,7 +24,7 @@ class Invoker : public Mona::TaskHandler, private Mona::Startable {
 friend class ConnectionsManager;
 public:
 
-	Invoker(Mona::UInt16 threads) : Mona::Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this),_lastIndex(0),_onManage(NULL) {}
+	Invoker(Mona::UInt16 threads);
 	virtual ~Invoker();
 
 	// Start the socket manager if not started

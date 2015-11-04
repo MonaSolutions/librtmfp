@@ -40,8 +40,9 @@ SOURCES = $(wildcard ./*.cpp)
 OBJECT = $(addprefix tmp/Release/,$(notdir $(SOURCES:%.cpp=%.o)))
 OBJECTD = $(addprefix tmp/Debug/,$(notdir $(SOURCES:%.cpp=%.o)))
 
+.PHONY: debug release
+
 release:
-	@echo destdir $(DESTDIR)
 	mkdir -p tmp/Release
 	mkdir -p lib
 	@$(MAKE) -k $(OBJECT)
