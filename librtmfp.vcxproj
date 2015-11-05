@@ -89,6 +89,7 @@
     <ClInclude Include="Invoker.h" />
     <ClInclude Include="librtmfp.h" />
     <ClInclude Include="ParameterWriter.h" />
+    <ClInclude Include="Publisher.h" />
     <ClInclude Include="ReferableReader.h" />
     <ClInclude Include="RTMFP.h" />
     <ClInclude Include="RTMFPConnection.h" />
@@ -108,6 +109,7 @@
     <ClCompile Include="FlashWriter.cpp" />
     <ClCompile Include="Invoker.cpp" />
     <ClCompile Include="librtmfp.cpp" />
+    <ClCompile Include="Publisher.cpp" />
     <ClCompile Include="ReferableReader.cpp" />
     <ClCompile Include="RTMFP.cpp" />
     <ClCompile Include="RTMFPConnection.cpp" />

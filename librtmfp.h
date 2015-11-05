@@ -18,9 +18,11 @@ void RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName);*/
 void RTMFP_Close(unsigned int RTMFPcontext);
 
 // Read size bytes of flv data from the current connexion (Asynchronous read, to be called by ffmpeg)
+// return the number of bytes read (always less or equal than size)
 int RTMFP_Read(unsigned int RTMFPcontext, char *buf, unsigned int size);
 
 // Write size bytes of data into the current connexion
+// return the number of bytes used
 int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int size);
 
 // Set log callback

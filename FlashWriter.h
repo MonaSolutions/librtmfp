@@ -36,11 +36,12 @@ public:
 	Mona::BinaryWriter&		writeRaw() { return write(AMF::RAW).packet; }
 	AMFWriter&				writeMessage();
 	AMFWriter&				writeInvocation(const char* name) { return writeInvocation(name,0); }
+	virtual FlashWriter&	newWriter() { return *this; }
 
 	/*AMFWriter&				writeAMFSuccess(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_result", code, description, withoutClosing); }
 	AMFWriter&				writeAMFStatus(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("onStatus", code, description, withoutClosing); }
 	AMFWriter&				writeAMFError(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_error", code, description, withoutClosing); }*/
-	bool					writeMedia(MediaType type,Mona::UInt32 time,Mona::PacketReader& packet,const Mona::Parameters& properties);
+	bool					writeMedia(MediaType type,Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 
 	AMFWriter&				writeAMFData(const std::string& name);
 
@@ -50,16 +51,16 @@ public:
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)
 
+	/**	The main Writer of one session should close the entiere session
+	If code==0, it's a normal close
+	If code>0, it's a user close (from server application script)
+	If code<0, it's a system core close
+	-1 => Publisher close!				*/
+	virtual void			close(Mona::Int32 code = 0);
+
 protected:
 	FlashWriter(State state,const Mona::PoolBuffers& poolBuffers);
 	FlashWriter(FlashWriter& other);
-
-	/**	The main Writer of one session should close the entiere session
-		If code==0, it's a normal close
-		If code>0, it's a user close (from server application script)
-		If code<0, it's a system core close
-			-1 => Listener close!				*/
-	virtual void			close(Mona::Int32 code=0);
 
 	virtual AMFWriter&		write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL,Mona::UInt32 size=0)=0;
 	AMFWriter&				writeInvocation(const char* name,double callback);

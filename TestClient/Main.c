@@ -14,8 +14,11 @@
 #endif
 
 // Global variables declaration
+#define BUFFER_SIZE			20480
+static char buf[BUFFER_SIZE];
+static unsigned int cursor = BUFFER_SIZE;
 static unsigned int context = 0;
-static FILE * fileOut = NULL;
+static FILE * pFile = NULL;
 static enum TestOption {
 	SYNC_READ,
 	ASYNC_READ,
@@ -57,28 +60,42 @@ void onStatusEvent(const char* code,const char* description) {
 
 // Synchronous read
 void onMedia(unsigned int time,const char* buf,unsigned int size,int audio) {
-	if (fileOut) {
+	if (pFile) {
 		unsigned int tmp=0;
-		fprintf(fileOut, audio? "\x08" : "\x09");
+		fprintf(pFile, audio? "\x08" : "\x09");
 		tmp = flip24(size);
-		fwrite(&tmp, 3, 1, fileOut);
+		fwrite(&tmp, 3, 1, pFile);
 		tmp = flip24(time);
-		fwrite(&tmp, 3, 1, fileOut);
-		fwrite("\x00\x00\x00\x00", sizeof(char), 4, fileOut);
-		fwrite(buf, sizeof(char), size, fileOut);
+		fwrite(&tmp, 3, 1, pFile);
+		fwrite("\x00\x00\x00\x00", sizeof(char), 4, pFile);
+		fwrite(buf, sizeof(char), size, pFile);
 		tmp = flip32(11+size);
-		fwrite(&tmp, 4, 1, fileOut);
+		fwrite(&tmp, 4, 1, pFile);
 	}
 }
 
 void onManage() {
-	unsigned int readed = 0;
-	char buf[20480];
+	int read = 0;
 
 	// Asynchronous read
 	if (_option == ASYNC_READ) {
-		if(readed = RTMFP_Read(context,buf,20480))
-			fwrite(buf, sizeof(char), readed, fileOut);
+		if((read = RTMFP_Read(context,buf,BUFFER_SIZE))>0)
+			fwrite(buf, sizeof(char), read, pFile);
+	}
+	// Write
+	else if (_option == WRITE) {
+		if (cursor!=0)
+			fread(buf + (BUFFER_SIZE-cursor), sizeof(char), cursor, pFile);
+
+		if ((read = RTMFP_Write(context, buf, BUFFER_SIZE)) < 0)
+			RTMFP_Close(context); // Error
+		else if (read == 0)
+			cursor = 0; // Not ready
+		else if (read > 0) {
+			cursor = read;
+			// Move buffer
+			memcpy(buf, buf + cursor, BUFFER_SIZE - cursor);
+		}
 	}
 }
 
@@ -94,10 +111,6 @@ int main(int argc,char* argv[]) {
 			_option = ASYNC_READ;
 		else if (stricmp(argv[i], "--write")==0)
 			_option = WRITE;
-		/*else if (strlen(argv[i]) > 5 && strnicmp(argv[i], "host=", 5)==0)
-			host = argv[i]+5;
-		else if (strlen(argv[i]) > 5 && strnicmp(argv[i], "port=", 5)==0)
-			port = atoi(argv[i]+5);*/
 		else if (strlen(argv[i]) > 4 && strnicmp(argv[i], "url=", 4)==0)
 			url = argv[i]+4;
 		else
@@ -114,26 +127,22 @@ int main(int argc,char* argv[]) {
 
 #if defined(WIN32)
 		errno_t err;
-		if(_option != WRITE && (err = fopen_s(&fileOut,"out.flv","wb+"))!=0)
+		if((err = fopen_s(&pFile,"out.flv", (_option == WRITE)? "rb" : "wb+"))!=0)
 			printf("Unable to open file out.flv : %d\n", err);
 	#else
-		if(_option != WRITE && (fileOut = fopen("out.flv","wb+")) == NULL)
+		if((pFile = fopen("out.flv", (_option == WRITE) ? "rb" : "wb+")) == NULL)
 			printf("Unable to open file out.flv\n");
 	#endif
 		else {
-			if(_option != WRITE) {
-				printf("Output file out.flv opened\n");
-				if (_option == SYNC_READ)
-					fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, fileOut);
-			}
+			printf("Output file out.flv opened\n");
+			if (_option == SYNC_READ)
+				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
 
 			RTMFP_OnManageSetCallback(onManage);
 			RTMFP_WaitTermination();
 
-			if(_option != WRITE) {
-				fclose(fileOut);
-				fileOut = NULL;
-			}
+			fclose(pFile);
+			pFile = NULL;
 		}
 
 		printf("Closing connection...\n");

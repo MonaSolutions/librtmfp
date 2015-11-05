@@ -8,7 +8,7 @@
 //#include "Mona/Invoker.h"
 
 namespace FlashEvents {
-	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description)> {};
+	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description, FlashWriter& writer)> {};
 	struct OnMedia: Mona::Event<void(Mona::UInt32 time,Mona::PacketReader& packet,double lostRate,bool audio)> {};
 };
 
@@ -34,7 +34,7 @@ public:
 	void	disengage(FlashWriter* pWriter=NULL);
 
 	// return flase if writer is closed!
-	bool	process(AMF::ContentType type,Mona::UInt32 time,Mona::PacketReader& packet,FlashWriter& writer,double lostRate=0);
+	bool	process(AMF::ContentType type,Mona::UInt32 time,Mona::PacketReader& packet,FlashWriter& writer, double lostRate=0);
 
 	virtual void	flush() { /*if(_pPublication) _pPublication->flush();*/ }
 
@@ -49,9 +49,6 @@ public:
 
 	// Send the publish request to the RTMFP server
 	virtual void publish(FlashWriter& writer, const std::string& name);
-
-	// Write a media packet
-	virtual void writeMedia(Mona::UInt8 type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 
 /*protected:
 

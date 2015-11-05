@@ -78,7 +78,7 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 					}
 					writer.flush();
 				}
-				OnStatus::raise(code, description);
+				OnStatus::raise(code, description, writer);
 				return;
 			}
 		} 
@@ -104,7 +104,7 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 				string code, description;
 				params.getString("code",code);
 				params.getString("description", description);
-				OnStatus::raise(code, description);
+				OnStatus::raise(code, description, writer);
 				return;
 			}
 		} 

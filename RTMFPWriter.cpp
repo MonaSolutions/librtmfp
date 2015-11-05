@@ -36,6 +36,8 @@ RTMFPWriter::~RTMFPWriter() {
 }
 
 void RTMFPWriter::abort() {
+	std::lock_guard<recursive_mutex> lock(_mutexMessages);
+
 	// delete messages
 	RTMFPMessage* pMessage;
 	while(!_messages.empty()) {
@@ -60,6 +62,8 @@ void RTMFPWriter::abort() {
 }
 
 void RTMFPWriter::clear() {
+	std::lock_guard<recursive_mutex> lock(_mutexMessages);
+
 	for (RTMFPMessage* pMessage : _messages)
 		delete pMessage;
 	_messages.clear();
@@ -75,6 +79,7 @@ void RTMFPWriter::close(Int32 code) {
 }
 
 void RTMFPWriter::acknowledgment(PacketReader& packet) {
+	std::lock_guard<recursive_mutex> lock(_mutexMessages);
 
 	UInt64 bufferSize = packet.read7BitLongValue(); // TODO use this value in reliability mechanism?
 	
@@ -418,6 +423,7 @@ void RTMFPWriter::raiseMessage() {
 }
 
 bool RTMFPWriter::flush(bool full) {
+	std::lock_guard<recursive_mutex> lock(_mutexMessages);
 
 	if(_messagesSent.size()>100)
 		TRACE("_messagesSent.size()=",_messagesSent.size());
@@ -505,6 +511,7 @@ RTMFPMessageBuffered& RTMFPWriter::createMessage() {
 		static RTMFPMessageBuffered MessageNull;
 		return MessageNull;
 	}
+	std::lock_guard<recursive_mutex> lock(_mutexMessages);
 	RTMFPMessageBuffered* pMessage = new RTMFPMessageBuffered(_band.poolBuffers(),reliable);
 	_messages.emplace_back(pMessage);
 	return *pMessage;
@@ -513,11 +520,11 @@ RTMFPMessageBuffered& RTMFPWriter::createMessage() {
 AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* data, UInt32 size) {
 	if (type < AMF::AUDIO || type > AMF::VIDEO)
 		time = 0; // Because it can "dropped" the packet otherwise (like if the Writer was not reliable!)
-	if(data && !reliable && state()==OPENED && !_band.failed() && !signature.empty()) {
+	/*if(data && !reliable && state()==OPENED && !_band.failed() && !signature.empty()) {
 		_messages.emplace_back(new RTMFPMessageUnbuffered(type,time,data,size));
 		flush(false);
         return AMFWriter::Null;
-	}
+	}*/
 	AMFWriter& amf = createMessage().writer();
 	BinaryWriter& binary(amf.packet);
 	binary.write8(type).write32(time);
@@ -540,12 +547,13 @@ void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 	}
 	if(state()==CLOSED || signature.empty() || _band.failed()) // signature.empty() means that we are on the writer of FlowNull
 		return;
-	_messages.emplace_back(new RTMFPMessageUnbuffered(data,size));
-	flush(false);
+	//TODO: not reliable
+	/*_messages.emplace_back(new RTMFPMessageUnbuffered(data,size));
+	flush(false);*/
 }
 
-bool RTMFPWriter::writeMedia(MediaType type,UInt32 time,PacketReader& packet,const Parameters& properties) {
+/*bool RTMFPWriter::writeMedia(MediaType type,UInt32 time,PacketReader& packet,const Parameters& properties) {
 	if (type==INIT)
 		_resetStream = false;
 	return _resetStream ? false : FlashWriter::writeMedia(type,time,packet,properties);
-}
+}*/

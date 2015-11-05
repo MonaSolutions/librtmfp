@@ -25,7 +25,7 @@ AMFWriter& FlashWriter::writeMessage() {
 AMFWriter& FlashWriter::writeInvocation(const char* name, double callback) {
 	AMFWriter& writer = write(AMF::INVOCATION);
 	BinaryWriter& packet = writer.packet;
-	packet.write8(AMF_STRING).write16(strlen(name)).write(name);
+	packet.write8(AMF_STRING).write16((UInt16)strlen(name)).write(name);
 	packet.write8(AMF_NUMBER).writeNumber<double>(callback);
 	packet.write8(AMF_NULL); // for RTMP compatibility! (requiere it)
 	writer.amf0 = amf0;
@@ -57,11 +57,11 @@ AMFWriter& FlashWriter::writeAMFData(const string& name) {
 	return writer;
 }
 
-bool FlashWriter::writeMedia(MediaType type,UInt32 time,PacketReader& packet,const Parameters& properties) {
+bool FlashWriter::writeMedia(MediaType type,UInt32 time, const UInt8* data, UInt32 size) {
 	
 	switch(type) {
 		case INIT:
-			if (time == AUDIO) {
+			/*if (time == AUDIO) {
 				_onAudio.clear();
 				if (properties.getString("onAudio", _onAudio) && amf0) {
 					WARN("Impossible to handle onAudio properties on a AMF0 stream (no ByteArray support)")
@@ -73,7 +73,7 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time,PacketReader& packet,con
 					WARN("Impossible to handle onVideo properties on a AMF0 stream (no ByteArray support)")
 					_onVideo.clear();
 				}
-			}
+			}*/
 			break;
 		case START:
 			/*if (time==DATA)
@@ -84,21 +84,21 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time,PacketReader& packet,con
 				writeAMFStatus("NetStream.Play.UnpublishNotify",string(STR packet.current(),packet.available()) + " is now unpublished");*/
 			break;
 		case AUDIO:
-			if (!_onAudio.empty()) {
+			/*if (!_onAudio.empty()) {
 				AMFWriter& writer(writeAMFData(_onAudio));
 				writer.writeNumber(time);
 				writer.writeBytes(packet.current(),packet.available());
-			} else
-				write(AMF::AUDIO,time,packet.current(),packet.available());
+			} else*/
+				write(AMF::AUDIO,time,data,size);
 			break;
 		case VIDEO:
-			if (!_onVideo.empty()) {
+			/*if (!_onVideo.empty()) {
 				AMFWriter& writer(writeAMFData(_onVideo));
 				writer.writeNumber(time);
 				writer.writeBytes(packet.current(),packet.available());
 				
-			} else
-				write(AMF::VIDEO,time,packet.current(),packet.available());
+			} else*/
+				write(AMF::VIDEO,time,data,size);
 			break;
 		case DATA: {
 			// convert to AMF ?

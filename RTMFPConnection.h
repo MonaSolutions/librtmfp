@@ -9,6 +9,7 @@
 #include "RTMFPWriter.h"
 #include "RTMFPFlow.h"
 #include "BandWriter.h"
+#include "Publisher.h"
 
 class Invoker;
 class RTMFPConnection : public BandWriter {
@@ -31,11 +32,11 @@ public:
 
 	// Asynchronous read (buffered)
 	// return false if end of buf has been reached
-	bool read(Mona::UInt8* buf, Mona::UInt32 size, Mona::UInt32& nbRead);
+	bool read(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Write media (netstream must be published)
-	// return total amount of treated data
-	Mona::UInt32 write(const Mona::UInt8* buf, Mona::UInt32 size);
+	// return false if the client is not ready to publish, otherwise true
+	bool write(const Mona::UInt8* buf, Mona::UInt32 size, int& pos);
 
 	// Called by Invoker every second to manage connection (flush and ping)
 	void manage();
@@ -60,6 +61,9 @@ public:
 	virtual bool							failed() const { return false; /* return _failed; */ }
 
 private:
+	
+	// Close the connection properly
+	void close();
 
 	// External Callbacks to link with parent
 	void (* _onSocketError)(const char*);
@@ -138,6 +142,7 @@ private:
 	Mona::UDPSocket::OnError::Type						onError; // TODO: delete this if not needed
 	Mona::UDPSocket::OnPacket::Type						onPacket; // Main input event, received on each raw packet
 
+	std::unique_ptr<Publisher>								_pPublisher;
 	std::shared_ptr<FlashConnection>						_pMainStream;
 	std::map<Mona::UInt64,RTMFPFlow*>						_flows;
 	std::map<Mona::UInt64,std::shared_ptr<RTMFPWriter> >	_flowWriters;
@@ -171,5 +176,5 @@ private:
 	static const char										_FlvHeader[];
 
 	// Write
-	Mona::UInt16											_publishingStream;
+	bool													_firstWrite; // True if the input file as already been readed
 };

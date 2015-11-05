@@ -40,7 +40,7 @@ void FlashStream::disengage(FlashWriter* pWriter) {
 }
 
 
-bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet,FlashWriter& writer,double lostRate) {
+bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet,FlashWriter& writer, double lostRate) {
 
 	// if exception, it closes the connection, and print an ERROR message
 	switch(type) {
@@ -119,7 +119,7 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 			string code, description;
 			params.getString("code",code);
 			params.getString("description", description);
-			OnStatus::raise(code, description);
+			OnStatus::raise(code, description, writer);
 
 			if (code == "NetStream.Play.Start") { 
 				// TODO: Send acknowledgment
@@ -218,8 +218,4 @@ void FlashStream::publish(FlashWriter& writer,const string& name) {
 	AMFWriter& amfWriter = writer.writeInvocation("publish");
 	amfWriter.writeString(name.c_str(), name.size());
 	writer.flush();
-}
-
-void FlashStream::writeMedia(UInt8 type,UInt32 time,const UInt8* data,UInt32 size) {
-	ERROR("not implemented yet")
 }

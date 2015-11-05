@@ -84,7 +84,10 @@ void Invoker::manage() {
 		}
 		it++;
 	}
-	if (_onManage)
+
+	if (_mapConnections.empty())
+		delete this; // All connections are died, delete the invoker
+	else if (_onManage)
 		_onManage();
 }
 

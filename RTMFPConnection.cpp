@@ -35,7 +35,7 @@ const char RTMFPConnection::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 
 RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
 		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),_nonce(0x8B),_timeReceived(0), died(false),
-		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0),_pLastWriter(NULL),_firstRead(true),_publishingStream(0),
+		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0),_pLastWriter(NULL),_firstRead(true), _firstWrite(true),
 		_pEncoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 		_pDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
 		_onSocketError(onSocketError), _onStatusEvent(onStatusEvent), _onMedia(onMediaEvent) {
@@ -62,18 +62,21 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 		if (ex)
 			_onSocketError(ex.error().c_str());
 	};
-	onStatus = [this](const std::string& code, const std::string& description) {
+	onStatus = [this](const string& code, const string& description, FlashWriter& writer) {
 		if (code == "NetConnection.Connect.Success") {
 			connected = true;
 			if (_isPublisher)
 				sendCommand(CommandType::NETSTREAM_PUBLISH, _publication.c_str());
 			else
 				sendCommand(CommandType::NETSTREAM_PLAY, _publication.c_str());
-		} else if (code == "NetStream.Publish.Start")
-			published=true;
-		else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed") {
+		}
+		else if (code == "NetStream.Publish.Start") {
+			_pPublisher.reset(new Publisher(writer));
+		} else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName") {
+			if (code != "NetConnection.Connect.Closed")
+				close();
 			died = true;
-			published = false;
+			_pPublisher.reset();
 		}
 
 		_onStatusEvent(code.c_str(), description.c_str());
@@ -102,7 +105,6 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 				break;
 			case NETSTREAM_PUBLISH:
 				pFlow->sendPublish(command.value);
-				_publishingStream = idStream;
 				break;
 		}		
 		_waitingCommands.pop_back();
@@ -123,6 +125,8 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 }
 
 RTMFPConnection::~RTMFPConnection() {
+	close();
+
 	if (_pSocket) {
 		_pSocket->OnPacket::unsubscribe(onPacket);
 		_pSocket->OnError::unsubscribe(onError);
@@ -157,6 +161,18 @@ RTMFPConnection::~RTMFPConnection() {
 	
 	// delete flowWriters
 	_flowWriters.clear();
+}
+
+void RTMFPConnection::close() {
+
+	if (connected) {
+		if (_pPublisher)
+			_pPublisher.reset();
+
+		writeMessage(0x4C, 0); // Close message
+		flush(false);
+		connected = false;
+	}
 }
 
 bool RTMFPConnection::connect(Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher) {
@@ -204,7 +220,7 @@ void RTMFPConnection::sendCommand(CommandType command, const char* streamName) {
 		ERROR("Unable to find the main flow");
 }
 
-bool RTMFPConnection::read(UInt8* buf,UInt32 size, Mona::UInt32& nbRead) {
+bool RTMFPConnection::read(UInt8* buf,UInt32 size, int& nbRead) {
 	nbRead = 0;
 	if (died)
 		return false; // to stop the parent loop
@@ -236,26 +252,30 @@ bool RTMFPConnection::read(UInt8* buf,UInt32 size, Mona::UInt32& nbRead) {
 	return true;
 }
 
-UInt32 RTMFPConnection::write(const UInt8* buf,UInt32 size) {
-	if(!published) {
-		ERROR("Can't write data because NetStream is not published")
-		return 0;
+bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
+	pos = 0;
+	if (died) {
+		pos = -1;
+		return true; // to stop the parent loop
 	}
-	std::shared_ptr<FlashStream> pStream;
-	if(!_pMainStream || !_pMainStream->getStream(_publishingStream,pStream)) {
-		ERROR("Unable to find publishing NetStream ", _publishingStream)
-		return 0;
+
+	if(!_pPublisher) {
+		DEBUG("Can't write data because NetStream is not published")
+		return false;
 	}
 
 	PacketReader packet(buf, size);
 	if(packet.available()<14) {
 		DEBUG("Packet too small")
-		return 0;
+		return true;
 	}
 	
-	string tmp;
-	if (packet.read(3, tmp) == "FLV") // header
+	const UInt8* cur = packet.current();
+	if (_firstWrite && *cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header
 		packet.next(13);
+		pos = +13;
+		_firstWrite = false;
+	}
 
 	while(packet.available()) {
 		if (packet.available() < 11) // smaller than flv header
@@ -263,17 +283,29 @@ UInt32 RTMFPConnection::write(const UInt8* buf,UInt32 size) {
 
 		UInt8 type = packet.read8();
 		UInt32 bodySize = packet.read24();
-		UInt32 time = packet.read32();
+		UInt32 time = packet.read24();
+		packet.next(4); // ignored
 
 		if(packet.available() < bodySize+4)
-			break; // we will wait further data
+			break; // we will wait for further data
 
-		if (type == AMF::AUDIO || type == AMF::VIDEO)
-			pStream->writeMedia(type, time, packet.current(), bodySize);
-		packet.next(bodySize+15);
+		DEBUG(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
+
+		if (type == AMF::AUDIO)
+			_pPublisher->pushAudio(time, packet.current(), bodySize);
+		else if (type == AMF::VIDEO)
+			_pPublisher->pushVideo(time, packet.current(), bodySize);
+		else
+			WARN("Unhandled packet type : ", type)
+		packet.next(bodySize);
+		UInt32 sizeBis = packet.read32();
+		pos += bodySize + 15;
+		if (sizeBis != bodySize + 11) {
+			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize+11, ")")
+			break;
+		}
 	}
-
-	return size-packet.available();
+	return true;
 }
 
 void RTMFPConnection::handleMessage(Exception& ex,const Mona::PoolBuffer& pBuffer) {

@@ -29,7 +29,7 @@ public:
 	const Mona::UInt64	flowId;
 	const std::string	signature;
 
-	//virtual Writer&		newWriter() { return *(new RTMFPWriter(state(),signature, _band)); }
+	virtual FlashWriter&		newWriter() { return *(new RTMFPWriter(state(),signature, _band)); }
 
 	bool				flush() { return flush(true); }
 
@@ -57,7 +57,7 @@ public:
 
 	Mona::UInt64		stage() { return _stage; }
 
-	bool				writeMedia(MediaType type,Mona::UInt32 time,Mona::PacketReader& packet,const Mona::Parameters& properties);
+	//bool				writeMedia(MediaType type,Mona::UInt32 time,Mona::PacketReader& packet,const Mona::Parameters& properties);
 	void				writeRaw(const Mona::UInt8* data,Mona::UInt32 size);
 	//bool				writeMember(const Client& client);
 
@@ -74,6 +74,7 @@ private:
 
 	//Trigger						_trigger;
 
+	std::recursive_mutex		_mutexMessages;
 	std::deque<RTMFPMessage*>	_messages;
 	Mona::UInt64				_stage;
 	std::deque<RTMFPMessage*>	_messagesSent;

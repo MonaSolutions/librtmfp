@@ -69,19 +69,32 @@ void RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName) {
 }*/
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
+	if (!GlobalInvoker) {
+		ERROR("Invoker is not ready, you must establish the connection first")
+		return;
+	}
+
 	GlobalInvoker->removeConnection(RTMFPcontext);
 	if (GlobalInvoker->empty()) // delete if no more connections
 		GlobalInvoker.reset();
 }
 
 int RTMFP_Read(unsigned int RTMFPcontext,char *buf,unsigned int size) {
+	if (!GlobalInvoker) {
+		ERROR("Invoker is not ready, you must establish the connection first")
+		return -1;
+	}
+
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if (pConn) {
-		UInt32 total = 0, nbRead = 0;
+		UInt32 total = 0;
+		int nbRead = 0;
 		bool running = true;
 		while (running && nbRead==0 /*size > 0*/) {
 			running = pConn->read((UInt8*)buf, size, nbRead);
+			if (nbRead < 0)
+				return nbRead;
 			if (nbRead > 0) {
 				size -= nbRead;
 				total += nbRead;
@@ -94,10 +107,18 @@ int RTMFP_Read(unsigned int RTMFPcontext,char *buf,unsigned int size) {
 }
 
 int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
+	if (!GlobalInvoker) {
+		ERROR("Invoker is not ready, you must establish the connection first")
+		return -1;
+	}
+
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if(pConn)
-		return pConn->write((const UInt8*)buf, size);
+	if (pConn) {
+		int pos = 0;
+		pConn->write((const UInt8*)buf, size, pos);
+		return pos;
+	}
 	
 	return -1;
 }
@@ -112,14 +133,29 @@ void RTMFP_LogSetLevel(int level) {
 }
 
 void RTMFP_Terminate() {
+	if (!GlobalInvoker) {
+		ERROR("Invoker is not ready, you must establish the connection first")
+		return;
+	}
+
 	GlobalInvoker->terminate();
 }
 
 void RTMFP_WaitTermination() {
+	if (!GlobalInvoker) {
+		ERROR("Invoker is not ready, you must establish the connection first")
+		return;
+	}
+
 	GlobalInvoker->wait();
 }
 
 void RTMFP_OnManageSetCallback(void(* onManage)()) {
+	if (!GlobalInvoker) {
+		ERROR("Invoker is not ready, you must establish the connection first")
+		return;
+	}
+
 	GlobalInvoker->setOnManage(onManage);
 }
 
