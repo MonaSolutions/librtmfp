@@ -24,7 +24,7 @@ else
 endif
 override INCLUDES+=-I./../MonaServer/MonaBase/include/
 LIBDIRS+=-L./../MonaServer/MonaBase/lib/
-LIBS+=-lMonaBase -lcrypto -lssl
+LIBS+=-Wl,-Bstatic -lMonaBase -Wl,-Bdynamic -lcrypto -lssl
 
 INCDIR=/usr/include/librtmfp/
 
@@ -49,6 +49,13 @@ release:
 	@echo creating dynamic lib $(LIB)
 	@$(GPP) $(CFLAGS) $(LIBDIRS) -fPIC $(SHARED) -o $(LIB) $(OBJECT) $(LIBS)
 
+debug:
+	mkdir -p tmp/Debug
+	mkdir -p lib
+	@$(MAKE) -k $(OBJECTD)
+	@echo creating dynamic debug lib $(LIB)
+	@$(GPP) -g -D_DEBUG $(CFLAGS) $(LIBDIRS) -fPIC $(SHARED) -o $(LIB) $(OBJECTD) $(LIBS)
+
 librtmfp.pc: librtmfp.pc.in Makefile
 	sed -e "s;@prefix@;$(prefix);" -e "s;@libdir@;$(LIBDIR);" \
 	    -e "s;@VERSION@;$(VERSION);" \
@@ -61,13 +68,6 @@ install: librtmfp.pc
 	cp librtmfp.h $(INCDIR)
 	cp $(LIB) $(LIBDIR)
 	cp librtmfp.pc $(LIBDIR)/pkgconfig
-
-debug:
-	mkdir -p tmp/Debug
-	mkdir -p lib
-	@$(MAKE) -k $(OBJECTD)
-	@echo creating dynamic debug lib $(LIB)
-	@$(GPP) -g -D_DEBUG $(CFLAGS) $(LIBDIRS) -fPIC $(SHARED) -o $(LIB) $(OBJECTD) $(LIBS)
 
 $(OBJECT): tmp/Release/%.o: %.cpp
 	@echo compiling $(@:tmp/Release/%.o=%.cpp)
