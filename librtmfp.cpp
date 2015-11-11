@@ -14,10 +14,9 @@ extern "C" {
 static std::shared_ptr<Invoker>		GlobalInvoker; // manage threads, sockets and connection
 static std::shared_ptr<RTMFPLogger> GlobalLogger; // handle log messages
 
-unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*, const char*), 
-				void (* onMedia)(unsigned int, const char*, unsigned int, int)) {
+unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent,	OnMediaEvent pOnMedia, unsigned short audioReliable, unsigned short videoReliable) {
 
-	if(!onSocketError || !onStatusEvent) {
+	if(!pOnSocketError || !pOnStatusEvent) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
 		return 0;
 	}
@@ -35,16 +34,17 @@ unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, void (* 
 	size_t	filePos = Util::UnpackUrl(url, host, publication, query);
 	if (filePos == string::npos) {
 		ERROR("No publication name found in url")
+		GlobalInvoker.reset();
 		return 0;
 	}
 	app.erase(app.size()-publication.size()+1);
 	publication.erase(0,filePos);
 
 	Exception ex;
-	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(onSocketError, onStatusEvent, onMedia));
+	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(pOnSocketError, pOnStatusEvent, pOnMedia, audioReliable>0, videoReliable>0));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
 	if(!pConn->connect(ex,GlobalInvoker.get(), app.c_str(), host.c_str(), publication.c_str(), isPublisher>0)) {
-		ERROR(ex.error())
+		ERROR("Error in connect : ", ex.error())
 		GlobalInvoker->removeConnection(index);
 		return 0;
 	}
@@ -138,6 +138,7 @@ void RTMFP_Terminate() {
 		return;
 	}
 
+	INFO("Terminating the RTMFP invoker...")
 	GlobalInvoker->terminate();
 }
 

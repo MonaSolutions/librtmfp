@@ -33,23 +33,21 @@ const char RTMFPConnection::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
   0x00, 0x00, 0x00, 0x00
 };
 
-RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int)): 
+RTMFPConnection::RTMFPConnection(OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, bool audioReliable, bool videoReliable):
 		_handshakeStep(0),_pInvoker(NULL),_pThread(NULL),_tag(16),_pubKey(0x80),_nonce(0x8B),_timeReceived(0), died(false),
-		_farId(0),_bytesReceived(0),_nextRTMFPWriterId(0),_pLastWriter(NULL),_firstRead(true), _firstWrite(true),
+		_farId(0),_nextRTMFPWriterId(0),_pLastWriter(NULL),_firstRead(true), _firstWrite(true), _audioReliable(audioReliable), _videoReliable(videoReliable),
 		_pEncoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 		_pDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
-		_onSocketError(onSocketError), _onStatusEvent(onStatusEvent), _onMedia(onMediaEvent) {
+		_pOnSocketError(pOnSocketError), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent) {
 	onError = [this](const Exception& ex) {
-		_onSocketError(ex.error().c_str());
+		_pOnSocketError(ex.error());
 	};
 	onPacket = [this](PoolBuffer& pBuffer,const SocketAddress& address) {
-		_bytesReceived += pBuffer.size();
-
 		// Decode the RTMFP data
 		Exception ex;
 		if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
 			ex.set(Exception::PROTOCOL,"Invalid RTMFP packet");
-			_onSocketError(ex.error().c_str());
+			_pOnSocketError(ex.error());
 			return;
 		}
 		
@@ -60,7 +58,7 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 
 		handleMessage(ex, pBuffer);
 		if (ex)
-			_onSocketError(ex.error().c_str());
+			_pOnSocketError(ex.error());
 	};
 	onStatus = [this](const string& code, const string& description, FlashWriter& writer) {
 		if (code == "NetConnection.Connect.Success") {
@@ -71,7 +69,7 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 				sendCommand(CommandType::NETSTREAM_PLAY, _publication.c_str());
 		}
 		else if (code == "NetStream.Publish.Start") {
-			_pPublisher.reset(new Publisher(writer));
+			_pPublisher.reset(new Publisher(writer, _audioReliable, _videoReliable));
 		} else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName") {
 			if (code != "NetConnection.Connect.Closed")
 				close();
@@ -79,7 +77,7 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 			_pPublisher.reset();
 		}
 
-		_onStatusEvent(code.c_str(), description.c_str());
+		_pOnStatusEvent(code.c_str(), description.c_str());
 	};
 	onStreamCreated = [this](UInt16 idStream) {
 		shared_ptr<FlashStream> pStream;
@@ -110,8 +108,8 @@ RTMFPConnection::RTMFPConnection(void (*onSocketError)(const char*), void (*onSt
 		_waitingCommands.pop_back();
 	};
 	onMedia = [this](UInt32 time,PacketReader& packet,double lostRate,bool audio) {
-		if (_onMedia) // Synchronous read
-			_onMedia(time,(const char*)packet.current(),packet.available(), audio);
+		if (_pOnMedia) // Synchronous read
+			_pOnMedia(time,(const char*)packet.current(),packet.available(), audio);
 		else { // Asynchronous read
 			lock_guard<recursive_mutex> lock(_readMutex);
 			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(),packet.current(),packet.available(), time, audio));
@@ -203,11 +201,11 @@ bool RTMFPConnection::connect(Exception& ex, Invoker* invoker, const char* url, 
 // TODO: see if we always need to manage a list of commands
 void RTMFPConnection::sendCommand(CommandType command, const char* streamName) {
 	if(!_pInvoker) {
-		_onSocketError("Can't play stream because RTMFPConnection is not initialized");
+		_pOnSocketError("Can't play stream because RTMFPConnection is not initialized");
 		return;
 	}
 	if(!connected) {
-		_onSocketError("Can't play stream because RTMFPConnection is not connected");
+		_pOnSocketError("Can't play stream because RTMFPConnection is not connected");
 		return;
 	}
 
@@ -289,7 +287,7 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 		if(packet.available() < bodySize+4)
 			break; // we will wait for further data
 
-		DEBUG(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
+		//DEBUG(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
 
 		if (type == AMF::AUDIO)
 			_pPublisher->pushAudio(time, packet.current(), bodySize);

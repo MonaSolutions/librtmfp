@@ -30,7 +30,7 @@ public:
 	// Start the socket manager if not started
 	bool			start();
 
-	unsigned int	addConnection(std::shared_ptr<RTMFPConnection> pConn);
+	unsigned int	addConnection(std::shared_ptr<RTMFPConnection>& pConn);
 
 	bool			getConnection(unsigned int index, std::shared_ptr<RTMFPConnection>& pConn);
 
@@ -38,7 +38,7 @@ public:
 
 	unsigned int	empty();
 
-	void			terminate() { _terminateSignal.set(); }
+	void			terminate();
 	void			wait() { _terminateSignal.wait(); }
 	void			setOnManage(void(*onManage)()) { _onManage = onManage; }
 
@@ -50,6 +50,7 @@ private:
 	void				requestHandle() { wakeUp(); }
 	void				run(Mona::Exception& exc);
 
+	bool											_init; // True if at least a connection has been added
 	ConnectionsManager								_manager;
 	std::map<int,std::shared_ptr<RTMFPConnection>>	_mapConnections;
 	int												_lastIndex; // last index of connection

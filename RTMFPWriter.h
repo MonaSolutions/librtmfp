@@ -65,9 +65,12 @@ private:
 	RTMFPWriter(RTMFPWriter& writer);
 	
 	Mona::UInt32			headerSize(Mona::UInt64 stage);
-	void					flush(Mona::BinaryWriter& writer,Mona::UInt64 stage,Mona::UInt8 flags,bool header, const RTMFPMessage& message, Mona::UInt32 offset, Mona::UInt16 size);
-	bool					flush(bool full);
-
+	
+	// Complete the message with the final container (header, flags, body and front) and write it
+	void					packMessage(Mona::BinaryWriter& writer,Mona::UInt64 stage,Mona::UInt8 flags,bool header, const RTMFPMessage& message, Mona::UInt32 offset, Mona::UInt16 size);
+	// Write unbuffered data if not null and flush all messages
+	bool					flush(bool full, const Mona::UInt8* data=NULL, Mona::UInt32 size=0, AMF::ContentType type=AMF::EMPTY, Mona::UInt32 time=0);
+	// Write again repeatable messages
 	void					raiseMessage();
 	RTMFPMessageBuffered&	createMessage();
 	AMFWriter&				write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL, Mona::UInt32 size=0);

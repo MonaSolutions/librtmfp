@@ -242,8 +242,7 @@ void RTMFPWriter::acknowledgment(PacketReader& packet) {
 
 			// Write packet
 			size-=3;  // type + timestamp removed, before the "writeMessage"
-			flush(_band.writeMessage(header ? 0x10 : 0x11,(UInt16)size)
-				,stage,flags,header,message,fragment,contentSize);
+			packMessage(_band.writeMessage(header ? 0x10 : 0x11,(UInt16)size),stage,flags,header,message,fragment,contentSize);
 			header=false;
 			--lostCount;
 			++lostStage;
@@ -305,7 +304,7 @@ UInt32 RTMFPWriter::headerSize(UInt64 stage) { // max size header = 50
 }
 
 
-void RTMFPWriter::flush(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool header,const RTMFPMessage& message, UInt32 offset, UInt16 size) {
+void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool header,const RTMFPMessage& message, UInt32 offset, UInt16 size) {
 	if(_stageAck==0 && header)
 		flags |= MESSAGE_HEADER;
 	if(size==0)
@@ -411,8 +410,7 @@ void RTMFPWriter::raiseMessage() {
 
 			// Write packet
 			size-=3;  // type + timestamp removed, before the "writeMessage"
-			flush(_band.writeMessage(header ? 0x10 : 0x11,(UInt16)size)
-				,stage++,flags,header,message,fragment,contentSize);
+			packMessage(_band.writeMessage(header ? 0x10 : 0x11,(UInt16)size),stage++,flags,header,message,fragment,contentSize);
 			available -= contentSize;
 			header=false;
 		}
@@ -422,11 +420,16 @@ void RTMFPWriter::raiseMessage() {
 		_trigger.stop();*/
 }
 
-bool RTMFPWriter::flush(bool full) {
+bool RTMFPWriter::flush(bool full, const UInt8* data, UInt32 size, AMF::ContentType type, UInt32 time) {
 	std::lock_guard<recursive_mutex> lock(_mutexMessages);
 
+	if (data && type != AMF::EMPTY)
+		_messages.emplace_back(new RTMFPMessageUnbuffered(type, time, data, size));
+	else if (data)
+		_messages.emplace_back(new RTMFPMessageUnbuffered(data, size));
+
 	if(_messagesSent.size()>100)
-		TRACE("_messagesSent.size()=",_messagesSent.size());
+		TRACE("Buffering become high : _messagesSent.size()=",_messagesSent.size());
 
 	if(state()==OPENING) {
 		ERROR("Violation policy, impossible to flush data on a opening writer");
@@ -487,7 +490,7 @@ bool RTMFPWriter::flush(bool full) {
 
 			// Write packet
 			size-=3; // type + timestamp removed, before the "writeMessage"
-			flush(_band.writeMessage(head ? 0x10 : 0x11,(UInt16)size,this),_stage,flags,head,message,fragments,contentSize);
+			packMessage(_band.writeMessage(head ? 0x10 : 0x11,(UInt16)size,this),_stage,flags,head,message,fragments,contentSize);
 
 			
 			message.fragments[fragments] = _stage;
@@ -520,11 +523,11 @@ RTMFPMessageBuffered& RTMFPWriter::createMessage() {
 AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* data, UInt32 size) {
 	if (type < AMF::AUDIO || type > AMF::VIDEO)
 		time = 0; // Because it can "dropped" the packet otherwise (like if the Writer was not reliable!)
-	/*if(data && !reliable && state()==OPENED && !_band.failed() && !signature.empty()) {
-		_messages.emplace_back(new RTMFPMessageUnbuffered(type,time,data,size));
-		flush(false);
+	if(data && !reliable && state()==OPENED && !_band.failed() && !signature.empty()) {
+		//_messages.emplace_back(new RTMFPMessageUnbuffered(type,time,data,size));
+		flush(false, data, size, type, time);
         return AMFWriter::Null;
-	}*/
+	}
 	AMFWriter& amf = createMessage().writer();
 	BinaryWriter& binary(amf.packet);
 	binary.write8(type).write32(time);
@@ -547,9 +550,8 @@ void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 	}
 	if(state()==CLOSED || signature.empty() || _band.failed()) // signature.empty() means that we are on the writer of FlowNull
 		return;
-	//TODO: not reliable
-	/*_messages.emplace_back(new RTMFPMessageUnbuffered(data,size));
-	flush(false);*/
+	//_messages.emplace_back(new RTMFPMessageUnbuffered(data, size));
+	flush(false, data, size);
 }
 
 /*bool RTMFPWriter::writeMedia(MediaType type,UInt32 time,PacketReader& packet,const Parameters& properties) {

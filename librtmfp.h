@@ -6,7 +6,7 @@ extern "C" {
 // RTMFP Connection function
 // return : index of the connection's context
 unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
-				void (* onMedia)(unsigned int, const char*, unsigned int,int));
+				void (* onMedia)(unsigned int, const char*, unsigned int,int), unsigned short audioReliable, unsigned short videoReliable);
 
 /*// RTMFP NetStream Play function
 void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);

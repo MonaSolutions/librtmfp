@@ -11,10 +11,15 @@
 #include "BandWriter.h"
 #include "Publisher.h"
 
+// Callback typedef definitions
+typedef void(*OnSocketError)(const char*);
+typedef void(*OnStatusEvent)(const char*, const char*);
+typedef void(*OnMediaEvent)(unsigned int, const char*, unsigned int, int);
+
 class Invoker;
 class RTMFPConnection : public BandWriter {
 public:
-	RTMFPConnection(void (*onSocketError)(const char*), void (*onStatusEvent)(const char*,const char*), void (*onMediaEvent)(unsigned int, const char*, unsigned int,int));
+	RTMFPConnection(OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, bool audioReliable=true, bool videoReliable=true);
 
 	~RTMFPConnection();
 
@@ -66,9 +71,9 @@ private:
 	void close();
 
 	// External Callbacks to link with parent
-	void (* _onSocketError)(const char*);
-	void (* _onStatusEvent)(const char*,const char*);
-	void (* _onMedia)(unsigned int, const char*, unsigned int,int);
+	OnSocketError	_pOnSocketError;
+	OnStatusEvent	_pOnStatusEvent;
+	OnMediaEvent	_pOnMedia;
 
 	// Handle message (after hanshake is done)
 	void handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer);
@@ -117,14 +122,15 @@ private:
 	Mona::UInt32						_farId;
 	Mona::UInt64						_nextRTMFPWriterId;
 
-	Mona::UInt64						_bytesReceived; // Number of bytes received
 	Mona::Time							_lastKeepAlive; // last time a keepalive request has been received
 
 	// Connection parameters
-	Mona::SocketAddress					_address;
+	Mona::SocketAddress					_address; // host address
 	std::string							_url; // RTMFP url of the application
 	std::string							_publication; // Stream name
 	bool								_isPublisher; // Publisher or Player?
+	bool								_videoReliable; // buffered/unbuffered video mode
+	bool								_audioReliable; // buffered/unbuffered audio mode
 
 	// Pool of stream commands
 	struct StreamCommand {
@@ -175,6 +181,5 @@ private:
 	bool													_firstRead;
 	static const char										_FlvHeader[];
 
-	// Write
 	bool													_firstWrite; // True if the input file as already been readed
 };

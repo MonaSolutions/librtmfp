@@ -9,10 +9,11 @@
 using namespace Mona;
 using namespace std;
 
-Publisher::Publisher(FlashWriter& writer) : _writer(writer), publishAudio(true), publishVideo(true), //_firstTime(true),
+Publisher::Publisher(FlashWriter& writer, bool audioReliable, bool videoReliable) : _writer(writer), publishAudio(true), publishVideo(true), //_firstTime(true),
 	/*_seekTime(0),*/ _pAudioWriter(NULL), _pVideoWriter(NULL), /*_publicationNamePacket((const UInt8*)publication.name().c_str(), publication.name().size()),*/
-	_dataInitialized(false), _reliable(true)/*, _startTime(0), _lastTime(0), _codecInfosSent(false)*/ {
+	_dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable)/*, _startTime(0), _lastTime(0), _codecInfosSent(false)*/ {
 
+	INFO("Initialization of the publisher (audioReliable : ",audioReliable," - videoReliable : ", videoReliable,")")
 	initWriters();
 }
 
@@ -129,7 +130,7 @@ void Publisher::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
 
 	TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, ") ", Util::FormatHex(packet.current(), 5, LOG_BUFFER));*/
 
-	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _reliable, FlashWriter::VIDEO, time, data, size/*_lastTime = (time + _seekTime), packet, *this*/))
+	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _videoReliable, FlashWriter::VIDEO, time, data, size/*_lastTime = (time + _seekTime), packet, *this*/))
 		initWriters();
 }
 
@@ -150,7 +151,7 @@ void Publisher::pushAudio(UInt32 time, const UInt8* data, UInt32 size) {
 
 	TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");*/
 
-	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _reliable, FlashWriter::AUDIO, time, data, size/*_lastTime = (time + _seekTime), packet, *this*/))
+	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _audioReliable, FlashWriter::AUDIO, time, data, size/*_lastTime = (time + _seekTime), packet, *this*/))
 		initWriters();
 }
 

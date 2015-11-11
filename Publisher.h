@@ -9,7 +9,7 @@
 class Publisher : virtual Mona::Object {
 public:
 
-	Publisher(FlashWriter& writer);
+	Publisher(FlashWriter& writer, bool audioReliable, bool videoReliable);
 	virtual ~Publisher();
 
 	/*void seek(Mona::UInt32 time);
@@ -57,6 +57,7 @@ private:
 	FlashWriter*			_pAudioWriter;
 	FlashWriter*			_pVideoWriter;
 	bool					_dataInitialized;
-	bool					_reliable;
+	bool					_videoReliable;
+	bool					_audioReliable;
 	//PacketReader			_publicationNamePacket;
 };

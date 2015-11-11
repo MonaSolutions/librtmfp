@@ -16,7 +16,8 @@
 // Global variables declaration
 #define BUFFER_SIZE			20480
 static char buf[BUFFER_SIZE];
-static unsigned int cursor = BUFFER_SIZE;
+static unsigned int cursor = BUFFER_SIZE; // File reader cursor
+static unsigned short endOfWrite = 0; // If >0 write is finished
 static unsigned int context = 0;
 static FILE * pFile = NULL;
 static enum TestOption {
@@ -75,7 +76,7 @@ void onMedia(unsigned int time,const char* buf,unsigned int size,int audio) {
 }
 
 void onManage() {
-	int read = 0;
+	int read = 0, res = 0, towrite = BUFFER_SIZE;
 
 	// Asynchronous read
 	if (_option == ASYNC_READ) {
@@ -83,26 +84,40 @@ void onManage() {
 			fwrite(buf, sizeof(char), read, pFile);
 	}
 	// Write
-	else if (_option == WRITE) {
-		if (cursor!=0)
-			fread(buf + (BUFFER_SIZE-cursor), sizeof(char), cursor, pFile);
+	else if (_option == WRITE && !endOfWrite) {
 
-		if ((read = RTMFP_Write(context, buf, BUFFER_SIZE)) < 0)
-			RTMFP_Close(context); // Error
-		else if (read == 0)
-			cursor = 0; // Not ready
-		else if (read > 0) {
-			cursor = read;
-			// Move buffer
-			memcpy(buf, buf + cursor, BUFFER_SIZE - cursor);
+		// First we read the file
+		if (cursor != 0) {
+			towrite = fread(buf + (BUFFER_SIZE - cursor), sizeof(char), cursor, pFile) + (BUFFER_SIZE - cursor);
+			if ((res = ferror(pFile)) > 0) {
+				endOfWrite = 1;
+				printf("Error while reading the input file, closing...\n");
+				RTMFP_Terminate(); // Error encountered
+				return;
+			}
+			else if ((res = feof(pFile)) > 0)
+				endOfWrite = 1;
+		}
+
+		if ((read = RTMFP_Write(context, buf, towrite)) < 0)
+			RTMFP_Terminate(); // Error encountered
+		else if (!endOfWrite) {
+			if ((cursor = read) > 0)
+				memcpy(buf, buf + cursor, BUFFER_SIZE - cursor); // Move buffer
+		}
+		else {
+			printf("End of file reached, goodbye!\n");
+			RTMFP_Terminate();
 		}
 	}
 }
 
 // Main Function
 int main(int argc,char* argv[]) {
-	char*	url = "rtmfp://127.0.0.1/";
-	int		i=1;
+	const char*		url = "rtmfp://127.0.0.1/";
+	int				i=1;
+	unsigned short	audioReliable=1;
+	unsigned short	videoReliable=1;
 
 	for(i; i<argc; i++) {
 		if (stricmp(argv[i], "--syncread")==0) // default
@@ -111,6 +126,10 @@ int main(int argc,char* argv[]) {
 			_option = ASYNC_READ;
 		else if (stricmp(argv[i], "--write")==0)
 			_option = WRITE;
+		else if (stricmp(argv[i], "--audioUnbuffered") == 0) // for publish mode
+			audioReliable = 0;
+		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
+			videoReliable = 0;
 		else if (strlen(argv[i]) > 4 && strnicmp(argv[i], "url=", 4)==0)
 			url = argv[i]+4;
 		else
@@ -121,7 +140,7 @@ int main(int argc,char* argv[]) {
 
 	RTMFP_LogSetCallback(onLog);
 	printf("Connection to '%s'\n", url);
-	context = RTMFP_Connect(url, _option==WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ)? onMedia : NULL);
+	context = RTMFP_Connect(url, _option==WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ)? onMedia : NULL, audioReliable, videoReliable);
 
 	if(context) {
 
@@ -144,9 +163,9 @@ int main(int argc,char* argv[]) {
 			fclose(pFile);
 			pFile = NULL;
 		}
-
 		printf("Closing connection...\n");
 		RTMFP_Close(context);
 	}
+
 	printf("End of the program\n");
 }

@@ -120,16 +120,6 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 			params.getString("code",code);
 			params.getString("description", description);
 			OnStatus::raise(code, description, writer);
-
-			if (code == "NetStream.Play.Start") { 
-				// TODO: Send acknowledgment
-				/*AMFWriter writer(_pInvoker->poolBuffers);
-				writer.clear(RTMFP_HEADER_SIZE+3); // header + type and size
-				BinaryWriter packet(writer.writeRaw());
-				packet.write7BitLongValue(id).write7BitLongValue(_bytesReceived);
-				packet.write7BitLongValue(++_stage); // Stage readen
-				sendMessage(0x89, 0x51, writer, true);*/
-			}
 			return;
 		}
 	}

@@ -4,16 +4,10 @@ OS := $(shell uname -s)
 GCC?=gcc
 EXEC?=TestClient
 
-# Variables extendable
-#ifeq ($(OS), FreeBSD)
-#	CFLAGS+=-D_GLIBCXX_USE_C99 -std=c++11
-#else
-#	CFLAGS+=-std=c++11
-#endif
-override INCLUDES+=-I./../../MonaServer/MonaBase/include/ -I./../
-LIBDIRS+=-L./../../MonaServer/MonaBase/lib/ -L./../lib/
-LDFLAGS+="-Wl,-rpath,./../../MonaServer/MonaBase/lib/,-rpath,/usr/local/lib/,-rpath,./../lib/"
-LIBS+=-pthread -lMonaBase -lrtmfp -lcrypto -lssl
+override INCLUDES+=-I./../
+LIBDIRS+=-L./../lib/
+LDFLAGS+="-Wl,-rpath,/usr/local/lib/,-rpath,./../lib/"
+LIBS+=-pthread -lrtmfp -lcrypto -lssl
 ifeq ($(OS),Darwin)
 	LBITS := $(shell getconf LONG_BIT)
 	ifeq ($(LBITS),64)

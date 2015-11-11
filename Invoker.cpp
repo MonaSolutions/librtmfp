@@ -13,7 +13,7 @@ void ConnectionsManager::run(Exception& ex) {
 
 void ConnectionsManager::handle(Exception& ex) { _invoker.manage(); }
 
-Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this), _lastIndex(0), _onManage(NULL) {
+Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this), _lastIndex(0), _onManage(NULL), _init(false) {
 }
 
 Invoker::~Invoker() {
@@ -27,13 +27,11 @@ bool Invoker::start() {
 		return false;
 	}
 
-	if(!sockets.running()) {
-		Exception ex;
-		if (!((Mona::SocketManager&)sockets).start(ex) || ex || !sockets.running())
-			return false;
-	}
-
 	Exception ex;
+	if (!((Mona::SocketManager&)sockets).start(ex) || ex || !sockets.running())
+		return false;
+
+	
 	bool result;
 	EXCEPTION_TO_LOG(result = Startable::start(ex, Startable::PRIORITY_HIGH), "Invoker");
 	if (result)
@@ -41,8 +39,9 @@ bool Invoker::start() {
 	return result;
 }
 
-unsigned int Invoker::addConnection(std::shared_ptr<RTMFPConnection> pConn) {
-	_mapConnections[++_lastIndex] = pConn;
+unsigned int Invoker::addConnection(std::shared_ptr<RTMFPConnection>& pConn) {
+	_init = true;
+	_mapConnections.emplace(++_lastIndex, pConn);
 	return _lastIndex; // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
 }
 
@@ -67,6 +66,11 @@ void Invoker::removeConnection(unsigned int index) {
 	_mapConnections.erase(it);
 }
 
+void Invoker::terminate() {
+	_mapConnections.clear();
+	_terminateSignal.set(); 
+}
+
 unsigned int Invoker::empty() {
 	return _mapConnections.empty();
 }
@@ -85,22 +89,24 @@ void Invoker::manage() {
 		it++;
 	}
 
-	if (_mapConnections.empty())
-		delete this; // All connections are died, delete the invoker
+	if (_init && _mapConnections.empty())
+		terminate();
 	else if (_onManage)
 		_onManage();
 }
 
 void Invoker::run(Exception& exc) {
 	Exception exWarn, ex;
+
 	if (!_manager.start(exWarn, Startable::PRIORITY_LOW))
-		ex.set(exWarn);
+		ex=exWarn;
 	else if (exWarn)
 		WARN(exWarn.error());
 	while (!ex && sleep() != STOP)
 		giveHandle(ex);
-	if (ex)
-		FATAL("Server, ", ex.error());
+
+	// terminate the tasks (forced to do immediatly, because no more "giveHandle" is called)
+	TaskHandler::stop();
 
 	_manager.stop();
 
