@@ -9,9 +9,8 @@
 using namespace Mona;
 using namespace std;
 
-Publisher::Publisher(FlashWriter& writer, bool audioReliable, bool videoReliable) : _writer(writer), publishAudio(true), publishVideo(true), //_firstTime(true),
-	/*_seekTime(0),*/ _pAudioWriter(NULL), _pVideoWriter(NULL), /*_publicationNamePacket((const UInt8*)publication.name().c_str(), publication.name().size()),*/
-	_dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable)/*, _startTime(0), _lastTime(0), _codecInfosSent(false)*/ {
+Publisher::Publisher(const PoolBuffers& poolBuffers, TaskHandler& handler, FlashWriter& writer, bool audioReliable, bool videoReliable) : _writer(writer), publishAudio(true), publishVideo(true),
+	_pAudioWriter(NULL), _pVideoWriter(NULL), _dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable), Task(handler), _poolBuffers(poolBuffers) {
 
 	INFO("Initialization of the publisher (audioReliable : ",audioReliable," - videoReliable : ", videoReliable,")")
 	initWriters();
@@ -29,6 +28,62 @@ void Publisher::closeWriters() {
 		_pVideoWriter->close(-1);
 	_pVideoWriter = _pAudioWriter = NULL;
 	_dataInitialized = false;
+}
+
+bool Publisher::publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos) {
+	PacketReader packet(data, size);
+	if (packet.available()<14) {
+		DEBUG("Packet too small")
+			return true;
+	}
+
+	const UInt8* cur = packet.current();
+	if (*cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header
+		packet.next(13);
+		pos = +13;
+	}
+
+	while (packet.available()) {
+		if (packet.available() < 11) // smaller than flv header
+			break;
+
+		UInt8 type = packet.read8();
+		UInt32 bodySize = packet.read24();
+		UInt32 time = packet.read24();
+		packet.next(4); // ignored
+
+		if (packet.available() < bodySize + 4)
+			break; // we will wait for further data
+
+				   //DEBUG(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
+
+		if (type == AMF::AUDIO || type == AMF::VIDEO)
+			_mediaPackets.emplace_back(_poolBuffers, (AMF::ContentType)type, time, packet.current(), bodySize);
+		else
+			WARN("Unhandled packet type : ", type)
+		packet.next(bodySize);
+		UInt32 sizeBis = packet.read32();
+		pos += bodySize + 15;
+		if (sizeBis != bodySize + 11) {
+			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize + 11, ")")
+				break;
+		}
+	}
+	if (!waitHandle())
+		ERROR("Unable to publish")
+	return true;
+}
+
+void Publisher::handle(Exception& ex) {
+	while (!_mediaPackets.empty()) {
+		OutMediaPacket& media = _mediaPackets.front();
+		if (media.type == AMF::AUDIO)
+			pushAudio(media.time, media.pBuffer.data(), media.pBuffer.size());
+		else
+			pushVideo(media.time, media.pBuffer.data(), media.pBuffer.size());
+		_mediaPackets.pop_front();
+	}
+	flush();
 }
 
 bool Publisher::initWriters() {

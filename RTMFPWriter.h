@@ -3,7 +3,7 @@
 
 #include "Mona/Mona.h"
 #include "RTMFP.h"
-//#include "Mona/Trigger.h"
+#include "Mona/Trigger.h"
 #include "BandWriter.h"
 #include "RTMFPMessage.h"
 #include "FlashWriter.h"
@@ -69,15 +69,14 @@ private:
 	// Complete the message with the final container (header, flags, body and front) and write it
 	void					packMessage(Mona::BinaryWriter& writer,Mona::UInt64 stage,Mona::UInt8 flags,bool header, const RTMFPMessage& message, Mona::UInt32 offset, Mona::UInt16 size);
 	// Write unbuffered data if not null and flush all messages
-	bool					flush(bool full, const Mona::UInt8* data=NULL, Mona::UInt32 size=0, AMF::ContentType type=AMF::EMPTY, Mona::UInt32 time=0);
+	bool					flush(bool full);
 	// Write again repeatable messages
 	void					raiseMessage();
 	RTMFPMessageBuffered&	createMessage();
 	AMFWriter&				write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL, Mona::UInt32 size=0);
 
-	//Trigger						_trigger;
+	Mona::Trigger				_trigger;
 
-	std::recursive_mutex		_mutexMessages;
 	std::deque<RTMFPMessage*>	_messages;
 	Mona::UInt64				_stage;
 	std::deque<RTMFPMessage*>	_messagesSent;

@@ -116,7 +116,8 @@ int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if (pConn) {
 		int pos = 0;
-		pConn->write((const UInt8*)buf, size, pos);
+		if (!pConn->write((const UInt8*)buf, size, pos))
+			return -1;
 		return pos;
 	}
 	
@@ -130,34 +131,6 @@ void RTMFP_LogSetCallback(void(* onLog)(int,const char*)) {
 
 void RTMFP_LogSetLevel(int level) {
 	Logs::SetLevel(level);
-}
-
-void RTMFP_Terminate() {
-	if (!GlobalInvoker) {
-		ERROR("Invoker is not ready, you must establish the connection first")
-		return;
-	}
-
-	INFO("Terminating the RTMFP invoker...")
-	GlobalInvoker->terminate();
-}
-
-void RTMFP_WaitTermination() {
-	if (!GlobalInvoker) {
-		ERROR("Invoker is not ready, you must establish the connection first")
-		return;
-	}
-
-	GlobalInvoker->wait();
-}
-
-void RTMFP_OnManageSetCallback(void(* onManage)()) {
-	if (!GlobalInvoker) {
-		ERROR("Invoker is not ready, you must establish the connection first")
-		return;
-	}
-
-	GlobalInvoker->setOnManage(onManage);
 }
 
 }

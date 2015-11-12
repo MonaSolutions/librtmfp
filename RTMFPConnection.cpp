@@ -10,8 +10,8 @@
 using namespace Mona;
 using namespace std;
 
-RTMFPConnection::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffers,const UInt8* data,UInt32 size,UInt32 time, bool audio): pBuffer(size+15) {
-	BinaryWriter writer(pBuffer.data(), size+15);
+RTMFPConnection::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffers, const UInt8* data,UInt32 size,UInt32 time, bool audio): pBuffer(poolBuffers,size+15) {
+	BinaryWriter writer(pBuffer->data(), size+15);
 
 	writer.write8(audio? '\x08' : '\x09');
 	// size on 3 bytes
@@ -69,7 +69,7 @@ RTMFPConnection::RTMFPConnection(OnSocketError pOnSocketError, OnStatusEvent pOn
 				sendCommand(CommandType::NETSTREAM_PLAY, _publication.c_str());
 		}
 		else if (code == "NetStream.Publish.Start") {
-			_pPublisher.reset(new Publisher(writer, _audioReliable, _videoReliable));
+			_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, writer, _audioReliable, _videoReliable));
 		} else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName") {
 			if (code != "NetConnection.Connect.Closed")
 				close();
@@ -112,7 +112,7 @@ RTMFPConnection::RTMFPConnection(OnSocketError pOnSocketError, OnStatusEvent pOn
 			_pOnMedia(time,(const char*)packet.current(),packet.available(), audio);
 		else { // Asynchronous read
 			lock_guard<recursive_mutex> lock(_readMutex);
-			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(),packet.current(),packet.available(), time, audio));
+			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(), packet.current(), packet.available(), time, audio));
 		}
 	};
 
@@ -254,56 +254,15 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 	pos = 0;
 	if (died) {
 		pos = -1;
-		return true; // to stop the parent loop
+		return false; // to stop the parent loop
 	}
 
 	if(!_pPublisher) {
 		DEBUG("Can't write data because NetStream is not published")
-		return false;
-	}
-
-	PacketReader packet(buf, size);
-	if(packet.available()<14) {
-		DEBUG("Packet too small")
 		return true;
 	}
-	
-	const UInt8* cur = packet.current();
-	if (_firstWrite && *cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header
-		packet.next(13);
-		pos = +13;
-		_firstWrite = false;
-	}
 
-	while(packet.available()) {
-		if (packet.available() < 11) // smaller than flv header
-			break;
-
-		UInt8 type = packet.read8();
-		UInt32 bodySize = packet.read24();
-		UInt32 time = packet.read24();
-		packet.next(4); // ignored
-
-		if(packet.available() < bodySize+4)
-			break; // we will wait for further data
-
-		//DEBUG(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
-
-		if (type == AMF::AUDIO)
-			_pPublisher->pushAudio(time, packet.current(), bodySize);
-		else if (type == AMF::VIDEO)
-			_pPublisher->pushVideo(time, packet.current(), bodySize);
-		else
-			WARN("Unhandled packet type : ", type)
-		packet.next(bodySize);
-		UInt32 sizeBis = packet.read32();
-		pos += bodySize + 15;
-		if (sizeBis != bodySize + 11) {
-			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize+11, ")")
-			break;
-		}
-	}
-	return true;
+	return _pPublisher->publish(buf, size, pos);
 }
 
 void RTMFPConnection::handleMessage(Exception& ex,const Mona::PoolBuffer& pBuffer) {

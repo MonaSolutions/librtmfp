@@ -13,7 +13,7 @@ void ConnectionsManager::run(Exception& ex) {
 
 void ConnectionsManager::handle(Exception& ex) { _invoker.manage(); }
 
-Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), sockets(poolBuffers, poolThreads), _manager(*this), _lastIndex(0), _onManage(NULL), _init(false) {
+Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), sockets(*this, poolBuffers, poolThreads), _manager(*this), _lastIndex(0), _init(false) {
 }
 
 Invoker::~Invoker() {
@@ -91,8 +91,6 @@ void Invoker::manage() {
 
 	if (_init && _mapConnections.empty())
 		terminate();
-	else if (_onManage)
-		_onManage();
 }
 
 void Invoker::run(Exception& exc) {

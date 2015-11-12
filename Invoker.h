@@ -40,7 +40,6 @@ public:
 
 	void			terminate();
 	void			wait() { _terminateSignal.wait(); }
-	void			setOnManage(void(*onManage)()) { _onManage = onManage; }
 
 	const Mona::SocketManager				sockets;
 	Mona::PoolThreads						poolThreads;
@@ -56,5 +55,4 @@ private:
 	int												_lastIndex; // last index of connection
 
 	Mona::TerminateSignal							_terminateSignal;
-	void											(*_onManage)();
 };

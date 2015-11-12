@@ -6,11 +6,14 @@
 #if defined(_WIN32)
 	#define strnicmp		_strnicmp
 	#define stricmp			_stricmp
-	#define	sleep			Sleep
+	#define	SLEEP			Sleep
 	#include <windows.h>
 #else
+	#include <time.h>
 	#define stricmp			strcasecmp
 	#define strnicmp		strncasecmp
+	static struct timespec ts;
+	#define SLEEP(TIME)		ts.tv_sec=(time_t)(TIME/1000);ts.tv_nsec=(TIME%1000)*1000000;nanosleep(&ts,NULL)
 #endif
 
 // Global variables declaration
@@ -20,6 +23,7 @@ static unsigned int cursor = BUFFER_SIZE; // File reader cursor
 static unsigned short endOfWrite = 0; // If >0 write is finished
 static unsigned int context = 0;
 static FILE * pFile = NULL;
+static unsigned short terminating = 0;
 static enum TestOption {
 	SYNC_READ,
 	ASYNC_READ,
@@ -28,7 +32,7 @@ static enum TestOption {
 
 // Windows CTrl+C handler
 void ConsoleCtrlHandler(int dummy) {
-	RTMFP_Terminate();
+	terminating=1;
 }
 
 unsigned int flip24(unsigned int value) { return ((value >> 16) & 0x000000FF) | (value & 0x0000FF00) | ((value << 16) & 0x00FF0000); }
@@ -52,7 +56,7 @@ void onLog(int level,const char* message) {
 
 void onSocketError(const char* error) {
 	printf("Socket Error : %s\n", error);
-	RTMFP_Terminate();
+	terminating=1;
 }
 
 void onStatusEvent(const char* code,const char* description) {
@@ -92,7 +96,7 @@ void onManage() {
 			if ((res = ferror(pFile)) > 0) {
 				endOfWrite = 1;
 				printf("Error while reading the input file, closing...\n");
-				RTMFP_Terminate(); // Error encountered
+				terminating=1; // Error encountered
 				return;
 			}
 			else if ((res = feof(pFile)) > 0)
@@ -100,14 +104,14 @@ void onManage() {
 		}
 
 		if ((read = RTMFP_Write(context, buf, towrite)) < 0)
-			RTMFP_Terminate(); // Error encountered
+			terminating=1; // Error encountered
 		else if (!endOfWrite) {
 			if ((cursor = read) > 0)
 				memcpy(buf, buf + cursor, BUFFER_SIZE - cursor); // Move buffer
 		}
 		else {
 			printf("End of file reached, goodbye!\n");
-			RTMFP_Terminate();
+			terminating = 1;
 		}
 	}
 }
@@ -157,8 +161,10 @@ int main(int argc,char* argv[]) {
 			if (_option == SYNC_READ)
 				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
 
-			RTMFP_OnManageSetCallback(onManage);
-			RTMFP_WaitTermination();
+			while (!terminating) {
+				onManage();
+				SLEEP(1000);
+			}
 
 			fclose(pFile);
 			pFile = NULL;

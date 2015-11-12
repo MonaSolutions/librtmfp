@@ -31,17 +31,6 @@ void RTMFP_LogSetCallback(void (* onLog)(int, const char*));
 // Set log level
 void RTMFP_LogSetLevel(int level);
 
-// TODO: see if we keep these functions (used for TestClient)
-
-// Set OnManage callback, function is called every second
-void RTMFP_OnManageSetCallback(void (* onManage)());
-
-// Terminate the processes
-void RTMFP_Terminate();
-
-// Wait for termination signal
-void RTMFP_WaitTermination();
-
 #ifdef __cplusplus
 }
 #endif

@@ -63,7 +63,7 @@ public:
 	
 	virtual bool							canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
 
-	virtual bool							failed() const { return false; /* return _failed; */ }
+	virtual bool							failed() const { return died; /* return _failed; */ }
 
 private:
 	
@@ -157,7 +157,7 @@ private:
 	
 	std::shared_ptr<Mona::UDPSocket>		_pSocket;
 	std::shared_ptr<RTMFPSender>			_pSender;
-	const Invoker*							_pInvoker;
+	Invoker*								_pInvoker;
 	Mona::PoolThread*						_pThread;
 
 	// Encryption/Decription
@@ -172,9 +172,9 @@ private:
 	// Asynchronous read
 	struct RTMFPMediaPacket {
 
-		RTMFPMediaPacket(const Mona::PoolBuffers& poolBuffers,const Mona::UInt8* data,Mona::UInt32 size,Mona::UInt32 time,bool audio);
+		RTMFPMediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data,Mona::UInt32 size,Mona::UInt32 time,bool audio);
 
-		Mona::Buffer	pBuffer;
+		Mona::PoolBuffer	pBuffer;
 	};
 	std::deque<std::shared_ptr<RTMFPMediaPacket>>			_mediaPackets;
 	std::recursive_mutex									_readMutex;
