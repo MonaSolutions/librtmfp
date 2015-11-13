@@ -55,8 +55,7 @@ bool Publisher::publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos) {
 		if (packet.available() < bodySize + 4)
 			break; // we will wait for further data
 
-				   //DEBUG(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
-
+		DEBUG(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
 		if (type == AMF::AUDIO || type == AMF::VIDEO)
 			_mediaPackets.emplace_back(_poolBuffers, (AMF::ContentType)type, time, packet.current(), bodySize);
 		else

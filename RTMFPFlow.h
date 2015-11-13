@@ -9,10 +9,16 @@
 
 class RTMFPPacket;
 class RTMFPFragment;
+/**************************************************************
+RTMFPFlow is the receiving class for one NetStream of a 
+connection, it is associated to an RTMFPWriter for
+sending RTMFP answers
+It manages acknowledgments and lost count of messages received
+*/
 class RTMFPFlow : public virtual Mona::Object {
 public:
-	RTMFPFlow(Mona::UInt64 id,const std::string& signature,/*Peer& peer,*/const Mona::PoolBuffers& poolBuffers, BandWriter& band, const std::shared_ptr<FlashConnection>& pMainStream);
-	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const std::shared_ptr<FlashStream>& pStream, /*Peer& peer,*/const Mona::PoolBuffers& poolBuffers, BandWriter& band);
+	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const Mona::PoolBuffers& poolBuffers, BandWriter& band, const std::shared_ptr<FlashConnection>& pMainStream);
+	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const std::shared_ptr<FlashStream>& pStream, const Mona::PoolBuffers& poolBuffers, BandWriter& band);
 	virtual ~RTMFPFlow();
 
 	const Mona::UInt64		id;
@@ -22,39 +28,37 @@ public:
 
 	bool				critical() const { return _pWriter->critical; }
 
+	// Handle fragments received
 	void				receive(Mona::UInt64 stage,Mona::UInt64 deltaNAck,Mona::PacketReader& fragment,Mona::UInt8 flags);
 	
+	// Send acknowledgment
 	void				commit();
 
 	void				fail(const std::string& error);
 
 	bool				consumed() { return _completed; }
 
+	// RTMFP Commands
 	void				sendConnect(const std::string& url, Mona::UInt16 port);
-
 	void				sendPlay(const std::string& name);
-
 	void				sendPublish(const std::string& name);
-
 	void				createStream();
 	
 private:
+	// Handle on fragment received
 	void				onFragment(Mona::UInt64 stage,Mona::PacketReader& fragment,Mona::UInt8 flags);
 
 	void				complete();
 
-	/*Peer&							_peer;
-	Group*							_pGroup;*/
-
-	bool							_completed;
-	BandWriter&						_band;
-	std::shared_ptr<RTMFPWriter>	_pWriter;
-	const Mona::UInt64				_stage;
-	std::shared_ptr<FlashStream>	_pStream;
+	bool							_completed; // Indicates that the flow is consumed
+	BandWriter&						_band; // RTMFP connection to send messages
+	std::shared_ptr<RTMFPWriter>	_pWriter; // Writer for sending AMF messages on RTMFP
+	const Mona::UInt64				_stage; // Current stage (index) of messages received
+	std::shared_ptr<FlashStream>	_pStream; // NetStream handler of the flow
 
 	// Receiving
-	RTMFPPacket*					_pPacket;
-	std::map<Mona::UInt64,RTMFPFragment>	_fragments;
+	RTMFPPacket*					_pPacket; // current packet/message containing 1 or more fragments (if chunked)
+	std::map<Mona::UInt64,RTMFPFragment>	_fragments; // map of all fragments received and not handled for now
 	Mona::UInt32					_numberLostFragments;
 	const Mona::PoolBuffers&		_poolBuffers;
 };

@@ -7,21 +7,21 @@
 using namespace std;
 using namespace Mona;
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis) : _resetStream(true), FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0),  flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis) : /*_resetStream(true),*/ FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0),  flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 	pThis.reset(this);
 	_band.initWriter(pThis);
 	//if (signature.empty())
 		open();
 }
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band) : _resetStream(true), FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0), flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band) : /*_resetStream(true),*/ FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0), flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 	shared_ptr<RTMFPWriter> pThis(this);
 	_band.initWriter(pThis);
 	//if (signature.empty())
 		open();
 }
 
-RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : _resetStream(true), FlashWriter(writer), _band(writer._band),
+RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : /*_resetStream(true),*/ FlashWriter(writer), _band(writer._band),
 		critical(false),_repeatable(writer._repeatable), _stage(writer._stage),_stageAck(writer._stageAck),id(writer.id),
 		_ackCount(writer._ackCount),_lostCount(writer._lostCount), flowId(0),signature(writer.signature) {
 	reliable = true;
@@ -482,7 +482,7 @@ bool RTMFPWriter::flush(bool full) {
 			// Write packet
 			size-=3; // type + timestamp removed, before the "writeMessage"
 			packMessage(_band.writeMessage(head ? 0x10 : 0x11,(UInt16)size,this),_stage,flags,head,message,fragments,contentSize);
-			//INFO("RTMFPWriter ", id, " : sending message ", _stage);
+			DEBUG("RTMFPWriter ", id, " : sending message ", _stage);
 			
 			message.fragments[fragments] = _stage;
 			available -= contentSize;

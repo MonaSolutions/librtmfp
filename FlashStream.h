@@ -5,25 +5,21 @@
 #include "AMF.h"
 #include "AMFReader.h"
 #include "FlashWriter.h"
-//#include "Mona/Invoker.h"
 
 namespace FlashEvents {
 	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description, FlashWriter& writer)> {};
 	struct OnMedia: Mona::Event<void(Mona::UInt32 time,Mona::PacketReader& packet,double lostRate,bool audio)> {};
 };
 
+/**************************************************************
+FlashStream is linked to an as3 NetStream
+*/
 class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnStatus,
 	public FlashEvents::OnMedia {
 public:
-	enum PlayStreamType {
-		PLAYSTREAM_STOPPED,
-		PLAYSTREAM_CREATING,
-		PLAYSTREAM_CREATED,
-		PLAYSTREAM_PLAYING
-	};
 
-	FlashStream(Mona::UInt16 id/*, Invoker& invoker,Peer& peer*/);
+	FlashStream(Mona::UInt16 id);
 	virtual ~FlashStream();
 
 	const Mona::UInt16	id;
@@ -36,7 +32,7 @@ public:
 	// return flase if writer is closed!
 	bool	process(AMF::ContentType type,Mona::UInt32 time,Mona::PacketReader& packet,FlashWriter& writer, double lostRate=0);
 
-	virtual void	flush() { /*if(_pPublication) _pPublication->flush();*/ }
+	virtual void	flush() { }
 
 	// Send the connect request to the RTMFP server
 	virtual void connect(FlashWriter& writer,const std::string& url,Mona::UInt16 port);
@@ -50,11 +46,6 @@ public:
 	// Send the publish request to the RTMFP server
 	virtual void publish(FlashWriter& writer, const std::string& name);
 
-/*protected:
-
-	Invoker&		invoker;
-	Peer&			peer;*/
-
 private:
 
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
@@ -63,10 +54,6 @@ private:
 	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 	virtual void	videoHandler(Mona::UInt32 time,Mona::PacketReader& packet, double lostRate);
 
-	/*Publication*	_pPublication;
-	Listener*		_pListener;*/
 	Mona::UInt32	_bufferTime;
-
-	PlayStreamType	_playStreamStep;
 	std::string		_streamName;
 };

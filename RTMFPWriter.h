@@ -18,6 +18,11 @@
 #define MESSAGE_ABANDONMENT		0x02
 #define MESSAGE_END				0x01
 
+/*******************************************************
+RTMFPWriter is the class for sending RTMFP messages to
+the server on a NetStream.
+It manages acknowlegment and lost of packet sent
+*/
 class RTMFPWriter : public FlashWriter, public virtual Mona::Object {
 public:
 	RTMFPWriter(State state,const std::string& signature, BandWriter& band);
@@ -47,7 +52,7 @@ public:
         //std::shared_ptr<RTMFPWriter> pThis = _band.changeWriter(*new RTMFPWriter(*this));
         //_band.initWriter(pThis);
 		//_qos.reset();
-		_resetStream = true;
+		//_resetStream = true;
 	}
 
 	void				clear();
@@ -75,16 +80,15 @@ private:
 	RTMFPMessageBuffered&	createMessage();
 	AMFWriter&				write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL, Mona::UInt32 size=0);
 
-	Mona::Trigger				_trigger;
-
-	std::deque<RTMFPMessage*>	_messages;
-	Mona::UInt64				_stage;
-	std::deque<RTMFPMessage*>	_messagesSent;
-	Mona::UInt64				_stageAck;
-	Mona::UInt32				_lostCount;
-	double						_ackCount;
-	Mona::UInt32				_repeatable;
-	BandWriter&					_band;
-	bool						_resetStream;
+	Mona::Trigger				_trigger; // count the number of sended cycles for managing repeated/lost counts
+	std::deque<RTMFPMessage*>	_messages; // queue of messages to send
+	Mona::UInt64				_stage; // stage (index) of the last message sent
+	std::deque<RTMFPMessage*>	_messagesSent; // queue of messages to send back or consider lost if delay is elapsed
+	Mona::UInt64				_stageAck; // stage of the last message acknowledged by the server
+	Mona::UInt32				_lostCount; // number of lost messages
+	double						_ackCount; // number of acknowleged messages
+	Mona::UInt32				_repeatable; // number of repeatable messages waiting for acknowledgment
+	BandWriter&					_band; // RTMFP connection for sending message
+	//bool						_resetStream;
 
 };

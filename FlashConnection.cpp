@@ -8,7 +8,7 @@
 using namespace std;
 using namespace Mona;
 
-FlashConnection::FlashConnection(/*Invoker& invoker,Peer& peer*/) : FlashStream(0/*, invoker,peer*/), _port(0), _creatingStream(0) {
+FlashConnection::FlashConnection() : FlashStream(0), _port(0), _creatingStream(0) {
 	
 }
 
@@ -35,13 +35,6 @@ FlashStream* FlashConnection::getStream(UInt16 id,shared_ptr<FlashStream>& pStre
 }
 
 FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStream) {
-	/*UInt16 idStream(1);
-	auto it(_streams.begin());
-	for (; it != _streams.end();++it) {
-		if (it->first > idStream) 
-			break;
-		++idStream;
-	}*/
 	pStream.reset(new FlashStream(id));
 	_streams[id] = pStream;
 	pStream->OnStatus::subscribe((OnStatus&)*this);
@@ -161,7 +154,7 @@ void FlashConnection::connect(FlashWriter& writer, const string& url, UInt16 por
 void FlashConnection::createStream(FlashWriter& writer) {
 	AMFWriter& amfWriter = writer.writeInvocation("createStream");
 	writer.flush();
-	_creatingStream = true; // TODO: create a list of create stream requests with each operations
+	_creatingStream = true;
 }
 
 void play(FlashWriter& writer,const std::string& name) {

@@ -118,7 +118,7 @@ void onManage() {
 
 // Main Function
 int main(int argc,char* argv[]) {
-	const char*		url = "rtmfp://127.0.0.1/";
+	const char*		url = "rtmfp://127.0.0.1/test123";
 	int				i=1;
 	unsigned short	audioReliable=1;
 	unsigned short	videoReliable=1;
@@ -143,7 +143,7 @@ int main(int argc,char* argv[]) {
 	signal(SIGINT, ConsoleCtrlHandler);
 
 	RTMFP_LogSetCallback(onLog);
-	printf("Connection to '%s'\n", url);
+	printf("Connection to '%s' - mode : %s\n", url, ((_option==SYNC_READ)? "Synchronous read" : ((_option==ASYNC_READ)? "Asynchronous read" : "Write")));
 	context = RTMFP_Connect(url, _option==WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ)? onMedia : NULL, audioReliable, videoReliable);
 
 	if(context) {

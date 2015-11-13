@@ -8,7 +8,7 @@
 using namespace std;
 using namespace Mona;
 
-FlashStream::FlashStream(UInt16 id/*, Invoker& invoker, Peer& peer*/) : id(id), /*invoker(invoker), peer(peer), _pPublication(NULL), _pListener(NULL), */_bufferTime(0),_playStreamStep(PLAYSTREAM_STOPPED) {
+FlashStream::FlashStream(UInt16 id/*, Invoker& invoker, Peer& peer*/) : id(id), /*invoker(invoker), peer(peer), _pPublication(NULL), _pListener(NULL), */_bufferTime(0) {
 	DEBUG("FlashStream ",id," created")
 }
 

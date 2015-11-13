@@ -7,7 +7,10 @@
 #include "Mona/PacketReader.h"
 #include "Mona/Parameters.h"
 
-// Writer of AMF messages
+/*************************************************
+Writer of AMF messages, must be inherited
+for each protocol (just RTMFP for now)
+*/
 class FlashWriter : public virtual Mona::Object {
 public:
 	enum MediaType {

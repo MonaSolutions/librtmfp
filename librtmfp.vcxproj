@@ -98,6 +98,7 @@
     <ClInclude Include="RTMFPMessage.h" />
     <ClInclude Include="RTMFPSender.h" />
     <ClInclude Include="RTMFPWriter.h" />
+    <ClInclude Include="RTMFPHandshake.h" />
     <ClInclude Include="StringWriter.h" />
   </ItemGroup>
   <ItemGroup>
@@ -114,6 +115,7 @@
     <ClCompile Include="RTMFP.cpp" />
     <ClCompile Include="RTMFPConnection.cpp" />
     <ClCompile Include="RTMFPFlow.cpp" />
+    <ClCompile Include="RTMFPHandshake.cpp" />
     <ClCompile Include="RTMFPSender.cpp" />
     <ClCompile Include="RTMFPWriter.cpp" />
   </ItemGroup>

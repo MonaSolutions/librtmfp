@@ -8,7 +8,11 @@ namespace FlashEvents {
 	struct OnStreamCreated: Mona::Event<void(Mona::UInt16 idStream)> {};
 };
 
-// Equivalent to the NetConnection's class of as3
+/**************************************************************
+FlashConnection is linked to an as3 NetConnection
+It creates FlashStream (NetStream) and handle messages on the
+connection
+*/
 class FlashConnection : public FlashStream, public virtual Mona::Object,
 	public FlashEvents::OnStreamCreated {
 public:

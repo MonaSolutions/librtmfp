@@ -80,7 +80,7 @@ void Invoker::manage() {
 	while(it != _mapConnections.end()) {
 		it->second->manage();
 
-		if (it->second->died) {
+		if (it->second->failed()) {
 			int id = it->first;
 			it++;
 			removeConnection(id);
