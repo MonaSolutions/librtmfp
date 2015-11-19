@@ -14,17 +14,18 @@ extern "C" {
 static std::shared_ptr<Invoker>		GlobalInvoker; // manage threads, sockets and connection
 static std::shared_ptr<RTMFPLogger> GlobalLogger; // handle log messages
 
-unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent,	OnMediaEvent pOnMedia, unsigned short audioReliable, unsigned short videoReliable) {
+static unsigned int Connect(const char* url, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMedia, 
+	unsigned short audioReliable, unsigned short videoReliable, const char* peerId=NULL) {
 
-	if(!pOnSocketError || !pOnStatusEvent) {
+	if (!pOnSocketError || !pOnStatusEvent) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
-		return 0;
+			return 0;
 	}
 
 	// Start Socket Manager if needed
-	if(!GlobalInvoker) {
+	if (!GlobalInvoker) {
 		GlobalInvoker.reset(new Invoker(0));
-		if(!GlobalInvoker->start()) {
+		if (!GlobalInvoker->start()) {
 			return 0;
 		}
 	}
@@ -32,24 +33,34 @@ unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, OnSocket
 	// Get hostname, port and publication name
 	string	host, publication, query, app = url;
 	size_t	filePos = Util::UnpackUrl(url, host, publication, query);
-	if (filePos == string::npos) {
+	if (!peerId && filePos == string::npos) {
 		ERROR("No publication name found in url")
-		GlobalInvoker.reset();
+			GlobalInvoker.reset();
 		return 0;
 	}
-	app.erase(app.size()-publication.size()+1);
-	publication.erase(0,filePos);
+	else if (!peerId) {
+		app.erase(app.size() - publication.size() + 1);
+		publication.erase(0, filePos);
+	}
 
 	Exception ex;
 	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(pOnSocketError, pOnStatusEvent, pOnMedia, audioReliable>0, videoReliable>0));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
-	if(!pConn->connect(ex,GlobalInvoker.get(), app.c_str(), host.c_str(), publication.c_str(), isPublisher>0)) {
+	if (!pConn->connect(ex, GlobalInvoker.get(), peerId? peerId : app.c_str(), host.c_str(), publication.c_str(), isPublisher > 0, peerId ? RTMFPConnection::P2P_HANDSHAKE : RTMFPConnection::BASE_HANDSHAKE)) {
 		ERROR("Error in connect : ", ex.error())
-		GlobalInvoker->removeConnection(index);
+			GlobalInvoker->removeConnection(index);
 		return 0;
 	}
 
 	return index;
+}
+
+unsigned int RTMFP_Connect2Peer(const char* host, const char* peerId, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMedia, unsigned short audioReliable, unsigned short videoReliable) {
+	return Connect(host, isPublisher, pOnSocketError, pOnStatusEvent, pOnMedia, audioReliable, videoReliable, peerId);
+}
+
+unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent,	OnMediaEvent pOnMedia, unsigned short audioReliable, unsigned short videoReliable) {
+	return Connect(url, isPublisher, pOnSocketError, pOnStatusEvent, pOnMedia, audioReliable, videoReliable);
 }
 
 /*void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {

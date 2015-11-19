@@ -53,6 +53,7 @@ public:
 		ADDRESS_REDIRECTION=3
 	};
 
+	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, Mona::UInt8 addressType);
 	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
 	static Mona::UInt32				Unpack(Mona::BinaryReader& reader);

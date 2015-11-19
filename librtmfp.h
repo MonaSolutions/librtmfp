@@ -8,6 +8,9 @@ extern "C" {
 unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
 				void (* onMedia)(unsigned int, const char*, unsigned int,int), unsigned short audioReliable, unsigned short videoReliable);
 
+unsigned int RTMFP_Connect2Peer(const char* host, const char* peerId, unsigned short isPublisher, void(*onSocketError)(const char*), void(*onStatusEvent)(const char*, const char*),
+	void(*onMedia)(unsigned int, const char*, unsigned int, int), unsigned short audioReliable, unsigned short videoReliable);
+
 /*// RTMFP NetStream Play function
 void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 

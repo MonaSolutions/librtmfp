@@ -5,6 +5,24 @@
 using namespace std;
 using namespace Mona;
 
+bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, UInt8 addressType) {
+	string data;
+	reader.read<string>((addressType & 0x80) ? sizeof(in6_addr) : sizeof(in_addr), data);
+	in_addr addrV4;
+	in6_addr addrV6;
+	IPAddress addr;
+	if (addressType & 0x80) {
+		memcpy(&addrV6, data.data(), sizeof(in6_addr));
+		addr.set(addrV6);
+	}
+	else {
+		memcpy(&addrV4, data.data(), sizeof(in_addr));
+		addr.set(addrV4);
+	}
+	address.set(addr, reader.read16());
+	return true;
+}
+
 BinaryWriter& RTMFP::WriteAddress(BinaryWriter& writer,const SocketAddress& address,AddressType type) {
 	const IPAddress& host = address.host();
 	if (host.family() == IPAddress::IPv6)

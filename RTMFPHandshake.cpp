@@ -4,6 +4,7 @@
 #include "Invoker.h"
 
 #include "Mona/Logs.h"
+#include <set>
 
 using namespace Mona;
 using namespace std;
@@ -52,9 +53,11 @@ RTMFPHandshake::~RTMFPHandshake() {
 	}
 }
 
-bool RTMFPHandshake::connect(Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher) {
+bool RTMFPHandshake::connect(Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher, HandshakeType type) {
 	_pInvoker = invoker;
-	_url = url;
+	(type == BASE_HANDSHAKE) ? _url = url : _peerId = url;
+	if (type == P2P_HANDSHAKE)
+		Util::UnformatHex<string>(_peerId);
 	_publication = publication;
 	_isPublisher = isPublisher;
 	string tmpHost = host;
@@ -68,12 +71,12 @@ bool RTMFPHandshake::connect(Exception& ex, Invoker* invoker, const char* url, c
 	_pSocket->OnError::subscribe(onError);
 	_pSocket->OnPacket::subscribe(onPacket);
 
-	INFO("Connecting to ", _address.host().toString(), ":", _address.port(), " (url : ", url, ")...")
+	INFO("Connecting to ", _address.host().toString(), ":", _address.port(), "(", (type == BASE_HANDSHAKE) ? "url" : "peer id" ," : ", url, ")...")
 	if (!_pSocket->connect(ex, _address))
 		return false;
 
 	_pMainStream->setPort(_address.port()); // Record port for setPeerInfo request
-	sendHandshake0();
+	sendHandshake0(type);
 	return !ex;
 }
 
@@ -120,14 +123,14 @@ void RTMFPHandshake::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffe
 	}
 }
 
-void RTMFPHandshake::sendHandshake0() {
+void RTMFPHandshake::sendHandshake0(HandshakeType type) {
 	// (First packets are encoded with default key)
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
 	writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
 
-	writer.write16((UInt16)_url.size() + 1);
-	writer.write8(0x0a); // type of handshake
-	writer.write(_url);
+	writer.write16((UInt16) ((type==BASE_HANDSHAKE)? _url.size() + 1 : _peerId.size() + 1));
+	writer.write8(type); // handshake type
+	writer.write((type == BASE_HANDSHAKE) ? _url : _peerId);
 
 	Util::Random(_tag.data(), 16); // random serie of 16 bytes
 	writer.write(_tag);
@@ -141,7 +144,7 @@ void RTMFPHandshake::sendHandshake1(Exception& ex, BinaryReader& reader) {
 
 	// Read & check handshake0's response
 	UInt8 type = reader.read8();
-	if (type != 0x70) {
+	if (type != 0x70 && type != 0x71) {
 		ex.set(Exception::PROTOCOL, "Unexpected handshake type : ", type);
 		return;
 	}
@@ -159,42 +162,64 @@ void RTMFPHandshake::sendHandshake1(Exception& ex, BinaryReader& reader) {
 		return;
 	}
 
-	UInt8 cookieSize = reader.read8();
-	if (cookieSize != 0x40) {
-		ex.set(Exception::PROTOCOL, "Unexpected cookie size : ", cookieSize);
-		return;
+	// Normal NetConnection
+	if (type == 0x70) {
+		UInt8 cookieSize = reader.read8();
+		if (cookieSize != 0x40) {
+			ex.set(Exception::PROTOCOL, "Unexpected cookie size : ", cookieSize);
+			return;
+		}
+		string cookie;
+		reader.read(cookieSize, cookie);
+
+		string certificat;
+		reader.read(77, certificat);
+
+		// Write handshake1
+		BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
+		writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
+
+		writer.write32(0x02000000); // id
+
+		writer.write7BitLongValue(cookieSize);
+		writer.write(cookie); // Resend cookie
+
+		if (!_diffieHellman.initialize(ex))
+			return;
+		_diffieHellman.readPublicKey(ex, _pubKey.data());
+		writer.write7BitLongValue(_pubKey.size() + 4);
+		writer.write7BitValue(_pubKey.size() + 2);
+		writer.write16(0x1D02); // unknown for now
+		writer.write(_pubKey);
+
+		Util::Random(_nonce.data(), _nonce.size()); // nonce is a serie of 77 random bytes
+		writer.write7BitValue(_nonce.size());
+		writer.write(_nonce);
+
+		BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
+		if (!ex) {
+			flush(0x0B, writer.size(), false);
+			_handshakeStep = 2;
+		}
 	}
-	string cookie;
-	reader.read(cookieSize, cookie);
-
-	string certificat;
-	reader.read(77, certificat);
-
-	// Write handshake1
-	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
-	writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
-
-	writer.write32(0x02000000); // id
-
-	writer.write7BitLongValue(cookieSize);
-	writer.write(cookie); // Resend cookie
-
-	if (!_diffieHellman.initialize(ex))
-		return;
-	_diffieHellman.readPublicKey(ex, _pubKey.data());
-	writer.write7BitLongValue(_pubKey.size() + 4);
-	writer.write7BitValue(_pubKey.size() + 2);
-	writer.write16(0x1D02); // unknown for now
-	writer.write(_pubKey);
-
-	Util::Random(_nonce.data(), _nonce.size()); // nonce is a serie of 77 random bytes
-	writer.write7BitValue(_nonce.size());
-	writer.write(_nonce);
-
-	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
-	if (!ex) {
-		flush(0x0B, writer.size(), false);
-		_handshakeStep = 2;
+	else {
+		SocketAddress address;
+		std::set<SocketAddress>		publicAddresses;
+		std::set<SocketAddress>		localAddresses;
+		std::set<SocketAddress>		redirectionAddresses;
+		while (reader.available() && *reader.current() != 0xFF) {
+			UInt8 addressType = reader.read8();
+			RTMFP::ReadAddress(reader, address, addressType);
+			DEBUG("Address added : ",address.toString()," (type : ",addressType,")")
+			if ((addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC)
+				publicAddresses.emplace(address);
+			else if ((addressType & 0x0F) == RTMFP::ADDRESS_LOCAL)
+				localAddresses.emplace(address);
+			else if ((addressType & 0x0F) == RTMFP::ADDRESS_REDIRECTION)
+				redirectionAddresses.emplace(address);
+			else
+				ERROR("Unexpected address type : ", addressType)
+		}
 	}
 }
 

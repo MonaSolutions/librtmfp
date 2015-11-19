@@ -119,6 +119,7 @@ void onManage() {
 // Main Function
 int main(int argc,char* argv[]) {
 	const char*		url = "rtmfp://127.0.0.1/test123";
+	const char*		peerId = NULL;
 	int				i=1;
 	unsigned short	audioReliable=1;
 	unsigned short	videoReliable=1;
@@ -134,8 +135,10 @@ int main(int argc,char* argv[]) {
 			audioReliable = 0;
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
 			videoReliable = 0;
-		else if (strlen(argv[i]) > 4 && strnicmp(argv[i], "url=", 4)==0)
-			url = argv[i]+4;
+		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
+			url = argv[i]+6;
+		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0)
+			peerId = argv[i]+9;
 		else
 			printf("Unknown option '%s'\n", argv[i]);
 	}
@@ -143,34 +146,48 @@ int main(int argc,char* argv[]) {
 	signal(SIGINT, ConsoleCtrlHandler);
 
 	RTMFP_LogSetCallback(onLog);
-	printf("Connection to '%s' - mode : %s\n", url, ((_option==SYNC_READ)? "Synchronous read" : ((_option==ASYNC_READ)? "Asynchronous read" : "Write")));
-	context = RTMFP_Connect(url, _option==WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ)? onMedia : NULL, audioReliable, videoReliable);
 
-	if(context) {
+	if (peerId) {
+		printf("Connection to peer '%s'", peerId);
+		context = RTMFP_Connect2Peer(url, peerId, _option == WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, audioReliable, videoReliable);
 
-#if defined(WIN32)
-		errno_t err;
-		if((err = fopen_s(&pFile,"out.flv", (_option == WRITE)? "rb" : "wb+"))!=0)
-			printf("Unable to open file out.flv : %d\n", err);
-	#else
-		if((pFile = fopen("out.flv", (_option == WRITE) ? "rb" : "wb+")) == NULL)
-			printf("Unable to open file out.flv\n");
-	#endif
-		else {
-			printf("Output file out.flv opened\n");
-			if (_option == SYNC_READ)
-				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
-
-			while (!terminating) {
-				onManage();
-				SLEEP(1000);
-			}
-
-			fclose(pFile);
-			pFile = NULL;
+		while (context && !terminating) {
+			onManage();
+			SLEEP(1000);
 		}
 		printf("Closing connection...\n");
 		RTMFP_Close(context);
+	}
+	else {
+		printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
+		context = RTMFP_Connect(url, _option == WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, audioReliable, videoReliable);
+		
+		if (context) {
+
+#if defined(WIN32)
+			errno_t err;
+			if ((err = fopen_s(&pFile, "out.flv", (_option == WRITE) ? "rb" : "wb+")) != 0)
+				printf("Unable to open file out.flv : %d\n", err);
+#else
+			if ((pFile = fopen("out.flv", (_option == WRITE) ? "rb" : "wb+")) == NULL)
+				printf("Unable to open file out.flv\n");
+#endif
+			else {
+				printf("Output file out.flv opened\n");
+				if (_option == SYNC_READ)
+					fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
+
+				while (!terminating) {
+					onManage();
+					SLEEP(1000);
+				}
+
+				fclose(pFile);
+				pFile = NULL;
+			}
+			printf("Closing connection...\n");
+			RTMFP_Close(context);
+		}
 	}
 
 	printf("End of the program\n");

@@ -26,13 +26,13 @@ public:
 
 	~RTMFPHandshake();
 
-	enum CommandType {
-		NETSTREAM_PLAY = 1,
-		NETSTREAM_PUBLISH
+	enum HandshakeType {
+		BASE_HANDSHAKE = 0x0A,
+		P2P_HANDSHAKE = 0x0F
 	};
 
 	// Connect to the specified url, return true if the command succeed
-	bool connect(Mona::Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher);
+	bool connect(Mona::Exception& ex, Invoker* invoker, const char* url, const char* host, const char* publication, bool isPublisher, HandshakeType type);
 
 	/******* Internal functions for writers *******/
 	void									flush() { flush(true); }
@@ -67,7 +67,8 @@ protected:
 
 	// Connection parameters
 	Mona::SocketAddress						_address; // host address
-	std::string								_url; // RTMFP url of the application
+	std::string								_url; // RTMFP url of the application (base handshake)
+	std::string								_peerId; // Id of the peer (P2P handshake)
 	std::string								_publication; // Stream name
 	bool									_isPublisher; // Publisher or Player?
 
@@ -87,6 +88,7 @@ protected:
 	std::shared_ptr<RTMFPEngine>			_pDecoder;
 
 private:
+
 	// External Callbacks to link with parent
 	OnSocketError	_pOnSocketError;
 
@@ -94,7 +96,7 @@ private:
 	void handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer);
 
 	// Send the first handshake message (with rtmfp url + tag)
-	void sendHandshake0();
+	void sendHandshake0(HandshakeType type);
 
 	// Send the second handshake message
 	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader);
