@@ -10,11 +10,14 @@ librtmfp can be integrated with FFmpeg to get the best experience.
 # Simple Installation
 
 - First you must download and compile the MonaBase library,
-- As root user install MonaBase using the following command :
-  make install
-- Then compile librtmfp :
-  make
-- And then install it using the same command as the sudoer:
+- Clone MonaServer :
+  git clone https://github.com/MonaSolutions/MonaServer.git
+- Cd into the MonaBase directory,
+- Compile MonaBase using the following command :
+  make debug
+- Compile librtmfp (must be at the same hierarchy level than the directory MonaServer) :
+  make debug
+- And then install it using the same command as the sudoer :
   make install
 
 Note: you need g++ to compile librtmfp
