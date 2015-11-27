@@ -142,6 +142,8 @@ void RTMFP_LogSetCallback(void(* onLog)(int,const char*)) {
 
 void RTMFP_LogSetLevel(int level) {
 	Logs::SetLevel(level);
+	//TODO: temporary
+	Logs::SetDump("RTMFP");
 }
 
 }

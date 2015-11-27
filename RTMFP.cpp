@@ -1,5 +1,4 @@
 #include "RTMFP.h"
-#include "Mona/Crypto.h"
 #include "Mona/Util.h"
 
 using namespace std;

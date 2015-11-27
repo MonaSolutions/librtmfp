@@ -13,6 +13,7 @@ public:
 
 	virtual void dump(const std::string& header, const Mona::UInt8* data, Mona::UInt32 size) {
 		// TODO: not implemented
+		Logger::dump(header, data, size);
 	}
 
 private:

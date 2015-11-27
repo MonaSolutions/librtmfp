@@ -14,6 +14,8 @@
 // Callback typedef definitions
 typedef void(*OnSocketError)(const char*);
 
+#define COOKIE_SIZE	0x40
+
 class Invoker;
 /**************************************************
 Parent class of RTMFPConnection
@@ -66,7 +68,8 @@ protected:
 	void DumpResponse(const Mona::UInt8* data, Mona::UInt32 size);
 
 	// Connection parameters
-	Mona::SocketAddress						_address; // host address
+	Mona::SocketAddress						_outAddress; // current address used for sending
+	Mona::SocketAddress						_hostAddress; // host address
 	std::string								_url; // RTMFP url of the application (base handshake)
 	std::string								_peerId; // Id of the peer (P2P handshake)
 	std::string								_publication; // Stream name
@@ -78,7 +81,8 @@ protected:
 	// Job Members
 	std::shared_ptr<FlashConnection>		_pMainStream; // Main Stream (NetConnection)
 	RTMFPWriter*							_pLastWriter; // Write pointer used to check if it is possible to write
-	std::shared_ptr<Mona::UDPSocket>		_pSocket; // Unique socket established with server
+	std::unique_ptr<Mona::UDPSocket>		_pSocket; // Sending socket established with server
+	std::unique_ptr<Mona::UDPSocket>		_pSocketIn; // Receiving socket established with server (needed for middle to accept new socket connections)
 	std::shared_ptr<RTMFPSender>			_pSender; // Current sender object
 	Invoker*								_pInvoker; // Main invoker
 	Mona::PoolThread*						_pThread; // Thread used to send last message
@@ -86,8 +90,19 @@ protected:
 	// Encryption/Decription
 	std::shared_ptr<RTMFPEngine>			_pEncoder;
 	std::shared_ptr<RTMFPEngine>			_pDecoder;
+	std::shared_ptr<RTMFPEngine>			_pDefaultDecoder; // used for id stream 0
 
 private:
+
+	// P2P Direct Connection
+	struct P2PStream {
+		P2PStream(const std::string& id);
+
+		const std::string				peerId;
+		std::shared_ptr<RTMFPEngine>	pEncoder;
+		std::shared_ptr<RTMFPEngine>	pDecoder;
+	};
+	std::map<Mona::SocketAddress, P2PStream>	mapP2pPeers;
 
 	// External Callbacks to link with parent
 	OnSocketError	_pOnSocketError;
@@ -95,15 +110,24 @@ private:
 	// Handle message (after hanshake0)
 	void handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer);
 
+	// Manage all handshake messages (marke 0x0B)
+	void manageHandshake(Mona::Exception& ex, Mona::BinaryReader& reader);
+
 	// Send the first handshake message (with rtmfp url + tag)
 	void sendHandshake0(HandshakeType type);
 
 	// Send the second handshake message
-	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader);
+	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader, Mona::UInt8 type);
+
+	// Handle the first P2P handshake message
+	void p2pHandshake0(Mona::Exception& ex, Mona::BinaryReader& reader);
+
+	// Handle the second P2P handshake message
+	void p2pHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Compute keys for encryption/decryption of the session (after handshake ok)
 	// TODO: Create a Startable object for this
-	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& nonce);
+	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder);
 
 	Mona::UInt8								_handshakeStep; // Handshake step (3 possible states)
 	Mona::UInt16							_timeReceived; // last time received
@@ -111,6 +135,8 @@ private:
 	// Events
 	Mona::UDPSocket::OnError::Type			onError; // TODO: delete this if not needed
 	Mona::UDPSocket::OnPacket::Type			onPacket; // Main input event, received on each raw packet
+	Mona::UDPSocket::OnError::Type			onErrorIn; // TODO: delete this if not needed
+	Mona::UDPSocket::OnPacket::Type			onPacketIn; // Main input event, received on each raw packet
 
 	// Encryption/Decription
 	Mona::DiffieHellman						_diffieHellman;

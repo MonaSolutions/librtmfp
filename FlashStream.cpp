@@ -165,10 +165,10 @@ void FlashStream::rawHandler(UInt16 type, PacketReader& packet, FlashWriter& wri
 		INFO("Stream stop message on NetStream ",id," (value : ",idReceived,")")
 		return;
 	}
-	/*if(type==0x0022) { // TODO Here we receive RTMFP flow sync signal, useless to support it!
+	if(type==0x0022) { // TODO Here we receive RTMFP flow sync signal, useless to support it!
 		//TRACE("Sync ",id," : ",data.read32(),"/",data.read32());
 		return;
-	}*/
+	}
 	ERROR("Raw message ",Format<UInt16>("%.4x",type)," unknown on stream ",id);
 }
 

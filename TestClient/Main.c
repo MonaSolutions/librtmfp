@@ -138,7 +138,9 @@ int main(int argc,char* argv[]) {
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
 			url = argv[i]+6;
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0)
-			peerId = argv[i]+9;
+			peerId = argv[i] + 9;
+		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
+			RTMFP_LogSetLevel(atoi(argv[i] + 6));
 		else
 			printf("Unknown option '%s'\n", argv[i]);
 	}

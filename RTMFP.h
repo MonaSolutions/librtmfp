@@ -6,7 +6,10 @@
 #include "Mona/BinaryReader.h"
 #include "Mona/BinaryWriter.h"
 #include "Mona/Time.h"
+#include "Mona/Crypto.h"
 #include <openssl/evp.h>
+
+#include "Mona/Logs.h"
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -31,10 +34,18 @@ public:
 		EVP_CIPHER_CTX_cleanup(&_context);
 	}
 
-	void process(Mona::UInt8* data, int size) {
+	bool process(Mona::UInt8* data, int size) {
+		int newSize(size);
 		static Mona::UInt8 IV[RTMFP_KEY_SIZE];
 		EVP_CipherInit_ex(&_context, EVP_aes_128_cbc(), NULL, _key, IV,_direction);
-		EVP_CipherUpdate(&_context, data, &size, data, size);
+		EVP_CipherUpdate(&_context, data, &newSize, data, size);
+
+		if (_direction == DECRYPT) { // check CRC
+			Mona::BinaryReader reader(data, size);
+			Mona::UInt16 crc(reader.read16());
+			return (Mona::Crypto::ComputeCRC(reader) == crc);
+		}
+		return true;
 	}
 
 private:
