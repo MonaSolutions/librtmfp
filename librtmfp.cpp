@@ -14,9 +14,10 @@ extern "C" {
 static std::shared_ptr<Invoker>		GlobalInvoker; // manage threads, sockets and connection
 static std::shared_ptr<RTMFPLogger> GlobalLogger; // handle log messages
 
-static unsigned int Connect(const char* url, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMedia, 
-	unsigned short audioReliable, unsigned short videoReliable, const char* peerId=NULL) {
+static int		(*GlobalInterruptCb)(void*) = NULL;
+static void*	GlobalInterruptArg = NULL;
 
+unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent,	OnMediaEvent pOnMedia, int blocking) {
 	if (!pOnSocketError || !pOnStatusEvent) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
 			return 0;
@@ -31,53 +32,58 @@ static unsigned int Connect(const char* url, unsigned short isPublisher, OnSocke
 	}
 
 	// Get hostname, port and publication name
-	string	host, publication, query, app = url;
-	size_t	filePos = Util::UnpackUrl(url, host, publication, query);
-	if (!peerId && filePos == string::npos) {
-		ERROR("No publication name found in url")
-			GlobalInvoker.reset();
-		return 0;
-	}
-	else if (!peerId) {
-		app.erase(app.size() - publication.size() + 1);
-		publication.erase(0, filePos);
-	}
+	string host, publication, query;
+	Util::UnpackUrl(url, host, publication, query);
 
 	Exception ex;
-	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(pOnSocketError, pOnStatusEvent, pOnMedia, audioReliable>0, videoReliable>0));
+	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(GlobalInvoker.get(), pOnSocketError, pOnStatusEvent, pOnMedia));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
-	if (!pConn->connect(ex, GlobalInvoker.get(), peerId? peerId : app.c_str(), host.c_str(), publication.c_str(), isPublisher > 0, peerId ? RTMFPConnection::P2P_HANDSHAKE : RTMFPConnection::BASE_HANDSHAKE)) {
+	if (!pConn->connect(ex, url, host.c_str())) {
 		ERROR("Error in connect : ", ex.error())
-			GlobalInvoker->removeConnection(index);
+		GlobalInvoker->removeConnection(index);
 		return 0;
+	}
+
+	if (blocking) {
+		while (!pConn->connected) {
+			pConn->connectSignal.wait(200);
+			if (GlobalInterruptCb(GlobalInterruptArg) == 1) {
+				GlobalInvoker->removeConnection(index);
+				return 0;
+			}
+		}
 	}
 
 	return index;
 }
 
-unsigned int RTMFP_Connect2Peer(const char* host, const char* peerId, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMedia, unsigned short audioReliable, unsigned short videoReliable) {
-	return Connect(host, isPublisher, pOnSocketError, pOnStatusEvent, pOnMedia, audioReliable, videoReliable, peerId);
+void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId) {
+
+	shared_ptr<RTMFPConnection> pConn;
+	GlobalInvoker->getConnection(RTMFPcontext, pConn);
+	if (pConn)
+		pConn->connect2Peer(peerId);
 }
 
-unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent,	OnMediaEvent pOnMedia, unsigned short audioReliable, unsigned short videoReliable) {
-	return Connect(url, isPublisher, pOnSocketError, pOnStatusEvent, pOnMedia, audioReliable, videoReliable);
-}
+int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 
-/*void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
-	Exception ex;
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if(pConn)
-		pConn->sendCommand(RTMFPConnection::CommandType::NETSTREAM_PLAY, streamName);
+		return pConn->sendCommand(RTMFPConnection::CommandType::NETSTREAM_PLAY, streamName);
+
+	return 0;
 }
 
-void RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName) {
-	Exception ex;
+int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable) {
+
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if(pConn)
-		pConn->sendCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH, streamName);
-}*/
+		return pConn->sendCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH, streamName, audioReliable>0, videoReliable>0);
+
+	return 0;
+}
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
 	if (!GlobalInvoker) {
@@ -143,7 +149,31 @@ void RTMFP_LogSetCallback(void(* onLog)(int,const char*)) {
 void RTMFP_LogSetLevel(int level) {
 	Logs::SetLevel(level);
 	//TODO: temporary
-	Logs::SetDump("RTMFP");
+	//Logs::SetDump("RTMFP");
+}
+
+void RTMFP_InterruptSetCallback(int(*interruptCb)(void*), void* argument) {
+	GlobalInterruptCb = interruptCb;
+	GlobalInterruptArg = argument;
+}
+
+
+void RTMFP_GetPublicationAndUrlFromUri(char* uri, char** publication) {
+	char* pos = (char*)strrchr(uri, '\\');
+	char* pos2 = (char*)strrchr(uri, '/');
+
+	if (pos && pos2) {
+		*publication = (char*)((pos > pos2)? pos+1 : pos2+1);
+		(pos > pos2) ? *pos = '\0' : *pos2 = '\0';
+	}
+	else if (pos) {
+		*publication = (char*)pos + 1;
+		*pos = '\0';
+	}
+	else if (pos2) {
+		*publication = (char*)pos2 + 1;
+		*pos2 = '\0';
+	}
 }
 
 }

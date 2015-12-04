@@ -32,7 +32,7 @@ AMFWriter& FlashWriter::writeInvocation(const char* name, double callback) {
 	return writer;
 }
 
-/*AMFWriter& FlashWriter::writeAMFState(const char* name,const char* code,const string& description,bool withoutClosing) {
+AMFWriter& FlashWriter::writeAMFState(const char* name,const char* code,const string& description,bool withoutClosing) {
 	AMFWriter& writer = (AMFWriter&)writeInvocation(name,_callbackHandleOnAbort = _callbackHandle);
 	_callbackHandle = 0;
 	writer.amf0=true;
@@ -47,7 +47,7 @@ AMFWriter& FlashWriter::writeInvocation(const char* name, double callback) {
 	if(!withoutClosing)
 		writer.endObject();
 	return writer;
-}*/
+}
 
 AMFWriter& FlashWriter::writeAMFData(const string& name) {
 	AMFWriter& writer(write(AMF::DATA));

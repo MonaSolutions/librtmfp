@@ -99,6 +99,7 @@ UInt32 FlashStream::bufferTime(UInt32 ms) {
 }
 
 void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWriter& writer) {
+	/*** Player ***/
 	if(name == "onStatus") {
 		double callback;
 		message.readNumber(callback);
@@ -122,6 +123,34 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 			OnStatus::raise(code, description, writer);
 			return;
 		}
+	}
+
+	/*** Publisher part ***/
+	if (name == "play") {
+		disengage(&writer);
+
+		string publication;
+		message.readString(publication);
+		
+		/*Exception ex;
+		_pListener = invoker.subscribe(ex, peer, publication, writer); // ex already log displayed
+		if (!_pListener) {
+			writer.writeAMFStatus("NetStream.Play.Failed", ex.error());
+			return;
+		}
+
+		OnStart::raise(id, writer); // stream begin*/
+		writer.writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + publication); // for entiere playlist
+		writer.writeAMFStatus("NetStream.Play.Start", "Started playing " + publication); // for item
+		AMFWriter& amf(writer.writeAMFData("|RtmpSampleAccess"));
+
+		// TODO: determinate if video and audio are available
+		amf.writeBoolean(true); // audioSampleAccess
+		amf.writeBoolean(true); // videoSampleAccess
+
+		/*if (_bufferTime > 0)
+			_pListener->setNumber("bufferTime", _bufferTime);*/
+		return;
 	}
 
 	ERROR("Message '",name,"' unknown on stream ",id);

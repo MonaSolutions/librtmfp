@@ -86,8 +86,10 @@
     <ClInclude Include="FlashConnection.h" />
     <ClInclude Include="FlashStream.h" />
     <ClInclude Include="FlashWriter.h" />
+    <ClInclude Include="FlowManager.h" />
     <ClInclude Include="Invoker.h" />
     <ClInclude Include="librtmfp.h" />
+    <ClInclude Include="P2PConnection.h" />
     <ClInclude Include="ParameterWriter.h" />
     <ClInclude Include="Publisher.h" />
     <ClInclude Include="ReferableReader.h" />
@@ -98,7 +100,6 @@
     <ClInclude Include="RTMFPMessage.h" />
     <ClInclude Include="RTMFPSender.h" />
     <ClInclude Include="RTMFPWriter.h" />
-    <ClInclude Include="RTMFPHandshake.h" />
     <ClInclude Include="StringWriter.h" />
   </ItemGroup>
   <ItemGroup>
@@ -108,6 +109,7 @@
     <ClCompile Include="FlashConnection.cpp" />
     <ClCompile Include="FlashStream.cpp" />
     <ClCompile Include="FlashWriter.cpp" />
+    <ClCompile Include="FlowManager.cpp" />
     <ClCompile Include="Invoker.cpp" />
     <ClCompile Include="librtmfp.cpp" />
     <ClCompile Include="Publisher.cpp" />
@@ -115,7 +117,6 @@
     <ClCompile Include="RTMFP.cpp" />
     <ClCompile Include="RTMFPConnection.cpp" />
     <ClCompile Include="RTMFPFlow.cpp" />
-    <ClCompile Include="RTMFPHandshake.cpp" />
     <ClCompile Include="RTMFPSender.cpp" />
     <ClCompile Include="RTMFPWriter.cpp" />
   </ItemGroup>

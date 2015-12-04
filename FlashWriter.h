@@ -41,9 +41,9 @@ public:
 	AMFWriter&				writeInvocation(const char* name) { return writeInvocation(name,0); }
 	virtual FlashWriter&	newWriter() { return *this; }
 
-	/*AMFWriter&				writeAMFSuccess(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_result", code, description, withoutClosing); }
+	AMFWriter&				writeAMFSuccess(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_result", code, description, withoutClosing); }
 	AMFWriter&				writeAMFStatus(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("onStatus", code, description, withoutClosing); }
-	AMFWriter&				writeAMFError(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_error", code, description, withoutClosing); }*/
+	AMFWriter&				writeAMFError(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_error", code, description, withoutClosing); }
 	bool					writeMedia(MediaType type,Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 
 	AMFWriter&				writeAMFData(const std::string& name);
@@ -67,7 +67,7 @@ protected:
 
 	virtual AMFWriter&		write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL,Mona::UInt32 size=0)=0;
 	AMFWriter&				writeInvocation(const char* name,double callback);
-	//AMFWriter&				writeAMFState(const char* name,const char* code,const std::string& description,bool withoutClosing=false);
+	AMFWriter&				writeAMFState(const char* name,const char* code,const std::string& description,bool withoutClosing=false);
 
 	const Mona::PoolBuffers&		poolBuffers;
 private:

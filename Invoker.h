@@ -1,8 +1,4 @@
-#include "Mona/Mona.h"
-#include "Mona/Startable.h"
 #include "Mona/SocketManager.h"
-#include "Mona/PoolThreads.h"
-#include "Mona/PoolBuffers.h"
 #include "Mona/TerminateSignal.h"
 #include "RTMFPConnection.h"
 
@@ -39,7 +35,6 @@ public:
 	unsigned int	empty();
 
 	void			terminate();
-	void			wait() { _terminateSignal.wait(); }
 
 	const Mona::SocketManager				sockets;
 	Mona::PoolThreads						poolThreads;
@@ -53,6 +48,4 @@ private:
 	ConnectionsManager								_manager;
 	std::map<int,std::shared_ptr<RTMFPConnection>>	_mapConnections;
 	int												_lastIndex; // last index of connection
-
-	Mona::TerminateSignal							_terminateSignal;
 };

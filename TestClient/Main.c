@@ -6,32 +6,47 @@
 #if defined(_WIN32)
 	#define strnicmp		_strnicmp
 	#define stricmp			_stricmp
+	#define snprintf		sprintf_s
 	#define	SLEEP			Sleep
 	#include <windows.h>
 #else
 	#include <time.h>
 	#define stricmp			strcasecmp
 	#define strnicmp		strncasecmp
+	#define _snprintf		snprintf
 	static struct timespec ts;
 	#define SLEEP(TIME)		ts.tv_sec=(time_t)(TIME/1000);ts.tv_nsec=(TIME%1000)*1000000;nanosleep(&ts,NULL)
 #endif
 
 // Global variables declaration
 #define BUFFER_SIZE			20480
-static char buf[BUFFER_SIZE];
-static unsigned int cursor = BUFFER_SIZE; // File reader cursor
-static unsigned short endOfWrite = 0; // If >0 write is finished
-static unsigned int context = 0;
-static FILE * pFile = NULL;
-static unsigned short terminating = 0;
+static char				buf[BUFFER_SIZE];
+static unsigned int		cursor = BUFFER_SIZE; // File reader cursor
+static unsigned short	endOfWrite = 0; // If >0 write is finished
+static unsigned int		context = 0;
+static FILE *			pFile = NULL;
+static unsigned short	terminating = 0;
+
+// return : true if program must be interrupted
+static int	IsInterrupted(void * arg) {
+	printf("IsInterrupted called, terminating = %d\n", terminating);
+	return terminating > 0;
+}
+
+// Global configuration variables
+static unsigned short	audioReliable = 1, videoReliable = 1;
+static char*			publication = NULL;
+static const char*		peerId = NULL;
 static enum TestOption {
 	SYNC_READ,
 	ASYNC_READ,
-	WRITE
+	WRITE,
+	P2P_MODE
 } _option = 0;
 
 // Windows CTrl+C handler
 void ConsoleCtrlHandler(int dummy) {
+	printf("CTRL+C (SIGINT Handled), terminating...\n");
 	terminating=1;
 }
 
@@ -61,6 +76,15 @@ void onSocketError(const char* error) {
 
 void onStatusEvent(const char* code,const char* description) {
 	printf("Status Event '%s' : %s\n", code, description);
+
+	if (strcmp(code, "NetConnection.Connect.Success") == 0) {
+		if (_option == SYNC_READ || _option == ASYNC_READ)
+			RTMFP_Play(context, publication);
+		else if (_option == WRITE)
+			RTMFP_Publish(context, publication, audioReliable, videoReliable);
+		else if (_option == P2P_MODE && peerId != NULL)
+			RTMFP_Connect2Peer(context, peerId);
+	}
 }
 
 // Synchronous read
@@ -118,11 +142,9 @@ void onManage() {
 
 // Main Function
 int main(int argc,char* argv[]) {
-	const char*		url = "rtmfp://127.0.0.1/test123";
-	const char*		peerId = NULL;
+	char 			url[MAX_PATH];
 	int				i=1;
-	unsigned short	audioReliable=1;
-	unsigned short	videoReliable=1;
+	snprintf(url, MAX_PATH, "rtmfp://127.0.0.1/test123");
 
 	for(i; i<argc; i++) {
 		if (stricmp(argv[i], "--syncread")==0) // default
@@ -136,60 +158,53 @@ int main(int argc,char* argv[]) {
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
 			videoReliable = 0;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
-			url = argv[i]+6;
-		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0)
+			snprintf(url, MAX_PATH, "%s", argv[i] + 6);
+		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) {
+			_option = P2P_MODE;
 			peerId = argv[i] + 9;
-		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
+		} else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
 			RTMFP_LogSetLevel(atoi(argv[i] + 6));
-		else
+		else {
 			printf("Unknown option '%s'\n", argv[i]);
+			exit(-1);
+		}
 	}
 
-	signal(SIGINT, ConsoleCtrlHandler);
+	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
+		printf("Cannot catch SIGINT\n");
 
 	RTMFP_LogSetCallback(onLog);
+	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
+	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 
-	if (peerId) {
-		printf("Connection to peer '%s'", peerId);
-		context = RTMFP_Connect2Peer(url, peerId, _option == WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, audioReliable, videoReliable);
+	printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
+	context = RTMFP_Connect(url, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, 1);
+		
+	if (context) {
 
-		while (context && !terminating) {
-			onManage();
-			SLEEP(1000);
+#if defined(WIN32)
+		errno_t err;
+		if ((err = fopen_s(&pFile, "out.flv", (_option == WRITE) ? "rb" : "wb+")) != 0)
+			printf("Unable to open file out.flv : %d\n", err);
+#else
+		if ((pFile = fopen("out.flv", (_option == WRITE) ? "rb" : "wb+")) == NULL)
+			printf("Unable to open file out.flv\n");
+#endif
+		else {
+			printf("Output file out.flv opened\n");
+			if (_option == SYNC_READ)
+				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
+
+			while (!IsInterrupted(NULL)) {
+				onManage();
+				SLEEP(1000);
+			}
+
+			fclose(pFile);
+			pFile = NULL;
 		}
 		printf("Closing connection...\n");
 		RTMFP_Close(context);
-	}
-	else {
-		printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
-		context = RTMFP_Connect(url, _option == WRITE, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, audioReliable, videoReliable);
-		
-		if (context) {
-
-#if defined(WIN32)
-			errno_t err;
-			if ((err = fopen_s(&pFile, "out.flv", (_option == WRITE) ? "rb" : "wb+")) != 0)
-				printf("Unable to open file out.flv : %d\n", err);
-#else
-			if ((pFile = fopen("out.flv", (_option == WRITE) ? "rb" : "wb+")) == NULL)
-				printf("Unable to open file out.flv\n");
-#endif
-			else {
-				printf("Output file out.flv opened\n");
-				if (_option == SYNC_READ)
-					fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
-
-				while (!terminating) {
-					onManage();
-					SLEEP(1000);
-				}
-
-				fclose(pFile);
-				pFile = NULL;
-			}
-			printf("Closing connection...\n");
-			RTMFP_Close(context);
-		}
 	}
 
 	printf("End of the program\n");

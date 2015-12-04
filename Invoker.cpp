@@ -30,7 +30,6 @@ bool Invoker::start() {
 	Exception ex;
 	if (!((Mona::SocketManager&)sockets).start(ex) || ex || !sockets.running())
 		return false;
-
 	
 	bool result;
 	EXCEPTION_TO_LOG(result = Startable::start(ex, Startable::PRIORITY_HIGH), "Invoker");
@@ -68,7 +67,6 @@ void Invoker::removeConnection(unsigned int index) {
 
 void Invoker::terminate() {
 	_mapConnections.clear();
-	_terminateSignal.set(); 
 }
 
 unsigned int Invoker::empty() {

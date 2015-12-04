@@ -5,17 +5,19 @@ extern "C" {
 
 // RTMFP Connection function
 // return : index of the connection's context
-unsigned int RTMFP_Connect(const char* url, unsigned short isPublisher, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
-				void (* onMedia)(unsigned int, const char*, unsigned int,int), unsigned short audioReliable, unsigned short videoReliable);
+unsigned int RTMFP_Connect(const char* url, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
+				void (* onMedia)(unsigned int, const char*, unsigned int,int), int blocking);
 
-unsigned int RTMFP_Connect2Peer(const char* host, const char* peerId, unsigned short isPublisher, void(*onSocketError)(const char*), void(*onStatusEvent)(const char*, const char*),
-	void(*onMedia)(unsigned int, const char*, unsigned int, int), unsigned short audioReliable, unsigned short videoReliable);
+// RTMFP P2P Connection (must be connected)
+void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId);
 
-/*// RTMFP NetStream Play function
-void RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
+// RTMFP NetStream Play function
+// return : 1 if the request succeed, 0 otherwise
+int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 
 // RTMFP NetStream Publish function
-void RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName);*/
+// return : 1 if the request succeed, 0 otherwise
+int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable);
 
 // Close the RTMFP connection
 void RTMFP_Close(unsigned int RTMFPcontext);
@@ -33,6 +35,12 @@ void RTMFP_LogSetCallback(void (* onLog)(int, const char*));
 
 // Set log level
 void RTMFP_LogSetLevel(int level);
+
+// Set Interrupt callback (to check if caller need the hand)
+void RTMFP_InterruptSetCallback(int (* interruptCb)(void*), void* argument);
+
+// Retrieve publication name and url from original uri
+void RTMFP_GetPublicationAndUrlFromUri(char* uri, char** publication);
 
 #ifdef __cplusplus
 }
