@@ -287,7 +287,7 @@ void RTMFPWriter::manage(Exception& ex) {
 		ex.set(Exception::NETWORK, "Main flow writer closed, session is closing");
 		return;
 	}
-	flush(false);
+	flush();
 }
 
 UInt32 RTMFPWriter::headerSize(UInt64 stage) { // max size header = 50

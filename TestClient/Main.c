@@ -29,14 +29,10 @@ static unsigned short	terminating = 0;
 
 // return : true if program must be interrupted
 static int	IsInterrupted(void * arg) {
-	printf("IsInterrupted called, terminating = %d\n", terminating);
 	return terminating > 0;
 }
 
 // Global configuration variables
-static unsigned short	audioReliable = 1, videoReliable = 1;
-static char*			publication = NULL;
-static const char*		peerId = NULL;
 static enum TestOption {
 	SYNC_READ,
 	ASYNC_READ,
@@ -46,7 +42,6 @@ static enum TestOption {
 
 // Windows CTrl+C handler
 void ConsoleCtrlHandler(int dummy) {
-	printf("CTRL+C (SIGINT Handled), terminating...\n");
 	terminating=1;
 }
 
@@ -76,15 +71,8 @@ void onSocketError(const char* error) {
 
 void onStatusEvent(const char* code,const char* description) {
 	printf("Status Event '%s' : %s\n", code, description);
-
-	if (strcmp(code, "NetConnection.Connect.Success") == 0) {
-		if (_option == SYNC_READ || _option == ASYNC_READ)
-			RTMFP_Play(context, publication);
-		else if (_option == WRITE)
-			RTMFP_Publish(context, publication, audioReliable, videoReliable);
-		else if (_option == P2P_MODE && peerId != NULL)
-			RTMFP_Connect2Peer(context, peerId);
-	}
+	if (strcmp(code, "NetStream.Play.UnpublishNotify") == 0 || strcmp(code, "NetConnection.Connect.Closed") == 0)
+		terminating=1;
 }
 
 // Synchronous read
@@ -142,9 +130,12 @@ void onManage() {
 
 // Main Function
 int main(int argc,char* argv[]) {
-	char 			url[MAX_PATH];
+	char 			url[1024];
 	int				i=1;
-	snprintf(url, MAX_PATH, "rtmfp://127.0.0.1/test123");
+	char*			publication = NULL;
+	const char*		peerId = NULL;
+	unsigned short	audioReliable = 1, videoReliable = 1;
+	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
 	for(i; i<argc; i++) {
 		if (stricmp(argv[i], "--syncread")==0) // default
@@ -158,7 +149,7 @@ int main(int argc,char* argv[]) {
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
 			videoReliable = 0;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
-			snprintf(url, MAX_PATH, "%s", argv[i] + 6);
+			snprintf(url, 1024, "%s", argv[i] + 6);
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) {
 			_option = P2P_MODE;
 			peerId = argv[i] + 9;
@@ -173,7 +164,7 @@ int main(int argc,char* argv[]) {
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
 		printf("Cannot catch SIGINT\n");
 
-	RTMFP_LogSetCallback(onLog);
+	//RTMFP_LogSetCallback(onLog);
 	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
 	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 
@@ -181,6 +172,12 @@ int main(int argc,char* argv[]) {
 	context = RTMFP_Connect(url, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, 1);
 		
 	if (context) {
+		if (_option == SYNC_READ || _option == ASYNC_READ)
+			RTMFP_Play(context, publication);
+		else if (_option == WRITE)
+			RTMFP_Publish(context, publication, audioReliable, videoReliable);
+		else if (_option == P2P_MODE && peerId != NULL)
+			RTMFP_Connect2Peer(context, peerId);
 
 #if defined(WIN32)
 		errno_t err;

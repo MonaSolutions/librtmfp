@@ -46,6 +46,8 @@ private:
 
 	bool											_init; // True if at least a connection has been added
 	ConnectionsManager								_manager;
-	std::map<int,std::shared_ptr<RTMFPConnection>>	_mapConnections;
 	int												_lastIndex; // last index of connection
+
+	std::recursive_mutex							_mutexConnections;
+	std::map<int, std::shared_ptr<RTMFPConnection>>	_mapConnections;
 };

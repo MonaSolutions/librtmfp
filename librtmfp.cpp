@@ -17,11 +17,21 @@ static std::shared_ptr<RTMFPLogger> GlobalLogger; // handle log messages
 static int		(*GlobalInterruptCb)(void*) = NULL;
 static void*	GlobalInterruptArg = NULL;
 
+void initLogger() {
+	if (!GlobalLogger) {
+		GlobalLogger.reset(new RTMFPLogger());
+		Logs::SetLogger(*GlobalLogger);
+		Logs::SetDump("RTMFP");
+	}
+}
+
 unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent,	OnMediaEvent pOnMedia, int blocking) {
 	if (!pOnSocketError || !pOnStatusEvent) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
 			return 0;
 	}
+
+	initLogger();
 
 	// Start Socket Manager if needed
 	if (!GlobalInvoker) {
@@ -59,10 +69,11 @@ unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStat
 
 void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId) {
 
+	Exception ex;
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
-	if (pConn)
-		pConn->connect2Peer(peerId);
+	if (pConn && !pConn->connect2Peer(ex, peerId))
+		ERROR("Unable to establish the P2P Connection : ", ex.error())
 }
 
 int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
@@ -142,14 +153,17 @@ int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 }
 
 void RTMFP_LogSetCallback(void(* onLog)(int,const char*)) {
-	GlobalLogger.reset(new RTMFPLogger(onLog));
-	Logs::SetLogger(*GlobalLogger);
+	initLogger();
+	GlobalLogger->setLogCallback(onLog);
 }
 
 void RTMFP_LogSetLevel(int level) {
 	Logs::SetLevel(level);
-	//TODO: temporary
-	//Logs::SetDump("RTMFP");
+}
+
+void RTMFP_DumpSetCallback(void(*onDump)(const char*, const void*, unsigned int)) {
+	initLogger();
+	GlobalLogger->setDumpCallback(onDump);
 }
 
 void RTMFP_InterruptSetCallback(int(*interruptCb)(void*), void* argument) {

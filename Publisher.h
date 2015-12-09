@@ -11,8 +11,10 @@
 class Publisher : public virtual Mona::Object, private Mona::Task {
 public:
 
-	Publisher(const Mona::PoolBuffers& poolBuffers, Mona::TaskHandler& handler, FlashWriter& writer, bool audioReliable, bool videoReliable);
+	Publisher(const Mona::PoolBuffers& poolBuffers, Mona::TaskHandler& handler, bool audioReliable, bool videoReliable);
 	virtual ~Publisher();
+
+	void setWriter(FlashWriter* pWriter) { _pWriter = pWriter; }
 
 	bool publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos);
 
@@ -60,7 +62,7 @@ private:
 	Mona::UInt32			_seekTime;
 	bool					_codecInfosSent;*/
 
-	FlashWriter&				_writer;
+	FlashWriter*				_pWriter;
 	FlashWriter*				_pAudioWriter;
 	FlashWriter*				_pVideoWriter;
 	bool						_dataInitialized;

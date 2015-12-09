@@ -9,11 +9,10 @@
 using namespace Mona;
 using namespace std;
 
-Publisher::Publisher(const PoolBuffers& poolBuffers, TaskHandler& handler, FlashWriter& writer, bool audioReliable, bool videoReliable) : _writer(writer), publishAudio(true), publishVideo(true),
+Publisher::Publisher(const PoolBuffers& poolBuffers, TaskHandler& handler, bool audioReliable, bool videoReliable) : _pWriter(NULL), publishAudio(true), publishVideo(true),
 	_pAudioWriter(NULL), _pVideoWriter(NULL), _dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable), Task(handler), _poolBuffers(poolBuffers) {
 
-	INFO("Initialization of the publisher (audioReliable : ",audioReliable," - videoReliable : ", videoReliable,")")
-	initWriters();
+	INFO("Initialization of the publisher (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")")
 }
 
 Publisher::~Publisher() {
@@ -26,7 +25,7 @@ void Publisher::closeWriters() {
 		_pAudioWriter->close(-1);
 	if (_pVideoWriter)
 		_pVideoWriter->close(-1);
-	_pVideoWriter = _pAudioWriter = NULL;
+	_pVideoWriter = _pAudioWriter = _pWriter = NULL;
 	_dataInitialized = false;
 }
 
@@ -86,9 +85,12 @@ void Publisher::handle(Exception& ex) {
 }
 
 bool Publisher::initWriters() {
-	// if start return false, the subscriber must unsubcribe the listener (closed by the caller)
-
 	bool firstTime(false);
+
+	if (!_pWriter) {
+		ERROR("Reinitialisation of the publication's writers _pWriter is NULL");
+		return false;
+	}
 
 	if (_pVideoWriter || _pAudioWriter || _dataInitialized) {
 		closeWriters();
@@ -101,12 +103,12 @@ bool Publisher::initWriters() {
 	/*if (!writeReliableMedia(_writer, FlashWriter::INIT, FlashWriter::DATA, publicationNamePacket(), *this))// unsubscribe can be done here!
 		return false; // Here consider that the listener have to be closed by the caller*/
 
-	_pAudioWriter = &_writer.newWriter();
+	_pAudioWriter = &_pWriter->newWriter();
 	/*if (!writeReliableMedia(*_pAudioWriter, FlashWriter::INIT, FlashWriter::AUDIO, publicationNamePacket(), *this)) {
 		closeWriters();
 		return false; // Here consider that the listener have to be closed by the caller
 	}*/
-	_pVideoWriter = &_writer.newWriter();
+	_pVideoWriter = &_pWriter->newWriter();
 	/*if (!writeReliableMedia(*_pVideoWriter, FlashWriter::INIT, FlashWriter::VIDEO, publicationNamePacket(), *this)) {
 		closeWriters();
 		return false; // Here consider that the listener have to be closed by the caller
@@ -224,8 +226,11 @@ bool Publisher::pushAudioInfos(UInt32 time) {
 }*/
 
 void Publisher::flush() {
+	if (!_pWriter)
+		return;
+
 	// in first data channel
-	_writer.flush();
+	_pWriter->flush();
 	// now media channel
 	if (_pAudioWriter) // keep in first, because audio track is sometimes the time reference track
 		_pAudioWriter->flush();

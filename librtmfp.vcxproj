@@ -112,6 +112,7 @@
     <ClCompile Include="FlowManager.cpp" />
     <ClCompile Include="Invoker.cpp" />
     <ClCompile Include="librtmfp.cpp" />
+    <ClCompile Include="P2PConnection.cpp" />
     <ClCompile Include="Publisher.cpp" />
     <ClCompile Include="ReferableReader.cpp" />
     <ClCompile Include="RTMFP.cpp" />
