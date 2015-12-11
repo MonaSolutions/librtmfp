@@ -36,8 +36,7 @@ static int	IsInterrupted(void * arg) {
 static enum TestOption {
 	SYNC_READ,
 	ASYNC_READ,
-	WRITE,
-	P2P_MODE
+	WRITE
 } _option = 0;
 
 // Windows CTrl+C handler
@@ -91,6 +90,7 @@ void onMedia(unsigned int time,const char* buf,unsigned int size,int audio) {
 	}
 }
 
+// Call each second to read/write asynchronously
 void onManage() {
 	int read = 0, res = 0, towrite = BUFFER_SIZE;
 
@@ -134,7 +134,7 @@ int main(int argc,char* argv[]) {
 	int				i=1;
 	char*			publication = NULL;
 	const char*		peerId = NULL;
-	unsigned short	audioReliable = 1, videoReliable = 1;
+	unsigned short	audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
 	for(i; i<argc; i++) {
@@ -151,7 +151,6 @@ int main(int argc,char* argv[]) {
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
 			snprintf(url, 1024, "%s", argv[i] + 6);
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) {
-			_option = P2P_MODE;
 			peerId = argv[i] + 9;
 		} else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
 			RTMFP_LogSetLevel(atoi(argv[i] + 6));
@@ -172,12 +171,12 @@ int main(int argc,char* argv[]) {
 	context = RTMFP_Connect(url, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, 1);
 		
 	if (context) {
-		if (_option == SYNC_READ || _option == ASYNC_READ)
+		if (peerId != NULL)
+			RTMFP_Connect2Peer(context, peerId, _option != WRITE, publication, audioReliable, videoReliable);
+		else if (_option == SYNC_READ || _option == ASYNC_READ)
 			RTMFP_Play(context, publication);
 		else if (_option == WRITE)
 			RTMFP_Publish(context, publication, audioReliable, videoReliable);
-		else if (_option == P2P_MODE && peerId != NULL)
-			RTMFP_Connect2Peer(context, peerId);
 
 #if defined(WIN32)
 		errno_t err;

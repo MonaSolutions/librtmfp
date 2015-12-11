@@ -40,7 +40,7 @@ public:
 
 	// RTMFP Commands
 	void				sendConnect(const std::string& url, Mona::UInt16 port);
-	void				sendPlay(const std::string& name);
+	void				sendPlay(const std::string& name, bool amf3=false);
 	void				sendPublish(const std::string& name);
 	void				createStream();
 	

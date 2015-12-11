@@ -34,8 +34,8 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 };
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-	_nextRTMFPWriterId(0), _firstRead(true), _firstWrite(true), _pLastWriter(NULL), _pInvoker(invoker), _timeReceived(0), _handshakeStep(0), _nbCreateStreams(0),
-	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _tag(16),
+	_nextRTMFPWriterId(0), _firstRead(true), _firstWrite(true), _pLastWriter(NULL), _pInvoker(invoker), _timeReceived(0), _handshakeStep(0),
+	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _tag(16), _pubKey(0x80), _nonce(0x8B),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
 	_pDefaultDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)) {
@@ -53,33 +53,7 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 			close();
 	};
 	onStreamCreated = [this](UInt16 idStream) {
-		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(idStream, pStream);
-
-		// Stream created, now we create the flow before sending another request
-		string signature;
-		signature.append("\x00\x54\x43\x04", 4);
-		RTMFP::Write7BitValue(signature, idStream);
-		UInt64 id = _flows.size();
-		RTMFPFlow * pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
-		_waitingFlows[idStream] = pFlow;
-
-		// Send createStream command and add command type to waiting commands
-		if (_waitingCommands.empty()) {
-			ERROR("created stream without command")
-			return;
-		}
-		const StreamCommand command = _waitingCommands.back();
-		switch (command.type) {
-		case NETSTREAM_PLAY:
-			pFlow->sendPlay(command.value);
-			break;
-		case NETSTREAM_PUBLISH:
-			pFlow->sendPublish(command.value);
-			_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, command.audioReliable, command.videoReliable));
-			break;
-		}
-		_waitingCommands.pop_back();
+		handleStreamCreated(idStream);
 	};
 	onMedia = [this](UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
@@ -111,10 +85,8 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 
 		if (!pDecoder->process((UInt8*)pBuffer.data(), pBuffer.size()))
 			ex.set(Exception::CRYPTO, "Bad RTMFP CRC sum computing (idstream: ", idStream, ")");
-		else {
-			//_outAddress.set(address);
+		else
 			handleMessage(ex, pBuffer, address);
-		}
 
 		if (ex)
 			_pOnSocketError(ex.error());
@@ -175,6 +147,10 @@ void FlowManager::close() {
 	_pPublisher.reset();
 }
 
+void FlowManager::handleStreamCreated(UInt16 idStream) {
+	ERROR("Stream creation not possible on this connection")
+}
+
 void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, const SocketAddress&  address) {
 	_outAddress.set(address);
 
@@ -215,19 +191,6 @@ void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, 
 	default:
 		WARN("Unexpected RTMFP marker : ", Format<UInt8>("%02x", marker));
 	}
-}
-
-// TODO: see if we always need to manage a list of commands
-bool FlowManager::sendCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
-	if (!connected) {
-		ERROR("Can't send command because the connection is not established");
-		return false;
-	}
-
-	lock_guard<recursive_mutex> lock(_mutexCommands);
-	_waitingCommands.emplace_front(command, streamName, audioReliable, videoReliable);
-	_nbCreateStreams++;
-	return true;
 }
 
 bool FlowManager::read(UInt8* buf, UInt32 size, int& nbRead) {
@@ -271,7 +234,7 @@ bool FlowManager::write(const UInt8* buf, UInt32 size, int& pos) {
 
 	if (!_pPublisher) {
 		DEBUG("Can't write data because NetStream is not published")
-			return true;
+		return true;
 	}
 
 	return _pPublisher->publish(buf, size, pos);
@@ -287,9 +250,6 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 
 	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF;
 	bool answer = false;
-
-	// First : treat waiting commands
-	createWaitingStreams();
 
 	// Can have nested queries
 	while (type != 0xFF) {
@@ -450,20 +410,6 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 	}
 }
 
-void FlowManager::createWaitingStreams() {
-	lock_guard<recursive_mutex>	lock(_mutexCommands);
-	if (!_nbCreateStreams)
-		return;
-
-	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
-	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
-	if (pFlow) {
-		INFO("Creating a new stream...")
-		pFlow->createStream();
-		_nbCreateStreams--;
-	}
-}
-
 RTMFPWriter* FlowManager::writer(UInt64 id) {
 	auto it = _flowWriters.find(id);
 	if (it == _flowWriters.end())
@@ -620,7 +566,7 @@ void FlowManager::flush(bool echoTime, UInt8 marker) {
 	_pSender.reset();
 }
 
-bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const string& initiatorNonce, const UInt8* responderNonce, UInt32 responderNonceSize, shared_ptr<RTMFPEngine>& pDecoder, shared_ptr<RTMFPEngine>& pEncoder) {
+bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const string& initiatorNonce, const UInt8* responderNonce, UInt32 responderNonceSize, shared_ptr<RTMFPEngine>& pDecoder, shared_ptr<RTMFPEngine>& pEncoder, bool isResponder) {
 	if (!_diffieHellman.initialized()) {
 		ex.set(Exception::CRYPTO, "Diffiehellman object must be initialized before computing");
 		return false;
@@ -633,18 +579,18 @@ bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const stri
 
 	DEBUG("Shared secret : ", Util::FormatHex(_sharedSecret.data(), _sharedSecret.size(), LOG_BUFFER))
 
-		PacketWriter packet(_pInvoker->poolBuffers);
+	PacketWriter packet(_pInvoker->poolBuffers);
 	if (packet.size() > 0) {
 		ex.set(Exception::CRYPTO, "RTMFPCookieComputing already executed");
 		return false;
 	}
 
 	// Compute Keys
-	UInt8 encryptKey[Crypto::HMAC::SIZE];
-	UInt8 decryptKey[Crypto::HMAC::SIZE];
-	RTMFP::ComputeAsymetricKeys(_sharedSecret, (UInt8*)initiatorNonce.data(), (UInt16)initiatorNonce.size(), responderNonce, responderNonceSize, decryptKey, encryptKey);
-	pDecoder.reset(new RTMFPEngine(decryptKey, RTMFPEngine::DECRYPT));
-	pEncoder.reset(new RTMFPEngine(encryptKey, RTMFPEngine::ENCRYPT));
+	UInt8 responseKey[Crypto::HMAC::SIZE];
+	UInt8 requestKey[Crypto::HMAC::SIZE];
+	RTMFP::ComputeAsymetricKeys(_sharedSecret, (UInt8*)initiatorNonce.data(), (UInt16)initiatorNonce.size(), responderNonce, responderNonceSize, requestKey, responseKey);
+	pDecoder.reset(new RTMFPEngine(isResponder? requestKey : responseKey, RTMFPEngine::DECRYPT));
+	pEncoder.reset(new RTMFPEngine(isResponder? responseKey : requestKey, RTMFPEngine::ENCRYPT));
 
 	return true;
 }

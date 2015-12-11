@@ -38,7 +38,7 @@ public:
 	
 	Mona::BinaryWriter&		writeRaw() { return write(AMF::RAW).packet; }
 	AMFWriter&				writeMessage();
-	AMFWriter&				writeInvocation(const char* name) { return writeInvocation(name,0); }
+	AMFWriter&				writeInvocation(const char* name, bool amf3=false) { return writeInvocation(name,0,amf3); }
 	virtual FlashWriter&	newWriter() { return *this; }
 
 	AMFWriter&				writeAMFSuccess(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_result", code, description, withoutClosing); }
@@ -66,7 +66,7 @@ protected:
 	FlashWriter(FlashWriter& other);
 
 	virtual AMFWriter&		write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL,Mona::UInt32 size=0)=0;
-	AMFWriter&				writeInvocation(const char* name,double callback);
+	AMFWriter&				writeInvocation(const char* name,double callback,bool amf3=false);
 	AMFWriter&				writeAMFState(const char* name,const char* code,const std::string& description,bool withoutClosing=false);
 
 	const Mona::PoolBuffers&		poolBuffers;

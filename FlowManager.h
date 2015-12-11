@@ -32,10 +32,8 @@ public:
 		NETSTREAM_PUBLISH
 	};
 
-	// Send a command to the main stream (play/publish)
-	// return : True if the request succeed, false otherwise
-	// TODO: See if we should add a createStream function
-	bool sendCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false);
+	// Add a command to the main stream (play/publish)
+	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
 
 	// Asynchronous read (buffered)
 	// return false if end of buf has been reached
@@ -45,7 +43,7 @@ public:
 	// return false if the client is not ready to publish, otherwise true
 	bool write(const Mona::UInt8* buf, Mona::UInt32 size, int& pos);
 
-	bool						computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder);
+	bool	computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
 
 	virtual Mona::UDPSocket&				socket() { return *_pSocket; }
 
@@ -71,6 +69,9 @@ protected:
 
 	// Analyze packets received from the server (must be connected)
 	void						receive(Mona::Exception& ex, Mona::BinaryReader& reader);
+
+	// Handle stream creation (only for RTMFP connection)
+	virtual void				handleStreamCreated(Mona::UInt16 idStream);
 
 	// Handle message (after hanshake0)
 	virtual void				handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
@@ -129,6 +130,8 @@ protected:
 	Mona::DiffieHellman					_diffieHellman;
 	Mona::Buffer						_sharedSecret; 
 	Mona::Buffer						_tag;
+	Mona::Buffer						_pubKey;
+	Mona::Buffer						_nonce;
 
 	// External Callbacks to link with parent
 	OnStatusEvent						_pOnStatusEvent;
@@ -169,21 +172,4 @@ protected:
 
 	// Write members
 	bool													_firstWrite; // True if the input file has already been read
-
-private:
-	// Pool of stream commands
-	struct StreamCommand {
-		StreamCommand(CommandType t, const char* v, bool aReliable, bool vReliable) : type(t), value(v), audioReliable(aReliable), videoReliable(vReliable) {}
-
-		CommandType		type;
-		std::string		value;
-		bool			audioReliable;
-		bool			videoReliable;
-	};
-	std::deque<StreamCommand>	_waitingCommands;
-	std::recursive_mutex		_mutexCommands;
-	Mona::UInt16				_nbCreateStreams; // Number of streams to create
-
-	// If there is at least one request of command : create the stream
-	void						createWaitingStreams();
 };

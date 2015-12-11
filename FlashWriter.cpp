@@ -22,8 +22,8 @@ AMFWriter& FlashWriter::writeMessage() {
 	return writer;
 }
 
-AMFWriter& FlashWriter::writeInvocation(const char* name, double callback) {
-	AMFWriter& writer = write(AMF::INVOCATION);
+AMFWriter& FlashWriter::writeInvocation(const char* name, double callback, bool amf3) {
+	AMFWriter& writer = write(amf3? AMF::INVOCATION_AMF3 : AMF::INVOCATION);
 	BinaryWriter& packet = writer.packet;
 	packet.write8(AMF_STRING).write16((UInt16)strlen(name)).write(name);
 	packet.write8(AMF_NUMBER).writeNumber<double>(callback);

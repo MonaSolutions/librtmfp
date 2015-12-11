@@ -10,13 +10,11 @@
 using namespace Mona;
 using namespace std;
 
-RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent):
-		_pubKey(0x80), _nonce(0x8B), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
-	
+RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent): _nbCreateStreams(0), 
+	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 }
 
 RTMFPConnection::~RTMFPConnection() {
-
 	close();
 }
 
@@ -46,18 +44,51 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	return !ex;
 }
 
-bool RTMFPConnection::connect2Peer(Exception& ex, const char* peerId) {
+bool RTMFPConnection::connect2Peer(Exception& ex, const char* peerId, CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
 
 	INFO("Connecting to peer ", peerId, "...")
 
-	auto it = _mapPeersById.emplace(piecewise_construct, forward_as_tuple(peerId),forward_as_tuple(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress)).first;
+	auto it = _mapPeersById.emplace(piecewise_construct, forward_as_tuple(peerId),forward_as_tuple(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, _tag)).first;
 	if (!it->second.connect(ex))
 		return false;
+
+	// Add the command to be send when connection is established
+	it->second.addCommand(command, streamName, audioReliable, videoReliable);
 	
 	// Add the connection request to the queue
 	lock_guard<recursive_mutex> lock(_mutexPeers);
 	_waitingPeers.push_back(peerId);
 	return true;
+}
+
+void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
+	shared_ptr<FlashStream> pStream;
+	_pMainStream->addStream(idStream, pStream);
+
+	// Stream created, now we create the flow before sending another request
+	string signature;
+	signature.append("\x00\x54\x43\x04", 4);
+	RTMFP::Write7BitValue(signature, idStream);
+	UInt64 id = _flows.size();
+	RTMFPFlow * pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
+	_waitingFlows[idStream] = pFlow;
+
+	// Send createStream command and add command type to waiting commands
+	if (_waitingCommands.empty()) {
+		ERROR("created stream without command")
+			return;
+	}
+	const StreamCommand command = _waitingCommands.back();
+	switch (command.type) {
+	case NETSTREAM_PLAY:
+		pFlow->sendPlay(command.value);
+		break;
+	case NETSTREAM_PUBLISH:
+		pFlow->sendPublish(command.value);
+		_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, command.audioReliable, command.videoReliable));
+		break;
+	}
+	_waitingCommands.pop_back();
 }
 
 void RTMFPConnection::handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const SocketAddress& address) {
@@ -74,7 +105,7 @@ void RTMFPConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 
 	switch (type) {
 	case 0x30:
-		p2pHandshake0(ex, reader); break;
+		responderHandshake0(ex, reader); break; // p2p
 	case 0x70:
 	case 0x71:
 		sendHandshake1(ex, reader, type); break;
@@ -177,15 +208,19 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 	}
 
 	_farId = reader.read32(); // id session?
-	UInt32 size = (UInt32)reader.read7BitLongValue() - 11;
-	string nonce;
-	reader.read(size + 11, nonce);
-	if (String::ICompare(nonce, "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) { // TODO: I think this is not fixed
-		ex.set(Exception::PROTOCOL, "Nonce not expected : ", nonce);
+	UInt32 nonceSize = (UInt32)reader.read7BitLongValue();
+	if (nonceSize != 0x8B) {
+		ex.set(Exception::PROTOCOL, "Incorrect nonce size : ", nonceSize, " (expected 139)");
 		return false;
 	}
 
-	string farPubKey = nonce.substr(11, size);
+	string nonce;
+	reader.read(nonceSize, nonce);
+	if (String::ICompare(nonce, "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
+		ex.set(Exception::PROTOCOL, "Incorrect nonce : ", nonce);
+		return false;
+	}
+
 	UInt8 endByte = reader.read8();
 	if (endByte != 0x58) {
 		ex.set(Exception::PROTOCOL, "Unexpected end of handshake 2 : ", endByte);
@@ -193,6 +228,7 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 	}
 
 	// Compute keys for encryption/decryption
+	string farPubKey = nonce.substr(11, nonceSize - 11);
 	if (!computeKeys(ex, farPubKey, nonce, _nonce.data(), _nonce.size(), _pDecoder, _pEncoder))
 		return false;
 	
@@ -206,7 +242,7 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 	return true;
 }
 
-void RTMFPConnection::p2pHandshake0(Exception& ex, BinaryReader& reader) {
+void RTMFPConnection::responderHandshake0(Exception& ex, BinaryReader& reader) {
 
 	if (!connected) {
 		ex.set(Exception::PROTOCOL, "Handshake 30 received before connection succeed");
@@ -231,15 +267,18 @@ void RTMFPConnection::p2pHandshake0(Exception& ex, BinaryReader& reader) {
 			ex.set(Exception::PROTOCOL, "A P2P connection already exists on address ", _outAddress.toString(), " (id : ", it->second.peerId, ")");
 			return;
 		}
-		it = _mapPeersByAddress.emplace_hint(it, piecewise_construct, forward_as_tuple(_outAddress), forward_as_tuple(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress));
+		it = _mapPeersByAddress.emplace_hint(it, piecewise_construct, forward_as_tuple(_outAddress), forward_as_tuple(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, _tag));
 
-		it->second.p2pHandshake0(ex, tag, _pubKey, _farId, _outAddress);
+		it->second.responderHandshake0(ex, tag, _farId, _outAddress);
 	}
 }
 
 void RTMFPConnection::manage() {
 	if (!_pMainStream)
 		return;
+
+	// Treat waiting commands
+	createWaitingStreams();
 
 	// Send waiting P2P connections
 	sendP2PConnections();
@@ -248,6 +287,30 @@ void RTMFPConnection::manage() {
 	flushWriters();
 	for (auto& it : _mapPeersByAddress)
 		it.second.flushWriters();
+	for (auto& it : _mapPeersById)
+		it.second.flushWriters();
+}
+
+// TODO: see if we always need to manage a list of commands
+void RTMFPConnection::addCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
+
+	lock_guard<recursive_mutex> lock(_mutexCommands);
+	_waitingCommands.emplace_front(command, streamName, audioReliable, videoReliable);
+	_nbCreateStreams++;
+}
+
+void RTMFPConnection::createWaitingStreams() {
+	lock_guard<recursive_mutex>	lock(_mutexCommands);
+	if (!connected || !_nbCreateStreams)
+		return;
+
+	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
+	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
+	if (pFlow) {
+		INFO("Creating a new stream...")
+		pFlow->createStream();
+		_nbCreateStreams--;
+	}
 }
 
 void RTMFPConnection::sendP2PConnections() {

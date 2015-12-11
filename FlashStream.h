@@ -41,7 +41,7 @@ public:
 	virtual void createStream(FlashWriter& writer);
 
 	// Send the play request to the RTMFP server
-	virtual void play(FlashWriter& writer, const std::string& name);
+	virtual void play(FlashWriter& writer, const std::string& name, bool amf3=false);
 
 	// Send the publish request to the RTMFP server
 	virtual void publish(FlashWriter& writer, const std::string& name);

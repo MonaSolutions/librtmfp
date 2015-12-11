@@ -157,30 +157,33 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 }
 
 void FlashStream::dataHandler(DataReader& data, double lostRate) {
-	/*if(!_pPublication) {
-		ERROR("a data packet has been received on a no publishing stream ",id,", certainly a publication currently closing");
-		return;
-	}
+	
+	AMFReader reader(data.packet);
+	string func, params, value;
+	if (reader.nextType() == AMFReader::STRING) {
+		reader.readString(func);
 
-	// necessary AMF0 here!
-	if (data.packet.available()>3 && *data.packet.current() == AMF_STRING && *(data.packet.current() + 3) == '@' && *(data.packet.current() + 1) == 0) {
-
-		if (data.packet.available()>15 && *(data.packet.current() + 2) == 13 && memcmp(data.packet.current() + 3, EXPAND("@setDataFrame"))==0) {
-			// @setDataFrame
-			data.next();
-			_pPublication->writeProperties(data);
-			return;
+		UInt8 type(AMFReader::END);
+		double number(0);
+		bool first = true, boolean;
+		while ((type = reader.nextType()) != AMFReader::END) {
+			switch (type) {
+				case AMFReader::STRING:
+					reader.readString(value); 
+					String::Append(params, (!first) ? ", " : "", value); break;
+				case AMFReader::NUMBER:
+					reader.readNumber(number);
+					String::Append(params, (!first) ? ", " : "", number); break;
+				case AMFReader::BOOLEAN:
+					reader.readBoolean(boolean);
+					String::Append(params, (!first) ? ", " : "", boolean); break;
+				default:
+					reader.next(); break;
+			}
+			first = false;
 		}
-
-		if (data.packet.available()>17 && *(data.packet.current() + 2) == 15 && memcmp(data.packet.current() + 3, EXPAND("@clearDataFrame"))==0) {
-			// @clearDataFrame
-			_pPublication->clearProperties();
-			return;
-		}
-
+		TRACE("Function ", func, " received with parameters : ", params)
 	}
-
-	_pPublication->pushData(data,peer.ping(),lostRate);*/
 }
 
 void FlashStream::rawHandler(UInt16 type, PacketReader& packet, FlashWriter& writer) {
@@ -227,8 +230,9 @@ void FlashStream::createStream(FlashWriter& writer) {
 	ERROR("createStream request can only be sent by Main stream")
 }
 
-void FlashStream::play(FlashWriter& writer,const string& name) {
-	AMFWriter& amfWriter = writer.writeInvocation("play");
+void FlashStream::play(FlashWriter& writer,const string& name, bool amf3) {
+	AMFWriter& amfWriter = writer.writeInvocation("play", amf3);
+	amfWriter.amf0 = true;
 	amfWriter.writeString(name.c_str(), name.size());
 	writer.flush();
 }

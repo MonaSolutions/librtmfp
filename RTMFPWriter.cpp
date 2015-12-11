@@ -520,7 +520,10 @@ AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* dat
 	}
 	AMFWriter& amf = createMessage().writer();
 	BinaryWriter& binary(amf.packet);
-	binary.write8(type).write32(time);
+	binary.write8(type);
+	if (type == AMF::INVOCATION_AMF3)
+		binary.write8(0);
+	binary.write32(time);
 	if(type==AMF::DATA_AMF3)
 		binary.write8(0);
 	if(data)

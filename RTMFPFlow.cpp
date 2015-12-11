@@ -322,8 +322,8 @@ void RTMFPFlow::createStream() {
 	_pStream->createStream(*_pWriter);
 }
 
-void RTMFPFlow::sendPlay(const string& name) {
-	_pStream->play(*_pWriter, name);
+void RTMFPFlow::sendPlay(const string& name, bool amf3) {
+	_pStream->play(*_pWriter, name, amf3);
 }
 
 void RTMFPFlow::sendPublish(const string& name) {
