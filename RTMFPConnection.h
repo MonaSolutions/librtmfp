@@ -16,14 +16,25 @@ public:
 	// Connect to the specified url, return true if the command succeed
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
 
-	// Connect to a peer of the RTMFP server (Direct P2P)
-	bool connect2Peer(Mona::Exception& ex, const char* peerId, CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false);
+	// Connect to a peer of the RTMFP server (Direct P2P) and start playing streamName
+	bool connect2Peer(Mona::Exception& ex, const char* peerId, const char* streamName);
+
+	// Asynchronous read (buffered)
+	// return false if end of buf has been reached
+	bool read(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+
+	// Write media (netstream must be published)
+	// return false if the client is not ready to publish, otherwise true
+	bool write(const Mona::UInt8* buf, Mona::UInt32 size, int& pos);
 
 	// Called by Invoker every second to manage connection (flush and ping)
 	void manage();
 
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
+		
+	// Return true if the stream exists, otherwise false (only for RTMFP connection)
+	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable);
 
 protected:
 
@@ -32,6 +43,12 @@ protected:
 	
 	// Handle stream creation (only for RTMFP connection)
 	virtual void handleStreamCreated(Mona::UInt16 idStream);
+	
+	// Handle play request (only for P2PConnection)
+	virtual void handlePlay(const std::string& streamName, FlashWriter& writer);
+
+	// Handle a P2P address exchange message (Only for P2PConnection)
+	virtual void handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
 
 	// Handle message (after hanshake0)
 	virtual void handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
@@ -45,7 +62,7 @@ protected:
 private:
 
 	// Send the second handshake message
-	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader, Mona::UInt8 type);
+	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Handle the first P2P responder handshake message (P2P connection initiated by peer)
 	void responderHandshake0(Mona::Exception& ex, Mona::BinaryReader& reader);
@@ -53,14 +70,17 @@ private:
 	// If there is at least one request of command : create the stream
 	void createWaitingStreams();
 
-	// Send waiting P2P connections
-	void											sendP2PConnections();
-	std::deque<std::string>							_waitingPeers;
-	std::recursive_mutex							_mutexPeers;
+	// Send waiting Connections (P2P or normal)
+	void											sendConnections();
+	bool											_waitConnect; // True if we are waiting for a normal connection request to be sent
+	std::deque<std::string>							_waitingPeers; // queue of waiting p2p connection request (initiators)
+	std::recursive_mutex							_mutexConnections; // mutex for waiting connections (normal or p2p)
 
 	// Map of addresses to P2P connections
-	std::map<Mona::SocketAddress, P2PConnection>	_mapPeersByAddress;
-	std::map<std::string, P2PConnection>			_mapPeersById;
+	std::map<Mona::SocketAddress, P2PConnection>	_mapPeersByAddress; // These P2P connections are responders and publishers
+	std::map<std::string, P2PConnection>			_mapPeersById; // These P2P connections are initiators and players
+
+	std::map<std::string, std::pair<bool,bool>>		_mapP2pPublications; // map of p2p stream publication names to their parameters
 
 	std::string										_url; // RTMFP url of the application (base handshake)
 

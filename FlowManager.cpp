@@ -34,7 +34,7 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 };
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-	_nextRTMFPWriterId(0), _firstRead(true), _firstWrite(true), _pLastWriter(NULL), _pInvoker(invoker), _timeReceived(0), _handshakeStep(0),
+_nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0),
 	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _tag(16), _pubKey(0x80), _nonce(0x8B),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
@@ -42,11 +42,8 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 	onStatus = [this](const string& code, const string& description, FlashWriter& writer) {
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
-		if (code == "NetConnection.Connect.Success") {
-			connected = true;
-			_pMainStream->setPort(_hostAddress.port()); // Record port for setPeerInfo request
+		if (code == "NetConnection.Connect.Success")
 			connectSignal.set();
-		}
 		else if (code == "NetStream.Publish.Start")
 			_pPublisher->setWriter(&writer);
 		else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName")
@@ -55,13 +52,21 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 	onStreamCreated = [this](UInt16 idStream) {
 		handleStreamCreated(idStream);
 	};
+	onPlay = [this](const string& streamName, FlashWriter& writer) {
+		handlePlay(streamName, writer);
+	};
 	onMedia = [this](UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
+		if(_firstMedia) {
+			_firstMedia=false;
+			_timeStart=time; // to set to 0 the first packets
+		}
+
 		if (_pOnMedia) // Synchronous read
-			_pOnMedia(time, (const char*)packet.current(), packet.available(), audio);
+			_pOnMedia(time-_timeStart, (const char*)packet.current(), packet.available(), audio);
 		else { // Asynchronous read
 			lock_guard<recursive_mutex> lock(_readMutex);
-			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(), packet.current(), packet.available(), time, audio));
+			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(), packet.current(), packet.available(), time-_timeStart, audio));
 		}
 	};
 	onError = [this](const Exception& ex) {
@@ -92,10 +97,13 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 			_pOnSocketError(ex.error());
 	};
 
+	_pFlowNull.reset(new RTMFPFlow(0,String::Empty,_pMainStream,poolBuffers(), *this));
+
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->OnStatus::subscribe(onStatus);
 	_pMainStream->OnStreamCreated::subscribe(onStreamCreated);
 	_pMainStream->OnMedia::subscribe(onMedia);
+	_pMainStream->OnPlay::subscribe(onPlay);
 }
 
 FlowManager::~FlowManager() {
@@ -121,10 +129,13 @@ FlowManager::~FlowManager() {
 	// delete flowWriters
 	_flowWriters.clear();
 
+	_pFlowNull.reset();
+
 	if (_pMainStream) {
 		_pMainStream->OnStatus::unsubscribe(onStatus);
 		_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
 		_pMainStream->OnMedia::unsubscribe(onMedia);
+		_pMainStream->OnPlay::unsubscribe(onPlay);
 		_pMainStream.reset();
 	}
 }
@@ -134,7 +145,7 @@ void FlowManager::close() {
 	
 	if (connected) {
 		writeMessage(0x4C, 0); // Close message
-		flush(false);
+		flush(false, 0x89);
 		connected = false;
 	}
 
@@ -145,10 +156,6 @@ void FlowManager::close() {
 	}
 
 	_pPublisher.reset();
-}
-
-void FlowManager::handleStreamCreated(UInt16 idStream) {
-	ERROR("Stream creation not possible on this connection")
 }
 
 void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, const SocketAddress&  address) {
@@ -193,7 +200,8 @@ void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, 
 	}
 }
 
-bool FlowManager::read(UInt8* buf, UInt32 size, int& nbRead) {
+bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
+	
 	nbRead = 0;
 	if (_died)
 		return false; // to stop the parent loop
@@ -225,21 +233,6 @@ bool FlowManager::read(UInt8* buf, UInt32 size, int& nbRead) {
 	return true;
 }
 
-bool FlowManager::write(const UInt8* buf, UInt32 size, int& pos) {
-	pos = 0;
-	if (_died) {
-		pos = -1;
-		return false; // to stop the parent loop
-	}
-
-	if (!_pPublisher) {
-		DEBUG("Can't write data because NetStream is not published")
-		return true;
-	}
-
-	return _pPublisher->publish(buf, size, pos);
-}
-
 void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 
 	// Variables for request (0x10 and 0x11)
@@ -259,6 +252,13 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 		PacketReader message(reader.current(), size);
 
 		switch (type) {
+		case 0x0f: // P2P address destinator exchange
+			handleP2PAddressExchange(ex, message);
+			break;
+		case 0xcc:
+			INFO("CC message received (unknown for now)")
+			Logs::Dump(reader.current(), size);
+			break;
 		case 0x0c:
 			ex.set(Exception::PROTOCOL, "Failed on server side");
 			writeMessage(0x0C, 0);
@@ -313,9 +313,9 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 				WARN("RTMFPWriter ", id, " unfound for acknowledgment on connection ");
 			break;
 		}
-				   /// Request
-				   // 0x10 normal request
-				   // 0x11 special request, in repeat case (following stage request)
+		/// Request
+		// 0x10 normal request
+		// 0x11 special request, in repeat case (following stage request)
 		case 0x10: {
 			flags = message.read8();
 			UInt64 idFlow = message.read7BitLongValue();
@@ -360,9 +360,9 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 
 			if (!pFlow) {
 				WARN("RTMFPFlow ", idFlow, " unfound");
-				/*if (_pFlowNull)
-				((UInt64&)_pFlowNull->id) = idFlow;
-				pFlow = _pFlowNull;*/
+				if (_pFlowNull)
+					((UInt64&)_pFlowNull->id) = idFlow;
+				pFlow = _pFlowNull.get();
 			}
 
 		}
@@ -436,12 +436,12 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 	// get flash stream process engine related by signature
 	if (signature.size() > 4 && signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0) { // NetConnection
 		INFO("Creating new Flow (", id, ") for NetConnection")
-			pFlow = new RTMFPFlow(id, signature, poolBuffers(), *this, _pMainStream);
+		pFlow = new RTMFPFlow(id, signature, poolBuffers(), *this, _pMainStream);
 	}
 	else if (signature.size() == 7 && signature.compare(0, 7, "\x00\x54\x43\x04\xFA\x89\x00", 7) == 0) { // Direct P2P Connection
 		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(2000000, pStream); // TODO : convert id from left aligned to right aligned
-		pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
+		_pMainStream->addStream(0, pStream); // TODO : find the correct id for the stream
+		pFlow = new RTMFPFlow(2, signature, pStream, poolBuffers(), *this);
 	}
 	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream
 		shared_ptr<FlashStream> pStream;
@@ -465,8 +465,9 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 
 	}
 	else {
-		ERROR("Unhandled signature type : ", signature, " , cannot create RTMFPFlow")
-			return NULL;
+		string tmp;
+		ERROR("Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow")
+		return NULL;
 	}
 	/*else if(signature.size()>2 && signature.compare(0,3,"\x00\x47\x43",3)==0)  // NetGroup
 	pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);*/
@@ -498,7 +499,7 @@ BinaryWriter& FlowManager::writeMessage(UInt8 type, UInt16 length, RTMFPWriter* 
 	UInt16 size = length + 3; // for type and size
 
 	if (size>availableToWrite()) {
-		flush(false); // send packet (and without time echo)
+		flush(false, 0x89); // send packet (and without time echo)
 
 		if (size > availableToWrite()) {
 			ERROR("RTMFPMessage truncated because exceeds maximum UDP packet size on connection");
@@ -519,11 +520,11 @@ UInt8* FlowManager::packet() {
 	return _pSender->packet.data();
 }
 
-void FlowManager::flush(UInt8 marker, UInt32 size, bool echoTime) {
+void FlowManager::flush(UInt8 marker, UInt32 size) {
 	if (!_pSender)
 		return;
 	_pSender->packet.clear(size);
-	flush(echoTime, marker);
+	flush(false, marker);
 }
 
 void FlowManager::flush(bool echoTime, UInt8 marker) {
@@ -608,7 +609,7 @@ void FlowManager::sendHandshake0(HandshakeType type, const string& epd) {
 	writer.write(_tag);
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x30).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
-	flush(0x0B, writer.size(), false);
+	flush(0x0B, writer.size());
 	_handshakeStep = 1; // TODO : see if we need to differentiate handshake steps for each type (basic and p2p)
 }
 
@@ -617,7 +618,7 @@ void FlowManager::flushWriters() {
 	if (_lastPing.isElapsed(25000) && connected) {
 		_outAddress.set(_hostAddress); // To avoid sending to the wrong address
 		writeMessage(0x01, 0); // TODO: send only if needed
-		flush(false);
+		flush(false, 0x89);
 		_lastPing.update();
 	}
 

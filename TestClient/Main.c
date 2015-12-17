@@ -36,7 +36,8 @@ static int	IsInterrupted(void * arg) {
 static enum TestOption {
 	SYNC_READ,
 	ASYNC_READ,
-	WRITE
+	WRITE,
+	P2P_WRITE
 } _option = 0;
 
 // Windows CTrl+C handler
@@ -100,7 +101,7 @@ void onManage() {
 			fwrite(buf, sizeof(char), read, pFile);
 	}
 	// Write
-	else if (_option == WRITE && !endOfWrite) {
+	else if ((_option == WRITE || _option == P2P_WRITE) && !endOfWrite) {
 
 		// First we read the file
 		if (cursor != 0) {
@@ -144,6 +145,8 @@ int main(int argc,char* argv[]) {
 			_option = ASYNC_READ;
 		else if (stricmp(argv[i], "--write")==0)
 			_option = WRITE;
+		else if (stricmp(argv[i], "--p2pWrite")==0)
+			_option = P2P_WRITE;
 		else if (stricmp(argv[i], "--audioUnbuffered") == 0) // for publish mode
 			audioReliable = 0;
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
@@ -172,18 +175,20 @@ int main(int argc,char* argv[]) {
 		
 	if (context) {
 		if (peerId != NULL)
-			RTMFP_Connect2Peer(context, peerId, _option != WRITE, publication, audioReliable, videoReliable);
+			RTMFP_Connect2Peer(context, peerId, publication);
 		else if (_option == SYNC_READ || _option == ASYNC_READ)
 			RTMFP_Play(context, publication);
 		else if (_option == WRITE)
 			RTMFP_Publish(context, publication, audioReliable, videoReliable);
+		else if(_option == P2P_WRITE)
+			RTMFP_PublishP2P(context, publication, audioReliable, videoReliable);
 
 #if defined(WIN32)
 		errno_t err;
-		if ((err = fopen_s(&pFile, "out.flv", (_option == WRITE) ? "rb" : "wb+")) != 0)
+		if ((err = fopen_s(&pFile, "out.flv", (_option == WRITE || _option == P2P_WRITE) ? "rb" : "wb+")) != 0)
 			printf("Unable to open file out.flv : %d\n", err);
 #else
-		if ((pFile = fopen("out.flv", (_option == WRITE) ? "rb" : "wb+")) == NULL)
+		if ((pFile = fopen("out.flv", (_option == WRITE || _option == P2P_WRITE) ? "rb" : "wb+")) == NULL)
 			printf("Unable to open file out.flv\n");
 #endif
 		else {

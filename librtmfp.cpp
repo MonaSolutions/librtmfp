@@ -67,12 +67,12 @@ unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStat
 	return index;
 }
 
-void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, unsigned short isPlay, const char* streamName, unsigned short audioReliable, unsigned short videoReliable) {
+void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName) {
 
 	Exception ex;
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
-	if (pConn && !pConn->connect2Peer(ex, peerId, isPlay? FlowManager::NETSTREAM_PLAY : FlowManager::NETSTREAM_PUBLISH, streamName, audioReliable>0, videoReliable>0))
+	if (pConn && !pConn->connect2Peer(ex, peerId, streamName))
 		ERROR("Unable to establish the P2P Connection : ", ex.error())
 }
 
@@ -94,6 +94,18 @@ int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned sh
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if(pConn) {
 		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH, streamName, audioReliable>0, videoReliable>0);
+		return 1;
+	}
+
+	return 0;
+}
+
+int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable) {
+
+	shared_ptr<RTMFPConnection> pConn;
+	GlobalInvoker->getConnection(RTMFPcontext,pConn);
+	if(pConn) {
+		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, audioReliable>0, videoReliable>0);
 		return 1;
 	}
 

@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
       <Configuration>Debug</Configuration>
@@ -10,21 +10,24 @@
       <Platform>Win32</Platform>
     </ProjectConfiguration>
   </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="Main.c" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}</ProjectGuid>
-    <RootNamespace>librtmfp</RootNamespace>
+    <ProjectGuid>{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}</ProjectGuid>
+    <RootNamespace>TestClient</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
-    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v120_xp</PlatformToolset>
+    <PlatformToolset>v140_xp</PlatformToolset>
     <CharacterSet>NotSet</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v120</PlatformToolset>
+    <PlatformToolset>v140</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>MultiByte</CharacterSet>
   </PropertyGroup>
@@ -39,27 +42,32 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <OutDir>$(ProjectDir)lib\</OutDir>
-    <IntDir>tmp/$(Configuration)\</IntDir>
-    <TargetName>$(ProjectName)d</TargetName>
+    <OutDir>$(ProjectDir)$(Configuration)\</OutDir>
+    <IntDir>tmp\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>$(ProjectDir)$(Configuration)\</OutDir>
+    <IntDir>tmp\$(Configuration)\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
-      <AdditionalIncludeDirectories>../MonaServer/External/include;../MonaServer/MonaBase/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <AdditionalIncludeDirectories>../../MonaServer/External/include;../../MonaServer/MonaBase/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <PreprocessorDefinitions>WIN32;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <StringPooling>true</StringPooling>
       <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <PrecompiledHeader />
+      <PrecompiledHeaderFile />
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>MonaBased.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>../MonaServer/MonaBase/lib/</AdditionalLibraryDirectories>
+      <AdditionalDependencies>librtmfpd.lib;MonaBased.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>../../MonaServer/External/lib;../lib/;../../MonaServer/MonaBase/lib</AdditionalLibraryDirectories>
+      <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
+      <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -76,51 +84,6 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
-  <ItemGroup>
-    <ClInclude Include="AMF.h" />
-    <ClInclude Include="AMFReader.h" />
-    <ClInclude Include="AMFWriter.h" />
-    <ClInclude Include="BandWriter.h" />
-    <ClInclude Include="DataReader.h" />
-    <ClInclude Include="DataWriter.h" />
-    <ClInclude Include="FlashConnection.h" />
-    <ClInclude Include="FlashStream.h" />
-    <ClInclude Include="FlashWriter.h" />
-    <ClInclude Include="FlowManager.h" />
-    <ClInclude Include="Invoker.h" />
-    <ClInclude Include="librtmfp.h" />
-    <ClInclude Include="P2PConnection.h" />
-    <ClInclude Include="ParameterWriter.h" />
-    <ClInclude Include="Publisher.h" />
-    <ClInclude Include="ReferableReader.h" />
-    <ClInclude Include="RTMFP.h" />
-    <ClInclude Include="RTMFPConnection.h" />
-    <ClInclude Include="RTMFPFlow.h" />
-    <ClInclude Include="RTMFPLogger.h" />
-    <ClInclude Include="RTMFPMessage.h" />
-    <ClInclude Include="RTMFPSender.h" />
-    <ClInclude Include="RTMFPWriter.h" />
-    <ClInclude Include="StringWriter.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="AMFReader.cpp" />
-    <ClCompile Include="AMFWriter.cpp" />
-    <ClCompile Include="DataReader.cpp" />
-    <ClCompile Include="FlashConnection.cpp" />
-    <ClCompile Include="FlashStream.cpp" />
-    <ClCompile Include="FlashWriter.cpp" />
-    <ClCompile Include="FlowManager.cpp" />
-    <ClCompile Include="Invoker.cpp" />
-    <ClCompile Include="librtmfp.cpp" />
-    <ClCompile Include="P2PConnection.cpp" />
-    <ClCompile Include="Publisher.cpp" />
-    <ClCompile Include="ReferableReader.cpp" />
-    <ClCompile Include="RTMFP.cpp" />
-    <ClCompile Include="RTMFPConnection.cpp" />
-    <ClCompile Include="RTMFPFlow.cpp" />
-    <ClCompile Include="RTMFPSender.cpp" />
-    <ClCompile Include="RTMFPWriter.cpp" />
-  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

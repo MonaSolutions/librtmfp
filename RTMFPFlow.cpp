@@ -58,10 +58,10 @@ RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,/*Peer& peer,*/const Pool
 
 	RTMFPWriter* pWriter = new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING,signature, band, _pWriter);
 
-	/*if (!_pStream) {
+	if (!_pStream) {
 		pWriter->open(); // FlowNull, must be opened
 		return;
-	}*/
+	}
 
 	(bool&)pWriter->critical = _pStream.use_count()<=2;
 	((UInt64&)pWriter->flowId) = id;
@@ -315,17 +315,21 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 }
 
 void RTMFPFlow::sendConnect(const string& url, UInt16 port) {
-	_pStream->connect(*_pWriter, url, port);
+	if(_pStream)
+		_pStream->connect(*_pWriter, url, port);
 }
 
 void RTMFPFlow::createStream() {
-	_pStream->createStream(*_pWriter);
+	if(_pStream)
+		_pStream->createStream(*_pWriter);
 }
 
 void RTMFPFlow::sendPlay(const string& name, bool amf3) {
-	_pStream->play(*_pWriter, name, amf3);
+	if(_pStream)
+		_pStream->play(*_pWriter, name, amf3);
 }
 
 void RTMFPFlow::sendPublish(const string& name) {
-	_pStream->publish(*_pWriter, name);
+	if(_pStream)
+		_pStream->publish(*_pWriter, name);
 }

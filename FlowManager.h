@@ -29,21 +29,18 @@ public:
 
 	enum CommandType {
 		NETSTREAM_PLAY = 1,
-		NETSTREAM_PUBLISH
+		NETSTREAM_PUBLISH,
+		NETSTREAM_PUBLISH_P2P
 	};
 
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
 
-	// Asynchronous read (buffered)
-	// return false if end of buf has been reached
-	bool read(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+	// Return true if the stream exists, otherwise false (only for RTMFP connection)
+	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable)=0;
 
-	// Write media (netstream must be published)
-	// return false if the client is not ready to publish, otherwise true
-	bool write(const Mona::UInt8* buf, Mona::UInt32 size, int& pos);
-
-	bool	computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
+	// Compute keys and init encoder and decoder
+	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
 
 	virtual Mona::UDPSocket&				socket() { return *_pSocket; }
 
@@ -58,7 +55,7 @@ public:
 
 	virtual bool							canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
 
-	virtual void							flush() { flush(true); }
+	virtual void							flush() { flush(connected, connected? 0x89 : 0x0B); }
 
 	// Return the size available in the current sender (or max size if there is no current sender)
 	virtual Mona::UInt32					availableToWrite() { return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); }
@@ -67,11 +64,20 @@ public:
 
 protected:
 
+	// Read data asynchronously (TODO: add possibility to specify the stream name)
+	bool						readAsync(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+
 	// Analyze packets received from the server (must be connected)
 	void						receive(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Handle stream creation (only for RTMFP connection)
-	virtual void				handleStreamCreated(Mona::UInt16 idStream);
+	virtual void				handleStreamCreated(Mona::UInt16 idStream)=0;
+
+	// Handle play request (only for P2PConnection)
+	virtual void				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
+
+	// Handle a P2P address exchange message (Only for P2PConnection)
+	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader)=0;
 
 	// Handle message (after hanshake0)
 	virtual void				handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
@@ -86,14 +92,14 @@ protected:
 	Mona::UInt8*				packet();
 
 	// Clear the packet and flush the connection
-	void						flush(Mona::UInt8 marker, Mona::UInt32 size, bool echoTime);
+	void						flush(Mona::UInt8 marker, Mona::UInt32 size);
 
 	// Flush the connection
 	// marker values can be :
 	// - 0B for handshake
 	// - 09 for raw request
 	// - 89 for AMF request
-	virtual void				flush(bool echoTime, Mona::UInt8 marker = 0x89);
+	virtual void				flush(bool echoTime, Mona::UInt8 marker);
 
 	// Manage handshake messages (marker 0x0B)
 	virtual void				manageHandshake(Mona::Exception& ex, Mona::BinaryReader& reader) = 0;
@@ -142,6 +148,7 @@ protected:
 	FlashConnection::OnStatus::Type						onStatus; // NetConnection or NetStream status event
 	FlashConnection::OnStreamCreated::Type				onStreamCreated; // Received when stream has been created and is waiting for a command
 	FlashConnection::OnMedia::Type						onMedia; // Received when we receive media (audio/video)
+	FlashConnection::OnPlay::Type						onPlay; // Received when we receive media (audio/video)
 	Mona::UDPSocket::OnError::Type						onError; // TODO: delete this if not needed
 	Mona::UDPSocket::OnPacket::Type						onPacket; // Main input event, received on each raw packet
 
@@ -153,6 +160,7 @@ protected:
 	std::map<Mona::UInt16, RTMFPFlow*>						_waitingFlows; // Map of id streams to new RTMFP flows (before knowing the flow id)
 	RTMFPWriter*											_pLastWriter; // Write pointer used to check if it is possible to write
 	Invoker*												_pInvoker;
+	std::unique_ptr<RTMFPFlow>								_pFlowNull; // Null flow for some messages
 
 	std::unique_ptr<Mona::UDPSocket>						_pSocket; // Sending socket established with server
 	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object
@@ -169,6 +177,10 @@ protected:
 	std::recursive_mutex									_readMutex;
 	bool													_firstRead;
 	static const char										_FlvHeader[];
+
+	// Read
+	bool													_firstMedia;
+	Mona::UInt32											_timeStart;
 
 	// Write members
 	bool													_firstWrite; // True if the input file has already been read

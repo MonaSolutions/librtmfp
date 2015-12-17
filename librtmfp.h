@@ -8,9 +8,8 @@ extern "C" {
 unsigned int RTMFP_Connect(const char* url, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
 				void (* onMedia)(unsigned int, const char*, unsigned int,int), int blocking);
 
-// Connect to a peer via RTMFP P2P Connection (must be connected) + play/publish command
-// isPlay : True if it is a play command, otherwise it is a publish command
-void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, unsigned short isPlay, const char* streamName, unsigned short audioReliable, unsigned short videoReliable);
+// Connect to a peer via RTMFP P2P Connection (must be connected) and start playing streamName
+void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
 
 // RTMFP NetStream Play function
 // return : 1 if the request succeed, 0 otherwise
@@ -19,6 +18,10 @@ int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 // RTMFP NetStream Publish function
 // return : 1 if the request succeed, 0 otherwise
 int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable);
+
+// RTMFP P2P NetStream Publish function (equivalent of NetStream.DIRECT_CONNECTIONS)
+// return : 1 if the request succeed, 0 otherwise
+int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable);
 
 // Close the RTMFP connection
 void RTMFP_Close(unsigned int RTMFPcontext);

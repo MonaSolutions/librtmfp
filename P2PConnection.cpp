@@ -1,25 +1,27 @@
 #include "P2PConnection.h"
 #include "Invoker.h"
 #include "RTMFPFlow.h"
+#include "Mona/Logs.h"
+#include <set>
 
 using namespace Mona;
 using namespace std;
 
-Mona::UInt32 P2PConnection::P2PSessionCounter = 0;
+UInt32 P2PConnection::P2PSessionCounter = 0;
 
 P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, const Buffer& tag) :
-	peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), _command(NETSTREAM_PLAY), _audioReliable(false), _videoReliable(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_hostAddress.set(hostAddress);
 
-	Mona::BinaryWriter writer(_tag.data(), _tag.size());
+	BinaryWriter writer(_tag.data(), _tag.size());
 	writer.write(tag.data(), tag.size()); // copy parent tag
 
-	Mona::BinaryWriter writer2(_pubKey.data(), _pubKey.size());
+	BinaryWriter writer2(_pubKey.data(), _pubKey.size());
 	writer2.write(pubKey.data(), pubKey.size()); // copy parent public key
 }
 
-bool P2PConnection::connect(Mona::Exception & ex) {
+bool P2PConnection::connect(Exception & ex) {
 	_outAddress = _hostAddress;
 
 	_pSocket.reset(new UDPSocket(_pInvoker->sockets, true));
@@ -30,24 +32,59 @@ bool P2PConnection::connect(Mona::Exception & ex) {
 	return true;
 }
 
+bool P2PConnection::bind(Exception& ex, const SocketAddress& address) {
+	//_outAddress = address;
+
+	_pSocket.reset(new UDPSocket(_pInvoker->sockets, true));
+	_pSocket->OnError::subscribe(onError);
+	_pSocket->OnPacket::subscribe(onPacket);
+	_pSocket->bind(ex, address);
+	return !ex;
+}
+
 void P2PConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 	UInt8 type = reader.read8();
 	UInt16 length = reader.read16();
 
 	switch (type) {
+	case 0x30:
+		responderHandshake0(ex, reader, 0, _outAddress); break;
+		break;
 	case 0x38:
 		responderHandshake1(ex, reader); break;
 	case 0x70:
-		initiatorHandshake1(ex, reader); break;
+		initiatorHandshake70(ex, reader); break;
+	case 0x71:
+		initiatorHandshake71(ex, reader); break;
 	case 0x78:
 		initiatorHandshake2(ex, reader); break;
 	default:
-		ex.set(Exception::PROTOCOL, "Unexpected handshake type : ", type);
+		ex.set(Exception::PROTOCOL, "Unexpected p2p handshake type : ", type);
 		break;
 	}
 }
 
-void P2PConnection::responderHandshake0(Exception& ex, const std::string& tag, UInt32 farId, const SocketAddress& address) {
+void P2PConnection::responderHandshake0(Exception& ex, BinaryReader& reader, UInt32 farId, const SocketAddress& address) {
+	UInt8 peerIdSize = reader.read8();
+	if(peerIdSize != 0x22) {
+		ex.set(Exception::PROTOCOL, "Unexpected peer id size : ", peerIdSize, " (expected 34)");
+		return;
+	}
+	if ((peerIdSize = reader.read8()) != 0x21) {
+		ex.set(Exception::PROTOCOL, "Unexpected peer id size : ", peerIdSize, " (expected 33)");
+		return;
+	}
+	if(reader.read8() != 0x0F) {
+		ex.set(Exception::PROTOCOL, "Unexpected marker : ", *reader.current(), " (expected 0x0F)");
+		return;
+	}
+	
+	string peerId, tag;
+	reader.read(0x20, peerId);
+	reader.read(16, tag);
+	INFO("P2P Connection request from peer ", Util::FormatHex((const UInt8*)peerId.data(), peerId.size(), LOG_BUFFER))
+
+	// Write Response
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
 	writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
 
@@ -69,13 +106,14 @@ void P2PConnection::responderHandshake0(Exception& ex, const std::string& tag, U
 	_outAddress = address;
 	_farId = farId;
 
-	FlowManager::flush(0x0B, writer.size(), false);
+	FlowManager::flush(0x0B, writer.size());
 	_handshakeStep = 1;
 }
 
 void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 
-	if (_handshakeStep != 1) {
+	if (_handshakeStep > 2) {
+	//if (_handshakeStep != 1) {
 		ex.set(Exception::PROTOCOL, "Unexpected handshake type 38 (step : ", _handshakeStep, ")");
 		return;
 	}
@@ -137,11 +175,11 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 		return;
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x78).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
-	FlowManager::flush(0x0B, writer.size(), false);
+	FlowManager::flush(0x0B, writer.size());
 	_handshakeStep = 2;
 }
 
-void P2PConnection::initiatorHandshake1(Exception& ex, BinaryReader& reader) {
+void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader) {
 
 	if (_handshakeStep != 1) {
 		ex.set(Exception::PROTOCOL, "Unexpected handshake type 70 (step : ", _handshakeStep, ")");
@@ -156,7 +194,7 @@ void P2PConnection::initiatorHandshake1(Exception& ex, BinaryReader& reader) {
 		return;
 	}
 	reader.read(16, tagReceived);
-	if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
+	if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) { // compare to parent tag
 		ex.set(Exception::PROTOCOL, "Unexpected tag received : ", tagReceived);
 		return;
 	}
@@ -201,9 +239,49 @@ void P2PConnection::initiatorHandshake1(Exception& ex, BinaryReader& reader) {
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	if (!ex) {
-		FlowManager::flush(0x0B, writer.size(), false);
+		FlowManager::flush(0x0B, writer.size());
 		_handshakeStep = 2;
 	}
+}
+
+void P2PConnection::initiatorHandshake71(Exception& ex, BinaryReader& reader) {
+
+	if (_handshakeStep != 1) {
+		ex.set(Exception::PROTOCOL, "Unexpected handshake type 71 (step : ", _handshakeStep, ")");
+		return;
+	}
+
+	// Read & check handshake0's response
+	UInt8 tagSize = reader.read8();
+	if (tagSize != 16) {
+		ex.set(Exception::PROTOCOL, "Unexpected tag size : ", tagSize);
+		return;
+	}
+	string tagReceived;
+	reader.read(16, tagReceived);
+	if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {  // compare to parent tag
+		ex.set(Exception::PROTOCOL, "Unexpected tag received : ", tagReceived);
+		return;
+	}
+
+	SocketAddress address;
+	set<SocketAddress>		publicAddresses;
+	set<SocketAddress>		localAddresses;
+	set<SocketAddress>		redirectionAddresses;
+	while (reader.available() && *reader.current() != 0xFF) {
+		UInt8 addressType = reader.read8();
+		RTMFP::ReadAddress(reader, address, addressType);
+		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
+		if ((addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC)
+			publicAddresses.emplace(address);
+		else if ((addressType & 0x0F) == RTMFP::ADDRESS_LOCAL)
+			localAddresses.emplace(address);
+		else if ((addressType & 0x0F) == RTMFP::ADDRESS_REDIRECTION)
+			redirectionAddresses.emplace(address);
+		else
+			ERROR("Unexpected address type : ", addressType)
+	}
+	//TODO: implement the redirection
 }
 
 bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
@@ -237,17 +315,20 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, (const UInt8*)responderNonce.data(), nonceSize, _pDecoder, _pEncoder, false))
 		return false;
 
+	connected = true;
+
+	// Create 1st NetStream and flow
+	shared_ptr<FlashStream> pStream;
+	_pMainStream->addStream(1, pStream);
 	string signature("\x00\x54\x43\x04\xFA\x89\x00", 7);
 	RTMFPFlow* pFlow = createFlow(2, signature);
-	if (_command == NETSTREAM_PLAY)
-		pFlow->sendPlay(_streamName, true);
-	else
-		pFlow->sendPublish(_streamName); // TODO : implement the publisher
-	connected = true; // allow sending waiting command
+
+	// Start playing Play
+	pFlow->sendPlay(_streamName, true);
 	return true;
 }
 
-void P2PConnection::flush(bool echoTime, Mona::UInt8 marker) {
+void P2PConnection::flush(bool echoTime, UInt8 marker) {
 	if (!_pSocket) // responder
 		FlowManager::flush(echoTime, (marker==0x0B)? 0x0B : marker+1);
 	else
@@ -256,8 +337,62 @@ void P2PConnection::flush(bool echoTime, Mona::UInt8 marker) {
 
 void P2PConnection::addCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
 
-	_command = command;
 	_streamName = streamName;
-	_audioReliable = audioReliable;
-	_videoReliable = videoReliable;
+}
+
+void P2PConnection::handleStreamCreated(UInt16 idStream) {
+	ERROR("Stream creation not possible on a P2P Connection") // implementation error
+}
+
+bool P2PConnection::getPublishStream(const string& streamName,bool& audioReliable,bool& videoReliable) {
+	ERROR("Cannot get publication stream on a P2P Connection") // implementation error
+	return false;
+}
+
+// Only in responder mode
+void P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
+	INFO("The peer ",peerId," is trying to play '", streamName,"'...")
+
+	// TODO: find a better place to determine that the connection is ON in responder mode
+	connected = true;
+
+	bool audioReliable, videoReliable;
+	if(!_parent.getPublishStream(streamName,audioReliable,videoReliable)) {
+		// TODO : implement NetStream.Play.BadName
+		return;
+	}
+
+	_streamName = streamName;
+
+	// Create the publisher
+	_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, audioReliable, videoReliable));
+	_pPublisher->setWriter(&writer);
+
+	// Send the response
+	writer.writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + streamName); // for entiere playlist
+	writer.writeAMFStatus("NetStream.Play.Start", "Started playing " + streamName); // for item
+	AMFWriter& amf(writer.writeAMFData("|RtmpSampleAccess"));
+
+	// TODO: determinate if video and audio are available
+	amf.writeBoolean(true); // audioSampleAccess
+	amf.writeBoolean(true); // videoSampleAccess
+
+	// TODO: flush?
+}
+
+void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
+	/*if(reader.read24() != 0x22210F) {
+		ERROR("Unexpected P2P address exchange first 3 bytes")
+		return;
+	}
+
+	string tmp;
+	//reader.read(0x20, peerId);
+	Util::FormatHex((const UInt8*)peerId.data(), peerId.size(), tmp);
+	SocketAddress address;
+	RTMFP::ReadAddress(reader, address, reader.read8());
+	
+	string tag;
+	reader.read(16, tag);
+	INFO("P2P address exchange from peer ", peerId, " with address : ", address.toString())*/
 }

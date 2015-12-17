@@ -9,6 +9,7 @@
 namespace FlashEvents {
 	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description, FlashWriter& writer)> {};
 	struct OnMedia: Mona::Event<void(Mona::UInt32 time,Mona::PacketReader& packet,double lostRate,bool audio)> {};
+	struct OnPlay: Mona::Event<void(const std::string& streamName, FlashWriter& writer)> {};
 };
 
 /**************************************************************
@@ -16,7 +17,8 @@ FlashStream is linked to an as3 NetStream
 */
 class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnStatus,
-	public FlashEvents::OnMedia {
+	public FlashEvents::OnMedia,
+	public FlashEvents::OnPlay {
 public:
 
 	FlashStream(Mona::UInt16 id);
@@ -56,4 +58,6 @@ private:
 
 	Mona::UInt32	_bufferTime;
 	std::string		_streamName;
+
+	//Mona::UInt32	_timeFrequency; // to retrieve time
 };

@@ -8,7 +8,7 @@
 using namespace std;
 using namespace Mona;
 
-FlashStream::FlashStream(UInt16 id/*, Invoker& invoker, Peer& peer*/) : id(id), /*invoker(invoker), peer(peer), _pPublication(NULL), _pListener(NULL), */_bufferTime(0) {
+FlashStream::FlashStream(UInt16 id/*, Invoker& invoker, Peer& peer*/) : id(id), /*invoker(invoker), peer(peer), _pPublication(NULL), _pListener(NULL), */ _bufferTime(0) {
 	DEBUG("FlashStream ",id," created")
 }
 
@@ -127,29 +127,12 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 
 	/*** Publisher part ***/
 	if (name == "play") {
-		disengage(&writer);
+		//disengage(&writer);
 
 		string publication;
 		message.readString(publication);
 		
-		/*Exception ex;
-		_pListener = invoker.subscribe(ex, peer, publication, writer); // ex already log displayed
-		if (!_pListener) {
-			writer.writeAMFStatus("NetStream.Play.Failed", ex.error());
-			return;
-		}
-
-		OnStart::raise(id, writer); // stream begin*/
-		writer.writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + publication); // for entiere playlist
-		writer.writeAMFStatus("NetStream.Play.Start", "Started playing " + publication); // for item
-		AMFWriter& amf(writer.writeAMFData("|RtmpSampleAccess"));
-
-		// TODO: determinate if video and audio are available
-		amf.writeBoolean(true); // audioSampleAccess
-		amf.writeBoolean(true); // videoSampleAccess
-
-		/*if (_bufferTime > 0)
-			_pListener->setNumber("bufferTime", _bufferTime);*/
+		OnPlay::raise(publication, writer);
 		return;
 	}
 
@@ -197,8 +180,8 @@ void FlashStream::rawHandler(UInt16 type, PacketReader& packet, FlashWriter& wri
 		INFO("Stream stop message on NetStream ",id," (value : ",idReceived,")")
 		return;
 	}
-	if(type==0x0022) { // TODO Here we receive RTMFP flow sync signal, useless to support it!
-		//TRACE("Sync ",id," : ",data.read32(),"/",data.read32());
+	if(type==0x0022) { // TODO Here we receive RTMFP flow sync signal, useless to support it?
+		INFO("Sync ",id," : ",packet.read32(),"/",packet.read32())
 		return;
 	}
 	ERROR("Raw message ",Format<UInt16>("%.4x",type)," unknown on stream ",id);
