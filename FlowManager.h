@@ -42,7 +42,7 @@ public:
 	// Compute keys and init encoder and decoder
 	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
 
-	virtual Mona::UDPSocket&				socket() { return *_pSocket; }
+	virtual Mona::UDPSocket&				socket() = 0;
 
 	/******* Internal functions for writers *******/
 	virtual Mona::BinaryWriter&				writeMessage(Mona::UInt8 type, Mona::UInt16 length, RTMFPWriter* pWriter = NULL);
@@ -76,7 +76,7 @@ protected:
 	// Handle play request (only for P2PConnection)
 	virtual void				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
 
-	// Handle a P2P address exchange message (Only for P2PConnection)
+	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader)=0;
 
 	// Handle message (after hanshake0)
@@ -109,8 +109,9 @@ protected:
 		P2P_HANDSHAKE = 0x0F
 	};
 
-	// Send the first handshake message (with rtmfp url + tag)
-	void sendHandshake0(HandshakeType type, const std::string& epd);
+	// Send the first handshake message (with rtmfp url/peerId + tag)
+	// TODO: see if we can move this in RTMFPConnection
+	void sendHandshake0(HandshakeType type, const std::string& epd, const std::string& tag);
 
 	virtual RTMFPEngine*	getDecoder(Mona::UInt32 idStream, const Mona::SocketAddress& address) { return (idStream == 0) ? _pDefaultDecoder.get() : _pDecoder.get(); }
 
@@ -135,7 +136,7 @@ protected:
 
 	Mona::DiffieHellman					_diffieHellman;
 	Mona::Buffer						_sharedSecret; 
-	Mona::Buffer						_tag;
+	std::string							_tag;
 	Mona::Buffer						_pubKey;
 	Mona::Buffer						_nonce;
 
@@ -161,8 +162,6 @@ protected:
 	RTMFPWriter*											_pLastWriter; // Write pointer used to check if it is possible to write
 	Invoker*												_pInvoker;
 	std::unique_ptr<RTMFPFlow>								_pFlowNull; // Null flow for some messages
-
-	std::unique_ptr<Mona::UDPSocket>						_pSocket; // Sending socket established with server
 	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object
 	Mona::PoolThread*										_pThread; // Thread used to send last message
 

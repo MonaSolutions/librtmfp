@@ -35,7 +35,7 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0),
-	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _tag(16), _pubKey(0x80), _nonce(0x8B),
+	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _pubKey(0x80), _nonce(0x8B),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
 	_pDefaultDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)) {
@@ -149,12 +149,6 @@ void FlowManager::close() {
 		connected = false;
 	}
 
-	if (_pSocket) {
-		_pSocket->OnPacket::unsubscribe(onPacket);
-		_pSocket->OnError::unsubscribe(onError);
-		_pSocket->close();
-	}
-
 	_pPublisher.reset();
 }
 
@@ -257,7 +251,9 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			break;
 		case 0xcc:
 			INFO("CC message received (unknown for now)")
+#if defined(_DEBUG)
 			Logs::Dump(reader.current(), size);
+#endif
 			break;
 		case 0x0c:
 			ex.set(Exception::PROTOCOL, "Failed on server side");
@@ -438,9 +434,11 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		INFO("Creating new Flow (", id, ") for NetConnection")
 		pFlow = new RTMFPFlow(id, signature, poolBuffers(), *this, _pMainStream);
 	}
-	else if (signature.size() == 7 && signature.compare(0, 7, "\x00\x54\x43\x04\xFA\x89\x00", 7) == 0) { // Direct P2P Connection
+	else if (signature.size()>6 && signature.compare(0, 6, "\x00\x54\x43\x04\xFA\x89", 6) == 0) { // Direct P2P Connection
 		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(0, pStream); // TODO : find the correct id for the stream
+		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
+		INFO("Creating new Flow (2) for P2P NetStream ", idSession)
+		_pMainStream->addStream(idSession, pStream);
 		pFlow = new RTMFPFlow(2, signature, pStream, poolBuffers(), *this);
 	}
 	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream
@@ -596,7 +594,7 @@ bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const stri
 	return true;
 }
 
-void FlowManager::sendHandshake0(HandshakeType type, const string& epd) {
+void FlowManager::sendHandshake0(HandshakeType type, const string& epd, const string& tag) {
 	// (First packets are encoded with default key)
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
 	writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
@@ -605,8 +603,7 @@ void FlowManager::sendHandshake0(HandshakeType type, const string& epd) {
 	writer.write8(type); // handshake type
 	writer.write(epd);
 
-	Util::Random(_tag.data(), 16); // random serie of 16 bytes
-	writer.write(_tag);
+	writer.write(tag);
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x30).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	flush(0x0B, writer.size());

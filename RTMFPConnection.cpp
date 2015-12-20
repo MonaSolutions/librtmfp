@@ -11,10 +11,19 @@ using namespace std;
 
 RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent): 
 	_nbCreateStreams(0), _waitConnect(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+
+	_tag.resize(16);
+	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
 }
 
 RTMFPConnection::~RTMFPConnection() {
 	close();
+
+	if (_pSocket) {
+		_pSocket->OnPacket::unsubscribe(onPacket);
+		_pSocket->OnError::unsubscribe(onError);
+		_pSocket->close();
+	}
 }
 
 bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) {
@@ -35,12 +44,6 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	_pSocket->OnError::subscribe(onError);
 	_pSocket->OnPacket::subscribe(onPacket);
 
-	INFO("Connecting to ", _hostAddress.host().toString(), "...")
-	if (!_pSocket->bind(ex, SocketAddress::Wildcard())) // TODO: deal with IPV6 too
-		return false;
-
-	_pMainStream->setPort(_pSocket->address().port()); // Record port for setPeerInfo request
-
 	{
 		// Wait the next handle before sending first handshake request
 		lock_guard<recursive_mutex> lock(_mutexConnections);
@@ -52,17 +55,19 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 bool RTMFPConnection::connect2Peer(Exception& ex, const char* peerId, const char* streamName) {
 
 	INFO("Connecting to peer ", peerId, "...")
+	
+	lock_guard<recursive_mutex> lock(_mutexConnections);
 
-	auto it = _mapPeersById.emplace(piecewise_construct, forward_as_tuple(peerId),forward_as_tuple(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, _tag)).first;
-	if (!it->second.connect(ex))
-		return false;
-
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, false));
+	
 	// Add the command to be send when connection is established
-	it->second.addCommand(NETSTREAM_PLAY, streamName);
+	pPeerConnection->addCommand(NETSTREAM_PLAY, streamName);
+	string tag = pPeerConnection->getTag();
+
+	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;
 	
 	// Add the connection request to the queue
-	lock_guard<recursive_mutex> lock(_mutexConnections);
-	_waitingPeers.push_back(peerId);
+	_waitingPeers.push_back(tag);
 	return true;
 }
 
@@ -72,8 +77,8 @@ bool RTMFPConnection::read(UInt8* buf, UInt32 size, int& nbRead) {
 	if (!(res = readAsync(buf, size, nbRead))  || nbRead>0)
 		return res; // quit if treated
 
-	for (auto &it : _mapPeersById) {
-		if (!(res = it.second.readAsync(buf, size, nbRead)) || nbRead>0)
+	for (auto &it : _mapPeersByAddress) {
+		if (!(res = it.second->readAsync(buf, size, nbRead)) || nbRead>0)
 			return res; // quit if treated
 	}
 
@@ -89,8 +94,8 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 
 	if(!_pPublisher) {
 		for (auto &it : _mapPeersByAddress) {
-			if (it.second._pPublisher)
-				return it.second._pPublisher->publish(buf, size, pos);
+			if (it.second->_pPublisher)
+				return it.second->_pPublisher->publish(buf, size, pos);
 		}
 		DEBUG("Can't write data because NetStream is not published")
 		return true;
@@ -132,7 +137,7 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 void RTMFPConnection::handleMessage(Exception& ex, const PoolBuffer& pBuffer, const SocketAddress& address) {
 	auto it = _mapPeersByAddress.find(address);
 	if (it != _mapPeersByAddress.end())
-		it->second.handleMessage(ex, pBuffer, address);
+		it->second->handleMessage(ex, pBuffer, address);
 	else
 		FlowManager::handleMessage(ex, pBuffer, address);
 }
@@ -143,9 +148,17 @@ void RTMFPConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 
 	switch (type) {
 	case 0x30:
-		responderHandshake0(ex, reader); break; // p2p
+		responderHandshake0(ex, reader); break; // p2p first handshake from initiator (in middle mode)
 	case 0x70:
-		sendHandshake1(ex, reader); break;
+		if (connected) { // P2P handshake ?
+			handleP2PHandshake(ex, reader);
+		} else
+			sendHandshake1(ex, reader); 
+		break;
+	case 0x71:
+		DEBUG("Handshake 71 received, ignored for now")
+		//sendP2pRequests(ex, reader); 
+		break;
 	case 0x78:
 		sendConnect(ex, reader); break;
 	default:
@@ -199,9 +212,14 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 		return;
 	_diffieHellman.readPublicKey(ex, _pubKey.data());
 	writer.write7BitLongValue(_pubKey.size() + 4);
+
+	UInt32 idPos = writer.size();
 	writer.write7BitValue(_pubKey.size() + 2);
 	writer.write16(0x1D02); // (signature)
 	writer.write(_pubKey);
+
+	EVP_Digest(writer.data()+idPos, writer.size()-idPos, _peerId, NULL, EVP_sha256(), NULL);
+	INFO("peer id : \n", Util::FormatHex(_peerId, sizeof(_peerId), LOG_BUFFER))
 
 	Util::Random(_nonce.data(), _nonce.size()); // nonce is a serie of 77 random bytes
 	writer.write7BitValue(_nonce.size());
@@ -214,6 +232,72 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 		_handshakeStep = 2;
 	}
 }
+
+bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
+
+	// Read & check handshake0's response
+	UInt8 tagSize = reader.read8();
+	if (tagSize != 16) {
+		ex.set(Exception::PROTOCOL, "Unexpected tag size : ", tagSize);
+		return false;
+	}
+	string tagReceived;
+	reader.read(16, tagReceived);
+
+	auto it = _mapPeersByTag.find(tagReceived);
+	if (it == _mapPeersByTag.end()) {
+		WARN("Handshake 70 received but no p2p connection found with tag ", tagReceived, " (possible old request)")
+		return true;
+	}
+
+	// Add the connection to map by addresses and send the handshake 38
+	auto itAddress = _mapPeersByAddress.emplace(_outAddress, it->second).first;
+	itAddress->second->initiatorHandshake70(ex, reader, _outAddress);
+	if (!ex)
+		return false;
+
+	// Delete the temporary pointer
+	_mapPeersByTag.erase(it);
+	return true;
+}
+
+/*
+bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
+
+	if (!connected) {
+		ex.set(Exception::PROTOCOL, "Handshake type 71 received but the connection is not established");
+		return false;
+	}
+
+	// Read & check handshake0's response
+	UInt8 tagSize = reader.read8();
+	if (tagSize != 16) {
+		ex.set(Exception::PROTOCOL, "Unexpected tag size : ", tagSize);
+		return false;
+	}
+	string tagReceived;
+	reader.read(16, tagReceived);
+
+	auto it = _mapPeersByTag.find(tagReceived);
+	if (it == _mapPeersByTag.end()) {
+		ex.set(Exception::PROTOCOL, "Handshake 71 with unexpected tag received : ", tagReceived);
+		return false;
+	}
+
+	string id;
+	Util::FormatHex(_peerId, sizeof(_peerId), id);
+	SocketAddress address;
+	while (reader.available() && *reader.current() != 0xFF) {
+		UInt8 addressType = reader.read8();
+		RTMFP::ReadAddress(reader, address, addressType);
+		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
+
+		// Send handshake 30 request to the current address
+		_outAddress = address;
+		sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
+	}
+	return true;
+}*/
 
 bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 
@@ -265,14 +349,41 @@ void RTMFPConnection::responderHandshake0(Exception& ex, BinaryReader& reader) {
 		return;
 	}
 
-	auto it = _mapPeersByAddress.lower_bound(_outAddress);
-	if (it != _mapPeersByAddress.end()) {
-		ex.set(Exception::PROTOCOL, "A P2P connection already exists on address ", _outAddress.toString(), " (id : ", it->second.peerId, ")");
-		return;
-	}
-	it = _mapPeersByAddress.emplace_hint(it, piecewise_construct, forward_as_tuple(_outAddress), forward_as_tuple(*this, "", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, _tag));
+	UInt8 peerIdSize = reader.read8();
+	if (peerIdSize != 0x22)
+		ex.set(Exception::PROTOCOL, "Unexpected peer id size : ", peerIdSize, " (expected 34)");
+	if ((peerIdSize = reader.read8()) != 0x21)
+		ex.set(Exception::PROTOCOL, "Unexpected peer id size : ", peerIdSize, " (expected 33)");
+	if (reader.read8() != 0x0F)
+		ex.set(Exception::PROTOCOL, "Unexpected marker : ", *reader.current(), " (expected 0x0F)");
+	else {
 
-	it->second.responderHandshake0(ex, reader, _farId, _outAddress);
+		string peerId, tag;
+		reader.read(0x20, peerId);
+		reader.read(16, tag);
+		INFO("P2P Connection request from ", _outAddress.toString())
+
+		auto it = _mapPeersByAddress.lower_bound(_outAddress);
+		if (it != _mapPeersByAddress.end()) {
+			WARN("The peer is already connected to us (same address)")
+			return;
+		}
+
+		auto itTag = _mapPeersByTag.find(tag);
+		if (itTag == _mapPeersByTag.end()) {
+			WARN("No p2p waiting connection found (possibly already connected)")
+			return;
+		}
+
+		// Add the connection to map by addresses and send the handshake 38
+		it = _mapPeersByAddress.emplace(_outAddress, itTag->second).first;
+
+		// Delete the temporary pointer
+		_mapPeersByTag.erase(itTag);
+
+		// Send response (handshake 70)
+		it->second->responderHandshake0(ex, tag, _outAddress);
+	}
 }
 
 void RTMFPConnection::manage() {
@@ -288,9 +399,7 @@ void RTMFPConnection::manage() {
 	// Flush writers
 	flushWriters();
 	for (auto& it : _mapPeersByAddress)
-		it.second.flushWriters();
-	for (auto& it : _mapPeersById)
-		it.second.flushWriters();
+		it.second->flushWriters();
 }
 
 // TODO: see if we always need to manage a list of commands
@@ -327,20 +436,31 @@ void RTMFPConnection::sendConnections() {
 
 	// Send normal connection request
 	if(_waitConnect) {
-		sendHandshake0(BASE_HANDSHAKE, _url);
+		INFO("Connecting to ", _hostAddress.host().toString(), "...")
+		sendHandshake0(BASE_HANDSHAKE, _url, _tag);
 		_waitConnect=false;
+
+		// Bind the current port for p2p requests
+		Exception ex;
+		SocketAddress address(IPAddress::Wildcard(), _pSocket->address().port());
+		if (!_pSocket->bind(ex, address))
+			return;
+
+		// Record port for setPeerInfo request
+		_pMainStream->setPort(address.port());
 	}
 
 	// Send waiting p2p connections
 	while (!_waitingPeers.empty()) {
 
-		string& peerId = _waitingPeers.front();
-		auto it = _mapPeersById.find(peerId);
-		if (it != _mapPeersById.end()) {
-			INFO("Sending P2P handshake 0 to peer ", peerId)
-			it->second.sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex<string>(peerId));
+		string& tag = _waitingPeers.front();
+		auto it = _mapPeersByTag.find(tag);
+		if (it != _mapPeersByTag.end()) {
+			INFO("Sending P2P handshake 0 to peer ", it->second->peerId)
+			string id = it->second->peerId;
+			it->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), tag);
 		} else
-			ERROR("flusP2PConnection - Unable to find the peer object with id ", peerId)
+			ERROR("flusP2PConnection - Unable to find the peer object with tag ", tag)
 
 		_waitingPeers.pop_front();
 	}
@@ -348,9 +468,12 @@ void RTMFPConnection::sendConnections() {
 
 RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& address) {
 	auto it = _mapPeersByAddress.find(address);
-	if (it != _mapPeersByAddress.end())
-		return it->second.getDecoder(idStream, address);
+	if (it != _mapPeersByAddress.end()) {
+		DEBUG("P2P RTMFP request")
+		return it->second->getDecoder(idStream, address);
+	}
 	
+	DEBUG("Normal RTMFP request")
 	return FlowManager::getDecoder(idStream, address);
 }
 
@@ -372,9 +495,8 @@ void RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
 	ERROR("Cannot handle play command on a RTMFP Connection") // target error (shouldn't happen)
 }
 
-// Handle a P2P address exchange message (Only for P2PConnection)
 void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
-	//ERROR("Cannot handle P2P Address Exchange command on a RTMFP Connection") // target error (shouldn't happen)
+	// Handle 0x0f message from server (a peer is about to contact us)
 
 	if(reader.read24() != 0x22210F) {
 		ERROR("Unexpected P2P address exchange first 3 bytes")
@@ -382,29 +504,17 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 	}
 
 	string tmp, peerId;
-	reader.read(0x20, peerId);
-	Util::FormatHex((const UInt8*)peerId.data(), peerId.size(), tmp);
+	reader.read(0x20, tmp);
+	Util::FormatHex((const UInt8*)tmp.data(), tmp.size(), peerId);
 	SocketAddress address;
 	RTMFP::ReadAddress(reader, address, reader.read8());
 	
 	string tag;
 	reader.read(16, tag);
-	INFO("P2P address exchange from peer with address : ", address.toString())
+	INFO("A peer will contact us with address : ", address.toString())
 
-	auto it = _mapPeersByAddress.lower_bound(address);
-	if (it != _mapPeersByAddress.end()) {
-		//ex.set(Exception::PROTOCOL, "A P2P connection already exists on address ", address.toString(), " (id : ", it->second.peerId, ")");
-		return;
-	}
-	// TODO: see if _tag is equal to tag
-	it = _mapPeersByAddress.emplace_hint(it, piecewise_construct, forward_as_tuple(address), forward_as_tuple(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, _tag));
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
 
-	//it->second.connect(ex);
-	Exception ex2;
-	SocketAddress test(IPAddress::Wildcard(), _pSocket->address().port());
-	if(!it->second.bind(ex2,test)) {
-		WARN("Unable to connect to the peer, deletion of the instance (", ex2.error(), ")")
-		_mapPeersByAddress.erase(it);
-	}
-	//it->second.responderHandshake0(ex, tag, _farId, _outAddress);
+	pPeerConnection->setTag(tag);
+	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;
 }
