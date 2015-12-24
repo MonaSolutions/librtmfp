@@ -24,7 +24,7 @@ else
 endif
 override INCLUDES+=-I./../MonaServer/MonaBase/include/
 LIBDIRS+=-L./../MonaServer/MonaBase/lib/
-LIBS+=-Wl,-Bstatic -lMonaBase -Wl,-Bdynamic -lcrypto -lssl
+LIBS+=-Wl,-Bstatic -l:libMonaBase.ar -Wl,-Bdynamic -lcrypto -lssl
 
 INCDIR=/usr/include/librtmfp/
 

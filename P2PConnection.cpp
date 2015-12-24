@@ -59,7 +59,7 @@ void P2PConnection::responderHandshake0(Exception& ex, string tag, const SocketA
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x70).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 
 	// Before sending we set connection parameters
-	_outAddress = address;
+	_outAddress = _hostAddress = address;
 	_farId = 0;
 
 	FlowManager::flush(0x0B, writer.size());
@@ -181,7 +181,7 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 	writer.write8(0x58);
 
 	// Before sending we set connection parameters
-	_outAddress = address;
+	_outAddress = _hostAddress = address;
 	_farId = 0;
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);

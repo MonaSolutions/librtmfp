@@ -38,6 +38,8 @@ public:
 	// Return true if the stream exists, otherwise false (only for RTMFP connection)
 	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable);
 
+	Mona::Signal							connectSignal; // signal to wait connection
+
 protected:
 
 	// Send the connection message (after the answer of handshake1)
@@ -61,6 +63,8 @@ protected:
 	// Return the decoder engine for the following address (can be P2P or Normal connection)
 	virtual RTMFPEngine*	getDecoder(Mona::UInt32 idStream, const Mona::SocketAddress& address);
 
+	virtual void onConnect();
+
 private:
 
 	// Finish the initiated p2p connection (when handshake 70 is received)
@@ -68,7 +72,7 @@ private:
 
 	// Send the p2p requests to each available address
 	// TODO: see if we need to implement it
-	//bool sendP2pRequests(Mona::Exception& ex, Mona::BinaryReader& reader);
+	bool sendP2pRequests(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Send the second handshake message
 	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader);

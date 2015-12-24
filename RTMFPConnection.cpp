@@ -156,8 +156,8 @@ void RTMFPConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 			sendHandshake1(ex, reader); 
 		break;
 	case 0x71:
-		DEBUG("Handshake 71 received, ignored for now")
-		//sendP2pRequests(ex, reader); 
+		//DEBUG("Handshake 71 received, ignored for now")
+		sendP2pRequests(ex, reader); 
 		break;
 	case 0x78:
 		sendConnect(ex, reader); break;
@@ -261,7 +261,6 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 	return true;
 }
 
-/*
 bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 
 	if (!connected) {
@@ -297,7 +296,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
 	}
 	return true;
-}*/
+}
 
 bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 
@@ -439,15 +438,6 @@ void RTMFPConnection::sendConnections() {
 		INFO("Connecting to ", _hostAddress.host().toString(), "...")
 		sendHandshake0(BASE_HANDSHAKE, _url, _tag);
 		_waitConnect=false;
-
-		// Bind the current port for p2p requests
-		Exception ex;
-		SocketAddress address(IPAddress::Wildcard(), _pSocket->address().port());
-		if (!_pSocket->bind(ex, address))
-			return;
-
-		// Record port for setPeerInfo request
-		_pMainStream->setPort(address.port());
 	}
 
 	// Send waiting p2p connections
@@ -464,6 +454,25 @@ void RTMFPConnection::sendConnections() {
 
 		_waitingPeers.pop_front();
 	}
+}
+
+void RTMFPConnection::onConnect() {
+	
+	// Bind the current port for p2p requests
+	Exception ex;
+	SocketAddress address(IPAddress::Wildcard(), _pSocket->address().port());
+	if (!_pSocket->bind(ex, address))
+		return;
+
+	// Record port for setPeerInfo request
+	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
+	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
+	if (pFlow) {
+		INFO("Sending peer info...")
+		pFlow->sendPeerInfo(address.port());
+	}
+
+	connectSignal.set();
 }
 
 RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& address) {

@@ -33,6 +33,8 @@ public:
 	virtual void connect(FlashWriter& writer, const std::string& url, Mona::UInt16 port);
 
 	virtual void createStream(FlashWriter& writer);
+
+	virtual void sendPeerInfo(FlashWriter& writer,Mona::UInt16 port);
 	
 private:
 	void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);

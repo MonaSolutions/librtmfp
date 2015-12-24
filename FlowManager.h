@@ -60,8 +60,6 @@ public:
 	// Return the size available in the current sender (or max size if there is no current sender)
 	virtual Mona::UInt32					availableToWrite() { return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); }
 
-	Mona::Signal							connectSignal; // signal to wait connection
-
 protected:
 
 	// Read data asynchronously (TODO: add possibility to specify the stream name)
@@ -84,6 +82,9 @@ protected:
 
 	// Close the socket, set the connected and died flags and wait for destruction
 	virtual void				close();
+
+	// On NetConnection success callback
+	virtual void				onConnect() {}
 
 	RTMFPWriter*				writer(Mona::UInt64 id);
 	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);

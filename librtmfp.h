@@ -9,7 +9,7 @@ unsigned int RTMFP_Connect(const char* url, void (* onSocketError)(const char*),
 				void (* onMedia)(unsigned int, const char*, unsigned int,int), int blocking);
 
 // Connect to a peer via RTMFP P2P Connection (must be connected) and start playing streamName
-void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
+int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
 
 // RTMFP NetStream Play function
 // return : 1 if the request succeed, 0 otherwise

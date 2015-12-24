@@ -67,13 +67,16 @@ unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStat
 	return index;
 }
 
-void RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName) {
+int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName) {
 
 	Exception ex;
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
-	if (pConn && !pConn->connect2Peer(ex, peerId, streamName))
+	if(pConn && !pConn->connect2Peer(ex,peerId,streamName)) {
 		ERROR("Unable to establish the P2P Connection : ", ex.error())
+		return 0;
+	}
+	return 1;
 }
 
 int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {

@@ -333,3 +333,8 @@ void RTMFPFlow::sendPublish(const string& name) {
 	if(_pStream)
 		_pStream->publish(*_pWriter, name);
 }
+
+void RTMFPFlow::sendPeerInfo(UInt16 port) {
+	if(_pStream)
+		_pStream->sendPeerInfo(*_pWriter, port);
+}

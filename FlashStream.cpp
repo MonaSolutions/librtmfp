@@ -205,7 +205,7 @@ void FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate
 	OnMedia::raise(time, packet, lostRate, false);
 }
 
-void FlashStream::connect(FlashWriter& writer,const string& url,Mona::UInt16 port) {
+void FlashStream::connect(FlashWriter& writer,const string& url,UInt16 port) {
 	ERROR("Connection request sent from a FlashStream (only main stream can send connect)")
 }
 
@@ -224,4 +224,8 @@ void FlashStream::publish(FlashWriter& writer,const string& name) {
 	AMFWriter& amfWriter = writer.writeInvocation("publish");
 	amfWriter.writeString(name.c_str(), name.size());
 	writer.flush();
+}
+
+void FlashStream::sendPeerInfo(FlashWriter& writer,UInt16 port) {
+	ERROR("sendPeerInfo request can only be sent by Main stream")
 }

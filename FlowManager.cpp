@@ -43,7 +43,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
 		if (code == "NetConnection.Connect.Success")
-			connectSignal.set();
+			onConnect();
 		else if (code == "NetStream.Publish.Start")
 			_pPublisher->setWriter(&writer);
 		else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName")

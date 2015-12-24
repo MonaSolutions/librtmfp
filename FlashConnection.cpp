@@ -60,19 +60,6 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 				params.getString("code",code);
 				params.getString("description", description);
 
-				if (code == "NetConnection.Connect.Success") {
-					AMFWriter& amfWriter = writer.writeInvocation("setPeerInfo");
-
-					Exception ex;
-					HostEntry host;
-					DNS::ThisHost(ex, host);
-					string buf;
-					for(auto it : host.addresses()) {
-						if (it.family() == IPAddress::IPv4)
-							amfWriter.writeString(String::Format(buf, it.toString(), ":", _port).c_str(), buf.size());
-					}
-					writer.flush();
-				}
 				OnStatus::raise(code, description, writer);
 				return;
 			}
@@ -105,6 +92,19 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 		} 
 	}
 	ERROR("Unhandled message ", name, " (next type : ", message.nextType(), ")")
+}
+
+void FlashConnection::sendPeerInfo(FlashWriter& writer,UInt16 port) {
+	AMFWriter& amfWriter = writer.writeInvocation("setPeerInfo");
+
+	Exception ex;
+	HostEntry host;
+	DNS::ThisHost(ex, host);
+	string buf;
+	for(auto it : host.addresses()) {
+		if (it.family() == IPAddress::IPv4)
+			amfWriter.writeString(String::Format(buf, it.toString(), ":", _port).c_str(), buf.size());
+	}
 }
 
 void FlashConnection::rawHandler(UInt16 type,PacketReader& packet,FlashWriter& writer) {

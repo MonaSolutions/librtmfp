@@ -43,6 +43,7 @@ public:
 	void				sendPlay(const std::string& name, bool amf3=false);
 	void				sendPublish(const std::string& name);
 	void				createStream();
+	void				sendPeerInfo(Mona::UInt16 port);
 	
 private:
 	// Handle on fragment received

@@ -48,6 +48,9 @@ public:
 	// Send the publish request to the RTMFP server
 	virtual void publish(FlashWriter& writer, const std::string& name);
 
+	// Send the setPeerInfo request to the RTMFP server
+	virtual void sendPeerInfo(FlashWriter& writer, Mona::UInt16 port);
+
 private:
 
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
