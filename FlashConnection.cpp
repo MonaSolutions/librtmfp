@@ -8,7 +8,7 @@
 using namespace std;
 using namespace Mona;
 
-FlashConnection::FlashConnection() : FlashStream(0), _port(0), _creatingStream(0) {
+FlashConnection::FlashConnection() : FlashStream(0), _creatingStream(0) {
 	
 }
 
@@ -102,8 +102,10 @@ void FlashConnection::sendPeerInfo(FlashWriter& writer,UInt16 port) {
 	DNS::ThisHost(ex, host);
 	string buf;
 	for(auto it : host.addresses()) {
-		if (it.family() == IPAddress::IPv4)
-			amfWriter.writeString(String::Format(buf, it.toString(), ":", _port).c_str(), buf.size());
+		if(it.family() == IPAddress::IPv4) {
+			String::Format(buf, it.toString(), ":", port);
+			amfWriter.writeString(buf.c_str(), buf.size());
+		}
 	}
 }
 
@@ -131,7 +133,7 @@ void FlashConnection::rawHandler(UInt16 type,PacketReader& packet,FlashWriter& w
 	ERROR("Raw message ",Format<UInt16>("%.4x",type)," unknown on main stream");
 }
 
-void FlashConnection::connect(FlashWriter& writer, const string& url, UInt16 port) {
+void FlashConnection::connect(FlashWriter& writer, const string& url) {
 
 	AMFWriter& amfWriter = writer.writeInvocation("connect");
 
@@ -157,8 +159,4 @@ void FlashConnection::createStream(FlashWriter& writer) {
 	AMFWriter& amfWriter = writer.writeInvocation("createStream");
 	writer.flush();
 	_creatingStream = true;
-}
-
-void play(FlashWriter& writer,const std::string& name) {
-	ERROR("Forbidden operation : play stream request sent to main stream")
 }

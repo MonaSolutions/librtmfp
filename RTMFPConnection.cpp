@@ -283,8 +283,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		return false;
 	}
 
-	string id;
-	Util::FormatHex(_peerId, sizeof(_peerId), id);
+	string id((const char*)_peerId, 0x20);
 	SocketAddress address;
 	while (reader.available() && *reader.current() != 0xFF) {
 		UInt8 addressType = reader.read8();
@@ -293,7 +292,8 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 
 		// Send handshake 30 request to the current address
 		_outAddress = address;
-		sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
+		it->second->_outAddress = address;
+		it->second->sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
 	}
 	return true;
 }
@@ -336,7 +336,7 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 		return false;
 
 	connected = true;
-	pFlow->sendConnect(_url, _pSocket->address().port());
+	pFlow->sendConnect(_url);
 	_handshakeStep = 3;
 	return true;
 }
@@ -348,10 +348,10 @@ void RTMFPConnection::responderHandshake0(Exception& ex, BinaryReader& reader) {
 		return;
 	}
 
-	UInt8 peerIdSize = reader.read8();
+	UInt64 peerIdSize = reader.read7BitLongValue();
 	if (peerIdSize != 0x22)
 		ex.set(Exception::PROTOCOL, "Unexpected peer id size : ", peerIdSize, " (expected 34)");
-	if ((peerIdSize = reader.read8()) != 0x21)
+	if ((peerIdSize = reader.read7BitLongValue()) != 0x21)
 		ex.set(Exception::PROTOCOL, "Unexpected peer id size : ", peerIdSize, " (expected 33)");
 	if (reader.read8() != 0x0F)
 		ex.set(Exception::PROTOCOL, "Unexpected marker : ", *reader.current(), " (expected 0x0F)");
@@ -441,7 +441,7 @@ void RTMFPConnection::sendConnections() {
 	}
 
 	// Send waiting p2p connections
-	while (!_waitingPeers.empty()) {
+	while (connected && !_waitingPeers.empty()) {
 
 		string& tag = _waitingPeers.front();
 		auto it = _mapPeersByTag.find(tag);
@@ -456,33 +456,34 @@ void RTMFPConnection::sendConnections() {
 	}
 }
 
-void RTMFPConnection::onConnect() {
+bool RTMFPConnection::onConnect(Mona::Exception& ex) {
 	
 	// Bind the current port for p2p requests
-	Exception ex;
-	SocketAddress address(IPAddress::Wildcard(), _pSocket->address().port());
+	/*SocketAddress address(IPAddress::Wildcard(), _pSocket->address().port());
 	if (!_pSocket->bind(ex, address))
-		return;
+		return false;*/
 
 	// Record port for setPeerInfo request
 	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
 	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
 	if (pFlow) {
 		INFO("Sending peer info...")
-		pFlow->sendPeerInfo(address.port());
+		//pFlow->sendPeerInfo(address.port());
+		pFlow->sendPeerInfo(_pSocket->address().port());
 	}
 
 	connectSignal.set();
+	return true;
 }
 
 RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& address) {
 	auto it = _mapPeersByAddress.find(address);
 	if (it != _mapPeersByAddress.end()) {
-		DEBUG("P2P RTMFP request")
+		TRACE("P2P RTMFP request")
 		return it->second->getDecoder(idStream, address);
 	}
 	
-	DEBUG("Normal RTMFP request")
+	TRACE("Normal RTMFP request")
 	return FlowManager::getDecoder(idStream, address);
 }
 

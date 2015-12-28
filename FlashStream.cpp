@@ -205,7 +205,7 @@ void FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate
 	OnMedia::raise(time, packet, lostRate, false);
 }
 
-void FlashStream::connect(FlashWriter& writer,const string& url,UInt16 port) {
+void FlashStream::connect(FlashWriter& writer,const string& url) {
 	ERROR("Connection request sent from a FlashStream (only main stream can send connect)")
 }
 

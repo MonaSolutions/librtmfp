@@ -314,9 +314,9 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 	}
 }
 
-void RTMFPFlow::sendConnect(const string& url, UInt16 port) {
+void RTMFPFlow::sendConnect(const string& url) {
 	if(_pStream)
-		_pStream->connect(*_pWriter, url, port);
+		_pStream->connect(*_pWriter, url);
 }
 
 void RTMFPFlow::createStream() {

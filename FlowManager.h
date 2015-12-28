@@ -84,7 +84,7 @@ protected:
 	virtual void				close();
 
 	// On NetConnection success callback
-	virtual void				onConnect() {}
+	virtual bool				onConnect(Mona::Exception& ex) { return true; }
 
 	RTMFPWriter*				writer(Mona::UInt64 id);
 	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);

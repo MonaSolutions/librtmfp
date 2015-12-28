@@ -69,7 +69,6 @@ private:
 	bool						_videoReliable;
 	bool						_audioReliable;
 	const Mona::PoolBuffers&	_poolBuffers;
-	//PacketReader				_publicationNamePacket;
 
 	struct OutMediaPacket : public Mona::Object {
 

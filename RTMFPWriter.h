@@ -34,7 +34,15 @@ public:
 	const Mona::UInt64	flowId;
 	const std::string	signature;
 
-	virtual FlashWriter&		newWriter() { return *(new RTMFPWriter(state(),signature, _band)); }
+	virtual FlashWriter&		newWriter() { 
+		if (signature.size()>6) {
+			std::string tmpSignature("\x00\x54\x43\x04", 4);
+			Mona::UInt32 idStream(Mona::BinaryReader((const Mona::UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
+			RTMFP::Write7BitValue(tmpSignature, idStream);
+			return *(new RTMFPWriter(state(), tmpSignature, _band)); 
+		} else
+			return *(new RTMFPWriter(state(), signature, _band)); 
+	}
 
 	bool				flush() { return flush(true); }
 

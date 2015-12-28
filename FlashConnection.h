@@ -30,7 +30,7 @@ public:
 	void setPort(Mona::UInt16 port) { _port = port; }
 
 	// Send the connect request to the RTMFP server
-	virtual void connect(FlashWriter& writer, const std::string& url, Mona::UInt16 port);
+	virtual void connect(FlashWriter& writer, const std::string& url);
 
 	virtual void createStream(FlashWriter& writer);
 

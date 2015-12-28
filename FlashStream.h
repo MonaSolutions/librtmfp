@@ -37,7 +37,7 @@ public:
 	virtual void	flush() { }
 
 	// Send the connect request to the RTMFP server
-	virtual void connect(FlashWriter& writer,const std::string& url,Mona::UInt16 port);
+	virtual void connect(FlashWriter& writer,const std::string& url);
 
 	// Send the createStream request to the RTMFP server
 	virtual void createStream(FlashWriter& writer);

@@ -40,6 +40,9 @@ void RTMFP_LogSetCallback(void (* onLog)(int, const char*));
 // Set log level
 void RTMFP_LogSetLevel(int level);
 
+// Active RTMFP Dump
+void RTMFP_ActiveDump();
+
 // Set Interrupt callback (to check if caller need the hand)
 void RTMFP_InterruptSetCallback(int (* interruptCb)(void*), void* argument);
 

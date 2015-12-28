@@ -39,7 +39,7 @@ public:
 	bool				consumed() { return _completed; }
 
 	// RTMFP Commands
-	void				sendConnect(const std::string& url, Mona::UInt16 port);
+	void				sendConnect(const std::string& url);
 	void				sendPlay(const std::string& name, bool amf3=false);
 	void				sendPublish(const std::string& name);
 	void				createStream();

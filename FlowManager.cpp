@@ -42,8 +42,11 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 	onStatus = [this](const string& code, const string& description, FlashWriter& writer) {
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
-		if (code == "NetConnection.Connect.Success")
-			onConnect();
+		if(code == "NetConnection.Connect.Success") {
+			Exception ex;
+			if (!onConnect(ex))
+				onError(ex);
+		}
 		else if (code == "NetStream.Publish.Start")
 			_pPublisher->setWriter(&writer);
 		else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName")
@@ -88,9 +91,10 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		// Handshake or session decoder?
 		RTMFPEngine* pDecoder = getDecoder(idStream, address);
 
-		if (!pDecoder->process((UInt8*)pBuffer.data(), pBuffer.size()))
-			ex.set(Exception::CRYPTO, "Bad RTMFP CRC sum computing (idstream: ", idStream, ")");
-		else
+		if(!pDecoder->process((UInt8*)pBuffer.data(),pBuffer.size())) {
+			WARN("Bad RTMFP CRC sum computing (idstream: ", idStream, ")")
+			return;
+		} else
 			handleMessage(ex, pBuffer, address);
 
 		if (ex)
@@ -238,6 +242,10 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF;
 	bool answer = false;
 
+	// TODO: find a better place to determine that the connection is ON in P2P responder mode
+	if(!connected)
+		connected = true;
+
 	// Can have nested queries
 	while (type != 0xFF) {
 
@@ -246,6 +254,10 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 		PacketReader message(reader.current(), size);
 
 		switch (type) {
+		case 0x5e: // P2P closing session
+			ex.set(Exception::PROTOCOL, "P2P Session with ", _outAddress.toString(), ", is closing");
+			//TODO: see if we need to send something (0x5e?)
+			break;
 		case 0x0f: // P2P address destinator exchange
 			handleP2PAddressExchange(ex, message);
 			break;
@@ -599,7 +611,11 @@ void FlowManager::sendHandshake0(HandshakeType type, const string& epd, const st
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
 	writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
 
-	writer.write16((UInt16)(epd.size() + 1));
+	if(type == P2P_HANDSHAKE) {
+		writer.write7BitLongValue(epd.size() + 2);
+		writer.write7BitLongValue(epd.size() + 1);
+	} else
+		writer.write16((UInt16)(epd.size() + 1));
 	writer.write8(type); // handshake type
 	writer.write(epd);
 

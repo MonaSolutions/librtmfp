@@ -21,7 +21,6 @@ void initLogger() {
 	if (!GlobalLogger) {
 		GlobalLogger.reset(new RTMFPLogger());
 		Logs::SetLogger(*GlobalLogger);
-		Logs::SetDump("RTMFP");
 	}
 }
 
@@ -207,6 +206,11 @@ void RTMFP_GetPublicationAndUrlFromUri(char* uri, char** publication) {
 		*publication = (char*)pos2 + 1;
 		*pos2 = '\0';
 	}
+}
+
+void RTMFP_ActiveDump() {
+	initLogger();
+	Logs::SetDump("RTMFP");
 }
 
 }

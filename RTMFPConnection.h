@@ -63,7 +63,7 @@ protected:
 	// Return the decoder engine for the following address (can be P2P or Normal connection)
 	virtual RTMFPEngine*	getDecoder(Mona::UInt32 idStream, const Mona::SocketAddress& address);
 
-	virtual void onConnect();
+	virtual bool onConnect(Mona::Exception& ex);
 
 private:
 

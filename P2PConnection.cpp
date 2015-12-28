@@ -6,7 +6,7 @@
 using namespace Mona;
 using namespace std;
 
-UInt32 P2PConnection::P2PSessionCounter = 0;
+UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
@@ -137,6 +137,11 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 
 void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, const SocketAddress& address) {
 
+	if (_handshakeStep > 1) {
+		WARN("Handshake 70 already received, ignored")
+		return;
+	}
+
 	string cookie;
 	UInt8 cookieSize = reader.read8();
 	if (cookieSize != 0x40) {
@@ -193,9 +198,9 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 
 bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
-	if (_handshakeStep != 2) {
-		ex.set(Exception::PROTOCOL, "Unexpected handshake type 78 (step : ", _handshakeStep, ")");
-		return false;
+	if (_handshakeStep > 2) {
+		WARN("Handshake 78 already received, ignored")
+		return true;
 	}
 
 	_farId = reader.read32(); // session Id
@@ -222,12 +227,13 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, (const UInt8*)responderNonce.data(), nonceSize, _pDecoder, _pEncoder, false))
 		return false;
 
+	_handshakeStep = 3;
 	connected = true;
 
+	DEBUG("P2P Connection ", _sessionId, " is now connected")
+
 	// Create 1st NetStream and flow
-	shared_ptr<FlashStream> pStream;
-	_pMainStream->addStream(1, pStream);
-	string signature("\x00\x54\x43\x04\xFA\x89\x00", 7);
+	string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
 	RTMFPFlow* pFlow = createFlow(2, signature);
 
 	// Start playing Play
@@ -260,14 +266,12 @@ bool P2PConnection::getPublishStream(const string& streamName,bool& audioReliabl
 void P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	INFO("The peer ",peerId," is trying to play '", streamName,"'...")
 
-	// TODO: find a better place to determine that the connection is ON in responder mode
-	connected = true;
-
 	bool audioReliable, videoReliable;
 	if(!_parent.getPublishStream(streamName,audioReliable,videoReliable)) {
 		// TODO : implement NetStream.Play.BadName
 		return;
 	}
+	INFO("Stream ",streamName," found, sending start answer")
 
 	_streamName = streamName;
 
@@ -276,6 +280,7 @@ void P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	_pPublisher->setWriter(&writer);
 
 	// Send the response
+	writer.writeRaw().write16(0).write32(_sessionId); // stream begin
 	writer.writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + streamName); // for entiere playlist
 	writer.writeAMFStatus("NetStream.Play.Start", "Started playing " + streamName); // for item
 	AMFWriter& amf(writer.writeAMFData("|RtmpSampleAccess"));
@@ -284,6 +289,7 @@ void P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	amf.writeBoolean(true); // audioSampleAccess
 	amf.writeBoolean(true); // videoSampleAccess
 
+	writer.flush();
 	// TODO: flush?
 }
 
