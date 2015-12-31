@@ -2,6 +2,7 @@
 #pragma once
 
 #include "P2PConnection.h"
+#include <list>
 
 /**************************************************
 RTMFPConnection represents a connection to the
@@ -109,7 +110,7 @@ private:
 		bool			audioReliable;
 		bool			videoReliable;
 	};
-	std::deque<StreamCommand>										_waitingCommands;
+	std::list<StreamCommand>										_waitingCommands;
 	std::recursive_mutex											_mutexCommands;
 	Mona::UInt16													_nbCreateStreams; // Number of streams to create
 };

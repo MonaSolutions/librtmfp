@@ -296,3 +296,9 @@ void P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
 	ERROR("Cannot handle P2P Address Exchange command on a RTMFP Connection") // target error (shouldn't happen)
 }
+
+void P2PConnection::close() {
+	if (connected)
+		writeMessage(0x5E, 0);
+	FlowManager::close();
+}

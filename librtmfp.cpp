@@ -114,6 +114,18 @@ int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned
 	return 0;
 }
 
+int RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {
+
+	shared_ptr<RTMFPConnection> pConn;
+	GlobalInvoker->getConnection(RTMFPcontext,pConn);
+	if(pConn) {
+		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_CLOSE, streamName);
+		return 1;
+	}
+
+	return 0;
+}
+
 void RTMFP_Close(unsigned int RTMFPcontext) {
 	if (!GlobalInvoker) {
 		ERROR("Invoker is not ready, you must establish the connection first")

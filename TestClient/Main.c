@@ -26,6 +26,7 @@ static unsigned short	endOfWrite = 0; // If >0 write is finished
 static unsigned int		context = 0;
 static FILE *			pFile = NULL;
 static unsigned short	terminating = 0;
+static char*			publication = NULL; // publication name
 
 // return : true if program must be interrupted
 static int	IsInterrupted(void * arg) {
@@ -71,7 +72,7 @@ void onSocketError(const char* error) {
 
 void onStatusEvent(const char* code,const char* description) {
 	printf("Status Event '%s' : %s\n", code, description);
-	if (strcmp(code, "NetStream.Play.UnpublishNotify") == 0 || strcmp(code, "NetConnection.Connect.Closed") == 0)
+	if (strcmp(code, "NetConnection.Connect.Closed") == 0)
 		terminating=1;
 }
 
@@ -112,8 +113,13 @@ void onManage() {
 				terminating=1; // Error encountered
 				return;
 			}
-			else if ((res = feof(pFile)) > 0)
+			else if ((res = feof(pFile)) > 0) {
+				printf("End of file reached, we send last data and unpublish.\n");
 				endOfWrite = 1;
+				RTMFP_Write(context, buf, towrite);
+				RTMFP_ClosePublication(context, publication);
+				return;
+			}
 		}
 
 		if ((read = RTMFP_Write(context, buf, towrite)) < 0)
@@ -122,10 +128,6 @@ void onManage() {
 			if ((cursor = read) > 0)
 				memcpy(buf, buf + cursor, BUFFER_SIZE - cursor); // Move buffer
 		}
-		else {
-			printf("End of file reached, goodbye!\n");
-			terminating = 1;
-		}
 	}
 }
 
@@ -133,7 +135,6 @@ void onManage() {
 int main(int argc,char* argv[]) {
 	char 			url[1024];
 	int				i=1;
-	char*			publication = NULL;
 	const char*		peerId = NULL;
 	unsigned short	audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");

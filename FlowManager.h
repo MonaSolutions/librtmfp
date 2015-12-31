@@ -30,7 +30,8 @@ public:
 	enum CommandType {
 		NETSTREAM_PLAY = 1,
 		NETSTREAM_PUBLISH,
-		NETSTREAM_PUBLISH_P2P
+		NETSTREAM_PUBLISH_P2P,
+		NETSTREAM_CLOSE
 	};
 
 	// Add a command to the main stream (play/publish)

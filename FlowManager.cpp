@@ -49,7 +49,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		}
 		else if (code == "NetStream.Publish.Start")
 			_pPublisher->setWriter(&writer);
-		else if (code == "NetStream.Play.UnpublishNotify" || code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName")
+		else if (code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName")
 			close();
 	};
 	onStreamCreated = [this](UInt16 idStream) {
@@ -145,13 +145,13 @@ FlowManager::~FlowManager() {
 }
 
 void FlowManager::close() {
-	_died = true;
-	
 	if (connected) {
 		writeMessage(0x4C, 0); // Close message
 		flush(false, 0x89);
 		connected = false;
 	}
+
+	_died = true;
 
 	_pPublisher.reset();
 }
@@ -254,10 +254,6 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 		PacketReader message(reader.current(), size);
 
 		switch (type) {
-		case 0x5e: // P2P closing session
-			ex.set(Exception::PROTOCOL, "P2P Session with ", _outAddress.toString(), ", is closing");
-			//TODO: see if we need to send something (0x5e?)
-			break;
 		case 0x0f: // P2P address destinator exchange
 			handleP2PAddressExchange(ex, message);
 			break;
@@ -271,15 +267,12 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			ex.set(Exception::PROTOCOL, "Failed on server side");
 			writeMessage(0x0C, 0);
 			break;
-
-			/*case 0x4c :
-			/// Session death!
-			_failed = true; // to avoid the fail signal!!
-			kill();
-			return;*/
-
-			/// KeepAlive
-		case 0x01:
+		case 0x4c : // P2P closing session (only for p2p I think)
+			INFO("P2P Session at ", _outAddress.toString(), " is closed")
+			connected = false;
+			close();
+			return;
+		case 0x01: // KeepAlive
 			/*if(!peer.connected)
 			fail("Timeout connection client");
 			else*/
@@ -289,19 +282,17 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			_lastKeepAlive.update();
 			break;
 
-			/*case 0x5e : {
-			// RTMFPFlow exception!
+		case 0x5e : {  // P2P closing flow (RTMFPFlow exception, only for p2p)
 			UInt64 id = message.read7BitLongValue();
 
 			RTMFPWriter* pRTMFPWriter = writer(id);
 			if(pRTMFPWriter)
-			pRTMFPWriter->fail("Writer rejected on session ",name());
+				pRTMFPWriter->fail("Writer terminated on connection");
 			else
-			WARN("RTMFPWriter ", id, " unfound for failed signal on session ", name());
+				WARN("RTMFPWriter ", id, " unfound for failed signal on connection");
 			break;
-
-			}
-			case 0x18 :
+		}
+			/*case 0x18 :
 			/// This response is sent when we answer with a Acknowledgment negative
 			// It contains the id flow
 			// I don't unsertand the usefulness...

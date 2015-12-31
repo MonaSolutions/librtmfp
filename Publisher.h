@@ -18,6 +18,8 @@ public:
 
 	bool publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos);
 
+	void unpublish();
+
 	virtual void	handle(Mona::Exception& ex);
 
 private:

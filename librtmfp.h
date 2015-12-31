@@ -23,6 +23,10 @@ int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned sh
 // return : 1 if the request succeed, 0 otherwise
 int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable);
 
+// RTMFP NetStream Unpublish function
+// return : 1 if the request succeed, 0 otherwise
+int RTMFP_ClosePublication(unsigned int RTMFPcontext, const char* streamName);
+
 // Close the RTMFP connection
 void RTMFP_Close(unsigned int RTMFPcontext);
 

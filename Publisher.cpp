@@ -72,6 +72,15 @@ bool Publisher::publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos) {
 	return true;
 }
 
+void Publisher::unpublish() {
+	if (!_pWriter)
+		return;
+
+	AMFWriter& amfWriter = _pWriter->writeInvocation("closeStream");
+	//amfWriter.writeString(name.c_str(), name.size());
+	_pWriter->flush();
+}
+
 void Publisher::handle(Exception& ex) {
 	while (!_mediaPackets.empty()) {
 		OutMediaPacket& media = _mediaPackets.front();

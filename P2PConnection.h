@@ -30,7 +30,7 @@ public:
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 
 	// Close the connection properly
-	virtual void close() { FlowManager::close(); }
+	virtual void close();
 
 	// Set the tag used for this connection (responder mode)
 	void setTag(const std::string& tag) { _tag = tag; }
@@ -60,6 +60,9 @@ public:
 	// - 8A for AMF responde in P2P mode (only for responder)
 	// - 4A for acknowlegment in P2P mode (TODO: see if it is needed)
 	virtual void				flush(bool echoTime, Mona::UInt8 marker);
+
+	// Does the connection is terminated? => can be deleted by parent
+	bool consumed() { return (_handshakeStep == 3 && connected == false); }
 
 protected:
 	// Handle stream creation (only for RTMFP connection)

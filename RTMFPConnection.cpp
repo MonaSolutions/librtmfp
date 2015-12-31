@@ -17,6 +17,11 @@ RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError,
 }
 
 RTMFPConnection::~RTMFPConnection() {
+	// Close peers
+	for(auto it : _mapPeersByAddress) {
+		it.second->close();
+	}
+
 	close();
 
 	if (_pSocket) {
@@ -117,9 +122,10 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 	_waitingFlows[idStream] = pFlow;
 
 	// Send createStream command and add command type to waiting commands
+	lock_guard<recursive_mutex> lock(_mutexCommands);
 	if (_waitingCommands.empty()) {
 		ERROR("created stream without command")
-			return;
+		return;
 	}
 	const StreamCommand command = _waitingCommands.back();
 	switch (command.type) {
@@ -130,6 +136,9 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 		pFlow->sendPublish(command.value);
 		_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, command.audioReliable, command.videoReliable));
 		break;
+	default:
+		ERROR("Unexpected command found on stream creation : ", command.type)
+		return;
 	}
 	_waitingCommands.pop_back();
 }
@@ -397,8 +406,19 @@ void RTMFPConnection::manage() {
 
 	// Flush writers
 	flushWriters();
-	for (auto& it : _mapPeersByAddress)
-		it.second->flushWriters();
+
+	auto it = _mapPeersByAddress.begin();
+	while (it != _mapPeersByAddress.end()) {
+		shared_ptr<P2PConnection>& pPeer(it->second);
+		if (pPeer->consumed()) { // delete if dead
+			NOTE("Deletion of p2p connection to ", _outAddress.toString())
+			_mapPeersByAddress.erase(it++);
+			continue;
+		}
+		// flush writers if not dead
+		pPeer->flushWriters();
+		++it;
+	}
 }
 
 // TODO: see if we always need to manage a list of commands
@@ -411,19 +431,41 @@ void RTMFPConnection::addCommand(CommandType command, const char* streamName, bo
 		return;
 	}
 		
-	_waitingCommands.emplace_front(command, streamName, audioReliable, videoReliable);
-	_nbCreateStreams++;
+	_waitingCommands.emplace_back(command, streamName, audioReliable, videoReliable);
+	if (command != NETSTREAM_CLOSE)
+		_nbCreateStreams++;
 }
 
 void RTMFPConnection::createWaitingStreams() {
 	lock_guard<recursive_mutex>	lock(_mutexCommands);
-	if (!connected || !_nbCreateStreams)
+	if (!connected || _waitingCommands.empty())
 		return;
 
-	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
-	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
-	if (pFlow) {
+	// Manage waiting close publication commands
+	auto itCommand = _waitingCommands.begin();
+	while(itCommand != _waitingCommands.end()) {
+		
+		// TODO: manage more than one publisher + protect the _pPublisher by mutex
+		if(itCommand->type == NETSTREAM_CLOSE) {
+			INFO("Unpublishing stream ", itCommand->value, "...")
+			if(!_pPublisher)
+				ERROR("Unable to find the publisher")
+			else
+				_pPublisher->unpublish();
+			_waitingCommands.erase(itCommand++);
+		} else
+			++itCommand;
+	}
+
+	// Create waiting streams
+	if (_nbCreateStreams) {
 		INFO("Creating a new stream...")
+		map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
+		RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
+		if(!pFlow) {
+			ERROR("Unable to found the flow 2")
+			return;
+		}
 		pFlow->createStream();
 		_nbCreateStreams--;
 	}
