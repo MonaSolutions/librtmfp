@@ -230,7 +230,7 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 	_handshakeStep = 3;
 	connected = true;
 
-	DEBUG("P2P Connection ", _sessionId, " is now connected")
+	NOTE("P2P Connection ", _sessionId, " is now connected to ", peerId)
 
 	// Create 1st NetStream and flow
 	string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1

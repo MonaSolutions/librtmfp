@@ -482,7 +482,7 @@ bool RTMFPWriter::flush(bool full) {
 			// Write packet
 			size-=3; // type + timestamp removed, before the "writeMessage"
 			packMessage(_band.writeMessage(head ? 0x10 : 0x11,(UInt16)size,this),_stage,flags,head,message,fragments,contentSize);
-			DEBUG("RTMFPWriter ", id, " : sending message ", _stage);
+			//DEBUG("RTMFPWriter ", id, " : sending message ", _stage);
 			
 			message.fragments[fragments] = _stage;
 			available -= contentSize;

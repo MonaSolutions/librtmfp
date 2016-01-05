@@ -259,10 +259,12 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 		return true;
 	}
 
+	INFO("Peer ", it->second->peerId," has answered, the handshake continues")
+
 	// Add the connection to map by addresses and send the handshake 38
 	auto itAddress = _mapPeersByAddress.emplace(_outAddress, it->second).first;
 	itAddress->second->initiatorHandshake70(ex, reader, _outAddress);
-	if (!ex)
+	if (ex)
 		return false;
 
 	// Delete the temporary pointer
@@ -271,6 +273,7 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 }
 
 bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
+	DEBUG("Server has sent to us the peer addresses")
 
 	if (!connected) {
 		ex.set(Exception::PROTOCOL, "Handshake type 71 received but the connection is not established");
@@ -288,11 +291,14 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 
 	auto it = _mapPeersByTag.find(tagReceived);
 	if (it == _mapPeersByTag.end()) {
-		ex.set(Exception::PROTOCOL, "Handshake 71 with unexpected tag received : ", tagReceived);
-		return false;
+		WARN("Handshake 71 received but no p2p connection found with tag ", tagReceived, " (possible old request)")
+		return true;
 	}
 
 	string id((const char*)_peerId, 0x20);
+	/*string id = it->second->peerId;
+	id = Util::UnformatHex(id);*/
+
 	SocketAddress address;
 	while (reader.available() && *reader.current() != 0xFF) {
 		UInt8 addressType = reader.read8();
@@ -477,7 +483,7 @@ void RTMFPConnection::sendConnections() {
 
 	// Send normal connection request
 	if(_waitConnect) {
-		INFO("Connecting to ", _hostAddress.host().toString(), "...")
+		INFO("Connecting to ", _hostAddress.toString(), "...")
 		sendHandshake0(BASE_HANDSHAKE, _url, _tag);
 		_waitConnect=false;
 	}

@@ -557,7 +557,7 @@ void FlowManager::flush(bool echoTime, UInt8 marker) {
 
 		// executed just in debug mode, or in dump mode
 		if (Logs::GetLevel() >= 7)
-			DUMP("RTMFP", packet.data()+6, packet.size()-6, "Response to ", _outAddress.toString())
+			DUMP("RTMFP", packet.data()+6, packet.size()-6, "Response to ", _outAddress.toString(), " (farId : ", _farId, ")")
 
 		Exception ex;
 		_pThread = socket().send<RTMFPSender>(ex, _pSender, _pThread);
