@@ -2,6 +2,7 @@
 #pragma once
 
 #include "FlowManager.h"
+#include "Mona/StopWatch.h"
 
 #define COOKIE_SIZE	0x40
 
@@ -25,6 +26,9 @@ public:
 
 	// Return true if the stream exists, otherwise false (only for RTMFP connection)
 	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable);
+
+	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
+	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
 
 	const std::string				peerId; // Peer Id of the peer connected
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id

@@ -306,7 +306,6 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
 
 		// Send handshake 30 request to the current address
-		_outAddress = address;
 		it->second->_outAddress = address;
 		it->second->sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
 	}
@@ -494,13 +493,36 @@ void RTMFPConnection::sendConnections() {
 		string& tag = _waitingPeers.front();
 		auto it = _mapPeersByTag.find(tag);
 		if (it != _mapPeersByTag.end()) {
-			INFO("Sending P2P handshake 0 to peer ", it->second->peerId)
+			INFO("Sending P2P handshake 30 to server (peerId : ", it->second->peerId, ")")
 			string id = it->second->peerId;
 			it->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), tag);
+			it->second->lastTry.start();
+			it->second->attempt++;
 		} else
 			ERROR("flusP2PConnection - Unable to find the peer object with tag ", tag)
 
 		_waitingPeers.pop_front();
+	}
+
+	// Send new p2p request if no answer
+	// TODO: make the attempt and elapsed count parametrable
+	auto itPeer = _mapPeersByTag.begin();
+	while (itPeer != _mapPeersByTag.end()) {
+		if (!itPeer->second->_responder && (itPeer->second->lastTry.elapsed() > 1500)) { // initiators
+			if (itPeer->second->attempt > 5) {
+				ERROR("P2P handshake has reached 6 attempts without answer, deleting session...")
+				_mapPeersByTag.erase(itPeer++);
+				continue;
+			}
+
+			INFO("Sending new P2P handshake 30 to server (peerId : ", itPeer->second->peerId, ")")
+			string id = itPeer->second->peerId;
+			itPeer->second->_outAddress = _hostAddress;
+			itPeer->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), itPeer->first);
+			itPeer->second->lastTry.restart();
+			itPeer->second->attempt++;
+		}
+		++itPeer;
 	}
 }
 
