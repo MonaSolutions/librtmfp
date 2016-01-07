@@ -39,7 +39,7 @@ int RTMFP_Read(unsigned int RTMFPcontext, char *buf, unsigned int size);
 int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int size);
 
 // Set log callback
-void RTMFP_LogSetCallback(void (* onLog)(int, const char*));
+void RTMFP_LogSetCallback(void (* onLog)(unsigned int, int, const char*, long, const char*));
 
 // Set log level
 void RTMFP_LogSetLevel(int level);

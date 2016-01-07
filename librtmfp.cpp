@@ -182,7 +182,7 @@ int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 	return -1;
 }
 
-void RTMFP_LogSetCallback(void(* onLog)(int,const char*)) {
+void RTMFP_LogSetCallback(void(* onLog)(unsigned int, int, const char*, long, const char*)) {
 	initLogger();
 	GlobalLogger->setLogCallback(onLog);
 }

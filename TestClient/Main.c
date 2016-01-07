@@ -1,8 +1,9 @@
 #include <stdlib.h>
-#include <stdio.h>
 #include <signal.h>
 #include <string.h>
 #include "../librtmfp.h"
+#include "TestLogger.h"
+
 #if defined(_WIN32)
 	#define strnicmp		_strnicmp
 	#define stricmp			_stricmp
@@ -10,7 +11,6 @@
 	#define	SLEEP			Sleep
 	#include <windows.h>
 #else
-	#include <time.h>
 	#define stricmp			strcasecmp
 	#define strnicmp		strncasecmp
 	#define _snprintf		snprintf
@@ -48,22 +48,6 @@ void ConsoleCtrlHandler(int dummy) {
 
 unsigned int flip24(unsigned int value) { return ((value >> 16) & 0x000000FF) | (value & 0x0000FF00) | ((value << 16) & 0x00FF0000); }
 unsigned int flip32(unsigned int value) { return ((value >> 24) & 0x000000FF) | ((value >> 8) & 0x0000FF00) | ((value << 8) & 0x00FF0000) | ((value << 24) & 0xFF000000); }
-
-void onLog(int level,const char* message) {
-
-	char* logType = "Unkwnown level";
-	switch(level) {
-		case 1: logType = "FATAL"; break;
-		case 2: logType = "CRITIC"; break;
-		case 3: logType = "ERROR"; break;
-		case 4: logType = "WARN"; break;
-		case 5: logType = "NOTE"; break;
-		case 6: logType = "INFO"; break;
-		case 7: logType = "DEBUG"; break;
-		case 8: logType = "TRACE"; break;
-	}
-	printf("%s - %s\n", logType, message);
-}
 
 void onSocketError(const char* error) {
 	printf("Socket Error : %s\n", error);
@@ -169,7 +153,7 @@ int main(int argc,char* argv[]) {
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
 		printf("Cannot catch SIGINT\n");
 
-	//RTMFP_LogSetCallback(onLog);
+	RTMFP_LogSetCallback(onLog);
 	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
 	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 

@@ -13,6 +13,9 @@
   <ItemGroup>
     <ClCompile Include="Main.c" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="TestLogger.h" />
+  </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}</ProjectGuid>
     <RootNamespace>TestClient</RootNamespace>
