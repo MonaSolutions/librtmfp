@@ -38,16 +38,8 @@ static const char*  LevelColors[] = { FATAL_COLOR, CRITIC_COLOR, ERROR_COLOR, WA
 static FILE *			pLogFile = NULL;
 
 void onLog(unsigned int threadID, int level, const char* fileName, long line, const char* message) {
-	if (!pLogFile) {
-#if defined(WIN32)
-		errno_t err;
-		if ((err = fopen_s(&pLogFile, "log.0", "w")) != 0)
-			printf("Unable to open file log.0 for logging : %d\n", err);
-#else
-		if ((pLogFile = fopen("log.0", "w")) == NULL)
-			printf("Unable to open file log.0 for logging\n");
-#endif
-	}
+	if (!pLogFile)
+		return;
 
 	char* logType = "Unkwnown level";
 	switch (level) {
@@ -67,7 +59,7 @@ void onLog(unsigned int threadID, int level, const char* fileName, long line, co
 #else
 	tm = *localtime(&t);
 #endif
-	BEGIN_CONSOLE_TEXT_COLOR(LevelColors[level]);
+	BEGIN_CONSOLE_TEXT_COLOR(LevelColors[level-1]);
 	printf("%s[%ld] %s\n", fileName, line, message);
 	END_CONSOLE_TEXT_COLOR;
 	fprintf(pLogFile, "%.2d/%.2d %.2d:%.2d:%.2d\t%s %s[%ld] %s\n", tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, logType, fileName, line, message);

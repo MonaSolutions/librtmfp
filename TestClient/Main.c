@@ -50,12 +50,14 @@ unsigned int flip24(unsigned int value) { return ((value >> 16) & 0x000000FF) | 
 unsigned int flip32(unsigned int value) { return ((value >> 24) & 0x000000FF) | ((value >> 8) & 0x0000FF00) | ((value << 8) & 0x00FF0000) | ((value << 24) & 0xFF000000); }
 
 void onSocketError(const char* error) {
-	printf("Socket Error : %s\n", error);
-	terminating=1;
+	onLog(0, 7, "Main.cpp", __LINE__, error);
 }
 
 void onStatusEvent(const char* code,const char* description) {
-	printf("Status Event '%s' : %s\n", code, description);
+	char statusMessage[1024];
+	snprintf(statusMessage, 1024, "Status Event '%s' : %s", code, description);
+	onLog(0, 6, "Main.cpp", __LINE__, statusMessage);
+
 	if (strcmp(code, "NetConnection.Connect.Closed") == 0)
 		terminating=1;
 }
@@ -93,12 +95,12 @@ void onManage() {
 			towrite = fread(buf + (BUFFER_SIZE - cursor), sizeof(char), cursor, pFile) + (BUFFER_SIZE - cursor);
 			if ((res = ferror(pFile)) > 0) {
 				endOfWrite = 1;
-				printf("Error while reading the input file, closing...\n");
+				onLog(0, 3, "Main.lua", __LINE__, "Error while reading the input file, closing...");
 				terminating=1; // Error encountered
 				return;
 			}
 			else if ((res = feof(pFile)) > 0) {
-				printf("End of file reached, we send last data and unpublish.\n");
+				onLog(0, 5, "Main.lua", __LINE__, "End of file reached, we send last data and unpublish");
 				endOfWrite = 1;
 				RTMFP_Write(context, buf, towrite);
 				RTMFP_ClosePublication(context, publication);
@@ -153,47 +155,61 @@ int main(int argc,char* argv[]) {
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
 		printf("Cannot catch SIGINT\n");
 
-	RTMFP_LogSetCallback(onLog);
-	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
-	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
+	// Open log file
+#if defined(WIN32)
+	errno_t err;
+	if ((err = fopen_s(&pLogFile, "log.0", "w")) != 0)
+		printf("Unable to open file log.0 for logging : %d\n", err);
+#else
+	if ((pLogFile = fopen("log.0", "w")) == NULL)
+		printf("Unable to open file log.0 for logging\n");
+#endif
+	else {
 
-	printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
-	context = RTMFP_Connect(url, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, 1);
-		
-	if (context) {
-		if (peerId != NULL)
-			RTMFP_Connect2Peer(context, peerId, publication);
-		else if (_option == SYNC_READ || _option == ASYNC_READ)
-			RTMFP_Play(context, publication);
-		else if (_option == WRITE)
-			RTMFP_Publish(context, publication, audioReliable, videoReliable);
-		else if(_option == P2P_WRITE)
-			RTMFP_PublishP2P(context, publication, audioReliable, videoReliable);
+		RTMFP_LogSetCallback(onLog);
+		RTMFP_InterruptSetCallback(IsInterrupted, NULL);
+		RTMFP_GetPublicationAndUrlFromUri(url, &publication);
+
+		printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
+		context = RTMFP_Connect(url, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, 1);
+
+		if (context) {
+			if (peerId != NULL)
+				RTMFP_Connect2Peer(context, peerId, publication);
+			else if (_option == SYNC_READ || _option == ASYNC_READ)
+				RTMFP_Play(context, publication);
+			else if (_option == WRITE)
+				RTMFP_Publish(context, publication, audioReliable, videoReliable);
+			else if (_option == P2P_WRITE)
+				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable);
 
 #if defined(WIN32)
-		errno_t err;
-		if ((err = fopen_s(&pFile, "out.flv", (_option == WRITE || _option == P2P_WRITE) ? "rb" : "wb+")) != 0)
-			printf("Unable to open file out.flv : %d\n", err);
+			errno_t err;
+			if ((err = fopen_s(&pFile, "out.flv", (_option == WRITE || _option == P2P_WRITE) ? "rb" : "wb+")) != 0)
+				printf("Unable to open file out.flv : %d\n", err);
 #else
-		if ((pFile = fopen("out.flv", (_option == WRITE || _option == P2P_WRITE) ? "rb" : "wb+")) == NULL)
-			printf("Unable to open file out.flv\n");
+			if ((pFile = fopen("out.flv", (_option == WRITE || _option == P2P_WRITE) ? "rb" : "wb+")) == NULL)
+				printf("Unable to open file out.flv\n");
 #endif
-		else {
-			printf("Output file out.flv opened\n");
-			if (_option == SYNC_READ)
-				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
+			else {
+				printf("Output file out.flv opened\n");
+				if (_option == SYNC_READ)
+					fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pFile);
 
-			while (!IsInterrupted(NULL)) {
-				onManage();
-				SLEEP(1000);
+				while (!IsInterrupted(NULL)) {
+					onManage();
+					SLEEP(1000);
+				}
+
+				fclose(pFile);
+				pFile = NULL;
 			}
-
-			fclose(pFile);
-			pFile = NULL;
+			printf("Closing connection...\n");
+			RTMFP_Close(context);
 		}
-		printf("Closing connection...\n");
-		RTMFP_Close(context);
-	}
 
+		fclose(pLogFile);
+		pLogFile = NULL;
+	}
 	printf("End of the program\n");
 }
