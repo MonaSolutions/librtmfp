@@ -10,7 +10,8 @@ using namespace Mona;
 using namespace std;
 
 Publisher::Publisher(const PoolBuffers& poolBuffers, TaskHandler& handler, bool audioReliable, bool videoReliable) : _pWriter(NULL), publishAudio(true), publishVideo(true),
-	_pAudioWriter(NULL), _pVideoWriter(NULL), _dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable), Task(handler), _poolBuffers(poolBuffers) {
+	_pAudioWriter(NULL), _pVideoWriter(NULL), _dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable), Task(handler), _poolBuffers(poolBuffers),
+	_lastTime(0), _seekTime(0), _startTime(0), _firstTime(0), _audioCodecBuffer(poolBuffers), _videoCodecBuffer(poolBuffers) {
 
 	INFO("Initialization of the publisher (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")")
 }
@@ -162,77 +163,91 @@ void Publisher::writeData(DataReader& reader, FlashWriter::DataType type) {
 }*/
 
 void Publisher::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
-	if (!publishVideo /*&& !MediaCodec::H264::IsCodecInfos(packet)*/)
+	// save video codec packet for future listeners
+	if (_videoCodecBuffer.empty() && RTMFP::IsH264CodecInfos(data, size)) {
+		DEBUG("H264 codec infos received on publication")
+		// h264 codec && settings codec informations
+		_videoCodecBuffer->resize(size, false);
+		memcpy(_videoCodecBuffer->data(), data, size);
+	}
+
+	if (!publishVideo && !RTMFP::IsH264CodecInfos(data, size))
 		return;
 
-	/*if (!_codecInfosSent) {
-		if (MediaCodec::IsKeyFrame(packet)) {
+	if (!_codecInfosSent) {
+		if (RTMFP::IsKeyFrame(data, size)) {
 			_codecInfosSent = true;
-			if (!publication.videoCodecBuffer().empty() && !MediaCodec::H264::IsCodecInfos(packet)) {
-				PacketReader videoCodecPacket(publication.videoCodecBuffer()->data(), publication.videoCodecBuffer()->size());
-				INFO("H264 codec infos sent to one listener of ", publication.name(), " publication")
-					pushVideo(time, videoCodecPacket);
+			if (!_videoCodecBuffer.empty() && !RTMFP::IsH264CodecInfos(data, size)) {
+				INFO("H264 codec infos sent to one listener of publication")
+				pushVideo(time, _videoCodecBuffer.data(), _videoCodecBuffer.size());
 			}
 		}
 		else {
 			DEBUG("Video frame dropped to wait first key frame");
 			return;
 		}
-	}*/
+	}
 
 	if (!_pVideoWriter && !initWriters())
 		return;
 
-	/*if (_firstTime) {
+	if (_firstTime) {
 		_startTime = time;
 		_firstTime = false;
 
 		// for audio sync (audio is usually the reference track)
 		if (pushAudioInfos(time))
-			pushAudio(time, PacketReader::Null); // push a empty audio packet to avoid a video which waits audio tracks!
+			pushAudio(time, NULL, 0); // push a empty audio packet to avoid a video which waits audio tracks!
 	}
 	time -= _startTime;
 
-	TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, ") ", Util::FormatHex(packet.current(), 5, LOG_BUFFER));*/
+	//TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, ") ", Util::FormatHex(packet.current(), 5, LOG_BUFFER));
 
-	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _videoReliable, FlashWriter::VIDEO, time, data, size/*_lastTime = (time + _seekTime), packet, *this*/))
+	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _videoReliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), data, size))
 		initWriters();
 }
 
 
 void Publisher::pushAudio(UInt32 time, const UInt8* data, UInt32 size) {
-	if (!publishAudio /*&& !MediaCodec::AAC::IsCodecInfos(packet)*/)
+	// Save audio codec packet for delayed start
+	if (RTMFP::IsAACCodecInfos(data, size)) {
+		DEBUG("AAC codec infos received on publication ")
+		// AAC codec && settings codec informations
+		_audioCodecBuffer->resize(size, false);
+		memcpy(_audioCodecBuffer->data(), data, size);
+	}
+
+	if (!publishAudio && !RTMFP::IsAACCodecInfos(data, size))
 		return;
 
 	if (!_pAudioWriter && !initWriters())
 		return;
 
-	/*if (_firstTime) {
+	if (_firstTime) {
 		_firstTime = false;
 		_startTime = time;
 		pushAudioInfos(time);
 	}
 	time -= _startTime;
 
-	TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");*/
+	//TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");*/
 
-	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _audioReliable, FlashWriter::AUDIO, time, data, size/*_lastTime = (time + _seekTime), packet, *this*/))
+	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _audioReliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), data, size))
 		initWriters();
 }
 
 /*void Publisher::pushProperties(DataReader& packet) {
 	INFO("Properties sent to one listener of ", publication.name(), " publication")
 		writeData(packet, FlashWriter::DATA_INFO);
-}
+}*/
 
 bool Publisher::pushAudioInfos(UInt32 time) {
-	if (publication.audioCodecBuffer().empty())
+	if (_audioCodecBuffer.empty())
 		return false;
-	PacketReader audioCodecPacket(publication.audioCodecBuffer()->data(), publication.audioCodecBuffer()->size());
-	INFO("AAC codec infos sent to one listener of ", publication.name(), " publication")
-		pushAudio(time, audioCodecPacket);
+	INFO("AAC codec infos sent to one listener of publication")
+	pushAudio(time, _audioCodecBuffer.data(), _audioCodecBuffer.size());
 	return true;
-}*/
+}
 
 void Publisher::flush() {
 	if (!_pWriter)

@@ -84,5 +84,7 @@ public:
 	static bool						IsKeyFrame(const Mona::UInt8* data, Mona::UInt32 size) { return size>0 && (*data & 0xF0) == 0x10; }
 
 	static bool						IsAACCodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && (*data >> 4) == 0x0A && data[1] == 0; }
+
+	static bool						IsH264CodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && *data == 0x17 && data[1] == 0; }
 };
 

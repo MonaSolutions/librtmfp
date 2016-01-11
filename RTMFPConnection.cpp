@@ -255,7 +255,7 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 
 	auto it = _mapPeersByTag.find(tagReceived);
 	if (it == _mapPeersByTag.end()) {
-		WARN("Handshake 70 received but no p2p connection found with tag ", tagReceived, " (possible old request)")
+		WARN("Handshake 70 received but no p2p connection found with tag (possible old request)")
 		return true;
 	}
 
@@ -291,7 +291,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 
 	auto it = _mapPeersByTag.find(tagReceived);
 	if (it == _mapPeersByTag.end()) {
-		WARN("Handshake 71 received but no p2p connection found with tag ", tagReceived, " (possible old request)")
+		WARN("Handshake 71 received but no p2p connection found with tag (possible old request)")
 		return true;
 	}
 
@@ -571,8 +571,9 @@ bool RTMFPConnection::getPublishStream(const string& streamName,bool& audioRelia
 	return false;
 }
 
-void RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
+bool RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
 	ERROR("Cannot handle play command on a RTMFP Connection") // target error (shouldn't happen)
+	return false;
 }
 
 void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {

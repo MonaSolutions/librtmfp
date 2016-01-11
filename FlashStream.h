@@ -9,7 +9,7 @@
 namespace FlashEvents {
 	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description, FlashWriter& writer)> {};
 	struct OnMedia: Mona::Event<void(Mona::UInt32 time,Mona::PacketReader& packet,double lostRate,bool audio)> {};
-	struct OnPlay: Mona::Event<void(const std::string& streamName, FlashWriter& writer)> {};
+	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
 };
 
 /**************************************************************

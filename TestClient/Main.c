@@ -134,8 +134,10 @@ int main(int argc,char* argv[]) {
 			_option = WRITE;
 		else if (stricmp(argv[i], "--p2pWrite")==0)
 			_option = P2P_WRITE;
-		else if (stricmp(argv[i], "--dump")==0)
+		else if (stricmp(argv[i], "--dump") == 0) {
 			RTMFP_ActiveDump();
+			RTMFP_DumpSetCallback(onDump);
+		} 
 		else if (stricmp(argv[i], "--audioUnbuffered") == 0) // for publish mode
 			audioReliable = 0;
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode

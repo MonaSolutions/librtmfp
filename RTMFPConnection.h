@@ -50,7 +50,7 @@ protected:
 	virtual void handleStreamCreated(Mona::UInt16 idStream);
 	
 	// Handle play request (only for P2PConnection)
-	virtual void handlePlay(const std::string& streamName, FlashWriter& writer);
+	virtual bool handlePlay(const std::string& streamName, FlashWriter& writer);
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);

@@ -263,13 +263,13 @@ bool P2PConnection::getPublishStream(const string& streamName,bool& audioReliabl
 }
 
 // Only in responder mode
-void P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
+bool P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	INFO("The peer ",peerId," is trying to play '", streamName,"'...")
 
 	bool audioReliable, videoReliable;
 	if(!_parent.getPublishStream(streamName,audioReliable,videoReliable)) {
 		// TODO : implement NetStream.Play.BadName
-		return;
+		return false;
 	}
 	INFO("Stream ",streamName," found, sending start answer")
 
@@ -279,18 +279,7 @@ void P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, audioReliable, videoReliable));
 	_pPublisher->setWriter(&writer);
 
-	// Send the response
-	writer.writeRaw().write16(0).write32(_sessionId); // stream begin
-	writer.writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + streamName); // for entiere playlist
-	writer.writeAMFStatus("NetStream.Play.Start", "Started playing " + streamName); // for item
-	AMFWriter& amf(writer.writeAMFData("|RtmpSampleAccess"));
-
-	// TODO: determinate if video and audio are available
-	amf.writeBoolean(true); // audioSampleAccess
-	amf.writeBoolean(true); // videoSampleAccess
-
-	writer.flush();
-	// TODO: flush?
+	return true;
 }
 
 void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {

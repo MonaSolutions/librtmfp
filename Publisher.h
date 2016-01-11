@@ -51,18 +51,18 @@ private:
 	//void    writeData(DataReader& reader, FlashWriter::DataType type);
 
 	bool	initWriters();
-	bool	firstTime() { return !_pVideoWriter && !_pAudioWriter && !_dataInitialized; }
+	//bool	firstTime() { return !_pVideoWriter && !_pAudioWriter && !_dataInitialized; }
 	void	closeWriters();
 
-	//bool	pushAudioInfos(Mona::UInt32 time);
+	bool	pushAudioInfos(Mona::UInt32 time);
 
 	//Mona::PacketReader& publicationNamePacket() { _publicationNamePacket.reset(); return _publicationNamePacket; }
 
-	/*Mona::UInt32 			_startTime;
+	Mona::UInt32			_startTime;
 	Mona::UInt32			_lastTime;
 	bool					_firstTime;
 	Mona::UInt32			_seekTime;
-	bool					_codecInfosSent;*/
+	bool					_codecInfosSent;
 
 	FlashWriter*				_pWriter;
 	FlashWriter*				_pAudioWriter;
@@ -72,6 +72,10 @@ private:
 	bool						_audioReliable;
 	const Mona::PoolBuffers&	_poolBuffers;
 
+	Mona::PoolBuffer			_audioCodecBuffer;
+	Mona::PoolBuffer			_videoCodecBuffer;
+
+	// Buffer of media packets
 	struct OutMediaPacket : public Mona::Object {
 
 		OutMediaPacket(const Mona::PoolBuffers& poolBuffers, AMF::ContentType typeMedia, Mona::UInt32 timeMedia, const Mona::UInt8* data, Mona::UInt32 size) : pBuffer(poolBuffers,size), time(timeMedia), type(typeMedia) {

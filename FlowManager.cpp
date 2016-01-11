@@ -56,7 +56,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		handleStreamCreated(idStream);
 	};
 	onPlay = [this](const string& streamName, FlashWriter& writer) {
-		handlePlay(streamName, writer);
+		return handlePlay(streamName, writer);
 	};
 	onMedia = [this](UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 

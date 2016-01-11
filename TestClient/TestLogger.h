@@ -38,8 +38,6 @@ static const char*  LevelColors[] = { FATAL_COLOR, CRITIC_COLOR, ERROR_COLOR, WA
 static FILE *			pLogFile = NULL;
 
 void onLog(unsigned int threadID, int level, const char* fileName, long line, const char* message) {
-	if (!pLogFile)
-		return;
 
 	char* logType = "Unkwnown level";
 	switch (level) {
@@ -62,5 +60,19 @@ void onLog(unsigned int threadID, int level, const char* fileName, long line, co
 	BEGIN_CONSOLE_TEXT_COLOR(LevelColors[level-1]);
 	printf("%s[%ld] %s\n", fileName, line, message);
 	END_CONSOLE_TEXT_COLOR;
-	fprintf(pLogFile, "%.2d/%.2d %.2d:%.2d:%.2d\t%s %s[%ld] %s\n", tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, logType, fileName, line, message);
+
+	if (pLogFile) {
+		fprintf(pLogFile, "%.2d/%.2d %.2d:%.2d:%.2d\t%s %s[%ld] %s\n", tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, logType, fileName, line, message);
+		fflush(pLogFile);
+	}
+}
+
+void onDump(const char* header, const void* data, unsigned int size) {
+	printf("%s\n", header);
+	fwrite(data, sizeof(char), size, stdout);
+	if (pLogFile) {
+		fprintf(pLogFile, "%s\n", header);
+		fwrite(data, sizeof(char), size, pLogFile);
+		fflush(pLogFile);
+	}
 }

@@ -132,7 +132,18 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 		string publication;
 		message.readString(publication);
 		
-		OnPlay::raise(publication, writer);
+		if (OnPlay::raise<false>(publication, writer)) {
+			writer.writeRaw().write16(0).write32(2000000 + id); // stream begin
+			writer.writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + publication); // for entiere playlist
+			writer.writeAMFStatus("NetStream.Play.Start", "Started playing " + publication); // for item
+			AMFWriter& amf(writer.writeAMFData("|RtmpSampleAccess"));
+
+			// TODO: determinate if video and audio are available
+			amf.writeBoolean(true); // audioSampleAccess
+			amf.writeBoolean(true); // videoSampleAccess
+		}
+
+		writer.flush();
 		return;
 	}
 
