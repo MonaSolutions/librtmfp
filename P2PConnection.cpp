@@ -262,13 +262,19 @@ bool P2PConnection::getPublishStream(const string& streamName,bool& audioReliabl
 	return false;
 }
 
+// Set the p2p publisher as ready (used for blocking mode)
+void P2PConnection::setP2pPublisherReady() {
+	ERROR("Cannot set publisher ready on a P2P Connection") // implementation error
+}
+
 // Only in responder mode
 bool P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	INFO("The peer ",peerId," is trying to play '", streamName,"'...")
 
 	bool audioReliable, videoReliable;
 	if(!_parent.getPublishStream(streamName,audioReliable,videoReliable)) {
-		// TODO : implement NetStream.Play.BadName
+		// TODO : See if we can send a specific answer
+		WARN("Unable to found the stream ", streamName, ", request ignored")
 		return false;
 	}
 	INFO("Stream ",streamName," found, sending start answer")
@@ -278,6 +284,8 @@ bool P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	// Create the publisher
 	_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, audioReliable, videoReliable));
 	_pPublisher->setWriter(&writer);
+
+	_parent.setP2pPublisherReady();
 
 	return true;
 }

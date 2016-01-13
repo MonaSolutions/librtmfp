@@ -102,16 +102,24 @@ int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned sh
 	return 0;
 }
 
-int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable) {
+int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
 
 	shared_ptr<RTMFPConnection> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if(pConn) {
-		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, audioReliable>0, videoReliable>0);
-		return 1;
+	GlobalInvoker->getConnection(RTMFPcontext, pConn);
+	if (!pConn)
+		return 0;
+
+	pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, audioReliable > 0, videoReliable > 0);
+
+	if (blocking) {
+		while (!pConn->p2pPublishReady) {
+			pConn->p2pPublishSignal.wait(200);
+			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
+				return 0;
+		}
 	}
 
-	return 0;
+	return 1;
 }
 
 int RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {

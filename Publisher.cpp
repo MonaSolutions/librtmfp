@@ -11,7 +11,7 @@ using namespace std;
 
 Publisher::Publisher(const PoolBuffers& poolBuffers, TaskHandler& handler, bool audioReliable, bool videoReliable) : _pWriter(NULL), publishAudio(true), publishVideo(true),
 	_pAudioWriter(NULL), _pVideoWriter(NULL), _dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable), Task(handler), _poolBuffers(poolBuffers),
-	_lastTime(0), _seekTime(0), _startTime(0), _firstTime(0), _audioCodecBuffer(poolBuffers), _videoCodecBuffer(poolBuffers) {
+	_lastTime(0), _seekTime(0), _startTime(0), _firstTime(true), _audioCodecBuffer(poolBuffers), _videoCodecBuffer(poolBuffers) {
 
 	INFO("Initialization of the publisher (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")")
 }
@@ -169,6 +169,7 @@ void Publisher::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
 		// h264 codec && settings codec informations
 		_videoCodecBuffer->resize(size, false);
 		memcpy(_videoCodecBuffer->data(), data, size);
+		return; // we wait the first video packet before sending codecs
 	}
 
 	if (!publishVideo && !RTMFP::IsH264CodecInfos(data, size))

@@ -39,7 +39,12 @@ public:
 	// Return true if the stream exists, otherwise false (only for RTMFP connection)
 	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable);
 
+	// Set the p2p publisher as ready (used for blocking mode)
+	virtual void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
+
 	Mona::Signal							connectSignal; // signal to wait connection
+	Mona::Signal							p2pPublishSignal; // signal to wait p2p publish
+	bool									p2pPublishReady;
 
 protected:
 

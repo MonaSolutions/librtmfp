@@ -27,6 +27,9 @@ public:
 	// Return true if the stream exists, otherwise false (only for RTMFP connection)
 	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable);
 
+	// Set the p2p publisher as ready (used for blocking mode)
+	virtual void setP2pPublisherReady();
+
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
 	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
 

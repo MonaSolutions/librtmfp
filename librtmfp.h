@@ -21,7 +21,7 @@ int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned sh
 
 // RTMFP P2P NetStream Publish function (equivalent of NetStream.DIRECT_CONNECTIONS)
 // return : 1 if the request succeed, 0 otherwise
-int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable);
+int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
 
 // RTMFP NetStream Unpublish function
 // return : 1 if the request succeed, 0 otherwise

@@ -103,7 +103,8 @@ void onManage() {
 				onLog(0, 5, "Main.lua", __LINE__, "End of file reached, we send last data and unpublish");
 				endOfWrite = 1;
 				RTMFP_Write(context, buf, towrite);
-				RTMFP_ClosePublication(context, publication);
+				if (_option == WRITE)
+					RTMFP_ClosePublication(context, publication);
 				return;
 			}
 		}
@@ -183,7 +184,7 @@ int main(int argc,char* argv[]) {
 			else if (_option == WRITE)
 				RTMFP_Publish(context, publication, audioReliable, videoReliable);
 			else if (_option == P2P_WRITE)
-				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable);
+				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
 
 #if defined(WIN32)
 			errno_t err;

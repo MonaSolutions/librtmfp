@@ -9,8 +9,8 @@
 using namespace Mona;
 using namespace std;
 
-RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent): 
-	_nbCreateStreams(0), _waitConnect(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
+	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
@@ -321,8 +321,8 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 
 	_farId = reader.read32(); // id session?
 	UInt32 nonceSize = (UInt32)reader.read7BitLongValue();
-	if (nonceSize != 0x8B) {
-		ex.set(Exception::PROTOCOL, "Incorrect nonce size : ", nonceSize, " (expected 139)");
+	if (nonceSize < 0x8A) {
+		ex.set(Exception::PROTOCOL, "Incorrect nonce size : ", nonceSize, " (expected at least 138 bytes)");
 		return false;
 	}
 
@@ -527,21 +527,16 @@ void RTMFPConnection::sendConnections() {
 }
 
 bool RTMFPConnection::onConnect(Mona::Exception& ex) {
-	
-	// Bind the current port for p2p requests
-	/*SocketAddress address(IPAddress::Wildcard(), _pSocket->address().port());
-	if (!_pSocket->bind(ex, address))
-		return false;*/
 
 	// Record port for setPeerInfo request
 	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
 	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
 	if (pFlow) {
 		INFO("Sending peer info...")
-		//pFlow->sendPeerInfo(address.port());
 		pFlow->sendPeerInfo(_pSocket->address().port());
 	}
 
+	// We are connected : unlock the possible blocking RTMFP_Connect function
 	connectSignal.set();
 	return true;
 }
