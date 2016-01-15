@@ -145,7 +145,7 @@ void RTMFP_Close(unsigned int RTMFPcontext) {
 		GlobalInvoker.reset();
 }
 
-int RTMFP_Read(unsigned int RTMFPcontext,char *buf,unsigned int size) {
+int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned int size) {
 	if (!GlobalInvoker) {
 		ERROR("Invoker is not ready, you must establish the connection first")
 		return -1;
@@ -158,7 +158,7 @@ int RTMFP_Read(unsigned int RTMFPcontext,char *buf,unsigned int size) {
 		int nbRead = 0;
 		bool running = true;
 		while (running && nbRead==0 /*size > 0*/) {
-			running = pConn->read((UInt8*)buf, size, nbRead);
+			running = pConn->read(peerId, (UInt8*)buf, size, nbRead);
 			if (nbRead < 0)
 				return nbRead;
 			if (nbRead > 0) {

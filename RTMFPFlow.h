@@ -44,6 +44,7 @@ public:
 	void				sendPublish(const std::string& name);
 	void				createStream();
 	void				sendPeerInfo(Mona::UInt16 port);
+	void				setPeerId(const std::string& peerId);
 	
 private:
 	// Handle on fragment received

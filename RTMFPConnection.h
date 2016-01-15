@@ -22,7 +22,7 @@ public:
 
 	// Asynchronous read (buffered)
 	// return false if end of buf has been reached
-	bool read(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+	bool read(const char* peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Write media (netstream must be published)
 	// return false if the client is not ready to publish, otherwise true

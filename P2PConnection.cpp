@@ -235,8 +235,10 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 	// Create 1st NetStream and flow
 	string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
 	RTMFPFlow* pFlow = createFlow(2, signature);
+	pFlow->setPeerId(peerId);
 
 	// Start playing Play
+	INFO("Sending play request to peer for stream '", _streamName, "'")
 	pFlow->sendPlay(_streamName, true);
 	return true;
 }

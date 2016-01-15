@@ -133,6 +133,8 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 		message.readString(publication);
 		
 		if (OnPlay::raise<false>(publication, writer)) {
+			_streamName = publication;
+
 			writer.writeRaw().write16(0).write32(2000000 + id); // stream begin
 			writer.writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + publication); // for entiere playlist
 			writer.writeAMFStatus("NetStream.Play.Start", "Started playing " + publication); // for item
@@ -199,21 +201,13 @@ void FlashStream::rawHandler(UInt16 type, PacketReader& packet, FlashWriter& wri
 }
 
 void FlashStream::audioHandler(UInt32 time,PacketReader& packet, double lostRate) {
-	/*if(!_pPublication) {
-		WARN("an audio packet has been received on a no publishing stream ",id,", certainly a publication currently closing");
-		return;
-	}
-	_pPublication->pushAudio(time,packet,peer.ping(),lostRate);*/
-	OnMedia::raise(time, packet, lostRate, true);
+
+	OnMedia::raise(_peerId, _streamName, time, packet, lostRate, true);
 }
 
 void FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate) {
-	/*if(!_pPublication) {
-		WARN("a video packet has been received on a no publishing stream ",id,", certainly a publication currently closing");
-		return;
-	}
-	_pPublication->pushVideo(time,packet,peer.ping(),lostRate);*/
-	OnMedia::raise(time, packet, lostRate, false);
+
+	OnMedia::raise(_peerId, _streamName, time, packet, lostRate, false);
 }
 
 void FlashStream::connect(FlashWriter& writer,const string& url) {
@@ -225,6 +219,7 @@ void FlashStream::createStream(FlashWriter& writer) {
 }
 
 void FlashStream::play(FlashWriter& writer,const string& name, bool amf3) {
+	_streamName = name;
 	AMFWriter& amfWriter = writer.writeInvocation("play", amf3);
 	amfWriter.amf0 = true;
 	amfWriter.writeString(name.c_str(), name.size());
@@ -232,6 +227,7 @@ void FlashStream::play(FlashWriter& writer,const string& name, bool amf3) {
 }
 
 void FlashStream::publish(FlashWriter& writer,const string& name) {
+	_streamName = name;
 	AMFWriter& amfWriter = writer.writeInvocation("publish");
 	amfWriter.writeString(name.c_str(), name.size());
 	writer.flush();

@@ -338,3 +338,8 @@ void RTMFPFlow::sendPeerInfo(UInt16 port) {
 	if(_pStream)
 		_pStream->sendPeerInfo(*_pWriter, port);
 }
+
+void RTMFPFlow::setPeerId(const string& peerId) {
+	if(_pStream)
+		_pStream->setPeerId(peerId);
+}

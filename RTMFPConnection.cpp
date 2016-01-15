@@ -76,14 +76,14 @@ bool RTMFPConnection::connect2Peer(Exception& ex, const char* peerId, const char
 	return true;
 }
 
-bool RTMFPConnection::read(UInt8* buf, UInt32 size, int& nbRead) {
+bool RTMFPConnection::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
 	
 	bool res(true);
-	if (!(res = readAsync(buf, size, nbRead))  || nbRead>0)
+	if (!(res = readAsync(peerId, buf, size, nbRead))  || nbRead>0)
 		return res; // quit if treated
 
 	for (auto &it : _mapPeersByAddress) {
-		if (!(res = it.second->readAsync(buf, size, nbRead)) || nbRead>0)
+		if (!(res = it.second->readAsync(peerId, buf, size, nbRead)) || nbRead>0)
 			return res; // quit if treated
 	}
 
@@ -488,13 +488,14 @@ void RTMFPConnection::sendConnections() {
 	}
 
 	// Send waiting p2p connections
+	string id;
 	while (connected && !_waitingPeers.empty()) {
 
 		string& tag = _waitingPeers.front();
 		auto it = _mapPeersByTag.find(tag);
 		if (it != _mapPeersByTag.end()) {
 			INFO("Sending P2P handshake 30 to server (peerId : ", it->second->peerId, ")")
-			string id = it->second->peerId;
+			id = it->second->peerId.c_str(); // strange behavior here, if we assign directly the string it references peerId no Linux
 			it->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), tag);
 			it->second->lastTry.start();
 			it->second->attempt++;

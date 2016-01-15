@@ -8,7 +8,7 @@
 
 namespace FlashEvents {
 	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description, FlashWriter& writer)> {};
-	struct OnMedia: Mona::Event<void(Mona::UInt32 time,Mona::PacketReader& packet,double lostRate,bool audio)> {};
+	struct OnMedia : Mona::Event<void(const std::string& peerId, const std::string& stream, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate, bool audio)> {};
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
 };
 
@@ -51,6 +51,8 @@ public:
 	// Send the setPeerInfo request to the RTMFP server
 	virtual void sendPeerInfo(FlashWriter& writer, Mona::UInt16 port);
 
+	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }
+
 private:
 
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
@@ -61,6 +63,8 @@ private:
 
 	Mona::UInt32	_bufferTime;
 	std::string		_streamName;
+
+	std::string		_peerId; // peer ID (only for p2p play stream)
 
 	//Mona::UInt32	_timeFrequency; // to retrieve time
 };

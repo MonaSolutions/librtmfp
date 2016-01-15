@@ -6,7 +6,7 @@ extern "C" {
 // RTMFP Connection function
 // return : index of the connection's context
 unsigned int RTMFP_Connect(const char* url, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
-				void (* onMedia)(unsigned int, const char*, unsigned int,int), int blocking);
+				void (* onMedia)(const char *, const char*, unsigned int, const char*, unsigned int,int), int blocking);
 
 // Connect to a peer via RTMFP P2P Connection (must be connected) and start playing streamName
 int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
@@ -32,7 +32,8 @@ void RTMFP_Close(unsigned int RTMFPcontext);
 
 // Read size bytes of flv data from the current connexion (Asynchronous read, to be called by ffmpeg)
 // return the number of bytes read (always less or equal than size)
-int RTMFP_Read(unsigned int RTMFPcontext, char *buf, unsigned int size);
+// peerId : the id of the peer or an empty string
+int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext, char *buf, unsigned int size);
 
 // Write size bytes of data into the current connexion
 // return the number of bytes used

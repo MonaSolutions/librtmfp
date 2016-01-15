@@ -11,7 +11,7 @@
 
 // Callback typedef definitions
 typedef void(*OnStatusEvent)(const char*, const char*);
-typedef void(*OnMediaEvent)(unsigned int, const char*, unsigned int, int);
+typedef void(*OnMediaEvent)(const char *, const char*, unsigned int, const char*, unsigned int, int);
 typedef void(*OnSocketError)(const char*);
 
 class Invoker;
@@ -66,8 +66,9 @@ public:
 
 protected:
 
-	// Read data asynchronously (TODO: add possibility to specify the stream name)
-	bool						readAsync(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+	// Read data asynchronously
+	// peerId : id of the peer if it is a p2p connection, otherwise parameter is ignored
+	bool						readAsync(const std::string& peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Analyze packets received from the server (must be connected)
 	void						receive(Mona::Exception& ex, Mona::BinaryReader& reader);
@@ -177,15 +178,15 @@ protected:
 
 		Mona::PoolBuffer	pBuffer;
 	};
-	std::deque<std::shared_ptr<RTMFPMediaPacket>>			_mediaPackets;
-	std::recursive_mutex									_readMutex;
-	bool													_firstRead;
-	static const char										_FlvHeader[];
+	std::map<std::string, std::deque<std::shared_ptr<RTMFPMediaPacket>>>		_mediaPackets;
+	std::recursive_mutex														_readMutex;
+	bool																		_firstRead;
+	static const char															_FlvHeader[];
 
 	// Read
-	bool													_firstMedia;
-	Mona::UInt32											_timeStart;
+	bool																		_firstMedia;
+	Mona::UInt32																_timeStart;
 
 	// Write members
-	bool													_firstWrite; // True if the input file has already been read
+	bool																		_firstWrite; // True if the input file has already been read
 };

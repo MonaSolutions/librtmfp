@@ -58,7 +58,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 	onPlay = [this](const string& streamName, FlashWriter& writer) {
 		return handlePlay(streamName, writer);
 	};
-	onMedia = [this](UInt32 time, PacketReader& packet, double lostRate, bool audio) {
+	onMedia = [this](const std::string& peerId, const std::string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
 		if(_firstMedia) {
 			_firstMedia=false;
@@ -66,10 +66,10 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		}
 
 		if (_pOnMedia) // Synchronous read
-			_pOnMedia(time-_timeStart, (const char*)packet.current(), packet.available(), audio);
+			_pOnMedia(peerId.c_str(), stream.c_str(), time-_timeStart, (const char*)packet.current(), packet.available(), audio);
 		else { // Asynchronous read
 			lock_guard<recursive_mutex> lock(_readMutex);
-			_mediaPackets.emplace_back(new RTMFPMediaPacket(poolBuffers(), packet.current(), packet.available(), time-_timeStart, audio));
+			_mediaPackets[peerId].emplace_back(new RTMFPMediaPacket(poolBuffers(), packet.current(), packet.available(), time-_timeStart, audio));
 		}
 	};
 	onError = [this](const Exception& ex) {
@@ -198,14 +198,14 @@ void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, 
 	}
 }
 
-bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
+bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& nbRead) {
 	
 	nbRead = 0;
 	if (_died)
 		return false; // to stop the parent loop
 
 	lock_guard<recursive_mutex> lock(_readMutex);
-	if (!_mediaPackets.empty()) {
+	if (!_mediaPackets[peerId].empty()) {
 		// First read => send header
 		if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
 			memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
@@ -215,15 +215,16 @@ bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
 		}
 
 		UInt32 bufferSize = 0;
-		while (!_mediaPackets.empty() && (nbRead < size)) {
+		auto& queue = _mediaPackets[peerId];
+		while (!queue.empty() && (nbRead < size)) {
 
-			std::shared_ptr<RTMFPMediaPacket> packet = _mediaPackets.front();
+			std::shared_ptr<RTMFPMediaPacket> packet = queue.front();
 			bufferSize = packet->pBuffer.size();
 			if (bufferSize >(size - nbRead))
 				return false;
 
 			memcpy(buf + nbRead, packet->pBuffer.data(), bufferSize);
-			_mediaPackets.pop_front();
+			queue.pop_front();
 			nbRead += bufferSize;
 		}
 	}
