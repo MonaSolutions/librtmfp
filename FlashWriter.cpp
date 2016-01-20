@@ -60,45 +60,19 @@ AMFWriter& FlashWriter::writeAMFData(const string& name) {
 bool FlashWriter::writeMedia(MediaType type,UInt32 time, const UInt8* data, UInt32 size) {
 	
 	switch(type) {
-		case INIT:
-			/*if (time == AUDIO) {
-				_onAudio.clear();
-				if (properties.getString("onAudio", _onAudio) && amf0) {
-					WARN("Impossible to handle onAudio properties on a AMF0 stream (no ByteArray support)")
-					_onAudio.clear();
-				}
-			} else if (time == VIDEO) {
-				_onVideo.clear();
-				if (properties.getString("onVideo", _onVideo) && amf0) {
-					WARN("Impossible to handle onVideo properties on a AMF0 stream (no ByteArray support)")
-					_onVideo.clear();
-				}
-			}*/
-			break;
 		case START:
 			/*if (time==DATA)
-				writeAMFStatus("NetStream.Play.PublishNotify",string(STR packet.current(),packet.available()) + " is now published");*/
+				writeAMFStatus("NetStream.Play.PublishNotify",string(STR data, size) + " is now published");*
 			break;
 		case STOP:
 			/*if (time==DATA)
-				writeAMFStatus("NetStream.Play.UnpublishNotify",string(STR packet.current(),packet.available()) + " is now unpublished");*/
+				writeAMFStatus("NetStream.Play.UnpublishNotify",string(STR data, size) + " is now unpublished");*/
 			break;
 		case AUDIO:
-			/*if (!_onAudio.empty()) {
-				AMFWriter& writer(writeAMFData(_onAudio));
-				writer.writeNumber(time);
-				writer.writeBytes(packet.current(),packet.available());
-			} else*/
-				write(AMF::AUDIO,time,data,size);
+			write(AMF::AUDIO,time,data,size);
 			break;
 		case VIDEO:
-			/*if (!_onVideo.empty()) {
-				AMFWriter& writer(writeAMFData(_onVideo));
-				writer.writeNumber(time);
-				writer.writeBytes(packet.current(),packet.available());
-				
-			} else*/
-				write(AMF::VIDEO,time,data,size);
+			write(AMF::VIDEO,time,data,size);
 			break;
 		case DATA: {
 			// convert to AMF ?

@@ -5,28 +5,35 @@
 #include "FlashWriter.h"
 //#include "Mona/QualityOfService.h"
 #include "DataReader.h"
-#include "Mona/Task.h"
+//#include "Mona/Task.h"
 #include <deque>
 
-class Publisher : public virtual Mona::Object, private Mona::Task {
+class Listener;
+class Publisher : public virtual Mona::Object {
 public:
 
-	Publisher(const Mona::PoolBuffers& poolBuffers, Mona::TaskHandler& handler, bool audioReliable, bool videoReliable);
+	Publisher(const std::string& name, const Mona::PoolBuffers& poolBuffers, bool audioReliable, bool videoReliable);
 	virtual ~Publisher();
 
-	void setWriter(FlashWriter* pWriter) { _pWriter = pWriter; }
-
+	// Add packets to the waiting queue
 	bool publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos);
 
-	void unpublish();
+	// Flush the media queue
+	virtual void	pushPackets();
 
-	virtual void	handle(Mona::Exception& ex);
+	const std::string&		name() const { return _name; }
 
+	void					start();
+	bool					running() const { return _running; }
+	void					stop();
+	Mona::UInt32			count() const { return _listeners.size(); }
+
+	Listener*				addListener(Mona::Exception& ex, const std::string& identifier, FlashWriter& writer);
+	void					removeListener(const std::string& identifier);
+
+	const Mona::PoolBuffer&		audioCodecBuffer() const { return _audioCodecBuffer; }
+	const Mona::PoolBuffer&		videoCodecBuffer() const { return _videoCodecBuffer; }
 private:
-	/*void seek(Mona::UInt32 time);
-
-	void startPublishing();
-	void stopPublishing();*/
 
 	void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 	void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
@@ -42,38 +49,21 @@ private:
 	const QualityOfService&	audioQOS() const { return _pAudioWriter ? _pAudioWriter->qos() : QualityOfService::Null; }
 	const QualityOfService&	dataQOS() const { return _writer.qos(); }*/
 
-//private:
+	bool								_running; // If the publication is running
+	std::map<std::string, Listener*>	_listeners; // list of listeners to this publication
+	const std::string					_name; // name of the publication
 
-	//bool writeReliableMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, Mona::PacketReader& packet, const Mona::Parameters& properties) { return writeMedia(writer, true, type, time, packet, properties); }
-	//bool writeMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, Mona::PacketReader& packet, const Mona::Parameters& properties) { return writeMedia(writer, _reliable, type, time, packet, properties); }
-	bool writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 
 	//void    writeData(DataReader& reader, FlashWriter::DataType type);
 
-	bool	initWriters();
-	//bool	firstTime() { return !_pVideoWriter && !_pAudioWriter && !_dataInitialized; }
-	void	closeWriters();
-
-	bool	pushAudioInfos(Mona::UInt32 time);
-
-	//Mona::PacketReader& publicationNamePacket() { _publicationNamePacket.reset(); return _publicationNamePacket; }
-
-	Mona::UInt32			_startTime;
-	Mona::UInt32			_lastTime;
-	bool					_firstTime;
-	Mona::UInt32			_seekTime;
-	bool					_codecInfosSent;
-
-	FlashWriter*				_pWriter;
-	FlashWriter*				_pAudioWriter;
-	FlashWriter*				_pVideoWriter;
-	bool						_dataInitialized;
 	bool						_videoReliable;
 	bool						_audioReliable;
 	const Mona::PoolBuffers&	_poolBuffers;
 
 	Mona::PoolBuffer			_audioCodecBuffer;
 	Mona::PoolBuffer			_videoCodecBuffer;
+
+	bool						_new; // True if there is at list a packet to send
 
 	// Buffer of media packets
 	struct OutMediaPacket : public Mona::Object {
@@ -89,4 +79,5 @@ private:
 	};
 
 	std::deque<OutMediaPacket>	_mediaPackets;
+	std::recursive_mutex		_mediaMutex;
 };

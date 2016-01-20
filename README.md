@@ -33,6 +33,16 @@ To use it just do a git clone and run the following command in FFmpeg directory 
 Notes: 
  - You must install first librtmp and libspeex developer versions (-dev or -devel)
  - You can remove --enable-debug if you doesn't want to debug ffmpeg
+
+# How to install librtmp and libspeex developer versions?
+
+On Fedora you can use the RPM Fusion repository, to install it run the following command as root :
+
+  dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+
+Then just install it with dnf :
+
+  dnf install librtmp-devel && dnf install speex-devel
  
 # Sample commands
  

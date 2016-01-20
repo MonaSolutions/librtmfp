@@ -98,6 +98,7 @@
     <ClInclude Include="FlowManager.h" />
     <ClInclude Include="Invoker.h" />
     <ClInclude Include="librtmfp.h" />
+    <ClInclude Include="Listener.h" />
     <ClInclude Include="P2PConnection.h" />
     <ClInclude Include="ParameterWriter.h" />
     <ClInclude Include="Publisher.h" />
@@ -121,6 +122,7 @@
     <ClCompile Include="FlowManager.cpp" />
     <ClCompile Include="Invoker.cpp" />
     <ClCompile Include="librtmfp.cpp" />
+    <ClCompile Include="Listener.cpp" />
     <ClCompile Include="P2PConnection.cpp" />
     <ClCompile Include="Publisher.cpp" />
     <ClCompile Include="ReferableReader.cpp" />

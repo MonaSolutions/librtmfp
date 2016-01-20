@@ -11,7 +11,7 @@ public:
 
 	virtual const Mona::PoolBuffers&		poolBuffers() = 0;
 	virtual void							initWriter(const std::shared_ptr<RTMFPWriter>& pWriter)=0;
-	//virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer) = 0;
+	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer) = 0;
 
 	virtual bool						failed() const = 0;
 	virtual bool						canWriteFollowing(RTMFPWriter& writer)=0;

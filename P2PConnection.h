@@ -15,17 +15,18 @@ class P2PConnection : public FlowManager {
 public:
 	P2PConnection(FlowManager& parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, const Mona::Buffer& pubKey, bool responder);
 
-	virtual ~P2PConnection() {
-		close();
-	}
+	virtual ~P2PConnection();
 
 	virtual Mona::UDPSocket&	socket() { return _parent.socket(); }
 
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false);
 
-	// Return true if the stream exists, otherwise false (only for RTMFP connection)
-	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable);
+	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
+	virtual Listener* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer);
+
+	// Remove the listener with peerId (only for RTMFP connection)
+	virtual void stopListening(const std::string& peerId);
 
 	// Set the p2p publisher as ready (used for blocking mode)
 	virtual void setP2pPublisherReady();
@@ -33,11 +34,8 @@ public:
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
 	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
 
-	const std::string				peerId; // Peer Id of the peer connected
+	std::string						peerId; // Peer Id of the peer connected
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
-
-	// Close the connection properly
-	virtual void close();
 
 	// Set the tag used for this connection (responder mode)
 	void setTag(const std::string& tag) { _tag = tag; }
@@ -69,7 +67,7 @@ public:
 	virtual void				flush(bool echoTime, Mona::UInt8 marker);
 
 	// Does the connection is terminated? => can be deleted by parent
-	bool consumed() { return (_handshakeStep == 3 && connected == false); }
+	bool consumed() { return _died; }
 
 protected:
 	// Handle stream creation (only for RTMFP connection)
@@ -80,6 +78,9 @@ protected:
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
+	
+	// Close the conection properly
+	virtual void				close();
 
 private:
 	FlowManager&				_parent; // RTMFPConnection related to
@@ -87,6 +88,7 @@ private:
 	std::string					_farKey; // Key of the server/peer
 
 	// Play/Publish command
-	std::string					_streamName;
+	std::string					_streamName; // playing stream name
 	bool						_responder; // is responder?
+	Listener*					_pListener;
 };

@@ -29,6 +29,8 @@ RTMFPConnection::~RTMFPConnection() {
 		_pSocket->OnError::unsubscribe(onError);
 		_pSocket->close();
 	}
+
+	_pPublisher.reset();
 }
 
 bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) {
@@ -97,11 +99,7 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 		return false; // to stop the parent loop
 	}
 
-	if(!_pPublisher) {
-		for (auto &it : _mapPeersByAddress) {
-			if (it.second->_pPublisher)
-				return it.second->_pPublisher->publish(buf, size, pos);
-		}
+	if(!_pPublisher || !_pPublisher->count()) {
 		DEBUG("Can't write data because NetStream is not published")
 		return true;
 	}
@@ -110,6 +108,24 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 }
 
 void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
+	// Get command
+	lock_guard<recursive_mutex> lock(_mutexCommands);
+	if (_waitingCommands.empty()) {
+		ERROR("created stream without command")
+		return;
+	}
+	const StreamCommand command = _waitingCommands.back();
+
+	// Manage publisher if it is a publish command
+	if (command.type == NETSTREAM_PUBLISH) {
+		if (_pPublisher) {
+			ERROR("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
+			_waitingCommands.pop_back();
+			return;
+		}
+	}
+
+	// Create the stream
 	shared_ptr<FlashStream> pStream;
 	_pMainStream->addStream(idStream, pStream);
 
@@ -121,20 +137,14 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 	RTMFPFlow * pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
 	_waitingFlows[idStream] = pFlow;
 
-	// Send createStream command and add command type to waiting commands
-	lock_guard<recursive_mutex> lock(_mutexCommands);
-	if (_waitingCommands.empty()) {
-		ERROR("created stream without command")
-		return;
-	}
-	const StreamCommand command = _waitingCommands.back();
+	// Send createStream command and remove command type from waiting commands
 	switch (command.type) {
 	case NETSTREAM_PLAY:
 		pFlow->sendPlay(command.value);
 		break;
 	case NETSTREAM_PUBLISH:
 		pFlow->sendPublish(command.value);
-		_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, command.audioReliable, command.videoReliable));
+		_pPublisher.reset(new Publisher(command.value, poolBuffers(), command.audioReliable, command.videoReliable));
 		break;
 	default:
 		ERROR("Unexpected command found on stream creation : ", command.type)
@@ -295,9 +305,8 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		return true;
 	}
 
-	string id((const char*)_peerId, 0x20);
-	/*string id = it->second->peerId;
-	id = Util::UnformatHex(id);*/
+	string id = it->second->peerId;
+	id = Util::UnformatHex(id);
 
 	SocketAddress address;
 	while (reader.available() && *reader.current() != 0xFF) {
@@ -409,6 +418,10 @@ void RTMFPConnection::manage() {
 	// Send waiting P2P connections
 	sendConnections();
 
+	// Flush the publisher
+	if (_pPublisher)
+		_pPublisher->pushPackets();
+
 	// Flush writers
 	flushWriters();
 
@@ -428,16 +441,9 @@ void RTMFPConnection::manage() {
 
 // TODO: see if we always need to manage a list of commands
 void RTMFPConnection::addCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
-
-	lock_guard<recursive_mutex> lock(_mutexCommands);
-	if(command == NETSTREAM_PUBLISH_P2P) {
-		pair<bool,bool> params(audioReliable,videoReliable);
-		_mapP2pPublications.emplace(streamName, params);
-		return;
-	}
 		
 	_waitingCommands.emplace_back(command, streamName, audioReliable, videoReliable);
-	if (command != NETSTREAM_CLOSE)
+	if (command != NETSTREAM_CLOSE && command != NETSTREAM_PUBLISH_P2P)
 		_nbCreateStreams++;
 }
 
@@ -446,19 +452,29 @@ void RTMFPConnection::createWaitingStreams() {
 	if (!connected || _waitingCommands.empty())
 		return;
 
-	// Manage waiting close publication commands
+	// Manage waiting close and p2p publication commands
 	auto itCommand = _waitingCommands.begin();
 	while(itCommand != _waitingCommands.end()) {
 		
-		// TODO: manage more than one publisher + protect the _pPublisher by mutex
 		if(itCommand->type == NETSTREAM_CLOSE) {
 			INFO("Unpublishing stream ", itCommand->value, "...")
 			if(!_pPublisher)
 				ERROR("Unable to find the publisher")
-			else
-				_pPublisher->unpublish();
+			else {
+				_pPublisher->stop();
+				_pPublisher->removeListener(_hostAddress.toString());
+			}
 			_waitingCommands.erase(itCommand++);
-		} else
+		} 
+		else if (itCommand->type == NETSTREAM_PUBLISH_P2P) {
+			INFO("Creating publisher for stream ", itCommand->value, "...")
+			if (_pPublisher)
+				ERROR("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
+			else
+				_pPublisher.reset(new Publisher(itCommand->value, poolBuffers(), itCommand->audioReliable, itCommand->videoReliable));
+			_waitingCommands.erase(itCommand++);
+		}
+		else
 			++itCommand;
 	}
 
@@ -542,6 +558,13 @@ bool RTMFPConnection::onConnect(Mona::Exception& ex) {
 	return true;
 }
 
+void RTMFPConnection::onPublished(FlashWriter& writer) {
+	Exception ex;
+	_pPublisher->start();
+	if (!_pPublisher->addListener(ex, _hostAddress.toString(), writer))
+		WARN(ex.error())
+}
+
 RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& address) {
 	auto it = _mapPeersByAddress.find(address);
 	if (it != _mapPeersByAddress.end()) {
@@ -553,18 +576,21 @@ RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& a
 	return FlowManager::getDecoder(idStream, address);
 }
 
-bool RTMFPConnection::getPublishStream(const string& streamName,bool& audioReliable,bool& videoReliable) {
-	lock_guard<recursive_mutex> lock(_mutexCommands);
-
-	// Search the publication with name streamName
-	auto it = _mapP2pPublications.find(streamName);
-	if(it != _mapP2pPublications.end()) {
-		audioReliable = it->second.first;
-		videoReliable = it->second.second;
-		return true;
+Listener* RTMFPConnection::startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer) {
+	
+	if (!_pPublisher || _pPublisher->name() != streamName) {
+		ex.set(Exception::APPLICATION, "No publication found with name ", streamName);
+		return NULL;
 	}
 
-	return false;
+	_pPublisher->start();
+	return _pPublisher->addListener(ex, peerId, writer);
+}
+
+void RTMFPConnection::stopListening(const std::string& peerId) {
+	INFO("Deletion of the listener to ", peerId)
+	if (_pPublisher)
+		_pPublisher->removeListener(peerId);
 }
 
 bool RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
@@ -580,9 +606,9 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 		return;
 	}
 
-	string tmp, peerId;
-	reader.read(0x20, tmp);
-	Util::FormatHex((const UInt8*)tmp.data(), tmp.size(), peerId);
+	// Read our peer id and address of initiator
+	string peerId;
+	reader.read(0x20, peerId);
 	SocketAddress address;
 	RTMFP::ReadAddress(reader, address, reader.read8());
 	
@@ -590,7 +616,7 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 	reader.read(16, tag);
 	INFO("A peer will contact us with address : ", address.toString())
 
-	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
 
 	pPeerConnection->setTag(tag);
 	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;

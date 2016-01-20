@@ -57,8 +57,8 @@ public:
 		abort();
 		_stage = _stageAck = _lostCount = 0;
 		 _ackCount = 0;
-        //std::shared_ptr<RTMFPWriter> pThis = _band.changeWriter(*new RTMFPWriter(*this));
-        //_band.initWriter(pThis);
+        std::shared_ptr<RTMFPWriter> pThis = _band.changeWriter(*new RTMFPWriter(*this));
+        _band.initWriter(pThis);
 		//_qos.reset();
 		//_resetStream = true;
 	}

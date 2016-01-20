@@ -42,13 +42,13 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 	onStatus = [this](const string& code, const string& description, FlashWriter& writer) {
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
-		if(code == "NetConnection.Connect.Success") {
+		if (code == "NetConnection.Connect.Success") {
 			Exception ex;
 			if (!onConnect(ex))
 				onError(ex);
 		}
 		else if (code == "NetStream.Publish.Start")
-			_pPublisher->setWriter(&writer);
+			onPublished(writer);
 		else if (code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName")
 			close();
 	};
@@ -152,8 +152,6 @@ void FlowManager::close() {
 	}
 
 	_died = true;
-
-	_pPublisher.reset();
 }
 
 void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, const SocketAddress&  address) {
@@ -646,4 +644,15 @@ void FlowManager::flushWriters() {
 		}
 		++it;
 	}
+}
+
+shared_ptr<RTMFPWriter> FlowManager::changeWriter(RTMFPWriter& writer) {
+	auto it = _flowWriters.find(writer.id);
+	if (it == _flowWriters.end()) {
+		ERROR("RTMFPWriter ", writer.id, " change impossible on connection")
+		return shared_ptr<RTMFPWriter>(&writer);
+	}
+	shared_ptr<RTMFPWriter> pWriter(it->second);
+	it->second.reset(&writer);
+	return pWriter;
 }

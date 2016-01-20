@@ -36,8 +36,11 @@ public:
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
 		
-	// Return true if the stream exists, otherwise false (only for RTMFP connection)
-	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable);
+	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
+	virtual Listener* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer);
+
+	// Remove the listener with peerId
+	virtual void stopListening(const std::string& peerId);
 
 	// Set the p2p publisher as ready (used for blocking mode)
 	virtual void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
@@ -69,7 +72,11 @@ protected:
 	// Return the decoder engine for the following address (can be P2P or Normal connection)
 	virtual RTMFPEngine*	getDecoder(Mona::UInt32 idStream, const Mona::SocketAddress& address);
 
+	// On NetConnection success callback
 	virtual bool onConnect(Mona::Exception& ex);
+
+	// On NetStream.Publish.Start (only for NetConnection)
+	virtual void onPublished(FlashWriter& writer);
 
 private:
 
@@ -99,12 +106,11 @@ private:
 	std::map<Mona::SocketAddress, std::shared_ptr<P2PConnection>>	_mapPeersByAddress; // P2P connections by Address
 	std::map<std::string, std::shared_ptr<P2PConnection>>			_mapPeersByTag; // Initiator connections waiting an answer (70 or 71)
 
-	std::map<std::string, std::pair<bool,bool>>						_mapP2pPublications; // map of p2p stream publication names to their parameters
-
 	std::string														_url; // RTMFP url of the application (base handshake)
 	Mona::UInt8														_peerId[0x20]; // my peer ID (computed with HMAC-SHA256)
 
 	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
+	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
 
 	// Publish/Play commands
 	struct StreamCommand {

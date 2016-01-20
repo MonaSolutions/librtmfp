@@ -37,8 +37,11 @@ public:
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
 
-	// Return true if the stream exists, otherwise false (only for RTMFP connection)
-	virtual bool getPublishStream(const std::string& streamName, bool& audioReliable, bool& videoReliable)=0;
+	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
+	virtual Listener* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer)=0;
+
+	// Remove the listener with peerId
+	virtual void stopListening(const std::string& peerId)=0;
 
 	// Set the p2p publisher as ready (used for blocking mode)
 	virtual void setP2pPublisherReady()=0;
@@ -60,6 +63,8 @@ public:
 	virtual bool							canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
 
 	virtual void							flush() { flush(connected, connected? 0x89 : 0x0B); }
+
+	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer);
 
 	// Return the size available in the current sender (or max size if there is no current sender)
 	virtual Mona::UInt32					availableToWrite() { return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); }
@@ -85,11 +90,14 @@ protected:
 	// Handle message (after hanshake0)
 	virtual void				handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
 
-	// Close the socket, set the connected and died flags and wait for destruction
+	// Close the conection properly
 	virtual void				close();
 
 	// On NetConnection success callback
 	virtual bool				onConnect(Mona::Exception& ex) { return true; }
+
+	// On NetStream.Publish.Start (only for NetConnection)
+	virtual void				onPublished(FlashWriter& writer) {}
 
 	RTMFPWriter*				writer(Mona::UInt64 id);
 	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);
@@ -161,7 +169,6 @@ protected:
 
 	// Job Members
 	std::shared_ptr<FlashConnection>						_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
-	std::unique_ptr<Publisher>								_pPublisher;
 	std::map<Mona::UInt64, RTMFPFlow*>						_flows;
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter> >	_flowWriters;
 	std::map<Mona::UInt16, RTMFPFlow*>						_waitingFlows; // Map of id streams to new RTMFP flows (before knowing the flow id)

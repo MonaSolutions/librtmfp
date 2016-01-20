@@ -2,39 +2,89 @@
 #include "RTMFP.h"
 #include "RTMFPWriter.h"
 #include "Mona/Logs.h"
-/*#include "Mona/Publication.h"
-#include "Mona/MediaCodec.h"
-#include "Mona/MIME.h"*/
+#include "Listener.h"
 
 using namespace Mona;
 using namespace std;
 
-Publisher::Publisher(const PoolBuffers& poolBuffers, TaskHandler& handler, bool audioReliable, bool videoReliable) : _pWriter(NULL), publishAudio(true), publishVideo(true),
-	_pAudioWriter(NULL), _pVideoWriter(NULL), _dataInitialized(false), _audioReliable(audioReliable), _videoReliable(videoReliable), Task(handler), _poolBuffers(poolBuffers),
-	_lastTime(0), _seekTime(0), _startTime(0), _firstTime(true), _audioCodecBuffer(poolBuffers), _videoCodecBuffer(poolBuffers) {
+Publisher::Publisher(const string& name, const PoolBuffers& poolBuffers, bool audioReliable, bool videoReliable) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),
+	_audioReliable(audioReliable), _videoReliable(videoReliable), _poolBuffers(poolBuffers), _audioCodecBuffer(poolBuffers), _videoCodecBuffer(poolBuffers) {
 
-	INFO("Initialization of the publisher (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")")
+	INFO("Initialization of the publisher ", _name, " (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")")
 }
 
 Publisher::~Publisher() {
-	closeWriters();
+	// delete listeners
+	if (!_listeners.empty()) {
+		ERROR("Publication ",_name," with subscribers is deleting")
+		while (!_listeners.empty())
+			removeListener(_listeners.begin()->first);
+	}
+	if (_running)
+		ERROR("Publication ",_name," running is deleting")
+	DEBUG("Publication ",_name," deleted");
 }
 
-void Publisher::closeWriters() {
-	// -1 indicate that it come of the listener class
-	if (_pAudioWriter)
-		_pAudioWriter->close(-1);
-	if (_pVideoWriter)
-		_pVideoWriter->close(-1);
-	_pVideoWriter = _pAudioWriter = _pWriter = NULL;
-	_dataInitialized = false;
+Listener* Publisher::addListener(Exception& ex, const string& identifier, FlashWriter& writer) {
+	auto it = _listeners.lower_bound(identifier);
+	if (it != _listeners.end() && it->first == identifier) {
+		ex.set(Exception::APPLICATION, "Already subscribed to ", _name);
+		return NULL;
+	}
+	if (it != _listeners.begin())
+		--it;
+	Listener* pListener = new Listener(*this, identifier, writer);
+	_listeners.emplace_hint(it, identifier, pListener);
+	return pListener;
+}
+
+void Publisher::removeListener(const string& identifier) {
+	auto it = _listeners.find(identifier);
+	if (it == _listeners.end()) {
+		WARN("Already unsubscribed of publication ", _name);
+		return;
+	}
+	Listener* pListener = it->second;
+	_listeners.erase(it);
+	delete pListener;
+}
+
+void Publisher::start() {
+	if (_running)
+		return;
+	INFO("Publication ", _name, " started")
+	_running = true;  // keep before startPublishing()
+	for (auto& it : _listeners) {
+		it.second->startPublishing();
+		it.second->flush(); // flush possible messages in startPublishing
+	}
+}
+
+void Publisher::stop() {
+	if (!_running)
+		return; // already done
+	INFO("Publication ", _name, " stopped")
+	for (auto& it : _listeners) {
+		it.second->stopPublishing();
+		it.second->flush(); // flush possible last media + messages in stopPublishing
+	}
+	/*_properties.clear();
+	_propertiesWriter.clear();
+	_videoQOS.reset();
+	_audioQOS.reset();
+	_dataQOS.reset();
+	_lastTime = 0;*/
+	_running = false;
+	_videoCodecBuffer.release();
+	_audioCodecBuffer.release();
 }
 
 bool Publisher::publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos) {
+	lock_guard<recursive_mutex> lock(_mediaMutex); // TODO: check if it is better to use a Task and wait
 	PacketReader packet(data, size);
 	if (packet.available()<14) {
 		DEBUG("Packet too small")
-			return true;
+		return true;
 	}
 
 	const UInt8* cur = packet.current();
@@ -65,24 +115,16 @@ bool Publisher::publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos) {
 		pos += bodySize + 15;
 		if (sizeBis != bodySize + 11) {
 			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize + 11, ")")
-				break;
+			break;
 		}
 	}
-	if (!waitHandle())
-		ERROR("Unable to publish")
 	return true;
 }
 
-void Publisher::unpublish() {
-	if (!_pWriter)
-		return;
+void Publisher::pushPackets() {
+	lock_guard<recursive_mutex> lock(_mediaMutex);
 
-	AMFWriter& amfWriter = _pWriter->writeInvocation("closeStream");
-	//amfWriter.writeString(name.c_str(), name.size());
-	_pWriter->flush();
-}
-
-void Publisher::handle(Exception& ex) {
+	// Send all packets
 	while (!_mediaPackets.empty()) {
 		OutMediaPacket& media = _mediaPackets.front();
 		if (media.type == AMF::AUDIO)
@@ -94,179 +136,77 @@ void Publisher::handle(Exception& ex) {
 	flush();
 }
 
-bool Publisher::initWriters() {
-	bool firstTime(false);
-
-	if (!_pWriter) {
-		ERROR("Reinitialisation of the publication's writers _pWriter is NULL");
-		return false;
-	}
-
-	if (_pVideoWriter || _pAudioWriter || _dataInitialized) {
-		closeWriters();
-		WARN("Reinitialisation of the publication");
-	}
-	else
-		firstTime = true;
-
-	_dataInitialized = true;
-	/*if (!writeReliableMedia(_writer, FlashWriter::INIT, FlashWriter::DATA, publicationNamePacket(), *this))// unsubscribe can be done here!
-		return false; // Here consider that the listener have to be closed by the caller*/
-
-	_pAudioWriter = &_pWriter->newWriter();
-	/*if (!writeReliableMedia(*_pAudioWriter, FlashWriter::INIT, FlashWriter::AUDIO, publicationNamePacket(), *this)) {
-		closeWriters();
-		return false; // Here consider that the listener have to be closed by the caller
-	}*/
-	_pVideoWriter = &_pWriter->newWriter();
-	/*if (!writeReliableMedia(*_pVideoWriter, FlashWriter::INIT, FlashWriter::VIDEO, publicationNamePacket(), *this)) {
-		closeWriters();
-		return false; // Here consider that the listener have to be closed by the caller
-	}*/
-
-	/*if (firstTime && publication.running()) {
-		startPublishing();
-		// send publication properties (metadata)
-		publication.requestProperties(*this);
-	}*/
-
-	return true;
-}
-
-/*void Publisher::stopPublishing() {
-
-	_seekTime = _lastTime;
-	_firstTime = true;
-	_codecInfosSent = false;
-	_startTime = 0;
-}
-
-void Publisher::seek(UInt32 time) {
-	// To force the time to be as requested, but the stream continue normally (not reseted _codecInfosSent and _firstMedia)
-	_firstTime = true;
-	_startTime = 0;
-	_lastTime = _seekTime = time;
-	NOTE("NEW SEEK_TIME = ", _seekTime);
-}
-
-void Publisher::writeData(DataReader& reader, FlashWriter::DataType type) {
-	if (!_dataInitialized && !initWriters())
-		return;
-
-	if (!reader) {
-		ERROR("Impossible to stream ", typeid(reader).name(), " null DataReader");
-		return;
-	}
-
-	if (!writeMedia(_writer, type == FlashWriter::DATA_INFO || _reliable, FlashWriter::DATA, MIME::DataType(reader) << 8 | type, reader.packet, *this))
-		initWriters();
-}*/
-
-void Publisher::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
-	// save video codec packet for future listeners
-	if (_videoCodecBuffer.empty() && RTMFP::IsH264CodecInfos(data, size)) {
-		DEBUG("H264 codec infos received on publication")
-		// h264 codec && settings codec informations
-		_videoCodecBuffer->resize(size, false);
-		memcpy(_videoCodecBuffer->data(), data, size);
-		return; // we wait the first video packet before sending codecs
-	}
-
-	if (!publishVideo && !RTMFP::IsH264CodecInfos(data, size))
-		return;
-
-	if (!_codecInfosSent) {
-		if (RTMFP::IsKeyFrame(data, size)) {
-			_codecInfosSent = true;
-			if (!_videoCodecBuffer.empty() && !RTMFP::IsH264CodecInfos(data, size)) {
-				INFO("H264 codec infos sent to one listener of publication")
-				pushVideo(time, _videoCodecBuffer.data(), _videoCodecBuffer.size());
-			}
-		}
-		else {
-			DEBUG("Video frame dropped to wait first key frame");
-			return;
-		}
-	}
-
-	if (!_pVideoWriter && !initWriters())
-		return;
-
-	if (_firstTime) {
-		_startTime = time;
-		_firstTime = false;
-
-		// for audio sync (audio is usually the reference track)
-		if (pushAudioInfos(time))
-			pushAudio(time, NULL, 0); // push a empty audio packet to avoid a video which waits audio tracks!
-	}
-	time -= _startTime;
-
-	//TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, ") ", Util::FormatHex(packet.current(), 5, LOG_BUFFER));
-
-	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _videoReliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), data, size))
-		initWriters();
-}
-
 
 void Publisher::pushAudio(UInt32 time, const UInt8* data, UInt32 size) {
-	// Save audio codec packet for delayed start
+	if (!_running) {
+		ERROR("Audio packet pushed on '", _name, "' publication stopped");
+		return;
+	}
+
+	//	TRACE("Time Audio ",time)
+
+	/*if (lostRate)
+		INFO((UInt8)(lostRate * 100), "% of audio information lost on publication ", _name);
+	_audioQOS.add(packet.available() + 4, ping, lostRate); // 4 for time encoded*/
+
+	// save audio codec packet for future listeners
 	if (RTMFP::IsAACCodecInfos(data, size)) {
-		DEBUG("AAC codec infos received on publication ")
+		DEBUG("AAC codec infos received on publication ", _name)
 		// AAC codec && settings codec informations
 		_audioCodecBuffer->resize(size, false);
 		memcpy(_audioCodecBuffer->data(), data, size);
 	}
 
-	if (!publishAudio && !RTMFP::IsAACCodecInfos(data, size))
-		return;
-
-	if (!_pAudioWriter && !initWriters())
-		return;
-
-	if (_firstTime) {
-		_firstTime = false;
-		_startTime = time;
-		pushAudioInfos(time);
+	_new = true;
+	auto it = _listeners.begin();
+	while (it != _listeners.end()) {
+		(it++)->second->pushAudio(time, data, size);  // listener can be removed in this call
 	}
-	time -= _startTime;
-
-	//TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");*/
-
-	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _audioReliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), data, size))
-		initWriters();
 }
 
-/*void Publisher::pushProperties(DataReader& packet) {
-	INFO("Properties sent to one listener of ", publication.name(), " publication")
-		writeData(packet, FlashWriter::DATA_INFO);
-}*/
+void Publisher::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
+	if (!_running) {
+		ERROR("Video packet pushed on '", _name, "' publication stopped");
+		return;
+	}
 
-bool Publisher::pushAudioInfos(UInt32 time) {
-	if (_audioCodecBuffer.empty())
-		return false;
-	INFO("AAC codec infos sent to one listener of publication")
-	pushAudio(time, _audioCodecBuffer.data(), _audioCodecBuffer.size());
-	return true;
+	//  TRACE("Time Video ",time," => ",Util::FormatHex(packet.current(),16,LOG_BUFFER))
+
+	// save video codec packet for future listeners
+	if (RTMFP::IsH264CodecInfos(data, size)) {
+		DEBUG("H264 codec infos received on publication ", _name)
+		// h264 codec && settings codec informations
+		_videoCodecBuffer->resize(size, false);
+		memcpy(_videoCodecBuffer->data(), data, size);
+	}
+
+	/*_videoQOS.add(packet.available() + 4, ping, lostRate); // 4 for time encoded
+	if (lostRate) {
+		INFO((UInt8)(lostRate * 100), "% video fragments lost on publication ", _name);
+		// here we are on a new frame which don't follow the previous,
+		// so I-Frame, P-Frame, P-Frame, ... sequence is broken
+		// we have to wait the next keyframe before to redistribute it to the listeners
+		_broken = true;
+	}
+	if (_broken) {
+		++_droppedFrames;
+		if (!MediaCodec::IsKeyFrame(packet))
+			return;
+		_broken = false;
+	}*/
+
+	_new = true;
+	auto it = _listeners.begin();
+	while (it != _listeners.end()) {
+		(it++)->second->pushVideo(time, data, size); // listener can be removed in this call
+	}
 }
 
 void Publisher::flush() {
-	if (!_pWriter)
+	if (!_new)
 		return;
-
-	// in first data channel
-	_pWriter->flush();
-	// now media channel
-	if (_pAudioWriter) // keep in first, because audio track is sometimes the time reference track
-		_pAudioWriter->flush();
-	if (_pVideoWriter)
-		_pVideoWriter->flush();
-}
-
-bool Publisher::writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, UInt32 time, const UInt8* data, UInt32 size) {
-	bool wasReliable(writer.reliable);
-	writer.reliable = reliable;
-	bool success(writer.writeMedia(type, time, data, size));
-	writer.reliable = wasReliable;
-	return success;
+	_new = false;
+	map<string, Listener*>::const_iterator it;
+	for (it = _listeners.begin(); it != _listeners.end(); ++it)
+		it->second->flush();
 }

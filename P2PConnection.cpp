@@ -9,7 +9,7 @@ using namespace std;
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
-	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _pListener(NULL), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_outAddress = _hostAddress = hostAddress;
 
@@ -18,6 +18,10 @@ P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, O
 
 	BinaryWriter writer2(_pubKey.data(), _pubKey.size());
 	writer2.write(pubKey.data(), pubKey.size()); // copy parent public key
+}
+
+P2PConnection::~P2PConnection() {
+	close();
 }
 
 void P2PConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
@@ -87,6 +91,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 		ex.set(Exception::PROTOCOL, "Public key size should be 132 bytes but found : ", publicKeySize);
 		return;
 	}
+	UInt32 idPos = reader.position(); // record position for peer ID determination
 	if ((publicKeySize = reader.read7BitValue()) != 0x82) {
 		ex.set(Exception::PROTOCOL, "Public key size should be 130 bytes but found : ", publicKeySize);
 		return;
@@ -97,6 +102,11 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 		return;
 	}
 	reader.read(0x80, _farKey);
+
+	// Reading peerId
+	UInt8 id[32];
+	EVP_Digest(reader.data() + idPos, 0x84, id, NULL, EVP_sha256(), NULL);
+	INFO("peer ID calculated from public key : ", Util::FormatHex(id, sizeof(id), peerId))
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -259,9 +269,13 @@ void P2PConnection::handleStreamCreated(UInt16 idStream) {
 	ERROR("Stream creation not possible on a P2P Connection") // implementation error
 }
 
-bool P2PConnection::getPublishStream(const string& streamName,bool& audioReliable,bool& videoReliable) {
-	ERROR("Cannot get publication stream on a P2P Connection") // implementation error
-	return false;
+Listener* P2PConnection::startListening(Exception& ex, const string& streamName, const std::string& peerId, FlashWriter& writer) {
+	ERROR("Cannot start listening stream on a P2P Connection") // implementation error
+	return NULL;
+}
+
+void P2PConnection::stopListening(const string& peerId) {
+	ERROR("Cannot stop listening stream on a P2P Connection") // implementation error
 }
 
 // Set the p2p publisher as ready (used for blocking mode)
@@ -271,24 +285,18 @@ void P2PConnection::setP2pPublisherReady() {
 
 // Only in responder mode
 bool P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
-	INFO("The peer ",peerId," is trying to play '", streamName,"'...")
+	INFO("The peer ", peerId, " is trying to play '", streamName, "'...")
 
-	bool audioReliable, videoReliable;
-	if(!_parent.getPublishStream(streamName,audioReliable,videoReliable)) {
+	Exception ex;
+	if(!(_pListener = _parent.startListening(ex, streamName, peerId, writer))) {
 		// TODO : See if we can send a specific answer
-		WARN("Unable to found the stream ", streamName, ", request ignored")
+		WARN(ex.error())
 		return false;
 	}
 	INFO("Stream ",streamName," found, sending start answer")
 
-	_streamName = streamName;
-
-	// Create the publisher
-	_pPublisher.reset(new Publisher(poolBuffers(), *_pInvoker, audioReliable, videoReliable));
-	_pPublisher->setWriter(&writer);
-
+	// A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 	_parent.setP2pPublisherReady();
-
 	return true;
 }
 
@@ -299,5 +307,11 @@ void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader
 void P2PConnection::close() {
 	if (connected)
 		writeMessage(0x5E, 0);
+
+	if (_pListener) {
+		_parent.stopListening(peerId);
+		_pListener = NULL;
+	}
+
 	FlowManager::close();
 }
