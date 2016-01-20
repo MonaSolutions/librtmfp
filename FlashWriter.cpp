@@ -62,7 +62,7 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time, const UInt8* data, UInt
 	switch(type) {
 		case START:
 			/*if (time==DATA)
-				writeAMFStatus("NetStream.Play.PublishNotify",string(STR data, size) + " is now published");*
+				writeAMFStatus("NetStream.Play.PublishNotify",string(STR data, size) + " is now published");*/
 			break;
 		case STOP:
 			/*if (time==DATA)

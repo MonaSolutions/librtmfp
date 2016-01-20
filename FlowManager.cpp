@@ -34,7 +34,7 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 };
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-_nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0),
+_nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0), _pListener(NULL),
 	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _pubKey(0x80), _nonce(0x8B),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),

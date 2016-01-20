@@ -4,13 +4,14 @@
 #include "Invoker.h"
 #include "RTMFPWriter.h"
 #include "RTMFPFlow.h"
+#include "Listener.h"
 #include "Mona/Logs.h"
 
 using namespace Mona;
 using namespace std;
 
 RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), publishReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
@@ -22,15 +23,22 @@ RTMFPConnection::~RTMFPConnection() {
 		it.second->close();
 	}
 
+	// Close listener & publisher
+	if (_pPublisher->running())
+		_pPublisher->stop();
+	if (_pListener && _pPublisher) {
+		_pPublisher->removeListener(_hostAddress.toString());
+		_pListener = NULL;
+	}
+
 	close();
 
+	// Close socket
 	if (_pSocket) {
 		_pSocket->OnPacket::unsubscribe(onPacket);
 		_pSocket->OnError::unsubscribe(onError);
 		_pSocket->close();
 	}
-
-	_pPublisher.reset();
 }
 
 bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) {
@@ -561,8 +569,11 @@ bool RTMFPConnection::onConnect(Mona::Exception& ex) {
 void RTMFPConnection::onPublished(FlashWriter& writer) {
 	Exception ex;
 	_pPublisher->start();
-	if (!_pPublisher->addListener(ex, _hostAddress.toString(), writer))
+	if (!(_pListener = _pPublisher->addListener(ex, _hostAddress.toString(), writer)))
 		WARN(ex.error())
+
+	publishReady = true;
+	publishSignal.set();
 }
 
 RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& address) {

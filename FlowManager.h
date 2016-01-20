@@ -177,6 +177,7 @@ protected:
 	std::unique_ptr<RTMFPFlow>								_pFlowNull; // Null flow for some messages
 	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object
 	Mona::PoolThread*										_pThread; // Thread used to send last message
+	Listener*												_pListener; // Listener of the main publication (only one by intance)
 
 	// Asynchronous read
 	struct RTMFPMediaPacket {

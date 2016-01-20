@@ -9,7 +9,7 @@ using namespace std;
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
-	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _pListener(NULL), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_outAddress = _hostAddress = hostAddress;
 

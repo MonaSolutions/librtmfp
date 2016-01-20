@@ -90,5 +90,4 @@ private:
 	// Play/Publish command
 	std::string					_streamName; // playing stream name
 	bool						_responder; // is responder?
-	Listener*					_pListener;
 };

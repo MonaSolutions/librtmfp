@@ -45,9 +45,12 @@ public:
 	// Set the p2p publisher as ready (used for blocking mode)
 	virtual void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
+	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal							connectSignal; // signal to wait connection
 	Mona::Signal							p2pPublishSignal; // signal to wait p2p publish
-	bool									p2pPublishReady;
+	Mona::Signal							publishSignal; // signal to wait publication
+	bool									p2pPublishReady; // true if the p2p publisher is ready
+	bool									publishReady; // true if the publisher is ready
 
 protected:
 

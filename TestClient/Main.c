@@ -308,7 +308,7 @@ int main(int argc,char* argv[]) {
 			else if (_option == SYNC_READ || _option == ASYNC_READ)
 				RTMFP_Play(context, publication);
 			else if (_option == WRITE)
-				RTMFP_Publish(context, publication, audioReliable, videoReliable);
+				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
 			else if (_option == P2P_WRITE)
 				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
 
