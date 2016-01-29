@@ -54,7 +54,7 @@ unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStat
 	}
 
 	if (blocking) {
-		while (!pConn->connected) {
+		while (!pConn->connectReady) {
 			pConn->connectSignal.wait(200);
 			if (GlobalInterruptCb(GlobalInterruptArg) == 1) {
 				GlobalInvoker->removeConnection(index);

@@ -27,8 +27,10 @@ AMFWriter& FlashWriter::writeInvocation(const char* name, double callback, bool 
 	BinaryWriter& packet = writer.packet;
 	packet.write8(AMF_STRING).write16((UInt16)strlen(name)).write(name);
 	packet.write8(AMF_NUMBER).writeNumber<double>(callback);
-	packet.write8(AMF_NULL); // for RTMP compatibility! (requiere it)
-	writer.amf0 = amf0;
+	if (amf3) // TODO: strange, without this connect or play doesn't work with AMS
+		packet.write8(AMF_NULL);
+	//TODO: see if needed :
+	//writer.amf0 = amf0;
 	return writer;
 }
 

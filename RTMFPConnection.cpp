@@ -11,7 +11,7 @@ using namespace Mona;
 using namespace std;
 
 RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), publishReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), publishReady(false), connectReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
@@ -24,7 +24,7 @@ RTMFPConnection::~RTMFPConnection() {
 	}
 
 	// Close listener & publisher
-	if (_pPublisher->running())
+	if (_pPublisher && _pPublisher->running())
 		_pPublisher->stop();
 	if (_pListener && _pPublisher) {
 		_pPublisher->removeListener(_hostAddress.toString());
@@ -52,7 +52,7 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	if (!strrchr(host, ':'))
 		tmpHost += ":1935"; // default port
 
-	if (!_hostAddress.set(ex, tmpHost) || !_outAddress.set(_hostAddress))
+	if (!_hostAddress.setWithDNS(ex, tmpHost) || !_outAddress.set(_hostAddress))
 		return false;
 
 	_pSocket.reset(new UDPSocket(_pInvoker->sockets, true));
@@ -116,6 +116,8 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 }
 
 void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
+	DEBUG("Stream ", idStream, " created, sending command...")
+
 	// Get command
 	lock_guard<recursive_mutex> lock(_mutexCommands);
 	if (_waitingCommands.empty()) {
@@ -148,7 +150,7 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 	// Send createStream command and remove command type from waiting commands
 	switch (command.type) {
 	case NETSTREAM_PLAY:
-		pFlow->sendPlay(command.value);
+		pFlow->sendPlay(command.value, true);
 		break;
 	case NETSTREAM_PUBLISH:
 		pFlow->sendPublish(command.value);
@@ -183,8 +185,31 @@ void RTMFPConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 			sendHandshake1(ex, reader); 
 		break;
 	case 0x71:
-		//DEBUG("Handshake 71 received, ignored for now")
-		sendP2pRequests(ex, reader); 
+		if (!connected) {
+			DEBUG("Redirection messsage, sending back the handshake 0")
+			UInt8 tagSize = reader.read8();
+			if (tagSize != 16) {
+				ex.set(Exception::PROTOCOL, "Unexpected tag size : ", tagSize);
+				return;
+			}
+			string tagReceived;
+			reader.read(16, tagReceived);
+			if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
+				ex.set(Exception::PROTOCOL, "Unexpected tag received : ", tagReceived);
+				return;
+			}
+			SocketAddress address;
+			while (reader.available() && *reader.current() != 0xFF) {
+				UInt8 addressType = reader.read8();
+				RTMFP::ReadAddress(reader, address, addressType);
+				DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
+
+				// Send handshake 30 request to the current address
+				_outAddress = address;
+				sendHandshake0(BASE_HANDSHAKE, _url, _tag);
+			}
+		} else
+			sendP2pRequests(ex, reader); 
 		break;
 	case 0x78:
 		sendConnect(ex, reader); break;
@@ -232,7 +257,7 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 
 	writer.write32(0x02000000); // id
 
-	writer.write7BitLongValue(cookieSize);
+	writer.write7BitLongValue(cookie.size());
 	writer.write(cookie); // Resend cookie
 
 	if (!_diffieHellman.initialize(ex))
@@ -248,10 +273,15 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 	EVP_Digest(writer.data()+idPos, writer.size()-idPos, _peerId, NULL, EVP_sha256(), NULL);
 	INFO("peer id : \n", Util::FormatHex(_peerId, sizeof(_peerId), LOG_BUFFER))
 
-	Util::Random(_nonce.data(), _nonce.size()); // nonce is a serie of 77 random bytes
+	_nonce.resize(0x4C, false);
+	BinaryWriter nonceWriter(_nonce.data(), 0x4C);
+	nonceWriter.write(EXPAND("\x02\x1D\x02\x41\x0E"));
+	Util::Random(_nonce.data() + 5, 64); // nonce 64 random bytes
+	nonceWriter.next(64);
+	nonceWriter.write(EXPAND("\x03\x1A\x02\x0A\x02\x1E\x02"));
 	writer.write7BitValue(_nonce.size());
 	writer.write(_nonce);
-	// TODO: see if we need to add 58 at the end + the stable part of nonce/certificate
+	writer.write8(0x58);
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	if (!ex) {
@@ -562,6 +592,7 @@ bool RTMFPConnection::onConnect(Mona::Exception& ex) {
 	}
 
 	// We are connected : unlock the possible blocking RTMFP_Connect function
+	connectReady = true;
 	connectSignal.set();
 	return true;
 }
@@ -579,11 +610,11 @@ void RTMFPConnection::onPublished(FlashWriter& writer) {
 RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& address) {
 	auto it = _mapPeersByAddress.find(address);
 	if (it != _mapPeersByAddress.end()) {
-		TRACE("P2P RTMFP request")
+		//TRACE("P2P RTMFP request")
 		return it->second->getDecoder(idStream, address);
 	}
 	
-	TRACE("Normal RTMFP request")
+	//TRACE("Normal RTMFP request")
 	return FlowManager::getDecoder(idStream, address);
 }
 

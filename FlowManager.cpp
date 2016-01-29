@@ -49,7 +49,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		}
 		else if (code == "NetStream.Publish.Start")
 			onPublished(writer);
-		else if (code == "NetConnection.Connect.Closed" || code == "NetStream.Publish.BadName")
+		else if (code == "NetConnection.Connect.Closed" || code == "NetConnection.Connect.Rejected" || code == "NetStream.Publish.BadName")
 			close();
 	};
 	onStreamCreated = [this](UInt16 idStream) {
@@ -164,7 +164,8 @@ void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, 
 		DUMP("RTMFP", reader.current(), reader.available(), "Request from ", _outAddress.toString())
 
 	UInt8 marker = reader.read8();
-	reader.shrink(reader.read16()); // length
+	reader.next(2);
+	//reader.shrink(reader.read16()); // length (TODO: it seems that ams length can be wrong, to check)
 
 	// Handshake
 	if (marker == 0x0B) {
@@ -478,6 +479,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 void FlowManager::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
 	while (++_nextRTMFPWriterId == 0 || !_flowWriters.emplace(_nextRTMFPWriterId, pWriter).second);
 	(UInt64&)pWriter->id = _nextRTMFPWriterId;
+	pWriter->amf0 = false;
 	if (!_flows.empty())
 		(UInt64&)pWriter->flowId = _flows.begin()->second->id; // newWriter will be associated to the NetConnection flow (first in _flow lists)
 	if (!pWriter->signature.empty())
@@ -601,11 +603,11 @@ void FlowManager::sendHandshake0(HandshakeType type, const string& epd, const st
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
 	writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
 
-	if(type == P2P_HANDSHAKE) {
+	//if(type == P2P_HANDSHAKE) {
 		writer.write7BitLongValue(epd.size() + 2);
 		writer.write7BitLongValue(epd.size() + 1);
-	} else
-		writer.write16((UInt16)(epd.size() + 1));
+	//} else
+	//	writer.write16((UInt16)(epd.size() + 1));
 	writer.write8(type); // handshake type
 	writer.write(epd);
 

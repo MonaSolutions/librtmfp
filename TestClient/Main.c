@@ -30,12 +30,22 @@ static FILE *			pOutFile = NULL; // Output file for subscription
 static unsigned short	terminating = 0;
 static char*			publication = NULL; // publication name
 
+static enum TestOption {
+	SYNC_READ, // default
+	ASYNC_READ,
+	WRITE,
+	P2P_WRITE
+} _option = 0;
+
 static unsigned int		nbPeers = 0;
 static char*			listPeers[255];
 static char*			listStreams[255];
 static FILE*			listFiles[255];
 static char*			listFileNames[255];
 
+// Open the p2p configuration file for multiple peers
+// Format :
+// <peer id>;<stream name>;<output file name>
 static void loadPeers(const char* path) {
 	FILE* pConfigFile = NULL;
 	char line[1024];
@@ -82,14 +92,6 @@ static void loadPeers(const char* path) {
 static int IsInterrupted(void * arg) {
 	return terminating > 0;
 }
-
-// Global configuration variables
-static enum TestOption {
-	SYNC_READ,
-	ASYNC_READ,
-	WRITE,
-	P2P_WRITE
-} _option = 0;
 
 // Windows CTrl+C handler
 void ConsoleCtrlHandler(int dummy) {
@@ -240,6 +242,7 @@ void onManage() {
 	}
 }
 
+////////////////////////////////////////////////////////
 // Main Function
 int main(int argc,char* argv[]) {
 	char 			url[1024];

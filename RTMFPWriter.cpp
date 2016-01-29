@@ -321,8 +321,8 @@ void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool
 		// signature
 		if(_stageAck==0) {
 			writer.write8((UInt8)signature.size()).write(signature);
-			// No write this in the case where it's a new flow!
-			if(flowId>0) {
+			// Send flowId for a new flow (not for writer 2 of flowId 2 => AMS support)
+			if(id>2) { // TODO: check this if
 				writer.write8(1+Util::Get7BitValueSize(flowId)); // following size
 				writer.write8(0x0a); // Unknown!
 				writer.write7BitLongValue(flowId);

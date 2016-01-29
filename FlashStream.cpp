@@ -116,11 +116,14 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 
 		string level;
 		params.getString("level",level);
-		if(level == "status") {
+		if(!level.empty()) {
 			string code, description;
 			params.getString("code",code);
 			params.getString("description", description);
-			OnStatus::raise(code, description, writer);
+			if (level == "status" || level == "error")
+				OnStatus::raise(code, description, writer);
+			else
+				ERROR("Unknown level message type : ", level)
 			return;
 		}
 	}
@@ -183,21 +186,23 @@ void FlashStream::dataHandler(DataReader& data, double lostRate) {
 }
 
 void FlashStream::rawHandler(UInt16 type, PacketReader& packet, FlashWriter& writer) {
-	if (type==0x0000) { // Stream Begin
-		UInt32 idReceived = packet.readNumber<UInt32>();
-		INFO("Stream begin message on NetStream ",id," (value : ",idReceived,")")
-			return;
+	switch (type) {
+		case 0x0000:
+			INFO("Stream begin message on NetStream ", id, " (value : ", packet.read32(), ")")
+			break;
+		case 0x0001:
+			INFO("Stream stop message on NetStream ", id, " (value : ", packet.read32(), ")")
+			break;
+		case 0x001f: // unknown for now
+		case 0x0020: // unknown for now
+			break;
+		case 0x0022: // TODO: useless to support it?
+			//INFO("Sync ",id," : (syncId=",packet.read32(),", count=",packet.read32(),")")
+			break;
+		default:
+			ERROR("Raw message ", Format<UInt16>("%.4x", type), " unknown on stream ", id);
+			break;
 	}
-	if (type==0x0001) { // Stream Stop
-		UInt32 idReceived = packet.readNumber<UInt32>();
-		INFO("Stream stop message on NetStream ",id," (value : ",idReceived,")")
-		return;
-	}
-	if(type==0x0022) { // TODO Here we receive RTMFP flow sync signal, useless to support it?
-		INFO("Sync ",id," : ",packet.read32(),"/",packet.read32())
-		return;
-	}
-	ERROR("Raw message ",Format<UInt16>("%.4x",type)," unknown on stream ",id);
 }
 
 void FlashStream::audioHandler(UInt32 time,PacketReader& packet, double lostRate) {
@@ -221,14 +226,14 @@ void FlashStream::createStream(FlashWriter& writer) {
 void FlashStream::play(FlashWriter& writer,const string& name, bool amf3) {
 	_streamName = name;
 	AMFWriter& amfWriter = writer.writeInvocation("play", amf3);
-	amfWriter.amf0 = true;
+	//amfWriter.amf0 = true;
 	amfWriter.writeString(name.c_str(), name.size());
 	writer.flush();
 }
 
 void FlashStream::publish(FlashWriter& writer,const string& name) {
 	_streamName = name;
-	AMFWriter& amfWriter = writer.writeInvocation("publish");
+	AMFWriter& amfWriter = writer.writeInvocation("publish", true);
 	amfWriter.writeString(name.c_str(), name.size());
 	writer.flush();
 }

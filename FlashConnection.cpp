@@ -47,51 +47,53 @@ FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStr
 
 void FlashConnection::messageHandler(const string& name,AMFReader& message,FlashWriter& writer) {
 	UInt8 type = message.nextType();
-	if(name == "_result") {
-		if(type == AMFReader::OBJECT) {
-			MapParameters params;
-			ParameterWriter paramWriter(params);
-			message.read(AMFReader::OBJECT, paramWriter);
+	while (type != AMFReader::END) {
+		if (name == "_result") {
+			if (type == AMFReader::OBJECT || type == AMFReader::MAP) {
+				MapParameters params;
+				ParameterWriter paramWriter(params);
+				message.read(type, paramWriter);
 
-			string level;
-			params.getString("level",level);
-			if(level == "status") {
-				string code, description;
-				params.getString("code",code);
-				params.getString("description", description);
+				string level;
+				params.getString("level", level);
+				if (level == "status") {
+					string code, description;
+					params.getString("code", code);
+					params.getString("description", description);
 
-				OnStatus::raise(code, description, writer);
-				return;
+					OnStatus::raise(code, description, writer);
+				} // TODO: else
 			}
-		} 
-		else if (type == AMFReader::NUMBER && _creatingStream) {
-			double idStream(0);
-			if(!message.readNumber(idStream)) {
-				ERROR("Unable to read id stream")
-				return;
+			else if (type == AMFReader::NUMBER && _creatingStream) {
+				double idStream(0);
+				if (!message.readNumber(idStream)) {
+					ERROR("Unable to read id stream")
+					return;
+				}
+				_creatingStream = false;
+				OnStreamCreated::raise((UInt16)idStream);
 			}
-			_creatingStream = false;
-			OnStreamCreated::raise((UInt16)idStream);
-			return;
 		}
-	} else if(name == "_error") {
-		if(type == AMFReader::OBJECT) {
-			MapParameters params;
-			ParameterWriter paramWriter(params);
-			message.read(AMFReader::OBJECT, paramWriter);
+		else if (name == "_error") {
+			if (type == AMFReader::OBJECT) {
+				MapParameters params;
+				ParameterWriter paramWriter(params);
+				message.read(AMFReader::OBJECT, paramWriter);
 
-			string level;
-			params.getString("level",level);
-			if(level == "error") {
-				string code, description;
-				params.getString("code",code);
-				params.getString("description", description);
-				OnStatus::raise(code, description, writer);
-				return;
+				string level;
+				params.getString("level", level);
+				if (level == "error") {
+					string code, description;
+					params.getString("code", code);
+					params.getString("description", description);
+					OnStatus::raise(code, description, writer);
+				}
 			}
-		} 
+		} else
+			ERROR("Unhandled message ", name, " (type : ", type, ")")
+
+		type = message.nextType();
 	}
-	ERROR("Unhandled message ", name, " (next type : ", message.nextType(), ")")
 }
 
 void FlashConnection::sendPeerInfo(FlashWriter& writer,UInt16 port) {
@@ -110,47 +112,41 @@ void FlashConnection::sendPeerInfo(FlashWriter& writer,UInt16 port) {
 }
 
 void FlashConnection::rawHandler(UInt16 type,PacketReader& packet,FlashWriter& writer) {
-	
-	 // ping message
-	/*if(type==0x0006) {
-		writer.writePong(packet.read32());
-		return;
+
+	switch (type) {
+		case 0x0022: // TODO Here we receive RTMFP flow sync signal, useless to support it?
+			INFO("Sync ", id, " : (syncId=", packet.read32(), ", count=", packet.read32(), ")")
+			break;
+		case 0x0029:
+			INFO("Set Keepalive timer : server period=", packet.read32(), "ms - peer period=", packet.read32(), "ms")
+			break;
+		default:
+			ERROR("Raw message ", Format<UInt16>("%.4x", type), " unknown on main stream ", id);
+			break;
 	}
-
-	 // pong message
-	if(type==0x0007) {
-		//TODO: peer.pong();
-		return;
-	}*/
-
-	// setPeerInfo response
-	if(type==0x0029) {
-		UInt32 keepAliveServer = packet.read32();
-		UInt32 keepAliverPeer = packet.read32();
-		return;
-	}
-
-	ERROR("Raw message ",Format<UInt16>("%.4x",type)," unknown on main stream");
 }
 
 void FlashConnection::connect(FlashWriter& writer, const string& url) {
 
 	AMFWriter& amfWriter = writer.writeInvocation("connect");
 
+	// TODO: add parameters to configuration
+	bool amf = amfWriter.amf0;
+	amfWriter.amf0 = true;
 	amfWriter.beginObject();
-	//TODO: writer.writeStringProperty("app",)
-	amfWriter.writeStringProperty("flashVer", EXPAND("WIN 19,0,0,185"));
-	//TODO: writer.writeStringProperty("swfUrl")
+	amfWriter.writeStringProperty("app", "live");
+	amfWriter.writeStringProperty("flashVer", EXPAND("WIN 20,0,0,286"));
+	amfWriter.writeStringProperty("swfUrl", "");
 	amfWriter.writeStringProperty("tcUrl", url);
-	//TODO: writer.writeStringProperty("fpad")
+	amfWriter.writeBooleanProperty("fpad", false);
 	amfWriter.writeNumberProperty("capabilities",235);
 	amfWriter.writeNumberProperty("audioCodecs",3575);
 	amfWriter.writeNumberProperty("videoCodecs",252);
 	amfWriter.writeNumberProperty("videoFunction",1);
-	amfWriter.writeNumberProperty("videoCodecs",252);
-	//TODO: writer.writeStringProperty("pageUrl")
+	amfWriter.writeStringProperty("pageUrl", "");
 	amfWriter.writeNumberProperty("objectEncoding",3);
 	amfWriter.endObject();
+	amfWriter.amf0 = amf;
 
 	writer.flush();
 }

@@ -51,6 +51,7 @@ public:
 	Mona::Signal							publishSignal; // signal to wait publication
 	bool									p2pPublishReady; // true if the p2p publisher is ready
 	bool									publishReady; // true if the publisher is ready
+	bool									connectReady; // Ready if we have received the NetStream.Connect.Success event
 
 protected:
 

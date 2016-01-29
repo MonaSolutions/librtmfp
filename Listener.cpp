@@ -117,7 +117,7 @@ void Listener::pushVideo(UInt32 time, const Mona::UInt8* data, Mona::UInt32 size
 	}
 	time -= _startTime;
 
-	TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, "), size : ", size);
+	//TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, "), size : ", size);
 
 	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _reliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), data, size))
 		initWriters();
@@ -138,7 +138,7 @@ void Listener::pushAudio(UInt32 time, const Mona::UInt8* data, Mona::UInt32 size
 	}
 	time -= _startTime;
 
-	TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");
+	//TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");
 
 	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _reliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), data, size))
 		initWriters();
