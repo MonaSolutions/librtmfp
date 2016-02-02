@@ -241,3 +241,7 @@ void FlashStream::publish(FlashWriter& writer,const string& name) {
 void FlashStream::sendPeerInfo(FlashWriter& writer,UInt16 port) {
 	ERROR("sendPeerInfo request can only be sent by Main stream")
 }
+
+void FlashStream::sendGroupConnect(FlashWriter& writer, const string& groupId) {
+	writer.writeGroup(groupId);
+}

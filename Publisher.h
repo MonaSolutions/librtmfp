@@ -5,21 +5,19 @@
 #include "FlashWriter.h"
 //#include "Mona/QualityOfService.h"
 #include "DataReader.h"
-//#include "Mona/Task.h"
+#include "Mona/Task.h"
 #include <deque>
 
+class Invoker;
 class Listener;
-class Publisher : public virtual Mona::Object {
+class Publisher : public Mona::Task, public virtual Mona::Object {
 public:
 
-	Publisher(const std::string& name, const Mona::PoolBuffers& poolBuffers, bool audioReliable, bool videoReliable);
+	Publisher(const std::string& name, Invoker& invoker, bool audioReliable, bool videoReliable);
 	virtual ~Publisher();
 
 	// Add packets to the waiting queue
 	bool publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos);
-
-	// Flush the media queue
-	virtual void	pushPackets();
 
 	const std::string&		name() const { return _name; }
 
@@ -40,6 +38,9 @@ private:
 	/*void pushData(DataReader& packet);
 	void pushProperties(DataReader& packet);*/
 
+	// Task handle : running function to send packets
+	virtual void handle(Mona::Exception& ex);
+
 	void flush();
 
 	bool publishAudio;
@@ -49,6 +50,7 @@ private:
 	const QualityOfService&	audioQOS() const { return _pAudioWriter ? _pAudioWriter->qos() : QualityOfService::Null; }
 	const QualityOfService&	dataQOS() const { return _writer.qos(); }*/
 
+	Invoker&							_invoker;
 	bool								_running; // If the publication is running
 	std::map<std::string, Listener*>	_listeners; // list of listeners to this publication
 	const std::string					_name; // name of the publication
@@ -56,28 +58,14 @@ private:
 
 	//void    writeData(DataReader& reader, FlashWriter::DataType type);
 
-	bool						_videoReliable;
-	bool						_audioReliable;
-	const Mona::PoolBuffers&	_poolBuffers;
+	bool									_videoReliable;
+	bool									_audioReliable;
 
-	Mona::PoolBuffer			_audioCodecBuffer;
-	Mona::PoolBuffer			_videoCodecBuffer;
+	Mona::PoolBuffer						_audioCodecBuffer;
+	Mona::PoolBuffer						_videoCodecBuffer;
 
-	bool						_new; // True if there is at list a packet to send
+	bool									_new; // True if there is at list a packet to send
 
-	// Buffer of media packets
-	struct OutMediaPacket : public Mona::Object {
-
-		OutMediaPacket(const Mona::PoolBuffers& poolBuffers, AMF::ContentType typeMedia, Mona::UInt32 timeMedia, const Mona::UInt8* data, Mona::UInt32 size) : pBuffer(poolBuffers,size), time(timeMedia), type(typeMedia) {
-			if (pBuffer->size()>=size)
-				memcpy(pBuffer->data(), data, size);
-		}
-
-		Mona::PoolBuffer	pBuffer;
-		AMF::ContentType	type;
-		Mona::UInt32		time;
-	};
-
-	std::deque<OutMediaPacket>	_mediaPackets;
-	std::recursive_mutex		_mediaMutex;
+	std::unique_ptr<Mona::PacketReader>		_reader; // Current reader of input data
+	int										_pos; // Current position of input data
 };

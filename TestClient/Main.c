@@ -249,6 +249,7 @@ int main(int argc,char* argv[]) {
 	int				i=1;
 	unsigned int	indexPeer = 0;
 	const char*		peerId = NULL;
+	const char*		netGroup = NULL;
 	unsigned short	audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
@@ -273,6 +274,8 @@ int main(int argc,char* argv[]) {
 			snprintf(url, 1024, "%s", argv[i] + 6);
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0)
 			peerId = argv[i] + 9;
+		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--netGroup=", 11) == 0)
+			netGroup = argv[i] + 11;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
 			RTMFP_LogSetLevel(atoi(argv[i] + 6));
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--peersFile=", 12) == 0)
@@ -304,7 +307,9 @@ int main(int argc,char* argv[]) {
 				listFileNames[0] = "out.flv";
 			}
 
-			if (nbPeers > 0) { // P2p Play
+			if (netGroup)
+				RTMFP_Connect2Group(context, netGroup);
+			else if (nbPeers > 0) { // P2p Play
 				for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
 					RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer]);
 			}

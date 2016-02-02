@@ -51,6 +51,9 @@ public:
 	// Send the setPeerInfo request to the RTMFP server
 	virtual void sendPeerInfo(FlashWriter& writer, Mona::UInt16 port);
 
+	// Send the group connection request to the server
+	void sendGroupConnect(FlashWriter& writer, const std::string& groupId);
+
 	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }
 
 private:

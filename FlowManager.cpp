@@ -427,7 +427,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 	map<UInt64, RTMFPFlow*>::iterator it = _flows.lower_bound(id);
 	if (it != _flows.end() && it->first == id) {
 		WARN("RTMFPFlow ", id, " has already been created on connection")
-			return it->second;
+		return it->second;
 	}
 
 	RTMFPFlow* pFlow;
@@ -465,13 +465,13 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		}
 
 	}
+	else if (signature.size()>2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0)  // NetGroup
+		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
 	else {
 		string tmp;
 		ERROR("Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow")
 		return NULL;
 	}
-	/*else if(signature.size()>2 && signature.compare(0,3,"\x00\x47\x43",3)==0)  // NetGroup
-	pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);*/
 
 	return _flows.emplace_hint(it, piecewise_construct, forward_as_tuple(id), forward_as_tuple(pFlow))->second;
 }

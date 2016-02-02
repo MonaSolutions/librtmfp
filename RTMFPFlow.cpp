@@ -343,3 +343,8 @@ void RTMFPFlow::setPeerId(const string& peerId) {
 	if(_pStream)
 		_pStream->setPeerId(peerId);
 }
+
+void RTMFPFlow::sendGroupConnect(const std::string& netGroup) {
+	if (_pStream)
+		_pStream->sendGroupConnect(*_pWriter, netGroup);
+}

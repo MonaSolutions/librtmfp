@@ -67,7 +67,7 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	return !ex;
 }
 
-bool RTMFPConnection::connect2Peer(Exception& ex, const char* peerId, const char* streamName) {
+void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 
 	INFO("Connecting to peer ", peerId, "...")
 	
@@ -83,7 +83,14 @@ bool RTMFPConnection::connect2Peer(Exception& ex, const char* peerId, const char
 	
 	// Add the connection request to the queue
 	_waitingPeers.push_back(tag);
-	return true;
+}
+
+void RTMFPConnection::connect2Group(const char* netGroup) {
+
+	INFO("Connecting to group ", netGroup, "...")
+
+	lock_guard<recursive_mutex> lock(_mutexConnections);
+	_waitingGroup.push_back(netGroup);
 }
 
 bool RTMFPConnection::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
@@ -154,7 +161,7 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 		break;
 	case NETSTREAM_PUBLISH:
 		pFlow->sendPublish(command.value);
-		_pPublisher.reset(new Publisher(command.value, poolBuffers(), command.audioReliable, command.videoReliable));
+		_pPublisher.reset(new Publisher(command.value, *_pInvoker, command.audioReliable, command.videoReliable));
 		break;
 	default:
 		ERROR("Unexpected command found on stream creation : ", command.type)
@@ -456,10 +463,6 @@ void RTMFPConnection::manage() {
 	// Send waiting P2P connections
 	sendConnections();
 
-	// Flush the publisher
-	if (_pPublisher)
-		_pPublisher->pushPackets();
-
 	// Flush writers
 	flushWriters();
 
@@ -509,7 +512,7 @@ void RTMFPConnection::createWaitingStreams() {
 			if (_pPublisher)
 				ERROR("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
 			else
-				_pPublisher.reset(new Publisher(itCommand->value, poolBuffers(), itCommand->audioReliable, itCommand->videoReliable));
+				_pPublisher.reset(new Publisher(itCommand->value, *_pInvoker, itCommand->audioReliable, itCommand->videoReliable));
 			_waitingCommands.erase(itCommand++);
 		}
 		else
@@ -559,7 +562,15 @@ void RTMFPConnection::sendConnections() {
 		_waitingPeers.pop_front();
 	}
 
-	// Send new p2p request if no answer
+	// Send waiting group connections
+	while (connected && !_waitingGroup.empty()) {
+		string& group = _waitingGroup.front();
+		Util::UnformatHex(group); // convert to binary string
+		sendGroupConnection(group);
+		_waitingGroup.pop_front();
+	}
+
+	// Send new p2p request if no answer after 1,5s
 	// TODO: make the attempt and elapsed count parametrable
 	auto itPeer = _mapPeersByTag.begin();
 	while (itPeer != _mapPeersByTag.end()) {
@@ -662,4 +673,14 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 
 	pPeerConnection->setTag(tag);
 	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;
+}
+
+void RTMFPConnection::sendGroupConnection(const string& netGroup) {
+
+	string signature("\x00\x47\x43", 3);
+	RTMFPFlow* pFlow = createFlow(2+_flows.size(), signature);
+	if (!pFlow)
+		return;
+
+	pFlow->sendGroupConnect(netGroup);
 }

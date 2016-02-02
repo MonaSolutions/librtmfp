@@ -531,6 +531,10 @@ AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* dat
 	return amf;
 }
 
+void RTMFPWriter::writeGroup(const string& netGroup) {
+	createMessage().writer().packet.write8(AMF::CHUNKSIZE).write16(0x2115).write(netGroup);
+}
+
 /*bool RTMFPWriter::writeMember(const Client& client) {
 	createMessage().writer().packet.write8(0x0b).write(client.id,ID_SIZE); // 0x0b unknown
 	return true;

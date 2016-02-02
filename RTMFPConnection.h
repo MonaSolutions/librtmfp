@@ -18,7 +18,10 @@ public:
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
 
 	// Connect to a peer of the RTMFP server (Direct P2P) and start playing streamName
-	bool connect2Peer(Mona::Exception& ex, const char* peerId, const char* streamName);
+	void connect2Peer(const char* peerId, const char* streamName);
+
+	// Connect to the NetGroup with netGroup ID (must be encrypted)
+	void connect2Group(const char* netGroup);
 
 	// Asynchronous read (buffered)
 	// return false if end of buf has been reached
@@ -101,10 +104,14 @@ private:
 	void createWaitingStreams();
 
 	// Send waiting Connections (P2P or normal)
-	void											sendConnections();
+	void sendConnections();
+
+	// Send handshake for group connection
+	void sendGroupConnection(const std::string& netGroup);
 
 	bool															_waitConnect; // True if we are waiting for a normal connection request to be sent
 	std::deque<std::string>											_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
+	std::deque<std::string>											_waitingGroup; // queue of waiting connections to groups
 	std::recursive_mutex											_mutexConnections; // mutex for waiting connections (normal or p2p)
 
 	std::map<Mona::SocketAddress, std::shared_ptr<P2PConnection>>	_mapPeersByAddress; // P2P connections by Address

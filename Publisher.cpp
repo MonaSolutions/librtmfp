@@ -3,12 +3,14 @@
 #include "RTMFPWriter.h"
 #include "Mona/Logs.h"
 #include "Listener.h"
+#include "Invoker.h"
 
 using namespace Mona;
 using namespace std;
 
-Publisher::Publisher(const string& name, const PoolBuffers& poolBuffers, bool audioReliable, bool videoReliable) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),
-	_audioReliable(audioReliable), _videoReliable(videoReliable), _poolBuffers(poolBuffers), _audioCodecBuffer(poolBuffers), _videoCodecBuffer(poolBuffers) {
+Publisher::Publisher(const string& name, Invoker& invoker, bool audioReliable, bool videoReliable) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),
+	_audioReliable(audioReliable), _videoReliable(videoReliable), _audioCodecBuffer(invoker.poolBuffers), _videoCodecBuffer(invoker.poolBuffers),
+	_pos(0), _invoker(invoker), Task((TaskHandler&)invoker) {
 
 	INFO("Initialization of the publisher ", _name, " (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")")
 }
@@ -80,62 +82,18 @@ void Publisher::stop() {
 }
 
 bool Publisher::publish(const Mona::UInt8* data, Mona::UInt32 size, int& pos) {
-	lock_guard<recursive_mutex> lock(_mediaMutex); // TODO: check if it is better to use a Task and wait
-	PacketReader packet(data, size);
-	if (packet.available()<14) {
+	_reader.reset(new PacketReader(data, size));
+	_pos = pos;
+	if (_reader->available()<14) {
 		DEBUG("Packet too small")
 		return true;
 	}
 
-	const UInt8* cur = packet.current();
-	if (*cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header
-		packet.next(13);
-		pos = +13;
-	}
-
-	while (packet.available()) {
-		if (packet.available() < 11) // smaller than flv header
-			break;
-
-		UInt8 type = packet.read8();
-		UInt32 bodySize = packet.read24();
-		UInt32 time = packet.read24();
-		packet.next(4); // ignored
-
-		if (packet.available() < bodySize + 4)
-			break; // we will wait for further data
-
-		//TRACE(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
-		if (type == AMF::AUDIO || type == AMF::VIDEO)
-			_mediaPackets.emplace_back(_poolBuffers, (AMF::ContentType)type, time, packet.current(), bodySize);
-		else
-			WARN("Unhandled packet type : ", type)
-		packet.next(bodySize);
-		UInt32 sizeBis = packet.read32();
-		pos += bodySize + 15;
-		if (sizeBis != bodySize + 11) {
-			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize + 11, ")")
-			break;
-		}
-	}
+	// Wait for packets to be sent
+	waitHandle();
+	pos = _pos; // update the position
 	return true;
 }
-
-void Publisher::pushPackets() {
-	lock_guard<recursive_mutex> lock(_mediaMutex);
-
-	// Send all packets
-	while (!_mediaPackets.empty()) {
-		OutMediaPacket& media = _mediaPackets.front();
-		if (media.type == AMF::AUDIO)
-			pushAudio(media.time, media.pBuffer.data(), media.pBuffer.size());
-		else
-			pushVideo(media.time, media.pBuffer.data(), media.pBuffer.size());
-		_mediaPackets.pop_front();
-	}
-	flush();
-}
-
 
 void Publisher::pushAudio(UInt32 time, const UInt8* data, UInt32 size) {
 	if (!_running) {
@@ -209,4 +167,45 @@ void Publisher::flush() {
 	map<string, Listener*>::const_iterator it;
 	for (it = _listeners.begin(); it != _listeners.end(); ++it)
 		it->second->flush();
+}
+
+void Publisher::handle(Exception& ex) { 
+	if (!_reader)
+		return; // TODO: shouldn't happen
+
+	const UInt8* cur = _reader->current();
+	if (*cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header
+		_reader->next(13);
+		_pos = 13;
+	}
+
+	// Send all packets
+	while (_reader->available()) {
+		if (_reader->available() < 11) // smaller than flv header
+			break;
+
+		UInt8 type = _reader->read8();
+		UInt32 bodySize = _reader->read24();
+		UInt32 time = _reader->read24();
+		_reader->next(4); // ignored
+
+		if (_reader->available() < bodySize + 4)
+			break; // we will wait for further data
+
+		//TRACE(((type == 0x08) ? "Audio" : ((type == 0x09) ? "Video" : "Unknown")), " packet read - size : ", bodySize, " - time : ", time)
+		if (type == AMF::AUDIO)
+			pushAudio(time, _reader->current(), bodySize);
+		else if (type == AMF::VIDEO)
+			pushVideo(time, _reader->current(), bodySize);
+		else
+			WARN("Unhandled packet type : ", type)
+		_reader->next(bodySize);
+		UInt32 sizeBis = _reader->read32();
+		_pos += bodySize + 15;
+		if (sizeBis != bodySize + 11) {
+			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize + 11, ")")
+			break;
+		}
+	}
+	flush();
 }

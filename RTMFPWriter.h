@@ -73,6 +73,7 @@ public:
 	//bool				writeMedia(MediaType type,Mona::UInt32 time,Mona::PacketReader& packet,const Mona::Parameters& properties);
 	void				writeRaw(const Mona::UInt8* data,Mona::UInt32 size);
 	//bool				writeMember(const Client& client);
+	virtual void		writeGroup(const std::string& netGroup);
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);
