@@ -89,8 +89,11 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 					OnStatus::raise(code, description, writer);
 				}
 			}
-		} else
+		}
+		else {
+			message.next();
 			ERROR("Unhandled message ", name, " (type : ", type, ")")
+		}
 
 		type = message.nextType();
 	}
