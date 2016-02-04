@@ -63,6 +63,7 @@ private:
 	virtual void	dataHandler(DataReader& data, double lostRate);
 	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 	virtual void	videoHandler(Mona::UInt32 time,Mona::PacketReader& packet, double lostRate);
+	virtual void	memberHandler(const std::string& peerId);
 
 	Mona::UInt32	_bufferTime;
 	std::string		_streamName;

@@ -293,6 +293,7 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 		case AMF::VIDEO:
 			time = pMessage->read32();
 		case AMF::CHUNKSIZE:
+		case AMF::MEMBER:
 			break;
 		default:
 			pMessage->next(4);

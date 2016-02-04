@@ -308,7 +308,7 @@ int main(int argc,char* argv[]) {
 			}
 
 			if (netGroup)
-				RTMFP_Connect2Group(context, netGroup);
+				RTMFP_Connect2Group(context, netGroup, publication);
 			else if (nbPeers > 0) { // P2p Play
 				for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
 					RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer]);

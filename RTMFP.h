@@ -19,6 +19,8 @@
 #define RTMFP_MAX_PACKET_SIZE	1192
 #define RTMFP_TIMESTAMP_SCALE	4
 
+#define PEER_ID_SIZE			0x20
+
 
 class RTMFPEngine : public virtual Mona::Object {
 public:

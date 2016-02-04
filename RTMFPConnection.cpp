@@ -85,7 +85,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 	_waitingPeers.push_back(tag);
 }
 
-void RTMFPConnection::connect2Group(const char* netGroup) {
+void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName) {
 
 	INFO("Connecting to group ", netGroup, "...")
 

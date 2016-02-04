@@ -76,12 +76,12 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 	return 1;
 }
 
-int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup) {
+int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName) {
 
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (pConn)
-		pConn->connect2Group(netGroup);
+		pConn->connect2Group(netGroup, streamName);
 
 	return 1;
 }

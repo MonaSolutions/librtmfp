@@ -296,7 +296,7 @@ UInt32 RTMFPWriter::headerSize(UInt64 stage) { // max size header = 50
 	if(_stageAck>stage)
 		CRITIC("stageAck ",_stageAck," superior to stage ",stage," on writer ",id);
 	size+= Util::Get7BitValueSize(stage-_stageAck);
-	size+= _stageAck>0 ? 0 : (signature.size()+(flowId==0?2:(4+Util::Get7BitValueSize(flowId))));
+	size+= _stageAck>0 ? 0 : (signature.size()+((flowId==0 || id<=2)?2:(4+Util::Get7BitValueSize(flowId)))); // TODO: check the condition id<=2 (see next TODO below)
 	return size;
 }
 
@@ -322,7 +322,7 @@ void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool
 		if(_stageAck==0) {
 			writer.write8((UInt8)signature.size()).write(signature);
 			// Send flowId for a new flow (not for writer 2 of flowId 2 => AMS support)
-			if(id>2) { // TODO: check this if
+			if(id>2) { // TODO: check this
 				writer.write8(1+Util::Get7BitValueSize(flowId)); // following size
 				writer.write8(0x0a); // Unknown!
 				writer.write7BitLongValue(flowId);

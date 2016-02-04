@@ -21,7 +21,7 @@ public:
 	void connect2Peer(const char* peerId, const char* streamName);
 
 	// Connect to the NetGroup with netGroup ID (must be encrypted)
-	void connect2Group(const char* netGroup);
+	void connect2Group(const char* netGroup, const char* streamName);
 
 	// Asynchronous read (buffered)
 	// return false if end of buf has been reached

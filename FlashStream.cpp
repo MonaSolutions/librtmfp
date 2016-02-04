@@ -1,9 +1,7 @@
-
 #include "FlashStream.h"
-#include "Mona/Logs.h"
-
 #include "ParameterWriter.h"
 #include "Mona/MapParameters.h"
+#include "RTMFP.h"
 
 using namespace std;
 using namespace Mona;
@@ -81,8 +79,16 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 			rawHandler(packet.read16(), packet, writer);
 			break;
 
+		case AMF::MEMBER:
+		{
+			string member;
+			packet.read(PEER_ID_SIZE, member);
+			memberHandler(member);
+			break;
+		}
+
 		default:
-			ERROR("Unpacking type '",Format<UInt8>("%02x",(UInt8)type),"' unknown");
+			ERROR("Unpacking type '",Format<UInt8>("%02x",(UInt8)type),"' unknown")
 	}
 
 	writer.setCallbackHandle(0);
@@ -213,6 +219,13 @@ void FlashStream::audioHandler(UInt32 time,PacketReader& packet, double lostRate
 void FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate) {
 
 	OnMedia::raise(_peerId, _streamName, time, packet, lostRate, false);
+}
+
+void FlashStream::memberHandler(const std::string& peerId) {
+
+	string test;
+	INFO("NetGroup Peer ID added : ", Util::FormatHex(BIN peerId.data(), peerId.size(), test))
+	// TODO: create an event and connect to the peer
 }
 
 void FlashStream::connect(FlashWriter& writer,const string& url) {

@@ -14,7 +14,7 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 // Connect to a NetGroup
 // Nb: netGroup must be the encoded form for now (value sent by flash)
 // TODO: find the way to convert from a netgroup id to the netgroup encoded value
-int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup);
+int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName);
 
 // RTMFP NetStream Play function
 // return : 1 if the request succeed, 0 otherwise
