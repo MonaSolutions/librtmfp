@@ -17,6 +17,7 @@ FlashConnection::~FlashConnection() {
 		it.second->OnStatus::unsubscribe((OnStatus&)*this);
 		it.second->OnMedia::unsubscribe((OnMedia&)*this);
 		it.second->OnPlay::unsubscribe((OnPlay&)*this);
+		it.second->OnNewPeer::unsubscribe((OnNewPeer&)*this);
 	}
 }
 
@@ -41,6 +42,7 @@ FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStr
 	pStream->OnStatus::subscribe((OnStatus&)*this);
 	pStream->OnMedia::subscribe((OnMedia&)*this);
 	pStream->OnPlay::subscribe((OnPlay&)*this);
+	pStream->OnNewPeer::subscribe((OnNewPeer&)*this);
 
 	return pStream.get();
 }

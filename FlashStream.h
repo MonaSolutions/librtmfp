@@ -10,6 +10,8 @@ namespace FlashEvents {
 	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description, FlashWriter& writer)> {};
 	struct OnMedia : Mona::Event<void(const std::string& peerId, const std::string& stream, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate, bool audio)> {};
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
+	struct OnNewPeer : Mona::Event<void(const std::string& groupId, const std::string& peerId)> {};
+	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {};
 };
 
 /**************************************************************
@@ -18,7 +20,9 @@ FlashStream is linked to an as3 NetStream
 class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnStatus,
 	public FlashEvents::OnMedia,
-	public FlashEvents::OnPlay {
+	public FlashEvents::OnPlay,
+	public FlashEvents::OnNewPeer,
+	public FlashEvents::OnGroupHandshake {
 public:
 
 	FlashStream(Mona::UInt16 id);
@@ -54,6 +58,10 @@ public:
 	// Send the group connection request to the server
 	void sendGroupConnect(FlashWriter& writer, const std::string& groupId);
 
+	// Send the group connection request to the peer
+	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId);
+
+	// Record target peer ID for identifying media source (play mode)
 	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }
 
 private:
@@ -64,11 +72,13 @@ private:
 	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 	virtual void	videoHandler(Mona::UInt32 time,Mona::PacketReader& packet, double lostRate);
 	virtual void	memberHandler(const std::string& peerId);
+	virtual void	groupPeerHandler(const std::string& netGroupId, const std::string& encryptKey, const std::string& peerId);
 
 	Mona::UInt32	_bufferTime;
 	std::string		_streamName;
 
 	std::string		_peerId; // peer ID (only for p2p play stream)
+	std::string		_groupId; // Group ID (only for NetGroup stream)
 
 	//Mona::UInt32	_timeFrequency; // to retrieve time
 };

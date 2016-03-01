@@ -19,8 +19,8 @@ public:
 
 	virtual Mona::UDPSocket&	socket() { return _parent.socket(); }
 
-	// Add a command to the main stream (play/publish)
-	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false);
+	// Add a command to the main stream (play/publish/netgroup)
+	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
 
 	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
 	virtual Listener* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer);
@@ -39,6 +39,9 @@ public:
 
 	// Set the tag used for this connection (responder mode)
 	void setTag(const std::string& tag) { _tag = tag; }
+
+	// Set the group id
+	void setGroupId(const std::string& groupId) { _groupId = groupId; }
 
 	// Return the tag used for this p2p connection (initiator mode)
 	std::string	getTag() { return _tag; }
@@ -76,6 +79,12 @@ protected:
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer);
 
+	// Handle new peer in a Netgroup : connect to the peer (only for RTMFPConnection)
+	virtual void				handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
+
+	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
+	virtual void				handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
+
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
 	
@@ -89,5 +98,8 @@ private:
 
 	// Play/Publish command
 	std::string					_streamName; // playing stream name
+	std::string					_groupId; // group id
 	bool						_responder; // is responder?
+
+	bool						_rawResponse; // next message is a raw response?
 };

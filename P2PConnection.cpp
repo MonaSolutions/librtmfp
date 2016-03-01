@@ -9,7 +9,7 @@ using namespace std;
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
-	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_outAddress = _hostAddress = hostAddress;
 
@@ -139,7 +139,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	FlowManager::flush(0x0B, writer.size());
 
 	// Compute P2P keys for decryption/encryption
-	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, _nonce.data(), 0x49, _pDecoder, _pEncoder))
+	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, _nonce.data(), 0x49, _sharedSecret, _pDecoder, _pEncoder))
 		return;
 
 	_handshakeStep = 2;
@@ -234,35 +234,55 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 	// Compute P2P keys for decryption/encryption (TODO: refactorize key computing)
 	string initiatorNonce((const char*)_nonce.data(), _nonce.size());
-	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, (const UInt8*)responderNonce.data(), nonceSize, _pDecoder, _pEncoder, false))
+	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, BIN responderNonce.data(), nonceSize, _sharedSecret, _pDecoder, _pEncoder, false))
 		return false;
 
 	_handshakeStep = 3;
 	connected = true;
-
 	NOTE("P2P Connection ", _sessionId, " is now connected to ", peerId)
 
-	// Create 1st NetStream and flow
-	string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
-	RTMFPFlow* pFlow = createFlow(2, signature);
-	pFlow->setPeerId(peerId);
+	if (!_groupId.empty()) {
+		// Send group connection request
+		// Create 1st Netstream and flow
+		string signature("\x00\x47\x52\x1C", 4);
+		RTMFPFlow* pFlow = createFlow(2, signature);
 
-	// Start playing Play
-	INFO("Sending play request to peer for stream '", _streamName, "'")
-	pFlow->sendPlay(_streamName, true);
+		// Compile encrypted key
+		UInt8 mdp1[Crypto::HMAC::SIZE];
+		UInt8 mdp2[Crypto::HMAC::SIZE];
+		Crypto::HMAC hmac;
+		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
+		hmac.compute(EVP_sha256(), _groupId.data(), _groupId.size(), mdp1, Crypto::HMAC::SIZE, mdp2);
+
+		INFO("Sending group connection request to peer")
+		_rawResponse = true;
+		pFlow->sendGroupPeerConnect(_groupId, mdp2, peerId);
+	}
+	else {
+		// Start playing
+		// Create 1st NetStream and flow
+		string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
+		RTMFPFlow* pFlow = createFlow(2, signature);
+		pFlow->setPeerId(peerId);
+
+		INFO("Sending play request to peer for stream '", _streamName, "'")
+		pFlow->sendPlay(_streamName, true);
+	}	
 	return true;
 }
 
 void P2PConnection::flush(bool echoTime, UInt8 marker) {
+	if (_rawResponse && marker != 0x0B)
+		marker = 0x09;
 	if (_responder)
-		FlowManager::flush(echoTime, (marker==0x0B)? 0x0B : marker+1);
+		FlowManager::flush(echoTime, (marker == 0x0B) ? 0x0B : marker + 1);
 	else
 		FlowManager::flush(echoTime, marker);
 }
 
 void P2PConnection::addCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
 
-	_streamName = streamName;
+	(command == NETSTREAM_GROUP) ? _groupId = streamName : _streamName = streamName;
 }
 
 void P2PConnection::handleStreamCreated(UInt16 idStream) {
@@ -300,8 +320,39 @@ bool P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 	return true;
 }
 
+void P2PConnection::handleNewGroupPeer(const std::string& groupId, const string& peerId) {
+	ERROR("Cannot handle new Group Peer on a P2P Connection") // target error (shouldn't happen)
+}
+
+void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
+	
+	if (String::ICompare(groupId, _groupId) != 0) {
+		ERROR("Unexpected group ID received : ", groupId)
+		return;
+	}
+	string idReceived;
+	INFO("Peer ID received : ", Util::FormatHex(BIN id.data(), PEER_ID_SIZE, idReceived))
+	// TODO: compare to our ID
+
+	// Compile encrypted key
+	UInt8 mdp1[Crypto::HMAC::SIZE];
+	UInt8 mdp2[Crypto::HMAC::SIZE];
+	Crypto::HMAC hmac;
+	hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
+	hmac.compute(EVP_sha256(), _groupId.data(), _groupId.size(), mdp1, Crypto::HMAC::SIZE, mdp2);
+
+	auto it = _flows.find(2);
+	if (it == _flows.end()) {
+		ERROR("Unable to find the flow 2 for NetGroup communication")
+		return;
+	}
+
+	INFO("Sending group connection answer to peer")
+	it->second->sendGroupPeerConnect(_groupId, mdp2, peerId);
+}
+
 void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
-	ERROR("Cannot handle P2P Address Exchange command on a RTMFP Connection") // target error (shouldn't happen)
+	ERROR("Cannot handle P2P Address Exchange command on a P2P Connection") // target error (shouldn't happen)
 }
 
 void P2PConnection::close() {

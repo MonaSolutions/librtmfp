@@ -58,6 +58,12 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 	onPlay = [this](const string& streamName, FlashWriter& writer) {
 		return handlePlay(streamName, writer);
 	};
+	onNewPeer = [this](const string& groupId, const string& peerId) {
+		handleNewGroupPeer(groupId, peerId);
+	};
+	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
+		handleGroupHandshake(groupId, key, peerId);
+	};
 	onMedia = [this](const std::string& peerId, const std::string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
 		if(_firstMedia) {
@@ -92,7 +98,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		RTMFPEngine* pDecoder = getDecoder(idStream, address);
 
 		if(!pDecoder->process((UInt8*)pBuffer.data(),pBuffer.size())) {
-			WARN("Bad RTMFP CRC sum computing (idstream: ", idStream, ")")
+			WARN("Bad RTMFP CRC sum computing (idstream: ", idStream, ", address : ", address.toString(),")")
 			return;
 		} else
 			handleMessage(ex, pBuffer, address);
@@ -108,6 +114,8 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 	_pMainStream->OnStreamCreated::subscribe(onStreamCreated);
 	_pMainStream->OnMedia::subscribe(onMedia);
 	_pMainStream->OnPlay::subscribe(onPlay);
+	_pMainStream->OnNewPeer::subscribe(onNewPeer);
+	_pMainStream->OnGroupHandshake::subscribe(onGroupHandshake);
 }
 
 FlowManager::~FlowManager() {
@@ -465,7 +473,9 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		}
 
 	}
-	else if (signature.size()>2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0)  // NetGroup
+	else if (signature.size()>2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0)  // NetGroup (from Mona)
+		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
+	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Member? (from peer)
 		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
 	else {
 		string tmp;
@@ -569,18 +579,18 @@ void FlowManager::flush(bool echoTime, UInt8 marker) {
 	_pSender.reset();
 }
 
-bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const string& initiatorNonce, const UInt8* responderNonce, UInt32 responderNonceSize, shared_ptr<RTMFPEngine>& pDecoder, shared_ptr<RTMFPEngine>& pEncoder, bool isResponder) {
+bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const string& initiatorNonce, const UInt8* responderNonce, UInt32 responderNonceSize, Buffer& sharedSecret, shared_ptr<RTMFPEngine>& pDecoder, shared_ptr<RTMFPEngine>& pEncoder, bool isResponder) {
 	if (!_diffieHellman.initialized()) {
 		ex.set(Exception::CRYPTO, "Diffiehellman object must be initialized before computing");
 		return false;
 	}
 
 	// Compute Diffie-Hellman secret
-	_diffieHellman.computeSecret(ex, (UInt8*)farPubKey.data(), farPubKey.size(), _sharedSecret);
+	_diffieHellman.computeSecret(ex, (UInt8*)farPubKey.data(), farPubKey.size(), sharedSecret);
 	if (ex)
 		return false;
 
-	DEBUG("Shared secret : ", Util::FormatHex(_sharedSecret.data(), _sharedSecret.size(), LOG_BUFFER))
+	DEBUG("Shared secret : ", Util::FormatHex(sharedSecret.data(), sharedSecret.size(), LOG_BUFFER))
 
 	PacketWriter packet(_pInvoker->poolBuffers);
 	if (packet.size() > 0) {
@@ -591,7 +601,7 @@ bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const stri
 	// Compute Keys
 	UInt8 responseKey[Crypto::HMAC::SIZE];
 	UInt8 requestKey[Crypto::HMAC::SIZE];
-	RTMFP::ComputeAsymetricKeys(_sharedSecret, (UInt8*)initiatorNonce.data(), (UInt16)initiatorNonce.size(), responderNonce, responderNonceSize, requestKey, responseKey);
+	RTMFP::ComputeAsymetricKeys(sharedSecret, (UInt8*)initiatorNonce.data(), (UInt16)initiatorNonce.size(), responderNonce, responderNonceSize, requestKey, responseKey);
 	pDecoder.reset(new RTMFPEngine(isResponder? requestKey : responseKey, RTMFPEngine::DECRYPT));
 	pEncoder.reset(new RTMFPEngine(isResponder? responseKey : requestKey, RTMFPEngine::ENCRYPT));
 

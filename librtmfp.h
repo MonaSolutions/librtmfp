@@ -11,9 +11,7 @@ unsigned int RTMFP_Connect(const char* url, void (* onSocketError)(const char*),
 // Connect to a peer via RTMFP P2P Connection (must be connected) and start playing streamName
 int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
 
-// Connect to a NetGroup
-// Nb: netGroup must be the encoded form for now (value sent by flash)
-// TODO: find the way to convert from a netgroup id to the netgroup encoded value
+// Connect to a NetGroup (in the G:... form)
 int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName);
 
 // RTMFP NetStream Play function

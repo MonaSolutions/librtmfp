@@ -86,6 +86,27 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 			memberHandler(member);
 			break;
 		}
+		case AMF::CHUNKSIZE:
+		{
+			if (packet.read16() != 0x4100) {
+				ERROR("Unexpected format for NetGroup ID header")
+				break;
+			}
+			string netGroupId, encryptKey, peerId;
+			packet.read(0x40, netGroupId);
+			if (packet.read16() != 0x2101) {
+				ERROR("Unexpected format for NetGroup ID header")
+				break;
+			}
+			packet.read(0x20, encryptKey);
+			if (packet.read32() != 0x2303210F) {
+				ERROR("Unexpected format for Peer ID header")
+				break;
+			}
+			packet.read(PEER_ID_SIZE, peerId);
+			groupPeerHandler(netGroupId, encryptKey, peerId);
+			break;
+		}
 
 		default:
 			ERROR("Unpacking type '",Format<UInt8>("%02x",(UInt8)type),"' unknown")
@@ -221,11 +242,16 @@ void FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate
 	OnMedia::raise(_peerId, _streamName, time, packet, lostRate, false);
 }
 
-void FlashStream::memberHandler(const std::string& peerId) {
+void FlashStream::memberHandler(const string& peerId) {
 
-	string test;
-	INFO("NetGroup Peer ID added : ", Util::FormatHex(BIN peerId.data(), peerId.size(), test))
-	// TODO: create an event and connect to the peer
+	string id;
+	INFO("NetGroup Peer ID added : ", Util::FormatHex(BIN peerId.data(), peerId.size(), id))
+	OnNewPeer::raise(_groupId, id);
+}
+
+void FlashStream::groupPeerHandler(const string& netGroupId, const string& encryptKey, const string& peerId) {
+	
+	OnGroupHandshake::raise(netGroupId, encryptKey, peerId);
 }
 
 void FlashStream::connect(FlashWriter& writer,const string& url) {
@@ -256,5 +282,12 @@ void FlashStream::sendPeerInfo(FlashWriter& writer,UInt16 port) {
 }
 
 void FlashStream::sendGroupConnect(FlashWriter& writer, const string& groupId) {
+	_groupId = groupId; // record the group id before sending answer
 	writer.writeGroup(groupId);
+	writer.flush();
+}
+
+void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const string& peerId) {
+	writer.writePeerGroup(netGroup, key, peerId);
+	writer.flush();
 }

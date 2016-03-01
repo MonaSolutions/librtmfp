@@ -532,13 +532,18 @@ AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* dat
 }
 
 void RTMFPWriter::writeGroup(const string& netGroup) {
-	createMessage().writer().packet.write8(AMF::CHUNKSIZE).write16(0x2115).write(netGroup);
+	string tmp(netGroup);
+	createMessage().writer().packet.write8(AMF::CHUNKSIZE).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
 }
 
-/*bool RTMFPWriter::writeMember(const Client& client) {
-	createMessage().writer().packet.write8(0x0b).write(client.id,ID_SIZE); // 0x0b unknown
-	return true;
-}*/
+void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const string& peerId) {
+
+	string id(peerId);
+	PacketWriter& writer = createMessage().writer().packet;
+	writer.write8(AMF::CHUNKSIZE).write16(0x4100).write(netGroup); // hexa format
+	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);
+	writer.write32(0x2303210F).write(Util::UnformatHex(id)); // binary format
+}
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 	if(reliable || state()==OPENING) {

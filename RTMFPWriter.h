@@ -73,7 +73,11 @@ public:
 	//bool				writeMedia(MediaType type,Mona::UInt32 time,Mona::PacketReader& packet,const Mona::Parameters& properties);
 	void				writeRaw(const Mona::UInt8* data,Mona::UInt32 size);
 	//bool				writeMember(const Client& client);
+
+	// Note: netGroup must be in binary format (32 bytes)
 	virtual void		writeGroup(const std::string& netGroup);
+	// Note: netGroup must be in hexa format (64 bytes)
+	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId);
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);

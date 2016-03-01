@@ -31,6 +31,7 @@ public:
 		NETSTREAM_PLAY = 1,
 		NETSTREAM_PUBLISH,
 		NETSTREAM_PUBLISH_P2P,
+		NETSTREAM_GROUP,
 		NETSTREAM_CLOSE
 	};
 
@@ -47,7 +48,7 @@ public:
 	virtual void setP2pPublisherReady()=0;
 
 	// Compute keys and init encoder and decoder
-	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
+	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, Mona::Buffer& sharedSecret, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
 
 	virtual Mona::UDPSocket&				socket() = 0;
 
@@ -83,6 +84,12 @@ protected:
 
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
+
+	// Handle new peer in a Netgroup : connect to the peer (only for RTMFPConnection)
+	virtual void				handleNewGroupPeer(const std::string& groupId, const std::string& peerId)=0;
+
+	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
+	virtual void				handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id)=0;
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader)=0;
@@ -164,6 +171,8 @@ protected:
 	FlashConnection::OnStreamCreated::Type				onStreamCreated; // Received when stream has been created and is waiting for a command
 	FlashConnection::OnMedia::Type						onMedia; // Received when we receive media (audio/video)
 	FlashConnection::OnPlay::Type						onPlay; // Received when we receive media (audio/video)
+	FlashConnection::OnNewPeer::Type					onNewPeer; // Received when a we receive the ID of a new peer in a NetGroup (only RTMFPConnection)
+	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)
 	Mona::UDPSocket::OnError::Type						onError; // TODO: delete this if not needed
 	Mona::UDPSocket::OnPacket::Type						onPacket; // Main input event, received on each raw packet
 

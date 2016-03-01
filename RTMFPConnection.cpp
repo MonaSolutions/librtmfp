@@ -67,7 +67,7 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	return !ex;
 }
 
-void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
+void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const char* groupId) {
 
 	INFO("Connecting to peer ", peerId, "...")
 	
@@ -76,10 +76,14 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, false));
 	
 	// Add the command to be send when connection is established
-	pPeerConnection->addCommand(NETSTREAM_PLAY, streamName);
-	string tag = pPeerConnection->getTag();
+	if (groupId)
+		pPeerConnection->addCommand(NETSTREAM_GROUP, groupId);
+	else
+		pPeerConnection->addCommand(NETSTREAM_PLAY, streamName);
+	string& tag = pPeerConnection->getTag();
 
-	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;
+	// Add it to waiting p2p sessions
+	_mapPeersByTag.emplace(tag, pPeerConnection);
 	
 	// Add the connection request to the queue
 	_waitingPeers.push_back(tag);
@@ -89,8 +93,22 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 
 	INFO("Connecting to group ", netGroup, "...")
 
+	// Remove the last zeroes from the group ID
+	string groupId(netGroup);
+	groupId.erase(groupId.find_last_not_of('0')+1);
+
+	// Compute the encrypted group specifier ID
+	UInt8 encryptedGroup[SHA256Computer::SIZE];
+	SHA256Computer sha;
+	sha.compute(BIN groupId.c_str(), groupId.size(), encryptedGroup);
+	sha.compute(encryptedGroup, SHA256Computer::SIZE, encryptedGroup);
+
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	_waitingGroup.push_back(netGroup);
+	Util::FormatHex(encryptedGroup, SHA256Computer::SIZE, _group);
+	_waitingGroup.push_back(_group);
+	//_mapGroup2stream[netGroup] = streamName;
+
+	DEBUG("Encrypted Group Id : ", _group)
 }
 
 bool RTMFPConnection::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
@@ -395,7 +413,7 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 
 	// Compute keys for encryption/decryption
 	string farPubKey = nonce.substr(11, nonceSize - 11);
-	if (!computeKeys(ex, farPubKey, nonce, _nonce.data(), _nonce.size(), _pDecoder, _pEncoder))
+	if (!computeKeys(ex, farPubKey, nonce, _nonce.data(), _nonce.size(), _sharedSecret, _pDecoder, _pEncoder))
 		return false;
 	
 	string signature("\x00\x54\x43\x04\x00", 5);
@@ -565,7 +583,6 @@ void RTMFPConnection::sendConnections() {
 	// Send waiting group connections
 	while (connected && !_waitingGroup.empty()) {
 		string& group = _waitingGroup.front();
-		Util::UnformatHex(group); // convert to binary string
 		sendGroupConnection(group);
 		_waitingGroup.pop_front();
 	}
@@ -651,6 +668,21 @@ bool RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
 	return false;
 }
 
+void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& peerId) {
+	
+	/*string& streamName = _mapGroup2stream[groupId];
+	if (streamName.empty()) {
+		ERROR("Unable to find the stream name of group ID : ", groupId)
+		return;
+	}*/
+	connect2Peer(peerId.c_str(), NULL, groupId.c_str());
+}
+
+void RTMFPConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
+	ERROR("Cannot handle group handshake message on a RTMFP Connection") // target error (shouldn't happen)
+}
+
+
 void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
 	// Handle 0x0f message from server (a peer is about to contact us)
 
@@ -670,6 +702,10 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 	INFO("A peer will contact us with address : ", address.toString())
 
 	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
+
+	// Record the group specifier ID if it is a NetGroup
+	if (!_group.empty())
+		pPeerConnection->setGroupId(_group);
 
 	pPeerConnection->setTag(tag);
 	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;

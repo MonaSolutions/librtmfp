@@ -18,9 +18,10 @@ public:
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
 
 	// Connect to a peer of the RTMFP server (Direct P2P) and start playing streamName
-	void connect2Peer(const char* peerId, const char* streamName);
+	// If groupId is not null it is a NetGroup connection
+	void connect2Peer(const char* peerId, const char* streamName, const char* groupId=NULL);
 
-	// Connect to the NetGroup with netGroup ID (must be encrypted)
+	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	void connect2Group(const char* netGroup, const char* streamName);
 
 	// Asynchronous read (buffered)
@@ -66,6 +67,12 @@ protected:
 	
 	// Handle play request (only for P2PConnection)
 	virtual bool handlePlay(const std::string& streamName, FlashWriter& writer);
+
+	// Handle new peer in a Netgroup : connect to the peer (only for RTMFPConnection)
+	virtual void handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
+
+	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
+	virtual void handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
@@ -122,6 +129,9 @@ private:
 
 	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
 	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
+
+	//std::map<std::string, std::string>							_mapGroup2stream; // Map of group names to stream name
+	std::string														_group; // group id (in hexa format)
 
 	// Publish/Play commands
 	struct StreamCommand {

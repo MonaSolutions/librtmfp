@@ -46,6 +46,7 @@ public:
 	void				sendPeerInfo(Mona::UInt16 port);
 	void				setPeerId(const std::string& peerId);
 	void				sendGroupConnect(const std::string& netGroup);
+	void				sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId);
 	
 private:
 	// Handle on fragment received

@@ -51,7 +51,11 @@ public:
 	void					writePing() { writeRaw().write16(0x0006).write32((Mona::UInt32)Mona::Time::Now()); }
 	void					writePong(Mona::UInt32 pingTime) { writeRaw().write16(0x0007).write32(pingTime); }
 	
+	// Note: netGroup must be in binary format (32 bytes)
 	virtual void			writeGroup(const std::string& netGroup)=0;
+
+	// Note: netGroup must be in hexa format (64 bytes)
+	virtual void			writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId)=0;
 
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)
