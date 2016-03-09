@@ -9,7 +9,7 @@ using namespace std;
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
-	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_outAddress = _hostAddress = hostAddress;
 
@@ -113,7 +113,8 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 		ex.set(Exception::PROTOCOL, "Responder Nonce size should be 76 bytes but found : ", nonceSize);
 		return;
 	}
-	reader.read(0x4C, initiatorNonce);
+	reader.read(nonceSize, _farNonce);
+	_farNonce.resize(nonceSize);
 
 	UInt8 endByte;
 	if ((endByte = reader.read8()) != 0x58) {
@@ -139,8 +140,12 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	FlowManager::flush(0x0B, writer.size());
 
 	// Compute P2P keys for decryption/encryption
-	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, _nonce.data(), 0x49, _sharedSecret, _pDecoder, _pEncoder))
+	// TODO: see if I need to resize nonce to 0x49 bytes
+	if (!_parent.computeKeys(ex, _farKey, _farNonce, _nonce.data(), 0x49, _sharedSecret, _pDecoder, _pEncoder))
 		return;
+
+	DEBUG("Initiator Nonce : ", Util::FormatHex(BIN initiatorNonce.data(), initiatorNonce.size(), LOG_BUFFER))
+	DEBUG("Responder Nonce : ", Util::FormatHex(BIN _nonce.data(), 0x49, LOG_BUFFER))
 
 	_handshakeStep = 2;
 }
@@ -219,10 +224,10 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 		ex.set(Exception::PROTOCOL, "Unexpected nonce size : ", nonceSize, " (expected 73)");
 		return false;
 	}
-	string responderNonce;
-	reader.read(nonceSize, responderNonce);
-	if (String::ICompare(responderNonce, "\x03\x1A\x00\x00\x02\x1E\x00\x41\0E", 9) != 0) {
-		ex.set(Exception::PROTOCOL, "Incorrect nonce : ", responderNonce);
+	reader.read(nonceSize, _farNonce);
+	_farNonce.resize(nonceSize);
+	if (String::ICompare(_farNonce, "\x03\x1A\x00\x00\x02\x1E\x00\x41\0E", 9) != 0) {
+		ex.set(Exception::PROTOCOL, "Incorrect responder nonce : ", _farNonce);
 		return false;
 	}
 
@@ -234,14 +239,17 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 	// Compute P2P keys for decryption/encryption (TODO: refactorize key computing)
 	string initiatorNonce((const char*)_nonce.data(), _nonce.size());
-	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, BIN responderNonce.data(), nonceSize, _sharedSecret, _pDecoder, _pEncoder, false))
+	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, BIN _farNonce.data(), nonceSize, _sharedSecret, _pDecoder, _pEncoder, false))
 		return false;
+
+	DEBUG("Initiator Nonce : ", Util::FormatHex(BIN initiatorNonce.data(), initiatorNonce.size(), LOG_BUFFER))
+	DEBUG("Responder Nonce : ", Util::FormatHex(BIN _farNonce.data(), _farNonce.size(), LOG_BUFFER))
 
 	_handshakeStep = 3;
 	connected = true;
 	NOTE("P2P Connection ", _sessionId, " is now connected to ", peerId)
 
-	if (!_groupId.empty()) {
+	if (!_groupTxt.empty()) {
 		// Send group connection request
 		// Create 1st Netstream and flow
 		string signature("\x00\x47\x52\x1C", 4);
@@ -251,12 +259,13 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 		UInt8 mdp1[Crypto::HMAC::SIZE];
 		UInt8 mdp2[Crypto::HMAC::SIZE];
 		Crypto::HMAC hmac;
-		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
-		hmac.compute(EVP_sha256(), _groupId.data(), _groupId.size(), mdp1, Crypto::HMAC::SIZE, mdp2);
+		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), BIN _farNonce.data(), _farNonce.size(), mdp1);
+		hmac.compute(EVP_sha256(), _groupTxt.data(), _groupTxt.size(), mdp1, Crypto::HMAC::SIZE, mdp2);
 
 		INFO("Sending group connection request to peer")
 		_rawResponse = true;
-		pFlow->sendGroupPeerConnect(_groupId, mdp2, peerId);
+		pFlow->sendGroupPeerConnect(_groupHex, mdp2, peerId);
+		_groupConnectSent = true;
 	}
 	else {
 		// Start playing
@@ -282,7 +291,7 @@ void P2PConnection::flush(bool echoTime, UInt8 marker) {
 
 void P2PConnection::addCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
 
-	(command == NETSTREAM_GROUP) ? _groupId = streamName : _streamName = streamName;
+	_streamName = streamName;
 }
 
 void P2PConnection::handleStreamCreated(UInt16 idStream) {
@@ -326,29 +335,38 @@ void P2PConnection::handleNewGroupPeer(const std::string& groupId, const string&
 
 void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
 	
-	if (String::ICompare(groupId, _groupId) != 0) {
+	if (String::ICompare(groupId, _groupHex) != 0) {
 		ERROR("Unexpected group ID received : ", groupId)
 		return;
 	}
-	string idReceived;
-	INFO("Peer ID received : ", Util::FormatHex(BIN id.data(), PEER_ID_SIZE, idReceived))
-	// TODO: compare to our ID
-
-	// Compile encrypted key
-	UInt8 mdp1[Crypto::HMAC::SIZE];
-	UInt8 mdp2[Crypto::HMAC::SIZE];
-	Crypto::HMAC hmac;
-	hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
-	hmac.compute(EVP_sha256(), _groupId.data(), _groupId.size(), mdp1, Crypto::HMAC::SIZE, mdp2);
-
-	auto it = _flows.find(2);
-	if (it == _flows.end()) {
-		ERROR("Unable to find the flow 2 for NetGroup communication")
+	string idReceived, myId;
+	Util::FormatHex(BIN id.data(), PEER_ID_SIZE, idReceived);
+	Util::FormatHex(_parent.peerId(), PEER_ID_SIZE, myId);
+	if (String::ICompare(idReceived, myId) != 0) {
+		ERROR("Our peer ID was expected but received : ", idReceived)
 		return;
 	}
 
-	INFO("Sending group connection answer to peer")
-	it->second->sendGroupPeerConnect(_groupId, mdp2, peerId);
+	// Send the group connection request to peer if not already sent
+	if (!_groupConnectSent) {
+
+		// Compile encrypted key
+		UInt8 mdp1[Crypto::HMAC::SIZE];
+		UInt8 mdp2[Crypto::HMAC::SIZE];
+		Crypto::HMAC hmac;
+		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), BIN _farNonce.data(), _farNonce.size(), mdp1);
+		hmac.compute(EVP_sha256(), _groupTxt.data(), _groupTxt.size(), mdp1, Crypto::HMAC::SIZE, mdp2);
+
+		auto it = _flows.find(2);
+		if (it == _flows.end()) {
+			ERROR("Unable to find the flow 2 for NetGroup communication")
+				return;
+		}
+
+		INFO("Sending group connection answer to peer")
+		it->second->sendGroupPeerConnect(_groupHex, mdp2, peerId);
+		_groupConnectSent = true;
+	}
 }
 
 void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {

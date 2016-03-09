@@ -41,7 +41,7 @@ public:
 	void setTag(const std::string& tag) { _tag = tag; }
 
 	// Set the group id
-	void setGroupId(const std::string& groupId) { _groupId = groupId; }
+	void setGroupId(const std::string& groupHex, const std::string& groupTxt) { _groupHex = groupHex; _groupTxt = groupTxt; }
 
 	// Return the tag used for this p2p connection (initiator mode)
 	std::string	getTag() { return _tag; }
@@ -95,11 +95,14 @@ private:
 	FlowManager&				_parent; // RTMFPConnection related to
 	Mona::UInt32				_sessionId; // id of the P2P session;
 	std::string					_farKey; // Key of the server/peer
+	std::string					_farNonce; // Nonce of the distant peer
 
 	// Play/Publish command
 	std::string					_streamName; // playing stream name
-	std::string					_groupId; // group id
+	std::string					_groupHex; // Group ID encrypted (double sha256) in Hex format
+	std::string					_groupTxt; // Group ID in plain text (without ending zeroes)
 	bool						_responder; // is responder?
 
-	bool						_rawResponse; // next message is a raw response?
+	bool						_rawResponse; // next message is a raw response? TODO: make it nicer
+	bool						_groupConnectSent; // True if group connection request has been sent to peer
 };

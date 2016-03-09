@@ -4,14 +4,6 @@
 using namespace std;
 using namespace Mona;
 
-
-UInt8* SHA256Computer::compute(Mona::UInt8* message, UInt32 length, Mona::UInt8* value) {
-	SHA256_Init(&_shaCTX);
-	SHA256_Update(&_shaCTX, message, length);
-	SHA256_Final(value, &_shaCTX);
-	return value;
-}
-
 bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, UInt8 addressType) {
 	string data;
 	reader.read<string>((addressType & 0x80) ? sizeof(in6_addr) : sizeof(in_addr), data);

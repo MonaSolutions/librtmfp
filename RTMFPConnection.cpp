@@ -67,7 +67,7 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	return !ex;
 }
 
-void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const char* groupId) {
+void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 
 	INFO("Connecting to peer ", peerId, "...")
 	
@@ -75,11 +75,11 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 
 	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, false));
 	
-	// Add the command to be send when connection is established
-	if (groupId)
-		pPeerConnection->addCommand(NETSTREAM_GROUP, groupId);
+	// Record the group specifier ID if it is a NetGroup
+	if (!_groupHex.empty())
+		pPeerConnection->setGroupId(_groupHex, _groupTxt);
 	else
-		pPeerConnection->addCommand(NETSTREAM_PLAY, streamName);
+		pPeerConnection->addCommand(NETSTREAM_PLAY, streamName); // command to be send when connection is established
 	string& tag = pPeerConnection->getTag();
 
 	// Add it to waiting p2p sessions
@@ -94,21 +94,19 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 	INFO("Connecting to group ", netGroup, "...")
 
 	// Remove the last zeroes from the group ID
-	string groupId(netGroup);
-	groupId.erase(groupId.find_last_not_of('0')+1);
+	_groupTxt = netGroup;
+	_groupTxt.erase(_groupTxt.find_last_not_of('0')+1);
 
-	// Compute the encrypted group specifier ID
-	UInt8 encryptedGroup[SHA256Computer::SIZE];
-	SHA256Computer sha;
-	sha.compute(BIN groupId.c_str(), groupId.size(), encryptedGroup);
-	sha.compute(encryptedGroup, SHA256Computer::SIZE, encryptedGroup);
+	// Compute the encrypted group specifier ID (2 consecutive sha256)
+	UInt8 encryptedGroup[32];
+	EVP_Digest(_groupTxt.data(), _groupTxt.size(), (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
+	EVP_Digest(encryptedGroup, 32, (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
+	Util::FormatHex(encryptedGroup, 32, _groupHex);
+	DEBUG("Encrypted Group Id : ", _groupHex)
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	Util::FormatHex(encryptedGroup, SHA256Computer::SIZE, _group);
-	_waitingGroup.push_back(_group);
+	_waitingGroup.push_back(_groupHex);
 	//_mapGroup2stream[netGroup] = streamName;
-
-	DEBUG("Encrypted Group Id : ", _group)
 }
 
 bool RTMFPConnection::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
@@ -275,6 +273,8 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 
 	string certificat;
 	reader.read(77, certificat);
+
+	DEBUG("Server Certificate : ", Util::FormatHex(BIN certificat.data(), 77, LOG_BUFFER))
 
 	// Write handshake1
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
@@ -675,7 +675,7 @@ void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& pe
 		ERROR("Unable to find the stream name of group ID : ", groupId)
 		return;
 	}*/
-	connect2Peer(peerId.c_str(), NULL, groupId.c_str());
+	connect2Peer(peerId.c_str(), NULL);
 }
 
 void RTMFPConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
@@ -704,8 +704,8 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
 
 	// Record the group specifier ID if it is a NetGroup
-	if (!_group.empty())
-		pPeerConnection->setGroupId(_group);
+	if (!_groupHex.empty())
+		pPeerConnection->setGroupId(_groupHex, _groupTxt);
 
 	pPeerConnection->setTag(tag);
 	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;

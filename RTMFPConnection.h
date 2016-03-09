@@ -18,8 +18,7 @@ public:
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
 
 	// Connect to a peer of the RTMFP server (Direct P2P) and start playing streamName
-	// If groupId is not null it is a NetGroup connection
-	void connect2Peer(const char* peerId, const char* streamName, const char* groupId=NULL);
+	void connect2Peer(const char* peerId, const char* streamName);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	void connect2Group(const char* netGroup, const char* streamName);
@@ -48,6 +47,9 @@ public:
 
 	// Set the p2p publisher as ready (used for blocking mode)
 	virtual void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
+
+	// Return the peer ID (for p2p childs)
+	virtual Mona::UInt8* peerId() { return _peerId; }
 
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal							connectSignal; // signal to wait connection
@@ -131,7 +133,8 @@ private:
 	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
 
 	//std::map<std::string, std::string>							_mapGroup2stream; // Map of group names to stream name
-	std::string														_group; // group id (in hexa format)
+	std::string														_groupHex; // group ID in hex format
+	std::string														_groupTxt; // group ID in plain text (without final zeroes)
 
 	// Publish/Play commands
 	struct StreamCommand {

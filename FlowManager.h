@@ -47,6 +47,9 @@ public:
 	// Set the p2p publisher as ready (used for blocking mode)
 	virtual void setP2pPublisherReady()=0;
 
+	// Return the peer ID (for p2p childs of RTMFPConnection)
+	virtual Mona::UInt8* peerId() { return NULL; }
+
 	// Compute keys and init encoder and decoder
 	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, Mona::Buffer& sharedSecret, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
 

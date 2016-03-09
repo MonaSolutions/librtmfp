@@ -57,20 +57,6 @@ private:
 	EVP_CIPHER_CTX			_context;
 };
 
-class SHA256Computer : public virtual Mona::Object {
-public:
-
-	enum { SIZE = 0x20 };
-
-	SHA256Computer() { }
-	virtual ~SHA256Computer() {}
-
-	Mona::UInt8* compute(Mona::UInt8* message, Mona::UInt32 length, Mona::UInt8* value);
-
-private:
-	SHA256_CTX _shaCTX;
-};
-
 class RTMFP : virtual Mona::Static {
 public:
 	enum AddressType {
