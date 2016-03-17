@@ -41,7 +41,7 @@ public:
 	void setTag(const std::string& tag) { _tag = tag; }
 
 	// Set the group id
-	void setGroupId(const std::string& groupHex, const std::string& groupTxt) { _groupHex = groupHex; _groupTxt = groupTxt; }
+	void setGroupId(const std::string& groupHex, const std::string& groupTxt, const std::string& streamName) { _groupHex = groupHex; _groupTxt = groupTxt; _streamName = streamName; }
 
 	// Return the tag used for this p2p connection (initiator mode)
 	std::string	getTag() { return _tag; }
@@ -105,4 +105,6 @@ private:
 
 	bool						_rawResponse; // next message is a raw response? TODO: make it nicer
 	bool						_groupConnectSent; // True if group connection request has been sent to peer
+
+	FlashStream::OnGroupMedia::Type	onGroupMedia; // Called when a peer signal us that their is a stream available in the NetGroup
 };

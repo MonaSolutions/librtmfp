@@ -132,7 +132,7 @@ private:
 	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
 	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
 
-	//std::map<std::string, std::string>							_mapGroup2stream; // Map of group names to stream name
+	std::map<std::string, std::string>								_mapGroup2stream; // Map of group names to stream name
 	std::string														_groupHex; // group ID in hex format
 	std::string														_groupTxt; // group ID in plain text (without final zeroes)
 

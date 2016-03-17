@@ -77,7 +77,11 @@ public:
 	// Note: netGroup must be in binary format (32 bytes)
 	virtual void		writeGroup(const std::string& netGroup);
 	// Note: netGroup must be in hexa format (64 bytes)
-	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId);
+	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator);
+	// 3rd message when connecting to a peer from a group (TODO: give the peer in binary format)
+	virtual void		writeGroupMessage3(const std::string& targetId);
+	// Play the stream in argument
+	virtual void		writeGroupMedia(const std::string& streamName, const std::string& data);
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);

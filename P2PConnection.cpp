@@ -11,6 +11,15 @@ UInt32 P2PConnection::P2PSessionCounter = 2000000;
 P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
+	onGroupMedia = [this](const string& streamName, const string& data) {
+		if (String::ICompare(streamName, _streamName) == 0) {
+			NOTE("Starting to listen to publication ",streamName)
+			return true;
+		}
+		INFO("New stream available in the group but not registered : ", streamName)
+		return false;
+	};
+
 	_outAddress = _hostAddress = hostAddress;
 
 	_tag.resize(16);
@@ -18,9 +27,13 @@ P2PConnection::P2PConnection(FlowManager& parent, string id, Invoker* invoker, O
 
 	BinaryWriter writer2(_pubKey.data(), _pubKey.size());
 	writer2.write(pubKey.data(), pubKey.size()); // copy parent public key
+
+	_pMainStream->OnGroupMedia::subscribe(onGroupMedia);
 }
 
 P2PConnection::~P2PConnection() {
+
+	_pMainStream->OnGroupMedia::unsubscribe(onGroupMedia);
 	close();
 }
 
@@ -79,7 +92,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 
 	_farId = reader.read32();
 
-	string cookie, initiatorNonce;
+	string cookie;
 	if (reader.read8() != 0x40) {
 		ex.set(Exception::PROTOCOL, "Cookie size should be 64 bytes but found : ", *(reader.current() - 1));
 		return;
@@ -144,7 +157,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	if (!_parent.computeKeys(ex, _farKey, _farNonce, _nonce.data(), 0x49, _sharedSecret, _pDecoder, _pEncoder))
 		return;
 
-	DEBUG("Initiator Nonce : ", Util::FormatHex(BIN initiatorNonce.data(), initiatorNonce.size(), LOG_BUFFER))
+	DEBUG("Initiator Nonce : ", Util::FormatHex(BIN _farNonce.data(), _farNonce.size(), LOG_BUFFER))
 	DEBUG("Responder Nonce : ", Util::FormatHex(BIN _nonce.data(), 0x49, LOG_BUFFER))
 
 	_handshakeStep = 2;
@@ -242,7 +255,7 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 	if (!_parent.computeKeys(ex, _farKey, initiatorNonce, BIN _farNonce.data(), nonceSize, _sharedSecret, _pDecoder, _pEncoder, false))
 		return false;
 
-	DEBUG("Initiator Nonce : ", Util::FormatHex(BIN initiatorNonce.data(), initiatorNonce.size(), LOG_BUFFER))
+	DEBUG("Initiator Nonce : ", Util::FormatHex(_nonce.data(), _nonce.size(), LOG_BUFFER))
 	DEBUG("Responder Nonce : ", Util::FormatHex(BIN _farNonce.data(), _farNonce.size(), LOG_BUFFER))
 
 	_handshakeStep = 3;
@@ -264,7 +277,7 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 		INFO("Sending group connection request to peer")
 		_rawResponse = true;
-		pFlow->sendGroupPeerConnect(_groupHex, mdp2, peerId);
+		pFlow->sendGroupPeerConnect(_groupHex, mdp2, peerId, true);
 		_groupConnectSent = true;
 	}
 	else {
@@ -364,7 +377,7 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 		}
 
 		INFO("Sending group connection answer to peer")
-		it->second->sendGroupPeerConnect(_groupHex, mdp2, peerId);
+		it->second->sendGroupPeerConnect(_groupHex, mdp2, peerId, false);
 		_groupConnectSent = true;
 	}
 }

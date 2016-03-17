@@ -53,7 +53,7 @@ public:
 
 
 RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,/*Peer& peer,*/const PoolBuffers& poolBuffers, BandWriter& band, const shared_ptr<FlashConnection>& pMainStream) : /*_pGroup(NULL), _peer(peer), */_pStream(pMainStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
-	
+	INFO("New main flow ", id, " on connection")
 	// MAIN Stream flow OR Null flow
 
 	RTMFPWriter* pWriter = new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING,signature, band, _pWriter);
@@ -68,7 +68,8 @@ RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,/*Peer& peer,*/const Pool
 }
 
 RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,/*Peer& peer,*/const PoolBuffers& poolBuffers, BandWriter& band) : /*_pGroup(NULL), _peer(peer), */_pStream(pStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
-	
+	INFO("New flow ", id, " on connection")
+
 	new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING,signature, band, _pWriter);
 
 }
@@ -293,7 +294,12 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 		case AMF::VIDEO:
 			time = pMessage->read32();
 		case AMF::CHUNKSIZE:
-		case AMF::MEMBER:
+		case AMF::MEMBER: // NetGroup member info
+		case AMF::ABORT: // unknown NetGroup type 1
+		case AMF::GROUP_NKNOWN2: // unknown NetGroup type 2
+		case AMF::GROUP_NKNOWN3: // unknown NetGroup type 3
+		case AMF::GROUP_MEDIA: // NetGroup media stream
+		case AMF::GROUP_NKNOWN4: // unknown NetGroup type 4
 			break;
 		default:
 			pMessage->next(4);
@@ -350,7 +356,7 @@ void RTMFPFlow::sendGroupConnect(const  string& netGroup) {
 		_pStream->sendGroupConnect(*_pWriter, netGroup);
 }
 
-void RTMFPFlow::sendGroupPeerConnect(const string& netGroup, const UInt8* key, const string& peerId) {
+void RTMFPFlow::sendGroupPeerConnect(const string& netGroup, const UInt8* key, const string& peerId, bool initiator) {
 	if (_pStream)
-		_pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, peerId);
+		_pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, peerId, initiator);
 }

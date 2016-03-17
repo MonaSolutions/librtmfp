@@ -6,7 +6,7 @@
 using namespace std;
 using namespace Mona;
 
-FlashStream::FlashStream(UInt16 id/*, Invoker& invoker, Peer& peer*/) : id(id), /*invoker(invoker), peer(peer), _pPublication(NULL), _pListener(NULL), */ _bufferTime(0) {
+FlashStream::FlashStream(UInt16 id/*, Invoker& invoker, Peer& peer*/) : id(id), /*invoker(invoker), peer(peer), _pPublication(NULL), _pListener(NULL), */ _bufferTime(0), _message3Sent(false) {
 	DEBUG("FlashStream ",id," created")
 }
 
@@ -103,8 +103,80 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 				ERROR("Unexpected format for Peer ID header")
 				break;
 			}
-			packet.read(PEER_ID_SIZE, peerId);
-			groupPeerHandler(netGroupId, encryptKey, peerId);
+			packet.read(PEER_ID_SIZE, peerId); 
+			OnGroupHandshake::raise(netGroupId, encryptKey, peerId);
+			break;
+		}
+		case AMF::ABORT:
+		{
+			string value;
+			if (packet.available()) {
+				UInt16 size = packet.read16();
+				packet.read(size, value);
+			}
+			INFO("NetGroup data message type - ", value)
+			break;
+		}
+		case AMF::GROUP_NKNOWN2:
+			INFO("NetGroup 0E message type")
+
+			// When we receive the 0E NetGroup message type we must send the group message 3
+			writer.writeGroupMessage3(_targetID);
+			_message3Sent = 3;
+			break;
+		case AMF::GROUP_NKNOWN3:
+		{
+			INFO("NetGroup 0A message type")
+			UInt8 size = packet.read8();
+			if (size == 1) {
+				packet.next();
+				size = packet.read8();
+			}
+			if (size != 8) {
+				ERROR("Unexpected 1st parameter size in group message 3")
+				break;
+			}
+			string value, peerId;
+			DEBUG("Group message 0A - 1st parameter : ", Util::FormatHex(BIN packet.read(8, value).data(), 8, LOG_BUFFER))
+			size = packet.read8();
+			DEBUG("Group message 0A - 2nd parameter : ", Util::FormatHex(BIN packet.read(size, value).data(), 8, LOG_BUFFER))
+			
+			// Loop on each peer of the NetGroup
+			while (packet.available() > 4) {
+				if (packet.read32() != 0x0022210F) {
+					ERROR("Unexpected format for peer infos in the group message 3")
+					break;
+				}
+				packet.read(PEER_ID_SIZE, peerId);
+				DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN peerId.data(), PEER_ID_SIZE, LOG_BUFFER))
+				DEBUG("Group message 0A - Time elapsed : ", packet.read7BitLongValue())
+				size = packet.read8();
+				DEBUG("Group message 0A - infos : ", Util::FormatHex(BIN packet.read(size, value).data(), size, LOG_BUFFER))
+			}
+			if (!_message3Sent) {
+				writer.writeGroupMessage3(_targetID);
+				_message3Sent = true;
+			}
+			break;
+		}
+
+		case AMF::GROUP_MEDIA:
+		{
+			UInt8 sizeName = packet.read8();
+			if (sizeName > 1) {
+				string streamName, data;
+				packet.next(); // 00
+				packet.read(sizeName-1, streamName);
+				packet.read(packet.available(), data);
+				if (OnGroupMedia::raise<false>(streamName, data))
+					writer.writeGroupMedia(streamName, data);
+			}
+			break;
+		}
+		case AMF::GROUP_NKNOWN4:
+		{
+			DEBUG("Group message 22 : ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
+			packet.next(packet.available());
 			break;
 		}
 
@@ -249,11 +321,6 @@ void FlashStream::memberHandler(const string& peerId) {
 	OnNewPeer::raise(_groupId, id);
 }
 
-void FlashStream::groupPeerHandler(const string& netGroupId, const string& encryptKey, const string& peerId) {
-	
-	OnGroupHandshake::raise(netGroupId, encryptKey, peerId);
-}
-
 void FlashStream::connect(FlashWriter& writer,const string& url) {
 	ERROR("Connection request sent from a FlashStream (only main stream can send connect)")
 }
@@ -287,7 +354,11 @@ void FlashStream::sendGroupConnect(FlashWriter& writer, const string& groupId) {
 	writer.flush();
 }
 
-void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const string& peerId) {
-	writer.writePeerGroup(netGroup, key, peerId);
+void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const string& peerId, bool initiator) {
+	// Record target peer ID in binary format
+	_targetID = peerId;
+	Util::UnformatHex(_targetID);
+
+	writer.writePeerGroup(netGroup, key, peerId, initiator);
 	writer.flush();
 }

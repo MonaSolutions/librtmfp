@@ -46,17 +46,21 @@ public:
 	enum ContentType {
 		EMPTY				=0x00,
 		CHUNKSIZE			=0x01,
-		ABORT				=0x02,
+		ABORT				=0x02, // unknown NetGroup type 1
 		ACK					=0x03,
 		RAW					=0x04,
 		WIN_ACKSIZE			=0x05,
 		BANDWITH			=0x06,
 		AUDIO				=0x08,
 		VIDEO				=0x09,
+		GROUP_NKNOWN3		=0x0A, // unknown NetGroup type 3
 		MEMBER				=0x0B, // added for NetGroup
+		GROUP_NKNOWN2		=0x0E, // unknown NetGroup type 2
 		DATA_AMF3			=0x0F,
 		INVOCATION_AMF3		=0x11,
 		DATA				=0x12,
-		INVOCATION			=0x14
+		INVOCATION			=0x14,
+		GROUP_MEDIA			=0x21, // Media stream
+		GROUP_NKNOWN4		=0x22 // unknown NetGroup type 4
 	};
 };

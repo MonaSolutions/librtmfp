@@ -393,7 +393,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 		}
 
 		// Next
-		reader.next(size); // TODO: maybe PacketReader was needed above to not move the cursor of "reader"
+		reader.next(size);
 		type = reader.available()>0 ? reader.read8() : 0xFF;
 
 		// Commit RTMFPFlow (pFlow means 0x11 or 0x10 message)
@@ -476,6 +476,10 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 	else if (signature.size()>2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0)  // NetGroup (from Mona)
 		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
 	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Member? (from peer)
+		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
+	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream (from peer)
+		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
+	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Media stream (from peer)
 		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
 	else {
 		string tmp;

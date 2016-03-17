@@ -77,7 +77,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 	
 	// Record the group specifier ID if it is a NetGroup
 	if (!_groupHex.empty())
-		pPeerConnection->setGroupId(_groupHex, _groupTxt);
+		pPeerConnection->setGroupId(_groupHex, _groupTxt, streamName);
 	else
 		pPeerConnection->addCommand(NETSTREAM_PLAY, streamName); // command to be send when connection is established
 	string& tag = pPeerConnection->getTag();
@@ -106,7 +106,7 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 	_waitingGroup.push_back(_groupHex);
-	//_mapGroup2stream[netGroup] = streamName;
+	_mapGroup2stream[_groupHex] = streamName;
 }
 
 bool RTMFPConnection::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
@@ -670,12 +670,12 @@ bool RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
 
 void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& peerId) {
 	
-	/*string& streamName = _mapGroup2stream[groupId];
+	string& streamName = _mapGroup2stream[groupId];
 	if (streamName.empty()) {
 		ERROR("Unable to find the stream name of group ID : ", groupId)
 		return;
-	}*/
-	connect2Peer(peerId.c_str(), NULL);
+	}
+	connect2Peer(peerId.c_str(), streamName.c_str());
 }
 
 void RTMFPConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
@@ -686,9 +686,9 @@ void RTMFPConnection::handleGroupHandshake(const std::string& groupId, const std
 void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
 	// Handle 0x0f message from server (a peer is about to contact us)
 
-	if(reader.read24() != 0x22210F) {
+	if (reader.read24() != 0x22210F) {
 		ERROR("Unexpected P2P address exchange first 3 bytes")
-		return;
+			return;
 	}
 
 	// Read our peer id and address of initiator
@@ -696,16 +696,22 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 	reader.read(0x20, peerId);
 	SocketAddress address;
 	RTMFP::ReadAddress(reader, address, reader.read8());
-	
+
 	string tag;
 	reader.read(16, tag);
 	INFO("A peer will contact us with address : ", address.toString())
 
-	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
+		shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
 
 	// Record the group specifier ID if it is a NetGroup
-	if (!_groupHex.empty())
-		pPeerConnection->setGroupId(_groupHex, _groupTxt);
+	if (!_groupHex.empty() && !_groupTxt.empty()) {
+		string& streamName = _mapGroup2stream[_groupHex];
+		if (streamName.empty()) {
+			ERROR("Unable to find the stream name of group ID : ", _groupHex)
+			return;
+		}
+		pPeerConnection->setGroupId(_groupHex, _groupTxt, streamName);
+	}
 
 	pPeerConnection->setTag(tag);
 	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;

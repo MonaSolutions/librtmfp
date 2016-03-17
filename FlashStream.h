@@ -12,6 +12,7 @@ namespace FlashEvents {
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
 	struct OnNewPeer : Mona::Event<void(const std::string& groupId, const std::string& peerId)> {};
 	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {};
+	struct OnGroupMedia : Mona::Event<bool(const std::string& streamName, const std::string& data)> {};
 };
 
 /**************************************************************
@@ -22,7 +23,8 @@ class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnMedia,
 	public FlashEvents::OnPlay,
 	public FlashEvents::OnNewPeer,
-	public FlashEvents::OnGroupHandshake {
+	public FlashEvents::OnGroupHandshake,
+	public FlashEvents::OnGroupMedia {
 public:
 
 	FlashStream(Mona::UInt16 id);
@@ -59,7 +61,7 @@ public:
 	void sendGroupConnect(FlashWriter& writer, const std::string& groupId);
 
 	// Send the group connection request to the peer
-	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId);
+	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator);
 
 	// Record target peer ID for identifying media source (play mode)
 	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }
@@ -72,13 +74,15 @@ private:
 	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 	virtual void	videoHandler(Mona::UInt32 time,Mona::PacketReader& packet, double lostRate);
 	virtual void	memberHandler(const std::string& peerId);
-	virtual void	groupPeerHandler(const std::string& netGroupId, const std::string& encryptKey, const std::string& peerId);
 
 	Mona::UInt32	_bufferTime;
 	std::string		_streamName;
 
 	std::string		_peerId; // peer ID (only for p2p play stream)
 	std::string		_groupId; // Group ID (only for NetGroup stream)
+	std::string		_targetID; // Peer ID of the target
+
+	bool			_message3Sent; // True if NetGroup message 3 has been sent to target peer
 
 	//Mona::UInt32	_timeFrequency; // to retrieve time
 };
