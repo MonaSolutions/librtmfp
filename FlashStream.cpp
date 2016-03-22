@@ -6,7 +6,7 @@
 using namespace std;
 using namespace Mona;
 
-FlashStream::FlashStream(UInt16 id/*, Invoker& invoker, Peer& peer*/) : id(id), /*invoker(invoker), peer(peer), _pPublication(NULL), _pListener(NULL), */ _bufferTime(0), _message3Sent(false) {
+FlashStream::FlashStream(UInt16 id) : id(id), _bufferTime(0), _message3Sent(false), _playing(false), _videoCodecSent(false) {
 	DEBUG("FlashStream ",id," created")
 }
 
@@ -16,25 +16,7 @@ FlashStream::~FlashStream() {
 }
 
 void FlashStream::disengage(FlashWriter* pWriter) {
-	// Stop the current  job
-	/*if(_pPublication) {
-		const string& name(_pPublication->name());
-		if(pWriter)
-			pWriter->writeAMFStatus("NetStream.Unpublish.Success",name + " is now unpublished");
-		 // do after writeAMFStatus because can delete the publication, so corrupt name reference
-		invoker.unpublish(peer,name);
-		_pPublication = NULL;
-	}
-	if(_pListener) {
-		const string& name(_pListener->publication.name());
-		if (pWriter) {
-			pWriter->writeAMFStatus("NetStream.Play.Stop", "Stopped playing " + name);
-			OnStop::raise(id, *pWriter); // stream end
-		}
-		 // do after writeAMFStatus because can delete the publication, so corrupt publication name reference
-		invoker.unsubscribe(peer,name);
-		_pListener = NULL;
-	}*/
+
 }
 
 
@@ -114,11 +96,11 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 				UInt16 size = packet.read16();
 				packet.read(size, value);
 			}
-			INFO("NetGroup data message type - ", value)
+			INFO("FlashStream ", id, " - NetGroup data message type : ", value)
 			break;
 		}
 		case AMF::GROUP_NKNOWN2:
-			INFO("NetGroup 0E message type")
+			INFO("FlashStream ", id, " - NetGroup 0E message type")
 
 			// When we receive the 0E NetGroup message type we must send the group message 3
 			writer.writeGroupMessage3(_targetID);
@@ -126,7 +108,7 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 			break;
 		case AMF::GROUP_NKNOWN3:
 		{
-			INFO("NetGroup 0A message type")
+			INFO("FlashStream ", id, " - NetGroup Report (type 0A)")
 			UInt8 size = packet.read8();
 			if (size == 1) {
 				packet.next();
@@ -160,8 +142,9 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 			break;
 		}
 
-		case AMF::GROUP_MEDIA:
+		case AMF::GROUP_INFOS: // contain the stream name of an eventual publication
 		{
+			DEBUG("FlashStream ", id, " - Group Media Infos : ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
 			UInt8 sizeName = packet.read8();
 			if (sizeName > 1) {
 				string streamName, data;
@@ -175,13 +158,44 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 		}
 		case AMF::GROUP_NKNOWN4:
 		{
-			DEBUG("Group message 22 : ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
+			UInt64 counter = packet.read7BitLongValue();
+			DEBUG("FlashStream ", id, " - Group Media Report (type 22) : ", counter, " ; ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
 			packet.next(packet.available());
+			if (!_playing) {
+				writer.writeGroupPlay();
+				_playing = true;
+			}
+			break;
+		}
+		case AMF::GROUP_MEDIA_DATA:
+		case AMF::GROUP_CODECS1:
+		{
+			UInt64 counter = packet.read7BitLongValue();
+			if (type == AMF::GROUP_CODECS1)
+				packet.next(); // ignore byte \x01
+			UInt8 mediaType = packet.read8();
+			time = packet.read32() / 5; // divided by 5 to obtain the right frequency
+
+			DEBUG("FlashStream ", id, " - Group ", (mediaType ==0x08?"Audio" : (mediaType ==0x09?"Video":"Unknown"))," media message ", Format<UInt8>("%02X", (UInt8)type)," : counter=", counter, ", time=", time)
+			//time = packet.read24() * 0x30;
+			if (mediaType == 0x08)
+				audioHandler(time, packet, lostRate);
+			else if (mediaType == 0x09) {
+				if (!_videoCodecSent) {
+					if (!RTMFP::IsKeyFrame(packet.current(), packet.available())) {
+						DEBUG("Video frame dropped to wait first key frame");
+						break;
+					}
+					_videoCodecSent = true;
+				}
+				videoHandler(time, packet, lostRate);
+			} else
+				ERROR("Media type ", Format<UInt8>("%02X", mediaType), " not supported (or data decoding error)")
 			break;
 		}
 
 		default:
-			ERROR("Unpacking type '",Format<UInt8>("%02x",(UInt8)type),"' unknown")
+			ERROR("Unpacking type '",Format<UInt8>("%02X",(UInt8)type),"' unknown")
 	}
 
 	writer.setCallbackHandle(0);

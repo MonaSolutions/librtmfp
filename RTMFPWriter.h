@@ -82,6 +82,8 @@ public:
 	virtual void		writeGroupMessage3(const std::string& targetId);
 	// Play the stream in argument
 	virtual void		writeGroupMedia(const std::string& streamName, const std::string& data);
+	// Start to play the group stream
+	virtual void			writeGroupPlay();
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);

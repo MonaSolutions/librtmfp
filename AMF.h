@@ -60,7 +60,10 @@ public:
 		INVOCATION_AMF3		=0x11,
 		DATA				=0x12,
 		INVOCATION			=0x14,
-		GROUP_MEDIA			=0x21, // Media stream
-		GROUP_NKNOWN4		=0x22 // unknown NetGroup type 4
+		GROUP_MEDIA_DATA    =0x20, // Audio/Video data
+		GROUP_INFOS			=0x21, // Media stream infos
+		GROUP_NKNOWN4		=0x22, // unknown NetGroup type 4
+		GROUP_PLAY			=0x23, // NetGroup Play request
+		GROUP_CODECS1       =0x30 // NetGroup Codecs data
 	};
 };

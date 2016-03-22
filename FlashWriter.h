@@ -60,8 +60,11 @@ public:
 	// 3rd message when connecting to a peer from a group
 	virtual void			writeGroupMessage3(const std::string& targetId)=0;
 
-	// Play the stream in argument
+	// Request the stream in argument
 	virtual void			writeGroupMedia(const std::string& streamName, const std::string& data)=0;
+
+	// Start to play the group stream
+	virtual void			writeGroupPlay()=0;
 
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)

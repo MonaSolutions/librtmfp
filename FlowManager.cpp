@@ -479,7 +479,9 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
 	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream (from peer)
 		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
-	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Media stream (from peer)
+	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Reporting stream (from peer)
+		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
+	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0)  // NetGroup Media (from peer)
 		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
 	else {
 		string tmp;

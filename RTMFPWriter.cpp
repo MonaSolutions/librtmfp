@@ -566,8 +566,13 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const std::stri
 
 	string tmp("\x00", 1);
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(AMF::GROUP_MEDIA).writeString(String::Append(tmp, streamName));
+	writer.write8(AMF::GROUP_INFOS).writeString(String::Append(tmp, streamName));
 	writer.write(data.data(), data.size());
+}
+
+void RTMFPWriter::writeGroupPlay() {
+	PacketWriter& writer = createMessage().writer().packet;
+	writer.write8(AMF::GROUP_PLAY).write8(0x10);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {

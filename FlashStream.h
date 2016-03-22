@@ -83,6 +83,8 @@ private:
 	std::string		_targetID; // Peer ID of the target
 
 	bool			_message3Sent; // True if NetGroup message 3 has been sent to target peer
+	bool			_playing; // True if we are already playing the stream (from a NetGroup)
+	bool			_videoCodecSent; // True if the video codecs have been sent
 
 	//Mona::UInt32	_timeFrequency; // to retrieve time
 };
