@@ -93,14 +93,22 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 
 	INFO("Connecting to group ", netGroup, "...")
 
-	// Remove the last zeroes from the group ID
-	_groupTxt = netGroup;
-	_groupTxt.erase(_groupTxt.find_last_not_of('0')+1);
+	// Keep the meanful part of the group ID (before end marker)
+	const char* endMarker = strstr(netGroup, "00");
+	if (!endMarker) {
+		ERROR("Group ID not well formated")
+		return;
+	}
+	_groupTxt.assign(netGroup, endMarker);
+
+	// Check if it is a v2 groupspec version
+	bool groupV2 = strncmp("G:027f02", netGroup, 8) == 0;
 
 	// Compute the encrypted group specifier ID (2 consecutive sha256)
 	UInt8 encryptedGroup[32];
 	EVP_Digest(_groupTxt.data(), _groupTxt.size(), (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
-	EVP_Digest(encryptedGroup, 32, (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
+	if (groupV2)
+		EVP_Digest(encryptedGroup, 32, (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL); // v2 groupspec needs 2 sha256
 	Util::FormatHex(encryptedGroup, 32, _groupHex);
 	DEBUG("Encrypted Group Id : ", _groupHex)
 
