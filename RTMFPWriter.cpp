@@ -325,7 +325,7 @@ void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool
 			if(id>2) { // TODO: check this
 				writer.write8(1+Util::Get7BitValueSize(flowId)); // following size
 				writer.write8(0x0a); // Unknown!
-				writer.write7BitLongValue(flowId-1); //TODO: check the -1
+				writer.write7BitLongValue(flowId);
 			}
 			writer.write8(0); // marker of end for this part
 		}
@@ -556,7 +556,7 @@ void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const
 void RTMFPWriter::writeGroupMessage3(const string& targetId) {
 
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(AMF::GROUP_NKNOWN3).write8(0x08).write(EXPAND("\x0D\x02\x7F\x00\x00\x01\x07\x8F"));
+	writer.write8(AMF::GROUP_REPORT).write8(0x08).write(EXPAND("\x0D\x02\x7F\x00\x00\x01\x07\x8F"));
 	writer.write8(0x08).write(EXPAND("\x0A\x03\x7F\x00\x00\x01\x07\x8F"));
 	writer.write32(0x0022210F).write(targetId);
 	writer.write16(0x0008).write(EXPAND("\x0A\x00\x7F\x00\x00\x01\x07\x8F")).write8(0);
@@ -572,7 +572,7 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const std::stri
 
 void RTMFPWriter::writeGroupPlay() {
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(AMF::GROUP_PLAY).write8(0x10);
+	writer.write8(AMF::GROUP_PLAY).write8(0xFF);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {

@@ -86,5 +86,8 @@ private:
 	bool			_playing; // True if we are already playing the stream (from a NetGroup)
 	bool			_videoCodecSent; // True if the video codecs have been sent
 
-	//Mona::UInt32	_timeFrequency; // to retrieve time
+	Mona::UInt8		_splittedMediaType;
+	Mona::UInt32	_splittedTime;
+	double			_splittedLostRate;
+	Mona::Buffer	_splittedContent;
 };

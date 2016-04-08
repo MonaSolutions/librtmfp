@@ -21,6 +21,10 @@ public:
 
 	void	disengage(FlashWriter* pWriter = NULL);
 
+	// Add a new stream to the Main stream with an incremental id
+	FlashStream* addStream(std::shared_ptr<FlashStream>& pStream);
+
+	// Add a new stream to the Main stream
 	FlashStream* addStream(Mona::UInt16 id, std::shared_ptr<FlashStream>& pStream);
 
 	FlashStream* getStream(Mona::UInt16 id, std::shared_ptr<FlashStream>& pStream);

@@ -351,7 +351,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 					else
 						message.read7BitLongValue(); // Fullduplex useless here! Because we are creating a new RTMFPFlow!
 
-													 // Useless header part 
+					// Useless header part 
 					UInt8 length = message.read8();
 					while (length>0 && message.available()) {
 						WARN("Unknown message part on flow ", idFlow);
@@ -473,16 +473,15 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		}
 
 	}
-	else if (signature.size()>2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0)  // NetGroup (from Mona)
-		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
-	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Member? (from peer)
-		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
-	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream (from peer)
-		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
-	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Reporting stream (from peer)
-		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
-	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0)  // NetGroup Media (from peer)
-		pFlow = new RTMFPFlow(id, signature, _pInvoker->poolBuffers, *this, _pMainStream);
+	else if ((signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0)  // NetGroup (from Mona)
+		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Member? (from peer)
+		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream (from peer)
+		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Reporting stream (from peer)
+		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0)) {  // NetGroup Media (from peer)
+		shared_ptr<FlashStream> pStream;
+		_pMainStream->addStream(pStream);
+		pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
+	}
 	else {
 		string tmp;
 		ERROR("Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow")

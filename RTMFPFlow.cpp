@@ -289,7 +289,6 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 
 	UInt32 time(0);
 	AMF::ContentType type = (AMF::ContentType)pMessage->read8();
-	INFO("Flow ", id, " : Message type ", Format<UInt8>("%02X", (UInt8)type))
 	switch(type) {
 		case AMF::AUDIO:
 		case AMF::VIDEO:
@@ -299,12 +298,14 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 		case AMF::MEMBER: // NetGroup member info
 		case AMF::ABORT: // unknown NetGroup type 1
 		case AMF::GROUP_NKNOWN2: // unknown NetGroup type 2
-		case AMF::GROUP_NKNOWN3: // unknown NetGroup type 3
-		case AMF::GROUP_INFOS: // NetGroup media stream
-		case AMF::GROUP_NKNOWN4: // unknown NetGroup type 4
-		case AMF::GROUP_PLAY: // group play?
-		case AMF::GROUP_MEDIA_DATA: // Audio data
-		case AMF::GROUP_CODECS1: // Codecs data?
+		case AMF::GROUP_REPORT:
+		case AMF::GROUP_INFOS:
+		case AMF::GROUP_FRAGMENTS_MAP:
+		case AMF::GROUP_PLAY:
+		case AMF::GROUP_MEDIA_DATA:
+		case AMF::GROUP_MEDIA_START:
+		case AMF::GROUP_MEDIA_NEXT:
+		case AMF::EMPTY: // NetGroup media End
 			break;
 		default:
 			pMessage->next(4);

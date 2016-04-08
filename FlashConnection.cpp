@@ -18,6 +18,7 @@ FlashConnection::~FlashConnection() {
 		it.second->OnMedia::unsubscribe((OnMedia&)*this);
 		it.second->OnPlay::unsubscribe((OnPlay&)*this);
 		it.second->OnNewPeer::unsubscribe((OnNewPeer&)*this);
+		it.second->OnGroupMedia::unsubscribe((OnGroupMedia&)*this);
 	}
 }
 
@@ -36,13 +37,19 @@ FlashStream* FlashConnection::getStream(UInt16 id,shared_ptr<FlashStream>& pStre
 	return (pStream = it->second).get();
 }
 
+FlashStream* FlashConnection::addStream(shared_ptr<FlashStream>& pStream) {
+	return addStream((UInt16)_streams.size(), pStream);
+}
+
 FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStream) {
+	// TODO: check existence of an older stream with the id
 	pStream.reset(new FlashStream(id));
 	_streams[id] = pStream;
 	pStream->OnStatus::subscribe((OnStatus&)*this);
 	pStream->OnMedia::subscribe((OnMedia&)*this);
 	pStream->OnPlay::subscribe((OnPlay&)*this);
 	pStream->OnNewPeer::subscribe((OnNewPeer&)*this);
+	pStream->OnGroupMedia::subscribe((OnGroupMedia&)*this);
 
 	return pStream.get();
 }

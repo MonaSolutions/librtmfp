@@ -6,8 +6,8 @@
 using namespace std;
 using namespace Mona;
 
-FlashStream::FlashStream(UInt16 id) : id(id), _bufferTime(0), _message3Sent(false), _playing(false), _videoCodecSent(false) {
-	DEBUG("FlashStream ",id," created")
+FlashStream::FlashStream(UInt16 id) : id(id), _bufferTime(0), _message3Sent(false), _playing(false), _videoCodecSent(false), _splittedTime(0), _splittedLostRate(0.0), _splittedMediaType(0) {
+	DEBUG("FlashStream ", id, " created")
 }
 
 FlashStream::~FlashStream() {
@@ -40,8 +40,8 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 			break;
 		}
 
-		case AMF::EMPTY:
-			break;
+		/*case AMF::EMPTY:
+			break;*/
 
 		case AMF::INVOCATION_AMF3:
 			packet.next();
@@ -104,9 +104,9 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 
 			// When we receive the 0E NetGroup message type we must send the group message 3
 			writer.writeGroupMessage3(_targetID);
-			_message3Sent = 3;
+			_message3Sent = true;
 			break;
-		case AMF::GROUP_NKNOWN3:
+		case AMF::GROUP_REPORT:
 		{
 			INFO("FlashStream ", id, " - NetGroup Report (type 0A)")
 			UInt8 size = packet.read8();
@@ -144,22 +144,22 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 
 		case AMF::GROUP_INFOS: // contain the stream name of an eventual publication
 		{
-			DEBUG("FlashStream ", id, " - Group Media Infos : ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
+			string streamName, data;
 			UInt8 sizeName = packet.read8();
 			if (sizeName > 1) {
-				string streamName, data;
 				packet.next(); // 00
 				packet.read(sizeName-1, streamName);
 				packet.read(packet.available(), data);
 				if (OnGroupMedia::raise<false>(streamName, data))
 					writer.writeGroupMedia(streamName, data);
 			}
+			DEBUG("FlashStream ", id, " - Group Media Infos (type 21) : ", streamName)
 			break;
 		}
-		case AMF::GROUP_NKNOWN4:
+		case AMF::GROUP_FRAGMENTS_MAP:
 		{
 			UInt64 counter = packet.read7BitLongValue();
-			DEBUG("FlashStream ", id, " - Group Media Report (type 22) : ", counter, " ; ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
+			DEBUG("FlashStream ", id, " - Group Fragments map (type 22) : ", counter, " ; ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
 			packet.next(packet.available());
 			if (!_playing) {
 				writer.writeGroupPlay();
@@ -168,19 +168,15 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 			break;
 		}
 		case AMF::GROUP_MEDIA_DATA:
-		case AMF::GROUP_CODECS1:
 		{
 			UInt64 counter = packet.read7BitLongValue();
-			if (type == AMF::GROUP_CODECS1)
-				packet.next(); // ignore byte \x01
-			UInt8 mediaType = packet.read8();
-			time = packet.read32() / 5; // divided by 5 to obtain the right frequency
+			AMF::ContentType mediaType = (AMF::ContentType)packet.read8();
+			time = packet.read32();
 
-			DEBUG("FlashStream ", id, " - Group ", (mediaType ==0x08?"Audio" : (mediaType ==0x09?"Video":"Unknown"))," media message ", Format<UInt8>("%02X", (UInt8)type)," : counter=", counter, ", time=", time)
-			//time = packet.read24() * 0x30;
-			if (mediaType == 0x08)
+			DEBUG("FlashStream ", id, " - Group ", (mediaType ==AMF::AUDIO?"Audio" : (mediaType ==AMF::VIDEO?"Video":"Unknown"))," media message 20 : counter=", counter, ", time=", time)
+			if (mediaType == AMF::AUDIO)
 				audioHandler(time, packet, lostRate);
-			else if (mediaType == 0x09) {
+			else if (mediaType == AMF::VIDEO) {
 				if (!_videoCodecSent) {
 					if (!RTMFP::IsKeyFrame(packet.current(), packet.available())) {
 						DEBUG("Video frame dropped to wait first key frame");
@@ -189,8 +185,64 @@ bool FlashStream::process(AMF::ContentType type,UInt32 time,PacketReader& packet
 					_videoCodecSent = true;
 				}
 				videoHandler(time, packet, lostRate);
-			} else
+			}
+			else if (mediaType == AMF::INVOCATION || mediaType == AMF::INVOCATION_AMF3)
+				return process(mediaType, time, packet, writer, lostRate);
+			else
 				ERROR("Media type ", Format<UInt8>("%02X", mediaType), " not supported (or data decoding error)")
+			break;
+		}
+		case AMF::GROUP_MEDIA_START: // Start a splitted media sequence
+		{
+			UInt64 counter = packet.read7BitLongValue();
+			UInt8 splitNumber = packet.read8(); // counter of the splitted sequence
+			_splittedMediaType = packet.read8();
+			time = packet.read32();
+
+			DEBUG("FlashStream ", id, " - Group ", (_splittedMediaType == AMF::AUDIO ? "Audio" : (_splittedMediaType == AMF::VIDEO ? "Video" : "Unknown")), " Start Splitted media : counter=", counter, ", time=", time, ", splitNumber=", splitNumber)
+			if (_splittedMediaType == AMF::AUDIO || _splittedMediaType == AMF::VIDEO) {
+				_splittedTime = time;
+				_splittedLostRate = lostRate;
+				_splittedContent.clear();
+				Buffer::Append(_splittedContent, packet.current(), packet.available());
+			}
+			else
+				ERROR("Media type ", Format<UInt8>("%02X", _splittedMediaType), " not supported (or data decoding error)")
+			break;
+		}
+		case AMF::GROUP_MEDIA_NEXT: // Continue a splitted media sequence
+		{
+			if (_splittedMediaType != AMF::AUDIO && _splittedMediaType != AMF::VIDEO)
+				break;
+
+			UInt64 counter = packet.read7BitLongValue();
+			UInt8 splitNumber = packet.read8(); // counter of the splitted sequence
+			DEBUG("FlashStream ", id, " - Group next Splitted media : counter=", counter, ", splitNumber=", splitNumber)
+			Buffer::Append(_splittedContent, packet.current(), packet.available());
+			break;
+		}
+		case AMF::EMPTY: // End of a splitted media sequence (TODO: differentiate empty and end of split)
+		{
+			if (_splittedMediaType != AMF::AUDIO && _splittedMediaType != AMF::VIDEO)
+				break;
+
+			UInt64 counter = packet.read7BitLongValue();
+			Buffer::Append(_splittedContent, packet.current(), packet.available());
+			PacketReader content(_splittedContent.data(), _splittedContent.size());
+
+			DEBUG("FlashStream ", id, " - Group ", (_splittedMediaType == AMF::AUDIO ? "Audio" : (_splittedMediaType == AMF::VIDEO ? "Video" : "Unknown")), " End splitted media : counter=", counter)
+			if (_splittedMediaType == AMF::AUDIO)
+				audioHandler(_splittedTime, content, lostRate);
+			else if (_splittedMediaType == AMF::VIDEO) {
+				if (!_videoCodecSent) {
+					if (!RTMFP::IsKeyFrame(content.current(), content.available())) {
+						DEBUG("Video frame dropped to wait first key frame");
+						break;
+					}
+					_videoCodecSent = true;
+				}
+				videoHandler(_splittedTime, content, lostRate);
+			}
 			break;
 		}
 
@@ -240,9 +292,13 @@ void FlashStream::messageHandler(const string& name, AMFReader& message, FlashWr
 			return;
 		}
 	}
-
+	else if (name == "closeStream") {
+		INFO("Stream ", id, " is closing...")
+		// TODO: implement close method
+		return;
+	}
 	/*** Publisher part ***/
-	if (name == "play") {
+	else if (name == "play") {
 		//disengage(&writer);
 
 		string publication;
