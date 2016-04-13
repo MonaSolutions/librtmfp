@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <string.h>
-#include "../librtmfp.h"
+#include "librtmfp.h"
 #include "TestLogger.h"
 #include "UtilFunctions.h"
 

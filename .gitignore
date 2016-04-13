@@ -11,3 +11,8 @@
 /TestClient/tmp
 /librtmfp.pc
 /TestClient/Release
+/librtmfpVS14.opensdf
+/librtmfpVS14.sdf
+/librtmfpVS14.vcxproj.user
+/TestClient/TestClientVS14.vcxproj.user
+/.vs
