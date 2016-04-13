@@ -287,34 +287,9 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 		return;
 	}
 
-	UInt32 time(0);
-	AMF::ContentType type = (AMF::ContentType)pMessage->read8();
-	switch(type) {
-		case AMF::AUDIO:
-		case AMF::VIDEO:
-			time = pMessage->read32();
-		// NetGroup
-		case AMF::CHUNKSIZE:
-		case AMF::MEMBER: // NetGroup member info
-		case AMF::ABORT: // unknown NetGroup type 1
-		case AMF::GROUP_NKNOWN2: // unknown NetGroup type 2
-		case AMF::GROUP_REPORT:
-		case AMF::GROUP_INFOS:
-		case AMF::GROUP_FRAGMENTS_MAP:
-		case AMF::GROUP_PLAY:
-		case AMF::GROUP_MEDIA_DATA:
-		case AMF::GROUP_MEDIA_START:
-		case AMF::GROUP_MEDIA_NEXT:
-		case AMF::EMPTY: // NetGroup media End
-			break;
-		default:
-			pMessage->next(4);
-			break;
-	}
-
 	lostRate = _numberLostFragments/(lostRate+_numberLostFragments);
 
-	if (!_pStream || !_pStream->process(type, time, *pMessage, *_pWriter, lostRate)) {
+	if (!_pStream || !_pStream->process(*pMessage, *_pWriter, lostRate)) {
 		complete(); // do already the delete _pPacket
 		return;
 	}
@@ -325,44 +300,4 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 		delete _pPacket;
 		_pPacket=NULL;
 	}
-}
-
-void RTMFPFlow::sendConnect(const string& url) {
-	if(_pStream)
-		_pStream->connect(*_pWriter, url);
-}
-
-void RTMFPFlow::createStream() {
-	if(_pStream)
-		_pStream->createStream(*_pWriter);
-}
-
-void RTMFPFlow::sendPlay(const string& name, bool amf3) {
-	if(_pStream)
-		_pStream->play(*_pWriter, name, amf3);
-}
-
-void RTMFPFlow::sendPublish(const string& name) {
-	if(_pStream)
-		_pStream->publish(*_pWriter, name);
-}
-
-void RTMFPFlow::sendPeerInfo(UInt16 port) {
-	if(_pStream)
-		_pStream->sendPeerInfo(*_pWriter, port);
-}
-
-void RTMFPFlow::setPeerId(const string& peerId) {
-	if(_pStream)
-		_pStream->setPeerId(peerId);
-}
-
-void RTMFPFlow::sendGroupConnect(const  string& netGroup) {
-	if (_pStream)
-		_pStream->sendGroupConnect(*_pWriter, netGroup);
-}
-
-void RTMFPFlow::sendGroupPeerConnect(const string& netGroup, const UInt8* key, const string& peerId, bool initiator) {
-	if (_pStream)
-		_pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, peerId, initiator);
 }

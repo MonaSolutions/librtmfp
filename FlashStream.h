@@ -38,7 +38,7 @@ public:
 	void	disengage(FlashWriter* pWriter=NULL);
 
 	// return flase if writer is closed!
-	bool	process(AMF::ContentType type,Mona::UInt32 time,Mona::PacketReader& packet,FlashWriter& writer, double lostRate=0);
+	virtual bool	process(Mona::PacketReader& packet,FlashWriter& writer, double lostRate=0);
 
 	virtual void	flush() { }
 
@@ -66,28 +66,19 @@ public:
 	// Record target peer ID for identifying media source (play mode)
 	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }
 
-private:
-
+protected:
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
+	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
+	virtual void	videoHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
+
+	std::string		_targetID; // Peer ID of the target
+	std::string		_groupId; // Group ID (only for NetGroup stream)
+
+private:
 	virtual void	rawHandler(Mona::UInt16 type, Mona::PacketReader& data, FlashWriter& writer);
 	virtual void	dataHandler(DataReader& data, double lostRate);
-	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
-	virtual void	videoHandler(Mona::UInt32 time,Mona::PacketReader& packet, double lostRate);
-	virtual void	memberHandler(const std::string& peerId);
 
 	Mona::UInt32	_bufferTime;
 	std::string		_streamName;
-
 	std::string		_peerId; // peer ID (only for p2p play stream)
-	std::string		_groupId; // Group ID (only for NetGroup stream)
-	std::string		_targetID; // Peer ID of the target
-
-	bool			_message3Sent; // True if NetGroup message 3 has been sent to target peer
-	bool			_playing; // True if we are already playing the stream (from a NetGroup)
-	bool			_videoCodecSent; // True if the video codecs have been sent
-
-	Mona::UInt8		_splittedMediaType;
-	Mona::UInt32	_splittedTime;
-	double			_splittedLostRate;
-	Mona::Buffer	_splittedContent;
 };

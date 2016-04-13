@@ -1,5 +1,6 @@
 
 #include "FlashConnection.h"
+#include "GroupStream.h"
 #include "ParameterWriter.h"
 #include "Mona/HostEntry.h"
 #include "Mona/DNS.h"
@@ -37,13 +38,13 @@ FlashStream* FlashConnection::getStream(UInt16 id,shared_ptr<FlashStream>& pStre
 	return (pStream = it->second).get();
 }
 
-FlashStream* FlashConnection::addStream(shared_ptr<FlashStream>& pStream) {
-	return addStream((UInt16)_streams.size(), pStream);
+FlashStream* FlashConnection::addStream(shared_ptr<FlashStream>& pStream, bool group) {
+	return addStream((UInt16)_streams.size(), pStream, group);
 }
 
-FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStream) {
+FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStream, bool group) {
 	// TODO: check existence of an older stream with the id
-	pStream.reset(new FlashStream(id));
+	pStream.reset(group? new GroupStream(id) : new FlashStream(id));
 	_streams[id] = pStream;
 	pStream->OnStatus::subscribe((OnStatus&)*this);
 	pStream->OnMedia::subscribe((OnMedia&)*this);

@@ -96,6 +96,7 @@
     <ClInclude Include="FlashStream.h" />
     <ClInclude Include="FlashWriter.h" />
     <ClInclude Include="FlowManager.h" />
+    <ClInclude Include="GroupStream.h" />
     <ClInclude Include="Invoker.h" />
     <ClInclude Include="librtmfp.h" />
     <ClInclude Include="Listener.h" />
@@ -120,6 +121,7 @@
     <ClCompile Include="FlashStream.cpp" />
     <ClCompile Include="FlashWriter.cpp" />
     <ClCompile Include="FlowManager.cpp" />
+    <ClCompile Include="GroupStream.cpp" />
     <ClCompile Include="Invoker.cpp" />
     <ClCompile Include="librtmfp.cpp" />
     <ClCompile Include="Listener.cpp" />

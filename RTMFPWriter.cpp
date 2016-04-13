@@ -3,6 +3,7 @@
 //#include "Mona/Peer.h"
 #include "Mona/Util.h"
 #include "Mona/Logs.h"
+#include "GroupStream.h"
 
 using namespace std;
 using namespace Mona;
@@ -533,14 +534,14 @@ AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* dat
 
 void RTMFPWriter::writeGroup(const string& netGroup) {
 	string tmp(netGroup);
-	createMessage().writer().packet.write8(AMF::CHUNKSIZE).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
+	createMessage().writer().packet.write8(GroupStream::GROUP_INIT).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
 }
 
 void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const string& peerId, bool initiator) {
 
 	string id(peerId);
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(AMF::CHUNKSIZE).write16(0x4100).write(netGroup); // hexa format
+	writer.write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
 	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);
 	writer.write32(0x2303210F).write(Util::UnformatHex(id)); // binary format
 
@@ -549,14 +550,14 @@ void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const
 		flush(false);
 		createMessage().writer().packet.write8(AMF::ABORT);
 		flush(false);
-		createMessage().writer().packet.write8(AMF::GROUP_NKNOWN2);
+		createMessage().writer().packet.write8(GroupStream::GROUP_NKNOWN2);
 	}
 }
 
 void RTMFPWriter::writeGroupMessage3(const string& targetId) {
 
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(AMF::GROUP_REPORT).write8(0x08).write(EXPAND("\x0D\x02\x7F\x00\x00\x01\x07\x8F"));
+	writer.write8(GroupStream::GROUP_REPORT).write8(0x08).write(EXPAND("\x0D\x02\x7F\x00\x00\x01\x07\x8F"));
 	writer.write8(0x08).write(EXPAND("\x0A\x03\x7F\x00\x00\x01\x07\x8F"));
 	writer.write32(0x0022210F).write(targetId);
 	writer.write16(0x0008).write(EXPAND("\x0A\x00\x7F\x00\x00\x01\x07\x8F")).write8(0);
@@ -566,13 +567,13 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const std::stri
 
 	string tmp("\x00", 1);
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(AMF::GROUP_INFOS).writeString(String::Append(tmp, streamName));
+	writer.write8(GroupStream::GROUP_INFOS).writeString(String::Append(tmp, streamName));
 	writer.write(data.data(), data.size());
 }
 
 void RTMFPWriter::writeGroupPlay() {
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(AMF::GROUP_PLAY).write8(0xFF);
+	writer.write8(GroupStream::GROUP_PLAY).write8(0xFF);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {

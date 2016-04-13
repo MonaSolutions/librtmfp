@@ -479,7 +479,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Reporting stream (from peer)
 		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0)) {  // NetGroup Media (from peer)
 		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(pStream);
+		_pMainStream->addStream(pStream, true);
 		pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
 	}
 	else {
