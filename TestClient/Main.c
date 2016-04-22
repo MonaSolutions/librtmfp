@@ -251,6 +251,8 @@ int main(int argc,char* argv[]) {
 	const char*		peerId = NULL;
 	const char*		netGroup = NULL;
 	unsigned short	audioReliable = 1, videoReliable = 1, p2pPlay = 1;
+	double			updatePeriod = 0.2;
+	unsigned int	windowDuration = 10;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
 	for(i; i<argc; i++) {
@@ -270,15 +272,19 @@ int main(int argc,char* argv[]) {
 			audioReliable = 0;
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
 			videoReliable = 0;
+		else if (strlen(argv[i]) > 15 && strnicmp(argv[i], "--updatePeriod=", 15)==0) // for NetGroup mode (multicastAvailabilityUpdatePeriod)
+			sscanf(argv[i] + 15, "%lf", &updatePeriod);
+		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--windowDuration=", 17) == 0) // for NetGroup mode (multicastWindowDuration)
+			windowDuration = atoi(argv[i] + 17);
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
 			snprintf(url, 1024, "%s", argv[i] + 6);
-		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0)
+		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) // p2p direct
 			peerId = argv[i] + 9;
-		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--netGroup=", 11) == 0)
+		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--netGroup=", 11) == 0) // groupspec for NetGroup
 			netGroup = argv[i] + 11;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
 			RTMFP_LogSetLevel(atoi(argv[i] + 6));
-		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--peersFile=", 12) == 0)
+		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--peersFile=", 12) == 0) // p2p direct with multiple peers
 			loadPeers(argv[i] + 12);
 		else {
 			printf("Unknown option '%s'\n", argv[i]);
@@ -308,17 +314,17 @@ int main(int argc,char* argv[]) {
 			}
 
 			if (netGroup)
-				RTMFP_Connect2Group(context, netGroup, publication);
+				RTMFP_Connect2Group(context, netGroup, publication, (_option == WRITE || _option == P2P_WRITE), updatePeriod, windowDuration);
+			else if (_option == WRITE)
+				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
+			else if (_option == P2P_WRITE)
+				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
 			else if (nbPeers > 0) { // P2p Play
 				for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
 					RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer]);
 			}
 			else if (_option == SYNC_READ || _option == ASYNC_READ)
 				RTMFP_Play(context, publication);
-			else if (_option == WRITE)
-				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
-			else if (_option == P2P_WRITE)
-				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
 
 			initFiles();
 			while (!IsInterrupted(NULL)) {

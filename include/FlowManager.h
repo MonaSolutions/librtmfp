@@ -38,15 +38,6 @@ public:
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
 
-	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
-	virtual Listener* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer)=0;
-
-	// Remove the listener with peerId
-	virtual void stopListening(const std::string& peerId)=0;
-
-	// Set the p2p publisher as ready (used for blocking mode)
-	virtual void setP2pPublisherReady()=0;
-
 	// Return the peer ID (for p2p childs of RTMFPConnection)
 	virtual Mona::UInt8* peerId() { return NULL; }
 
@@ -82,20 +73,14 @@ protected:
 	// Analyze packets received from the server (must be connected)
 	void						receive(Mona::Exception& ex, Mona::BinaryReader& reader);
 
-	// Handle stream creation (only for RTMFP connection)
-	virtual void				handleStreamCreated(Mona::UInt16 idStream)=0;
-
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
-
-	// Handle new peer in a Netgroup : connect to the peer (only for RTMFPConnection)
-	virtual void				handleNewGroupPeer(const std::string& groupId, const std::string& peerId)=0;
 
 	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
 	virtual void				handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id)=0;
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
-	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader)=0;
+	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader) = 0;
 
 	// Handle message (after hanshake0)
 	virtual void				handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
@@ -110,7 +95,11 @@ protected:
 	virtual void				onPublished(FlashWriter& writer) {}
 
 	RTMFPWriter*				writer(Mona::UInt64 id);
+	RTMFPFlow*					createFlow(const std::string& signature) { return createFlow(_flows.size() + 2, signature); }
 	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);
+
+	// Create a flow for special signatures (NetGroup)
+	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature) = 0;
 
 	// Initialize the packet in the RTMFPSender
 	Mona::UInt8*				packet();
@@ -171,10 +160,8 @@ protected:
 
 	// Events
 	FlashConnection::OnStatus::Type						onStatus; // NetConnection or NetStream status event
-	FlashConnection::OnStreamCreated::Type				onStreamCreated; // Received when stream has been created and is waiting for a command
 	FlashConnection::OnMedia::Type						onMedia; // Received when we receive media (audio/video)
 	FlashConnection::OnPlay::Type						onPlay; // Received when we receive media (audio/video)
-	FlashConnection::OnNewPeer::Type					onNewPeer; // Received when a we receive the ID of a new peer in a NetGroup (only RTMFPConnection)
 	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)
 	Mona::UDPSocket::OnError::Type						onError; // TODO: delete this if not needed
 	Mona::UDPSocket::OnPacket::Type						onPacket; // Main input event, received on each raw packet
@@ -189,7 +176,6 @@ protected:
 	std::unique_ptr<RTMFPFlow>								_pFlowNull; // Null flow for some messages
 	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object
 	Mona::PoolThread*										_pThread; // Thread used to send last message
-	Listener*												_pListener; // Listener of the main publication (only one by intance)
 
 	// Asynchronous read
 	struct RTMFPMediaPacket {

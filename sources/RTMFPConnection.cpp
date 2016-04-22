@@ -5,6 +5,7 @@
 #include "RTMFPWriter.h"
 #include "RTMFPFlow.h"
 #include "Listener.h"
+#include "NetGroup.h"
 #include "Mona/Logs.h"
 
 using namespace Mona;
@@ -12,9 +13,18 @@ using namespace std;
 
 RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), publishReady(false), connectReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	onStreamCreated = [this](UInt16 idStream) {
+		handleStreamCreated(idStream);
+	};
+	onNewPeer = [this](const string& groupId, const string& peerId) {
+		handleNewGroupPeer(groupId, peerId);
+	};
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
+
+	_pMainStream->OnStreamCreated::subscribe(onStreamCreated);
+	_pMainStream->OnNewPeer::subscribe(onNewPeer);
 }
 
 RTMFPConnection::~RTMFPConnection() {
@@ -39,6 +49,21 @@ RTMFPConnection::~RTMFPConnection() {
 		_pSocket->OnError::unsubscribe(onError);
 		_pSocket->close();
 	}
+
+	if (_pMainStream) {
+		_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
+		_pMainStream->OnNewPeer::unsubscribe(onNewPeer);
+	}
+}
+
+RTMFPFlow* RTMFPConnection::createSpecialFlow(UInt64 id, const string& signature) {
+	if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
+		shared_ptr<FlashStream> pStream;
+		_pMainStream->addStream(pStream, true);
+		RTMFPFlow* pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
+		return pFlow;
+	}
+	return NULL;
 }
 
 bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) {
@@ -73,12 +98,13 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 	
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 
-	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, false));
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, false));
 	
 	// Record the group specifier ID if it is a NetGroup
-	if (!_groupHex.empty())
-		pPeerConnection->setGroupId(_groupHex, _groupTxt, streamName);
-	else
+	if (_group) {
+		pPeerConnection->setGroup(_group);
+		_group->addPeer(peerId, pPeerConnection);
+	} else
 		pPeerConnection->addCommand(NETSTREAM_PLAY, streamName); // command to be send when connection is established
 	string& tag = pPeerConnection->getTag();
 
@@ -89,7 +115,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 	_waitingPeers.push_back(tag);
 }
 
-void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName) {
+void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName, bool publisher, double availabilityUpdatePeriod, UInt16 windowDuration) {
 
 	INFO("Connecting to group ", netGroup, "...")
 
@@ -99,22 +125,22 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 		ERROR("Group ID not well formated")
 		return;
 	}
-	_groupTxt.assign(netGroup, endMarker);
+	string groupTxt(netGroup, endMarker), groupHex;
 
 	// Check if it is a v2 groupspec version
 	bool groupV2 = strncmp("G:027f02", netGroup, 8) == 0;
 
 	// Compute the encrypted group specifier ID (2 consecutive sha256)
 	UInt8 encryptedGroup[32];
-	EVP_Digest(_groupTxt.data(), _groupTxt.size(), (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
+	EVP_Digest(groupTxt.data(), groupTxt.size(), (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
 	if (groupV2)
 		EVP_Digest(encryptedGroup, 32, (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL); // v2 groupspec needs 2 sha256
-	Util::FormatHex(encryptedGroup, 32, _groupHex);
-	DEBUG("Encrypted Group Id : ", _groupHex)
+	Util::FormatHex(encryptedGroup, 32, groupHex);
+	DEBUG("Encrypted Group Id : ", groupHex)
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	_waitingGroup.push_back(_groupHex);
-	_mapGroup2stream[_groupHex] = streamName;
+	_group.reset(new NetGroup(groupHex, groupTxt, streamName, publisher, *this, availabilityUpdatePeriod, windowDuration));
+	_waitingGroup.push_back(groupHex);
 }
 
 bool RTMFPConnection::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
@@ -181,7 +207,7 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 	// Send createStream command and remove command type from waiting commands
 	switch (command.type) {
 	case NETSTREAM_PLAY:
-		pFlow->sendPlay(command.value, true);
+		pFlow->sendPlay(command.value);
 		break;
 	case NETSTREAM_PUBLISH:
 		pFlow->sendPublish(command.value);
@@ -489,6 +515,10 @@ void RTMFPConnection::manage() {
 	// Send waiting P2P connections
 	sendConnections();
 
+	// Manage NetGroup
+	if (_group)
+		_group->manage();
+
 	// Flush writers
 	flushWriters();
 
@@ -636,7 +666,7 @@ bool RTMFPConnection::onConnect(Mona::Exception& ex) {
 void RTMFPConnection::onPublished(FlashWriter& writer) {
 	Exception ex;
 	_pPublisher->start();
-	if (!(_pListener = _pPublisher->addListener(ex, _hostAddress.toString(), writer)))
+	if (!(_pListener = _pPublisher->addListener<FlashListener, FlashWriter&>(ex, _hostAddress.toString(), writer)))
 		WARN(ex.error())
 
 	publishReady = true;
@@ -653,7 +683,7 @@ RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& a
 	//TRACE("Normal RTMFP request")
 	return FlowManager::getDecoder(idStream, address);
 }
-
+/*
 Listener* RTMFPConnection::startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer) {
 	
 	if (!_pPublisher || _pPublisher->name() != streamName) {
@@ -662,8 +692,8 @@ Listener* RTMFPConnection::startListening(Mona::Exception& ex, const std::string
 	}
 
 	_pPublisher->start();
-	return _pPublisher->addListener(ex, peerId, writer);
-}
+	return _pPublisher->addListener<>(ex, peerId, writer);
+}*/
 
 void RTMFPConnection::stopListening(const std::string& peerId) {
 	INFO("Deletion of the listener to ", peerId)
@@ -678,12 +708,12 @@ bool RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
 
 void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& peerId) {
 	
-	string& streamName = _mapGroup2stream[groupId];
-	if (streamName.empty()) {
+	//string& streamName = _mapGroup2stream[groupId];
+	if (!_group || _group->id != groupId) {
 		ERROR("Unable to find the stream name of group ID : ", groupId)
 		return;
 	}
-	connect2Peer(peerId.c_str(), streamName.c_str());
+	connect2Peer(peerId.c_str(), _group->stream.c_str());
 }
 
 void RTMFPConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
@@ -709,16 +739,12 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 	reader.read(16, tag);
 	INFO("A peer will contact us with address : ", address.toString())
 
-		shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(*this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
 
-	// Record the group specifier ID if it is a NetGroup
-	if (!_groupHex.empty() && !_groupTxt.empty()) {
-		string& streamName = _mapGroup2stream[_groupHex];
-		if (streamName.empty()) {
-			ERROR("Unable to find the stream name of group ID : ", _groupHex)
-			return;
-		}
-		pPeerConnection->setGroupId(_groupHex, _groupTxt, streamName);
+	// Add the peer to group if it is a NetGroup
+	if (_group) {
+		pPeerConnection->setGroup(_group);
+		_group->addPeer(peerId, pPeerConnection);
 	}
 
 	pPeerConnection->setTag(tag);
@@ -728,7 +754,7 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 void RTMFPConnection::sendGroupConnection(const string& netGroup) {
 
 	string signature("\x00\x47\x43", 3);
-	RTMFPFlow* pFlow = createFlow(2+_flows.size(), signature);
+	RTMFPFlow* pFlow = createFlow(signature);
 	if (!pFlow)
 		return;
 

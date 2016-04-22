@@ -10,38 +10,30 @@
 P2PConnection represents a direct P2P connection 
 with another peer
 */
-class P2PConnection : public FlowManager {
+class RTMFPConnection;
+class NetGroup;
+class FlashListener;
+class P2PConnection : public FlowManager,
+	public FlashEvents::OnGroupMedia,
+	public FlashEvents::OnGroupReport,
+	public FlashEvents::OnGroupPlayPush,
+	public FlashEvents::OnGroupPlayPull {
 	friend class RTMFPConnection;
 public:
-	P2PConnection(FlowManager& parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, const Mona::Buffer& pubKey, bool responder);
+	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, const Mona::Buffer& pubKey, bool responder);
 
 	virtual ~P2PConnection();
 
-	virtual Mona::UDPSocket&	socket() { return _parent.socket(); }
+	virtual Mona::UDPSocket&	socket();
 
 	// Add a command to the main stream (play/publish/netgroup)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
 
-	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
-	virtual Listener* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer);
-
-	// Remove the listener with peerId (only for RTMFP connection)
-	virtual void stopListening(const std::string& peerId);
-
-	// Set the p2p publisher as ready (used for blocking mode)
-	virtual void setP2pPublisherReady();
-
-	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
-	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
-
-	std::string						peerId; // Peer Id of the peer connected
-	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
-
 	// Set the tag used for this connection (responder mode)
 	void setTag(const std::string& tag) { _tag = tag; }
 
-	// Set the group id
-	void setGroupId(const std::string& groupHex, const std::string& groupTxt, const std::string& streamName) { _groupHex = groupHex; _groupTxt = groupTxt; _streamName = streamName; }
+	// Set the group
+	void setGroup(std::shared_ptr<NetGroup> group) { _group = group; }
 
 	// Return the tag used for this p2p connection (initiator mode)
 	std::string	getTag() { return _tag; }
@@ -61,6 +53,18 @@ public:
 	// Send the third P2P initiator handshake message
 	bool initiatorHandshake2(Mona::Exception& ex, Mona::BinaryReader& reader);
 
+	// Write the Group publication infos
+	void writeGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
+
+	// If packet is pushable : create the flow if necessary and send media
+	void sendMedia(const Mona::UInt8* data, Mona::UInt32 size, bool pull=false);
+
+	// Send the report message
+	void sendFragmentsMap(const Mona::UInt8* data, Mona::UInt32 size);
+
+	// Set the Group Push mode
+	void setPushMode(Mona::UInt8 mode);
+
 	// Flush the connection
 	// marker values can be :
 	// - 0B for handshake
@@ -69,18 +73,23 @@ public:
 	// - 4A for acknowlegment in P2P mode (TODO: see if it is needed)
 	virtual void				flush(bool echoTime, Mona::UInt8 marker);
 
+	// Create a flow for special signatures (NetGroup)
+	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
+
 	// Does the connection is terminated? => can be deleted by parent
-	bool consumed() { return _died; }
+	bool						consumed() { return _died; }
 
+	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
+	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
+
+	std::string						peerId; // Peer Id of the peer connected
+	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
+
+	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
+	bool							firstFragmentMap; // True if the fragment map has not been send
 protected:
-	// Handle stream creation (only for RTMFP connection)
-	virtual void				handleStreamCreated(Mona::UInt16 idStream);
-
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer);
-
-	// Handle new peer in a Netgroup : connect to the peer (only for RTMFPConnection)
-	virtual void				handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
 
 	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
 	virtual void				handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
@@ -92,19 +101,33 @@ protected:
 	virtual void				close();
 
 private:
-	FlowManager&				_parent; // RTMFPConnection related to
+	// Return true if the new fragment is pushable (according to the Group push mode)
+	bool						isPushable();
+
+	RTMFPConnection*			_parent; // RTMFPConnection related to
+	FlashListener*				_pListener; // Listener of the main publication (only one by intance)
 	Mona::UInt32				_sessionId; // id of the P2P session;
 	std::string					_farKey; // Key of the server/peer
 	std::string					_farNonce; // Nonce of the distant peer
 
 	// Play/Publish command
 	std::string					_streamName; // playing stream name
-	std::string					_groupHex; // Group ID encrypted (double sha256) in Hex format
-	std::string					_groupTxt; // Group ID in plain text (without ending zeroes)
 	bool						_responder; // is responder?
 
 	bool						_rawResponse; // next message is a raw response? TODO: make it nicer
-	bool						_groupConnectSent; // True if group connection request has been sent to peer
 
-	FlashStream::OnGroupMedia::Type	onGroupMedia; // Called when a peer signal us that their is a stream available in the NetGroup
+	// Group members
+	bool						_groupConnectSent; // True if group connection request has been sent to peer
+	std::shared_ptr<NetGroup>	_group; // Group pointer if netgroup connection
+
+	Mona::UInt8					_mode; // Group Push mode
+	Mona::UInt8					_pushCounter; // Count of push fragments
+
+	RTMFPFlow*					_pMediaFlow; // Flow for media packets
+	RTMFPFlow*					_pReportFlow; // Flow for report messages
+
+	//std::string				_groupHex; // Group ID encrypted (double sha256) in Hex format
+	//std::string				_groupTxt; // Group ID in plain text (without ending zeroes)
+
+	//FlashStream::OnGroupMedia::Type	onGroupMedia; // Called when a peer signal us that their is a stream available in the NetGroup
 };

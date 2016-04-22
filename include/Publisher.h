@@ -26,7 +26,19 @@ public:
 	void					stop();
 	Mona::UInt32			count() const { return _listeners.size(); }
 
-	Listener*				addListener(Mona::Exception& ex, const std::string& identifier, FlashWriter& writer);
+	template <typename ListenerType, typename... Args>
+	ListenerType*				addListener(Mona::Exception& ex, const std::string& identifier, Args... args) {
+		auto it = _listeners.lower_bound(identifier);
+		if (it != _listeners.end() && it->first == identifier) {
+			ex.set(Exception::APPLICATION, "Already subscribed to ", _name);
+			return NULL;
+		}
+		if (it != _listeners.begin())
+			--it;
+		ListenerType* pListener = new ListenerType(*this, identifier, args...);
+		_listeners.emplace_hint(it, identifier, pListener);
+		return pListener;
+	}
 	void					removeListener(const std::string& identifier);
 
 	const Mona::PoolBuffer&		audioCodecBuffer() const { return _audioCodecBuffer; }

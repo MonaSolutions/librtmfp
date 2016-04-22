@@ -554,7 +554,7 @@ void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const
 	}
 }
 
-void RTMFPWriter::writeGroupMessage3(const string& targetId) {
+void RTMFPWriter::writeGroupReport(const string& targetId) {
 
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_REPORT).write8(0x08).write(EXPAND("\x0D\x02\x7F\x00\x00\x01\x07\x8F"));
@@ -563,17 +563,17 @@ void RTMFPWriter::writeGroupMessage3(const string& targetId) {
 	writer.write16(0x0008).write(EXPAND("\x0A\x00\x7F\x00\x00\x01\x07\x8F")).write8(0);
 }
 
-void RTMFPWriter::writeGroupMedia(const std::string& streamName, const std::string& data) {
+void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size) {
 
-	string tmp("\x00", 1);
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_INFOS).writeString(String::Append(tmp, streamName));
-	writer.write(data.data(), data.size());
+	writer.write8(GroupStream::GROUP_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
+	writer.write(data, size);
+	writer.write("\x01\x02\x03\x03\xBE\x40\x04\x04\x92\xA7\x60\x02\x05\x64\x03\x07\x93\x44"); // TODO: find what is means
 }
 
 void RTMFPWriter::writeGroupPlay() {
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_PLAY).write8(0xFF);
+	writer.write8(GroupStream::GROUP_PLAY_PUSH).write8(0xFF);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {

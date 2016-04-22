@@ -76,12 +76,14 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 	return 1;
 }
 
-int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName) {
+int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName, int publisher, double availabilityUpdatePeriod, unsigned int windowDuration) {
 
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (pConn)
-		pConn->connect2Group(netGroup, streamName);
+		pConn->connect2Group(netGroup, streamName, publisher==1, availabilityUpdatePeriod, windowDuration);
+
+	pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
 
 	return 1;
 }

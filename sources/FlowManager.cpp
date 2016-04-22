@@ -34,7 +34,7 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 };
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-_nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0), _pListener(NULL),
+_nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0),
 	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _pubKey(0x80), _nonce(0x8B),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
@@ -52,14 +52,8 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 		else if (code == "NetConnection.Connect.Closed" || code == "NetConnection.Connect.Rejected" || code == "NetStream.Publish.BadName")
 			close();
 	};
-	onStreamCreated = [this](UInt16 idStream) {
-		handleStreamCreated(idStream);
-	};
 	onPlay = [this](const string& streamName, FlashWriter& writer) {
 		return handlePlay(streamName, writer);
-	};
-	onNewPeer = [this](const string& groupId, const string& peerId) {
-		handleNewGroupPeer(groupId, peerId);
 	};
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
@@ -111,10 +105,8 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->OnStatus::subscribe(onStatus);
-	_pMainStream->OnStreamCreated::subscribe(onStreamCreated);
 	_pMainStream->OnMedia::subscribe(onMedia);
 	_pMainStream->OnPlay::subscribe(onPlay);
-	_pMainStream->OnNewPeer::subscribe(onNewPeer);
 	_pMainStream->OnGroupHandshake::subscribe(onGroupHandshake);
 }
 
@@ -145,9 +137,9 @@ FlowManager::~FlowManager() {
 
 	if (_pMainStream) {
 		_pMainStream->OnStatus::unsubscribe(onStatus);
-		_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
 		_pMainStream->OnMedia::unsubscribe(onMedia);
 		_pMainStream->OnPlay::unsubscribe(onPlay);
+		_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
 		_pMainStream.reset();
 	}
 }
@@ -473,16 +465,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		}
 
 	}
-	else if ((signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0)  // NetGroup (from Mona)
-		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Member? (from peer)
-		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream (from peer)
-		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Reporting stream (from peer)
-		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0)) {  // NetGroup Media (from peer)
-		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(pStream, true);
-		pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
-	}
-	else {
+	else if (!(pFlow = createSpecialFlow(id, signature))) {
 		string tmp;
 		ERROR("Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow")
 		return NULL;

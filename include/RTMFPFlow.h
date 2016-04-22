@@ -43,13 +43,15 @@ public:
 
 	// RTMFP Commands
 	void	sendConnect(const std::string& url) { if (_pStream) _pStream->connect(*_pWriter, url); }
-	void	sendPlay(const std::string& name, bool amf3 = false) { if (_pStream) _pStream->play(*_pWriter, name, amf3); }
+	void	sendPlay(const std::string& name) { if (_pStream) _pStream->play(*_pWriter, name); }
 	void	sendPublish(const std::string& name) { if (_pStream) _pStream->publish(*_pWriter, name); }
 	void	createStream() { if (_pStream) _pStream->createStream(*_pWriter); }
 	void	sendPeerInfo(Mona::UInt16 port) { if (_pStream) _pStream->sendPeerInfo(*_pWriter, port); }
 	void	sendGroupConnect(const std::string& netGroup) { if (_pStream) _pStream->sendGroupConnect(*_pWriter, netGroup); }
 	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, peerId, initiator); }
-	
+	void	sendGroupMediaInfos(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size) { if (_pStream) _pStream->sendGroupMediaInfos(*_pWriter, stream, data, size); }
+	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size) { if (_pStream) _pStream->sendRaw(*_pWriter, data, size); }
+
 private:
 	// Handle on fragment received
 	void	onFragment(Mona::UInt64 stage,Mona::PacketReader& fragment,Mona::UInt8 flags);

@@ -8,6 +8,7 @@
 RTMFPConnection represents a connection to the
 RTMFP Server
 */
+class NetGroup;
 class RTMFPConnection : public FlowManager {
 public:
 	RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
@@ -21,7 +22,7 @@ public:
 	void connect2Peer(const char* peerId, const char* streamName);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
-	void connect2Group(const char* netGroup, const char* streamName);
+	void connect2Group(const char* netGroup, const char* streamName, bool publisher, double availabilityUpdatePeriod, Mona::UInt16 windowDuration);
 
 	// Asynchronous read (buffered)
 	// return false if end of buf has been reached
@@ -40,13 +41,22 @@ public:
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
 		
 	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
-	virtual Listener* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, FlashWriter& writer);
+	template <typename ListenerType, typename... Args>
+	ListenerType* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, Args... args) {
+		if (!_pPublisher || _pPublisher->name() != streamName) {
+			ex.set(Exception::APPLICATION, "No publication found with name ", streamName);
+			return NULL;
+		}
+
+		_pPublisher->start();
+		return _pPublisher->addListener<ListenerType, Args...>(ex, peerId, args...);
+	}
 
 	// Remove the listener with peerId
-	virtual void stopListening(const std::string& peerId);
+	void stopListening(const std::string& peerId);
 
 	// Set the p2p publisher as ready (used for blocking mode)
-	virtual void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
+	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
 	// Return the peer ID (for p2p childs)
 	virtual Mona::UInt8* peerId() { return _peerId; }
@@ -64,20 +74,20 @@ protected:
 	// Send the connection message (after the answer of handshake1)
 	virtual bool sendConnect(Mona::Exception& ex, Mona::BinaryReader& reader);
 	
-	// Handle stream creation (only for RTMFP connection)
-	virtual void handleStreamCreated(Mona::UInt16 idStream);
+	// Handle stream creation
+	void handleStreamCreated(Mona::UInt16 idStream);
 	
 	// Handle play request (only for P2PConnection)
 	virtual bool handlePlay(const std::string& streamName, FlashWriter& writer);
 
-	// Handle new peer in a Netgroup : connect to the peer (only for RTMFPConnection)
-	virtual void handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
+	// Handle new peer in a Netgroup : connect to the peer
+	void handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
 
 	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
 	virtual void handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
 
-	// Handle a P2P address exchange message (Only for RTMFPConnection)
-	virtual void handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
+	// Handle a P2P address exchange message
+	void handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
 
 	// Handle message (after hanshake0)
 	virtual void handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
@@ -93,6 +103,9 @@ protected:
 
 	// On NetStream.Publish.Start (only for NetConnection)
 	virtual void onPublished(FlashWriter& writer);
+
+	// Create a flow for special signatures (NetGroup)
+	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
 
 private:
 
@@ -131,10 +144,13 @@ private:
 
 	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
 	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
+	FlashListener*													_pListener; // Listener of the main publication (only one by intance)
 
-	std::map<std::string, std::string>								_mapGroup2stream; // Map of group names to stream name
-	std::string														_groupHex; // group ID in hex format
-	std::string														_groupTxt; // group ID in plain text (without final zeroes)
+	std::shared_ptr<NetGroup>										_group;
+
+
+	FlashConnection::OnStreamCreated::Type							onStreamCreated; // Received when stream has been created and is waiting for a command
+	FlashConnection::OnNewPeer::Type								onNewPeer; // Received when a we receive the ID of a new peer in a NetGroup
 
 	// Publish/Play commands
 	struct StreamCommand {

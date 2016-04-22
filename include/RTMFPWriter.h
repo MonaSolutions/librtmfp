@@ -71,7 +71,7 @@ public:
 	Mona::UInt64		stage() { return _stage; }
 
 	//bool				writeMedia(MediaType type,Mona::UInt32 time,Mona::PacketReader& packet,const Mona::Parameters& properties);
-	void				writeRaw(const Mona::UInt8* data,Mona::UInt32 size);
+	virtual void		writeRaw(const Mona::UInt8* data,Mona::UInt32 size);
 	//bool				writeMember(const Client& client);
 
 	// Ask the server to connect to group, netGroup must be in binary format (32 bytes)
@@ -79,11 +79,11 @@ public:
 	// Init the group session with a peer, netGroup must be in hexa format (64 bytes)
 	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator);
 	// 3rd message when connecting to a peer from a group (TODO: give the peer in binary format)
-	virtual void		writeGroupMessage3(const std::string& targetId);
+	virtual void		writeGroupReport(const std::string& targetId);
 	// Play the stream in argument
-	virtual void		writeGroupMedia(const std::string& streamName, const std::string& data);
+	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size);
 	// Start to play the group stream
-	virtual void			writeGroupPlay();
+	virtual void		writeGroupPlay();
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);

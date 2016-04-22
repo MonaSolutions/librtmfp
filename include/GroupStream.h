@@ -19,7 +19,8 @@ public:
 		GROUP_MEDIA_DATA	= 0x20, // Audio/Video data
 		GROUP_INFOS			= 0x21, // Media stream infos
 		GROUP_FRAGMENTS_MAP = 0x22, // Map of media fragments availables for the peer
-		GROUP_PLAY			= 0x23, // NetGroup Play request
+		GROUP_PLAY_PUSH		= 0x23, // NetGroup Push request
+		GROUP_PLAY_PULL		= 0x2B, // NetGroup Pull request
 		GROUP_MEDIA_START	= 0x30, // Beginning of a NetGroup splitted media data
 	};
 
@@ -33,9 +34,7 @@ protected:
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
 
 private:
-	virtual void	memberHandler(const std::string& peerId);
-
-	bool			_message3Sent; // True if NetGroup message 3 has been sent to target peer
+	bool			_firstReportSent; // True if the first NetGroup message 0A has been sent to target peer
 	bool			_playing; // True if we are already playing the stream (from a NetGroup)
 	bool			_videoCodecSent; // True if the video codecs have been sent
 

@@ -2,7 +2,7 @@
 #include "RTMFP.h"
 #include "RTMFPWriter.h"
 #include "Mona/Logs.h"
-#include "Listener.h"
+#include "GroupListener.h"
 #include "Invoker.h"
 
 using namespace Mona;
@@ -25,19 +25,6 @@ Publisher::~Publisher() {
 	if (_running)
 		ERROR("Publication ",_name," running is deleting")
 	DEBUG("Publication ",_name," deleted");
-}
-
-Listener* Publisher::addListener(Exception& ex, const string& identifier, FlashWriter& writer) {
-	auto it = _listeners.lower_bound(identifier);
-	if (it != _listeners.end() && it->first == identifier) {
-		ex.set(Exception::APPLICATION, "Already subscribed to ", _name);
-		return NULL;
-	}
-	if (it != _listeners.begin())
-		--it;
-	Listener* pListener = new Listener(*this, identifier, writer);
-	_listeners.emplace_hint(it, identifier, pListener);
-	return pListener;
 }
 
 void Publisher::removeListener(const string& identifier) {

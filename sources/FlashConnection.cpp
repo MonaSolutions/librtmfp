@@ -19,7 +19,11 @@ FlashConnection::~FlashConnection() {
 		it.second->OnMedia::unsubscribe((OnMedia&)*this);
 		it.second->OnPlay::unsubscribe((OnPlay&)*this);
 		it.second->OnNewPeer::unsubscribe((OnNewPeer&)*this);
+		it.second->OnGroupHandshake::unsubscribe((OnGroupHandshake&)*this);
 		it.second->OnGroupMedia::unsubscribe((OnGroupMedia&)*this);
+		it.second->OnGroupReport::unsubscribe((OnGroupReport&)*this);
+		it.second->OnGroupPlayPush::unsubscribe((OnGroupPlayPush&)*this);
+		it.second->OnGroupPlayPull::unsubscribe((OnGroupPlayPull&)*this);
 	}
 }
 
@@ -50,7 +54,11 @@ FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStr
 	pStream->OnMedia::subscribe((OnMedia&)*this);
 	pStream->OnPlay::subscribe((OnPlay&)*this);
 	pStream->OnNewPeer::subscribe((OnNewPeer&)*this);
+	pStream->OnGroupHandshake::subscribe((OnGroupHandshake&)*this);
 	pStream->OnGroupMedia::subscribe((OnGroupMedia&)*this);
+	pStream->OnGroupReport::subscribe((OnGroupReport&)*this);
+	pStream->OnGroupPlayPush::subscribe((OnGroupPlayPush&)*this);
+	pStream->OnGroupPlayPull::subscribe((OnGroupPlayPull&)*this);
 
 	return pStream.get();
 }

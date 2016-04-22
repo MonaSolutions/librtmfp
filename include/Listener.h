@@ -4,24 +4,47 @@
 class Publisher;
 class Listener : virtual Mona::Object {
 public:
-	Listener(Publisher& publication, const std::string& identifier, FlashWriter& writer);
-	virtual ~Listener();
+	Listener(Publisher& publication, const std::string& identifier);
+	virtual ~Listener() {}
 
-	void startPublishing();
-	void stopPublishing();
+	virtual void startPublishing() = 0;
+	virtual void stopPublishing() = 0;
 
-	void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
-	void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
-	//void pushData(DataReader& packet);
-	//void pushProperties(DataReader& packet);
+	virtual void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) = 0;
+	virtual void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) = 0;
+	//virtual void pushData(DataReader& packet) = 0;
+	//virtual void pushProperties(DataReader& packet) = 0;
 
-	void flush();
-
-	bool receiveAudio;
-	bool receiveVideo;
+	virtual void flush() = 0;
 
 	const Publisher&	publication;
 	const std::string&	identifier;
+
+protected:
+	Mona::PacketReader& publicationNamePacket() { _publicationNamePacket.reset(); return _publicationNamePacket; }
+
+private:
+	Mona::PacketReader		_publicationNamePacket;
+};
+
+
+class FlashListener : public Listener {
+public:
+	FlashListener(Publisher& publication, const std::string& identifier, FlashWriter& writer);
+	virtual ~FlashListener();
+
+	virtual void startPublishing();
+	virtual void stopPublishing();
+
+	virtual void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
+	virtual void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
+	//virtual void pushData(DataReader& packet);
+	//virtual void pushProperties(DataReader& packet);
+
+	virtual void flush();
+
+	bool receiveAudio;
+	bool receiveVideo;
 
 private:
 
@@ -35,8 +58,6 @@ private:
 
 	bool	pushAudioInfos(Mona::UInt32 time);
 
-	Mona::PacketReader& publicationNamePacket() { _publicationNamePacket.reset(); return _publicationNamePacket; }
-
 	Mona::UInt32 			_startTime;
 	Mona::UInt32			_lastTime;
 	bool					_firstTime;
@@ -48,5 +69,4 @@ private:
 	FlashWriter*			_pVideoWriter;
 	bool					_dataInitialized;
 	bool					_reliable;
-	Mona::PacketReader		_publicationNamePacket;
 };

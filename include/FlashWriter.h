@@ -36,6 +36,7 @@ public:
 	
 	bool					amf0;
 	
+	virtual void			writeRaw(const Mona::UInt8* data, Mona::UInt32 size) = 0; // TODO: see we need a GroupWriter
 	Mona::BinaryWriter&		writeRaw() { return write(AMF::RAW).packet; }
 	AMFWriter&				writeMessage();
 	AMFWriter&				writeInvocation(const char* name, bool amf3=false) { return writeInvocation(name,0,amf3); }
@@ -58,10 +59,10 @@ public:
 	virtual void			writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator)=0;
 
 	// 3rd message when connecting to a peer from a group
-	virtual void			writeGroupMessage3(const std::string& targetId)=0;
+	virtual void			writeGroupReport(const std::string& targetId)=0;
 
 	// Request the stream in argument
-	virtual void			writeGroupMedia(const std::string& streamName, const std::string& data)=0;
+	virtual void			writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size)=0;
 
 	// Start to play the group stream
 	virtual void			writeGroupPlay()=0;

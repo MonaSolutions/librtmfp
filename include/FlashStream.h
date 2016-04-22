@@ -12,7 +12,10 @@ namespace FlashEvents {
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
 	struct OnNewPeer : Mona::Event<void(const std::string& groupId, const std::string& peerId)> {};
 	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {};
-	struct OnGroupMedia : Mona::Event<bool(const std::string& streamName, const std::string& data)> {};
+	struct OnGroupMedia : Mona::Event<void(const std::string& peerId, const std::string& streamName, const std::string& data, FlashWriter& writer)> {};
+	struct OnGroupReport : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
+	struct OnGroupPlayPush: Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)>{};
+	struct OnGroupPlayPull : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 };
 
 /**************************************************************
@@ -24,7 +27,10 @@ class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnPlay,
 	public FlashEvents::OnNewPeer,
 	public FlashEvents::OnGroupHandshake,
-	public FlashEvents::OnGroupMedia {
+	public FlashEvents::OnGroupMedia,
+	public FlashEvents::OnGroupReport,
+	public FlashEvents::OnGroupPlayPush,
+	public FlashEvents::OnGroupPlayPull {
 public:
 
 	FlashStream(Mona::UInt16 id);
@@ -49,7 +55,7 @@ public:
 	virtual void createStream(FlashWriter& writer);
 
 	// Send the play request to the RTMFP server
-	virtual void play(FlashWriter& writer, const std::string& name, bool amf3=false);
+	virtual void play(FlashWriter& writer, const std::string& name);
 
 	// Send the publish request to the RTMFP server
 	virtual void publish(FlashWriter& writer, const std::string& name);
@@ -63,6 +69,12 @@ public:
 	// Send the group connection request to the peer
 	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator);
 
+	// Send the group publication infos
+	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
+
+	// Send the media
+	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size);
+
 	// Record target peer ID for identifying media source (play mode)
 	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }
 
@@ -71,7 +83,8 @@ protected:
 	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 	virtual void	videoHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 
-	std::string		_targetID; // Peer ID of the target
+	std::string		_targetID; // Peer ID of the target in hex format
+	std::string		_peerId; // Peer ID of the target in plain text
 	std::string		_groupId; // Group ID (only for NetGroup stream)
 
 private:
@@ -80,5 +93,4 @@ private:
 
 	Mona::UInt32	_bufferTime;
 	std::string		_streamName;
-	std::string		_peerId; // peer ID (only for p2p play stream)
 };

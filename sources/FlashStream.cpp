@@ -214,10 +214,10 @@ void FlashStream::createStream(FlashWriter& writer) {
 	ERROR("createStream request can only be sent by Main stream")
 }
 
-void FlashStream::play(FlashWriter& writer,const string& name, bool amf3) {
+void FlashStream::play(FlashWriter& writer,const string& name) {
 	_streamName = name;
-	AMFWriter& amfWriter = writer.writeInvocation("play", amf3);
-	//amfWriter.amf0 = true;
+	AMFWriter& amfWriter = writer.writeInvocation("play", true);
+	amfWriter.amf0 = true; // Important for p2p unicast play
 	amfWriter.writeString(name.c_str(), name.size());
 	writer.flush();
 }
@@ -246,4 +246,12 @@ void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGro
 
 	writer.writePeerGroup(netGroup, key, peerId, initiator);
 	writer.flush();
+}
+
+void FlashStream::sendGroupMediaInfos(FlashWriter& writer, const string& stream, const UInt8* data, UInt32 size) {
+	writer.writeGroupMedia(stream, data, size);
+}
+
+void FlashStream::sendRaw(FlashWriter& writer, const UInt8* data, UInt32 size) {
+	writer.writeRaw(data, size);
 }

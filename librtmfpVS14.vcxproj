@@ -96,10 +96,12 @@
     <ClInclude Include="include\FlashStream.h" />
     <ClInclude Include="include\FlashWriter.h" />
     <ClInclude Include="include\FlowManager.h" />
+    <ClInclude Include="include\GroupListener.h" />
     <ClInclude Include="include\GroupStream.h" />
     <ClInclude Include="include\Invoker.h" />
     <ClInclude Include="include\librtmfp.h" />
     <ClInclude Include="include\Listener.h" />
+    <ClInclude Include="include\NetGroup.h" />
     <ClInclude Include="include\P2PConnection.h" />
     <ClInclude Include="include\ParameterWriter.h" />
     <ClInclude Include="include\Publisher.h" />
@@ -121,10 +123,12 @@
     <ClCompile Include="sources\FlashStream.cpp" />
     <ClCompile Include="sources\FlashWriter.cpp" />
     <ClCompile Include="sources\FlowManager.cpp" />
+    <ClCompile Include="sources\GroupListener.cpp" />
     <ClCompile Include="sources\GroupStream.cpp" />
     <ClCompile Include="sources\Invoker.cpp" />
     <ClCompile Include="sources\librtmfp.cpp" />
     <ClCompile Include="sources\Listener.cpp" />
+    <ClCompile Include="sources\NetGroup.cpp" />
     <ClCompile Include="sources\P2PConnection.cpp" />
     <ClCompile Include="sources\Publisher.cpp" />
     <ClCompile Include="sources\ReferableReader.cpp" />

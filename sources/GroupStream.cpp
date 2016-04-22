@@ -5,7 +5,7 @@
 using namespace std;
 using namespace Mona;
 
-GroupStream::GroupStream(UInt16 id) : FlashStream(id), _message3Sent(false), _playing(false), _videoCodecSent(false), _splittedTime(0), _splittedLostRate(0.0), _splittedMediaType(0) {
+GroupStream::GroupStream(UInt16 id) : FlashStream(id), _firstReportSent(false), _playing(false), _videoCodecSent(false), _splittedTime(0), _splittedLostRate(0.0), _splittedMediaType(0) {
 	DEBUG("GroupStream ", id, " created")
 }
 
@@ -23,9 +23,10 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 	switch(type) {
 
 		case GroupStream::GROUP_MEMBER: {
-			string member;
+			string member, id;
 			packet.read(PEER_ID_SIZE, member);
-			memberHandler(member);
+			INFO("NetGroup Peer ID added : ", Util::FormatHex(BIN member.data(), member.size(), id))
+			OnNewPeer::raise(_groupId, id);
 			break;
 		}
 		case GroupStream::GROUP_INIT: {
@@ -61,13 +62,13 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			INFO("GroupStream ", id, " - NetGroup 0E message type")
 
 			// When we receive the 0E NetGroup message type we must send the group message 3
-			writer.writeGroupMessage3(_targetID);
-			_message3Sent = true;
+			writer.writeGroupReport(_targetID);
+			_firstReportSent = true;
 			break;
 		case GroupStream::GROUP_REPORT: {
 			INFO("GroupStream ", id, " - NetGroup Report (type 0A)")
 			UInt8 size = packet.read8();
-			if (size == 1) {
+			while (size == 1) {
 				packet.next();
 				size = packet.read8();
 			}
@@ -75,29 +76,15 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 				ERROR("Unexpected 1st parameter size in group message 3")
 				break;
 			}
-			string value, peerId;
-			DEBUG("Group message 0A - 1st parameter : ", Util::FormatHex(BIN packet.read(8, value).data(), 8, LOG_BUFFER))
-			size = packet.read8();
-			DEBUG("Group message 0A - 2nd parameter : ", Util::FormatHex(BIN packet.read(size, value).data(), 8, LOG_BUFFER))
-			
-			// Loop on each peer of the NetGroup
-			while (packet.available() > 4) {
-				if (packet.read32() != 0x0022210F) {
-					ERROR("Unexpected format for peer infos in the group message 3")
-					break;
-				}
-				packet.read(PEER_ID_SIZE, peerId);
-				DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN peerId.data(), PEER_ID_SIZE, LOG_BUFFER))
-				DEBUG("Group message 0A - Time elapsed : ", packet.read7BitLongValue())
-				size = packet.read8();
-				DEBUG("Group message 0A - infos : ", Util::FormatHex(BIN packet.read(size, value).data(), size, LOG_BUFFER))
-			}
-			if (!_message3Sent) {
-				writer.writeGroupMessage3(_targetID);
-				_message3Sent = true;
-			}
+			OnGroupReport::raise(_peerId, packet, writer);
 			break;
 		}
+		case GroupStream::GROUP_PLAY_PUSH:
+			OnGroupPlayPush::raise(_peerId, packet, writer);
+			break;
+		case GroupStream::GROUP_PLAY_PULL:
+			OnGroupPlayPull::raise(_peerId, packet, writer);
+			break;
 		case GroupStream::GROUP_INFOS: { // contain the stream name of an eventual publication
 			string streamName, data;
 			UInt8 sizeName = packet.read8();
@@ -105,8 +92,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 				packet.next(); // 00
 				packet.read(sizeName-1, streamName);
 				packet.read(packet.available(), data);
-				if (OnGroupMedia::raise<false>(streamName, data))
-					writer.writeGroupMedia(streamName, data);
+				OnGroupMedia::raise(_peerId, streamName, data, writer);
 			}
 			DEBUG("GroupStream ", id, " - Group Media Infos (type 21) : ", streamName)
 			break;
@@ -187,9 +173,3 @@ void GroupStream::messageHandler(const string& name, AMFReader& message, FlashWr
 	FlashStream::messageHandler(name, message, writer);
 }
 
-void GroupStream::memberHandler(const string& peerId) {
-
-	string id;
-	INFO("NetGroup Peer ID added : ", Util::FormatHex(BIN peerId.data(), peerId.size(), id))
-	OnNewPeer::raise(_groupId, id);
-}

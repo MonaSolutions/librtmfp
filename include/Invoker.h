@@ -2,7 +2,7 @@
 #include "Mona/TerminateSignal.h"
 #include "RTMFPConnection.h"
 
-#define DELAY_CONNECTIONS_MANAGER	1000 // 1s
+#define DELAY_CONNECTIONS_MANAGER	100 // 100ms
 
 class Invoker;
 // Thread class that call manage() function of the connections each second to flush the writers and send ping requests
