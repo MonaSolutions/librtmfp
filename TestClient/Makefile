@@ -4,7 +4,7 @@ OS := $(shell uname -s)
 GCC?=gcc
 EXEC?=TestClient
 
-override INCLUDES+=-I./../
+override INCLUDES+=-I./../include/
 LIBDIRS+=-L./../lib/
 LDFLAGS+="-Wl,-rpath,/usr/local/lib/,-rpath,./../lib/"
 LIBS+=-pthread -lrtmfp -lcrypto -lssl

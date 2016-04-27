@@ -22,7 +22,7 @@ ifeq ($(OS),FreeBSD)
 else
 	CFLAGS+=-std=c++11
 endif
-override INCLUDES+=-I./../MonaServer/MonaBase/include/
+override INCLUDES+=-I./../MonaServer/MonaBase/include/ -I./include/
 LIBDIRS+=-L./../MonaServer/MonaBase/lib/
 LIBS+=-Wl,-Bstatic -l:libMonaBase.ar -Wl,-Bdynamic -lcrypto -lssl
 
@@ -36,9 +36,11 @@ else
 	LIB=lib/librtmfp.so
 	SHARED=-shared
 endif
-SOURCES = $(wildcard ./*.cpp)
-OBJECT = $(addprefix tmp/Release/,$(notdir $(SOURCES:%.cpp=%.o)))
-OBJECTD = $(addprefix tmp/Debug/,$(notdir $(SOURCES:%.cpp=%.o)))
+
+# Variables fixed
+SOURCES = $(wildcard */*.cpp)
+OBJECT = $(SOURCES:sources/%.cpp=tmp/Release/%.o)
+OBJECTD = $(SOURCES:sources/%.cpp=tmp/Debug/%.o)
 
 .PHONY: debug release
 
@@ -65,17 +67,17 @@ librtmfp.pc: librtmfp.pc.in Makefile
 
 install: librtmfp.pc
 	-mkdir -p $(INCDIR)
-	cp librtmfp.h $(INCDIR)
+	cp ./include/librtmfp.h $(INCDIR)
 	cp $(LIB) $(LIBDIR)
 	cp librtmfp.pc $(LIBDIR)/pkgconfig
 
-$(OBJECT): tmp/Release/%.o: %.cpp
-	@echo compiling $(@:tmp/Release/%.o=%.cpp)
-	@$(GPP) $(CFLAGS) -fpic $(INCLUDES) -c -o $(@) $(@:tmp/Release/%.o=%.cpp)
+$(OBJECT): tmp/Release/%.o: sources/%.cpp
+	@echo compiling $(@:tmp/Release/%.o=sources/%.cpp)
+	@$(GPP) $(CFLAGS) -fpic $(INCLUDES) -c -o $(@) $(@:tmp/Release/%.o=sources/%.cpp)
 
-$(OBJECTD): tmp/Debug/%.o: %.cpp
-	@echo compiling $(@:tmp/Debug/%.o=%.cpp)
-	@$(GPP) -g -D_DEBUG $(CFLAGS) -fpic $(INCLUDES) -c -o $(@) $(@:tmp/Debug/%.o=%.cpp)
+$(OBJECTD): tmp/Debug/%.o: sources/%.cpp
+	@echo compiling $(@:tmp/Debug/%.o=sources/%.cpp)
+	@$(GPP) -g -D_DEBUG $(CFLAGS) -fpic $(INCLUDES) -c -o $(@) $(@:tmp/Debug/%.o=sources/%.cpp)
 
 clean:
 	@echo cleaning project librtmfp

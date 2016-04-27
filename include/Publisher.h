@@ -30,7 +30,7 @@ public:
 	ListenerType*				addListener(Mona::Exception& ex, const std::string& identifier, Args... args) {
 		auto it = _listeners.lower_bound(identifier);
 		if (it != _listeners.end() && it->first == identifier) {
-			ex.set(Exception::APPLICATION, "Already subscribed to ", _name);
+			ex.set(Mona::Exception::APPLICATION, "Already subscribed to ", _name);
 			return NULL;
 		}
 		if (it != _listeners.begin())

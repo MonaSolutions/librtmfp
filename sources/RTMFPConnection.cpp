@@ -112,7 +112,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 		_group->addPeer(peerId, pPeerConnection);
 	} else
 		pPeerConnection->addCommand(NETSTREAM_PLAY, streamName); // command to be send when connection is established
-	string& tag = pPeerConnection->getTag();
+	const string& tag = pPeerConnection->getTag();
 
 	// Add it to waiting p2p sessions
 	_mapPeersByTag.emplace(tag, pPeerConnection);

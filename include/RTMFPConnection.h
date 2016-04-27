@@ -44,7 +44,7 @@ public:
 	template <typename ListenerType, typename... Args>
 	ListenerType* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, Args... args) {
 		if (!_pPublisher || _pPublisher->name() != streamName) {
-			ex.set(Exception::APPLICATION, "No publication found with name ", streamName);
+			ex.set(Mona::Exception::APPLICATION, "No publication found with name ", streamName);
 			return NULL;
 		}
 

@@ -39,7 +39,7 @@ public:
 	void resetGroup() { _group.reset(); }
 
 	// Return the tag used for this p2p connection (initiator mode)
-	std::string	getTag() { return _tag; }
+	const std::string&	getTag() { return _tag; }
 
 	// Manage all handshake messages (marker 0x0B)
 	virtual void manageHandshake(Mona::Exception& ex, Mona::BinaryReader& reader);
