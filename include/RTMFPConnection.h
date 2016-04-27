@@ -58,6 +58,9 @@ public:
 	// Set the p2p publisher as ready (used for blocking mode)
 	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
+	// Called by P2PConnection when the responder receive the caller peerId to update the group if needed
+	void updatePeerId(const Mona::SocketAddress& peerAddress, const std::string& peerId);
+
 	// Return the peer ID (for p2p childs)
 	virtual Mona::UInt8* peerId() { return _peerId; }
 

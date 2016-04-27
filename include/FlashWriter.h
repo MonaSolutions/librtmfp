@@ -56,7 +56,10 @@ public:
 	virtual void			writeGroup(const std::string& netGroup)=0;
 
 	// Note: netGroup must be in hexa format (64 bytes)
-	virtual void			writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator)=0;
+	virtual void			writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId/*, bool initiator*/)=0;
+
+	// Send the Group begin message (02 + 0E)
+	virtual void			writeGroupBegin()=0;
 
 	// 3rd message when connecting to a peer from a group
 	virtual void			writeGroupReport(const std::string& targetId)=0;
@@ -65,7 +68,7 @@ public:
 	virtual void			writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size)=0;
 
 	// Start to play the group stream
-	virtual void			writeGroupPlay()=0;
+	virtual void			writeGroupPlay(Mona::UInt8 mode)=0;
 
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)

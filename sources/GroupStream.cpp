@@ -5,7 +5,7 @@
 using namespace std;
 using namespace Mona;
 
-GroupStream::GroupStream(UInt16 id) : FlashStream(id), _firstReportSent(false), _playing(false), _videoCodecSent(false), _splittedTime(0), _splittedLostRate(0.0), _splittedMediaType(0) {
+GroupStream::GroupStream(UInt16 id) : FlashStream(id), _splittedTime(0), _splittedLostRate(0.0), _splittedMediaType(0) {
 	DEBUG("GroupStream ", id, " created")
 }
 
@@ -60,10 +60,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 		}
 		case GroupStream::GROUP_NKNOWN2:
 			INFO("GroupStream ", id, " - NetGroup 0E message type")
-
-			// When we receive the 0E NetGroup message type we must send the group message 3
-			writer.writeGroupReport(_targetID);
-			_firstReportSent = true;
+			OnGroupBegin::raise(_peerId, writer);
 			break;
 		case GroupStream::GROUP_REPORT: {
 			INFO("GroupStream ", id, " - NetGroup Report (type 0A)")
@@ -97,16 +94,9 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			DEBUG("GroupStream ", id, " - Group Media Infos (type 21) : ", streamName)
 			break;
 		}
-		case GroupStream::GROUP_FRAGMENTS_MAP: {
-			UInt64 counter = packet.read7BitLongValue();
-			DEBUG("GroupStream ", id, " - Group Fragments map (type 22) : ", counter, " ; ", Util::FormatHex(BIN packet.current(), packet.available(), LOG_BUFFER))
-			packet.next(packet.available());
-			if (!_playing) {
-				writer.writeGroupPlay();
-				_playing = true;
-			}
+		case GroupStream::GROUP_FRAGMENTS_MAP:
+			OnFragmentsMap::raise(_peerId, packet, writer);
 			break;
-		}
 		case GroupStream::GROUP_MEDIA_DATA:
 			DEBUG("GroupStream ", id, " - Group media message 20 : counter=", packet.read7BitLongValue())
 			return FlashStream::process(packet, writer, lostRate); // recursive call, can be audio/video packet or invocation

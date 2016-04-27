@@ -12,8 +12,8 @@ using namespace std;
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
-	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), publicationInfosSent(false),
-	_pListener(NULL), _pushCounter(0), _mode(0), _pMediaFlow(NULL), _pReportFlow(NULL), firstFragmentMap(true), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
+	_pListener(NULL), _pushMode(0), _pMediaFlow(NULL), _pReportFlow(NULL), firstFragmentMap(true), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_outAddress = _hostAddress = hostAddress;
 
@@ -27,14 +27,19 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 	_pMainStream->OnGroupReport::subscribe((OnGroupReport&)*this);
 	_pMainStream->OnGroupPlayPush::subscribe((OnGroupPlayPush&)*this);
 	_pMainStream->OnGroupPlayPull::subscribe((OnGroupPlayPull&)*this);
+	_pMainStream->OnFragmentsMap::subscribe((OnFragmentsMap&)*this);
+	_pMainStream->OnGroupBegin::subscribe((OnGroupBegin&)*this);
 }
 
 P2PConnection::~P2PConnection() {
+	DEBUG("Deletion of P2PConnection ", peerId)
 
 	_pMainStream->OnGroupMedia::unsubscribe((OnGroupMedia&)*this);
 	_pMainStream->OnGroupReport::unsubscribe((OnGroupReport&)*this);
 	_pMainStream->OnGroupPlayPush::unsubscribe((OnGroupPlayPush&)*this);
 	_pMainStream->OnGroupPlayPull::unsubscribe((OnGroupPlayPull&)*this);
+	_pMainStream->OnFragmentsMap::unsubscribe((OnFragmentsMap&)*this);
+	_pMainStream->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
 	close();
 	_pMediaFlow = NULL;
 	_parent = NULL;
@@ -56,6 +61,20 @@ RTMFPFlow* P2PConnection::createSpecialFlow(UInt64 id, const string& signature) 
 		return pFlow;
 	}
 	return NULL;
+}
+
+void P2PConnection::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
+	while (++_nextRTMFPWriterId == 0 || !_flowWriters.emplace(_nextRTMFPWriterId, pWriter).second);
+	(UInt64&)pWriter->id = _nextRTMFPWriterId;
+	pWriter->amf0 = false;
+	if (!_flows.empty()) {
+		if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0 && _pReportFlow)
+			(UInt64&)pWriter->flowId = _pReportFlow->id; // new Media Writer of NetGroup will be associated to the Report Flow
+		else
+			(UInt64&)pWriter->flowId = _flows.begin()->second->id; // new Writer will be associated to the P2PConnection flow (first in _flow lists)
+	}
+	if (!pWriter->signature.empty())
+		DEBUG("New writer ", pWriter->id, " on connection ");
 }
 
 void P2PConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
@@ -137,10 +156,11 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	}
 	reader.read(0x80, _farKey);
 
-	// Reading peerId
+	// Read peerId and update the parent
 	UInt8 id[32];
 	EVP_Digest(reader.data() + idPos, 0x84, id, NULL, EVP_sha256(), NULL);
 	INFO("peer ID calculated from public key : ", Util::FormatHex(id, sizeof(id), peerId))
+	_parent->updatePeerId(_outAddress, peerId);
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -174,7 +194,6 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	FlowManager::flush(0x0B, writer.size());
 
 	// Compute P2P keys for decryption/encryption
-	// TODO: see if I need to resize nonce to 0x49 bytes
 	if (!_parent->computeKeys(ex, _farKey, _farNonce, _nonce.data(), 0x49, _sharedSecret, _pDecoder, _pEncoder))
 		return;
 
@@ -299,8 +318,9 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 		INFO("Sending group connection request to peer")
 		_rawResponse = true;
-		pFlow->sendGroupPeerConnect(_group->id, mdp2, peerId, true);
+		pFlow->sendGroupPeerConnect(_group->id, mdp2, peerId);
 		_groupConnectSent = true;
+		sendGroupBegin();
 	}
 	else {
 		// Start playing
@@ -313,6 +333,19 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 		pFlow->sendPlay(_streamName);
 	}	
 	return true;
+}
+
+void P2PConnection::sendGroupBegin() {
+	if (!_groupBeginSent) {
+		auto it = _flows.find(2);
+		if (it == _flows.end()) {
+			ERROR("Unable to find the flow 2 for NetGroup communication")
+				return;
+		}
+
+		it->second->sendGroupBegin();
+		_groupBeginSent = true;
+	}
 }
 
 void P2PConnection::flush(bool echoTime, UInt8 marker) {
@@ -352,6 +385,11 @@ void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader
 
 void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
 	
+	if (!_group) {
+		ERROR("Group Handshake on a normal p2p connection")
+		return;
+	}
+
 	if (String::ICompare(groupId, _group->id) != 0) {
 		ERROR("Unexpected group ID received : ", groupId)
 		return;
@@ -381,12 +419,14 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 		}
 
 		INFO("Sending group connection answer to peer")
-		it->second->sendGroupPeerConnect(_group->id, mdp2, peerId, false);
+		it->second->sendGroupPeerConnect(_group->id, mdp2, peerId/*, false*/);
 		_groupConnectSent = true;
 	}
 }
 
 void P2PConnection::close() {
+	_group.reset();
+
 	if (connected)
 		writeMessage(0x5E, 0);
 
@@ -398,7 +438,7 @@ void P2PConnection::close() {
 	FlowManager::close();
 }
 
-void P2PConnection::writeGroupMedia(const string& stream, const UInt8* data, UInt32 size) {
+void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt32 size) {
 
 	INFO("Sending the stream infos for stream '", stream, "'")
 	string signature("\x00\x47\x52\x11", 4);
@@ -408,8 +448,18 @@ void P2PConnection::writeGroupMedia(const string& stream, const UInt8* data, UIn
 	publicationInfosSent = true;
 }
 
-void P2PConnection::sendMedia(const UInt8* data, UInt32 size, bool pull) {
-	if (!pull && !isPushable())
+void P2PConnection::sendGroupReport(const string& peerId) {
+
+	auto it = _flows.find(2);
+	if (it == _flows.end()) {
+		ERROR("Unable to find the flow 2 for NetGroup communication")
+		return;
+	}
+	it->second->sendGroupReport(peerId);
+}
+
+void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, bool pull) {
+	if ((!pull && !isPushable((UInt8)fragment%8)) /*|| firstFragmentMap*/)
 		return;
 
 	if (!_pMediaFlow) {
@@ -421,17 +471,25 @@ void P2PConnection::sendMedia(const UInt8* data, UInt32 size, bool pull) {
 }
 
 void P2PConnection::sendFragmentsMap(const UInt8* data, UInt32 size) {
-	if (_pReportFlow)
+	if (_pReportFlow) {
 		_pReportFlow->sendRaw(data, size);
+		if (firstFragmentMap)
+			firstFragmentMap = false;
+	}
 }
 
 void P2PConnection::setPushMode(UInt8 mode) {
 	INFO("Setting Group Push mode to ", Format<UInt8>("%.2x", mode));
-	_pushCounter = _mode = mode; // pushCounter set to mode to always send the first fragment
+	_pushMode = mode;
 }
 
-bool P2PConnection::isPushable() {
-	bool res = (_mode & _pushCounter) > 0;
-	_pushCounter = (_pushCounter == 0x80) ? 1 : _pushCounter*2;
-	return res;
+bool P2PConnection::isPushable(UInt8 rest) {
+	return (_pushMode & (1 << rest)) > 0;
+}
+
+void P2PConnection::updatePlayMode(UInt8 mode) {
+	if (_pushMode != mode) {
+		_pReportFlow->sendGroupPlay(mode);
+		_pushMode = mode;
+	}
 }

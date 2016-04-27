@@ -17,7 +17,9 @@ class P2PConnection : public FlowManager,
 	public FlashEvents::OnGroupMedia,
 	public FlashEvents::OnGroupReport,
 	public FlashEvents::OnGroupPlayPush,
-	public FlashEvents::OnGroupPlayPull {
+	public FlashEvents::OnGroupPlayPull,
+	public FlashEvents::OnFragmentsMap,
+	public FlashEvents::OnGroupBegin {
 	friend class RTMFPConnection;
 public:
 	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, const Mona::Buffer& pubKey, bool responder);
@@ -34,6 +36,7 @@ public:
 
 	// Set the group
 	void setGroup(std::shared_ptr<NetGroup> group) { _group = group; }
+	void resetGroup() { _group.reset(); }
 
 	// Return the tag used for this p2p connection (initiator mode)
 	std::string	getTag() { return _tag; }
@@ -54,16 +57,25 @@ public:
 	bool initiatorHandshake2(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Write the Group publication infos
-	void writeGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
+	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
+
+	// Send the group report (messag 0A)
+	void sendGroupReport(const std::string& peerId);
 
 	// If packet is pushable : create the flow if necessary and send media
-	void sendMedia(const Mona::UInt8* data, Mona::UInt32 size, bool pull=false);
+	void sendMedia(const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 fragment, bool pull=false);
 
 	// Send the report message
 	void sendFragmentsMap(const Mona::UInt8* data, Mona::UInt32 size);
 
-	// Set the Group Push mode
+	// Set the Group Publish Push mode (after a message 23)
 	void setPushMode(Mona::UInt8 mode);
+
+	// Update the Group Play Push mode
+	void updatePlayMode(Mona::UInt8 mode);
+
+	// Send the group begin message (02 + 0E messages)
+	void sendGroupBegin();
 
 	// Flush the connection
 	// marker values can be :
@@ -72,6 +84,8 @@ public:
 	// - 8A for AMF responde in P2P mode (only for responder)
 	// - 4A for acknowlegment in P2P mode (TODO: see if it is needed)
 	virtual void				flush(bool echoTime, Mona::UInt8 marker);
+
+	virtual void				initWriter(const std::shared_ptr<RTMFPWriter>& pWriter);
 
 	// Create a flow for special signatures (NetGroup)
 	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
@@ -102,7 +116,7 @@ protected:
 
 private:
 	// Return true if the new fragment is pushable (according to the Group push mode)
-	bool						isPushable();
+	bool						isPushable(Mona::UInt8 rest);
 
 	RTMFPConnection*			_parent; // RTMFPConnection related to
 	FlashListener*				_pListener; // Listener of the main publication (only one by intance)
@@ -118,10 +132,10 @@ private:
 
 	// Group members
 	bool						_groupConnectSent; // True if group connection request has been sent to peer
+	bool						_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	std::shared_ptr<NetGroup>	_group; // Group pointer if netgroup connection
 
-	Mona::UInt8					_mode; // Group Push mode
-	Mona::UInt8					_pushCounter; // Count of push fragments
+	Mona::UInt8					_pushMode; // Group Publish/Play Push mode
 
 	RTMFPFlow*					_pMediaFlow; // Flow for media packets
 	RTMFPFlow*					_pReportFlow; // Flow for report messages

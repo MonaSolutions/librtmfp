@@ -239,19 +239,35 @@ void FlashStream::sendGroupConnect(FlashWriter& writer, const string& groupId) {
 	writer.flush();
 }
 
-void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const string& peerId, bool initiator) {
+void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const string& peerId/*, bool initiator*/) {
 	// Record target peer ID in binary format
 	_targetID = peerId;
 	Util::UnformatHex(_targetID);
 
-	writer.writePeerGroup(netGroup, key, peerId, initiator);
+	writer.writePeerGroup(netGroup, key, peerId/*, initiator*/);
+	writer.flush();
+}
+
+void FlashStream::sendGroupBegin(FlashWriter& writer) {
+	writer.writeGroupBegin();
 	writer.flush();
 }
 
 void FlashStream::sendGroupMediaInfos(FlashWriter& writer, const string& stream, const UInt8* data, UInt32 size) {
 	writer.writeGroupMedia(stream, data, size);
+	writer.flush();
+}
+
+void FlashStream::sendGroupReport(FlashWriter& writer, const std::string& peerId) {
+	writer.writeGroupReport(peerId);
+	writer.flush();
 }
 
 void FlashStream::sendRaw(FlashWriter& writer, const UInt8* data, UInt32 size) {
 	writer.writeRaw(data, size);
+	writer.flush();
+}
+
+void FlashStream::sendGroupPlay(FlashWriter& writer, UInt8 mode) {
+	writer.writeGroupPlay(mode);
 }

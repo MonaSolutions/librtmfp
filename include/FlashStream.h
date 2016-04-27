@@ -16,6 +16,8 @@ namespace FlashEvents {
 	struct OnGroupReport : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 	struct OnGroupPlayPush: Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)>{};
 	struct OnGroupPlayPull : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
+	struct OnFragmentsMap : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
+	struct OnGroupBegin : Mona::Event<void(const std::string& peerId, FlashWriter& writer)> {};
 };
 
 /**************************************************************
@@ -30,7 +32,9 @@ class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnGroupMedia,
 	public FlashEvents::OnGroupReport,
 	public FlashEvents::OnGroupPlayPush,
-	public FlashEvents::OnGroupPlayPull {
+	public FlashEvents::OnGroupPlayPull,
+	public FlashEvents::OnFragmentsMap,
+	public FlashEvents::OnGroupBegin {
 public:
 
 	FlashStream(Mona::UInt16 id);
@@ -67,13 +71,22 @@ public:
 	void sendGroupConnect(FlashWriter& writer, const std::string& groupId);
 
 	// Send the group connection request to the peer
-	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator);
+	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId /*, bool initiator*/);
+
+	// Send the group begin message (02 + 0E)
+	void sendGroupBegin(FlashWriter& writer);
 
 	// Send the group publication infos
 	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
 
+	// Send the group report
+	void sendGroupReport(FlashWriter& writer, const std::string& peerId);
+
 	// Send the media
 	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size);
+
+	// Send the group play message (type 23)
+	void sendGroupPlay(FlashWriter& writer, Mona::UInt8 mode);
 
 	// Record target peer ID for identifying media source (play mode)
 	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }

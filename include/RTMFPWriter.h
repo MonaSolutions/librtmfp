@@ -77,13 +77,15 @@ public:
 	// Ask the server to connect to group, netGroup must be in binary format (32 bytes)
 	virtual void		writeGroup(const std::string& netGroup);
 	// Init the group session with a peer, netGroup must be in hexa format (64 bytes)
-	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator);
+	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId/*, bool initiator*/);
+	// Send the Group begin message (02 + 0E)
+	virtual void		writeGroupBegin();
 	// 3rd message when connecting to a peer from a group (TODO: give the peer in binary format)
 	virtual void		writeGroupReport(const std::string& targetId);
 	// Play the stream in argument
 	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size);
 	// Start to play the group stream
-	virtual void		writeGroupPlay();
+	virtual void		writeGroupPlay(Mona::UInt8 mode);
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);

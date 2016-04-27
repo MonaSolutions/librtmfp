@@ -11,7 +11,7 @@
 using namespace Mona;
 using namespace std;
 
-RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
+RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _pListener(NULL),
 	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), publishReady(false), connectReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onStreamCreated = [this](UInt16 idStream) {
 		handleStreamCreated(idStream);
@@ -28,18 +28,24 @@ RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError,
 }
 
 RTMFPConnection::~RTMFPConnection() {
+
 	// Close peers
 	for(auto it : _mapPeersByAddress) {
 		it.second->close();
 	}
 
+	// Delete Group
+	if (_group)
+		_group.reset();
+
 	// Close listener & publisher
-	if (_pPublisher && _pPublisher->running())
-		_pPublisher->stop();
 	if (_pListener && _pPublisher) {
 		_pPublisher->removeListener(_hostAddress.toString());
 		_pListener = NULL;
 	}
+	if (_pPublisher && _pPublisher->running())
+		_pPublisher->stop();
+	_pPublisher.reset();
 
 	close();
 
@@ -726,7 +732,7 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 
 	if (reader.read24() != 0x22210F) {
 		ERROR("Unexpected P2P address exchange first 3 bytes")
-			return;
+		return;
 	}
 
 	// Read our peer id and address of initiator
@@ -741,12 +747,6 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 
 	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, "unknown", _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _hostAddress, _pubKey, true));
 
-	// Add the peer to group if it is a NetGroup
-	if (_group) {
-		pPeerConnection->setGroup(_group);
-		_group->addPeer(peerId, pPeerConnection);
-	}
-
 	pPeerConnection->setTag(tag);
 	auto it = _mapPeersByTag.emplace(tag, pPeerConnection).first;
 }
@@ -759,4 +759,18 @@ void RTMFPConnection::sendGroupConnection(const string& netGroup) {
 		return;
 
 	pFlow->sendGroupConnect(netGroup);
+}
+
+void RTMFPConnection::updatePeerId(const Mona::SocketAddress& peerAddress, const string& peerId) {
+	if (_group) {
+		auto it = _mapPeersByAddress.find(peerAddress);
+		if (it == _mapPeersByAddress.end())
+			ERROR("Unable to find the peer with address ", peerAddress.toString())
+		else {
+
+			// Add the peer to group if it is a NetGroup
+			it->second->setGroup(_group);
+			_group->addPeer(peerId, it->second);
+		}
+	}
 }

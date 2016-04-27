@@ -537,7 +537,7 @@ void RTMFPWriter::writeGroup(const string& netGroup) {
 	createMessage().writer().packet.write8(GroupStream::GROUP_INIT).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
 }
 
-void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const string& peerId, bool initiator) {
+void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const string& peerId/*, bool initiator*/) {
 
 	string id(peerId);
 	PacketWriter& writer = createMessage().writer().packet;
@@ -546,12 +546,18 @@ void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const
 	writer.write32(0x2303210F).write(Util::UnformatHex(id)); // binary format
 
 	// Send this only if we are the responder
-	if (!initiator) {
+	/*if (!initiator) {
 		flush(false);
 		createMessage().writer().packet.write8(AMF::ABORT);
-		flush(false);
+		flush(false); // TODO: see if needed
 		createMessage().writer().packet.write8(GroupStream::GROUP_NKNOWN2);
-	}
+	}*/
+}
+
+void RTMFPWriter::writeGroupBegin() {
+	createMessage().writer().packet.write8(AMF::ABORT);
+	flush(false); // TODO: see if needed
+	createMessage().writer().packet.write8(GroupStream::GROUP_NKNOWN2);
 }
 
 void RTMFPWriter::writeGroupReport(const string& targetId) {
@@ -571,9 +577,9 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* da
 	writer.write("\x01\x02\x03\x03\xBE\x40\x04\x04\x92\xA7\x60\x02\x05\x64\x03\x07\x93\x44"); // TODO: find what is means
 }
 
-void RTMFPWriter::writeGroupPlay() {
+void RTMFPWriter::writeGroupPlay(UInt8 mode) {
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_PLAY_PUSH).write8(0xFF);
+	writer.write8(GroupStream::GROUP_PLAY_PUSH).write8(mode);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {

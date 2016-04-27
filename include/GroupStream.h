@@ -34,9 +34,6 @@ protected:
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
 
 private:
-	bool			_firstReportSent; // True if the first NetGroup message 0A has been sent to target peer
-	bool			_playing; // True if we are already playing the stream (from a NetGroup)
-	bool			_videoCodecSent; // True if the video codecs have been sent
 
 	Mona::UInt8		_splittedMediaType;
 	Mona::UInt32	_splittedTime;

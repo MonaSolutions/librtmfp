@@ -48,9 +48,12 @@ public:
 	void	createStream() { if (_pStream) _pStream->createStream(*_pWriter); }
 	void	sendPeerInfo(Mona::UInt16 port) { if (_pStream) _pStream->sendPeerInfo(*_pWriter, port); }
 	void	sendGroupConnect(const std::string& netGroup) { if (_pStream) _pStream->sendGroupConnect(*_pWriter, netGroup); }
-	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId, bool initiator) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, peerId, initiator); }
+	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId/*, bool initiator*/) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, peerId/*, initiator*/); }
+	void	sendGroupBegin() { if (_pStream) _pStream->sendGroupBegin(*_pWriter); }
 	void	sendGroupMediaInfos(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size) { if (_pStream) _pStream->sendGroupMediaInfos(*_pWriter, stream, data, size); }
+	void	sendGroupReport(const std::string& peerId) { if (_pStream) _pStream->sendGroupReport(*_pWriter, peerId); }
 	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size) { if (_pStream) _pStream->sendRaw(*_pWriter, data, size); }
+	void	sendGroupPlay(Mona::UInt8 mode) { if (_pStream) _pStream->sendGroupPlay(*_pWriter, mode); }
 
 private:
 	// Handle on fragment received
