@@ -318,7 +318,7 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 		INFO("Sending group connection request to peer")
 		_rawResponse = true;
-		pFlow->sendGroupPeerConnect(_group->id, mdp2, peerId);
+		pFlow->sendGroupPeerConnect(_group->idHex, mdp2, peerId);
 		_groupConnectSent = true;
 		sendGroupBegin();
 	}
@@ -390,8 +390,8 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 		return;
 	}
 
-	if (String::ICompare(groupId, _group->id) != 0) {
-		ERROR("Unexpected group ID received : ", groupId)
+	if (String::ICompare(groupId, _group->idHex) != 0) {
+		ERROR("Unexpected group ID received : ", groupId, "\nExpected : ", _group->idHex)
 		return;
 	}
 	string idReceived, myId;
@@ -419,7 +419,7 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 		}
 
 		INFO("Sending group connection answer to peer")
-		it->second->sendGroupPeerConnect(_group->id, mdp2, peerId/*, false*/);
+		it->second->sendGroupPeerConnect(_group->idHex, mdp2, peerId/*, false*/);
 		_groupConnectSent = true;
 	}
 }

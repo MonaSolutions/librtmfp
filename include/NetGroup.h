@@ -20,7 +20,7 @@ public:
 	// Send report requests (messages 0A, 22)
 	void manage();
 
-	const std::string id;		// Group ID in hex format
+	const std::string idHex;	// Group ID in hex format
 	const std::string idTxt;	// Group ID in plain text (without final zeroes)
 	const std::string stream;	// Stream name
 	const bool isPublisher;

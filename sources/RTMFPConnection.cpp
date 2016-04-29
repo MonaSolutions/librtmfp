@@ -408,7 +408,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		return true;
 	}
 
-	string id = it->second->peerId;
+	string id = it->second->peerId.c_str(); // To avoid memory sharing (linux)
 	id = Util::UnformatHex(id);
 
 	SocketAddress address;
@@ -614,7 +614,7 @@ void RTMFPConnection::sendConnections() {
 		auto it = _mapPeersByTag.find(tag);
 		if (it != _mapPeersByTag.end()) {
 			INFO("Sending P2P handshake 30 to server (peerId : ", it->second->peerId, ")")
-			id = it->second->peerId.c_str(); // strange behavior here, if we assign directly the string it references peerId no Linux
+			id = it->second->peerId.c_str();  // To avoid memory sharing (linux)
 			it->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), tag);
 			it->second->lastTry.start();
 			it->second->attempt++;
@@ -643,7 +643,7 @@ void RTMFPConnection::sendConnections() {
 			}
 
 			INFO("Sending new P2P handshake 30 to server (peerId : ", itPeer->second->peerId, ")")
-			string id = itPeer->second->peerId;
+			string id = itPeer->second->peerId;  // To avoid memory sharing (linux)
 			itPeer->second->_outAddress = _hostAddress;
 			itPeer->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), itPeer->first);
 			itPeer->second->lastTry.restart();
@@ -715,7 +715,7 @@ bool RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
 void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& peerId) {
 	
 	//string& streamName = _mapGroup2stream[groupId];
-	if (!_group || _group->id != groupId) {
+	if (!_group || _group->idHex != groupId) {
 		ERROR("Unable to find the stream name of group ID : ", groupId)
 		return;
 	}

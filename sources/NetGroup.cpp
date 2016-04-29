@@ -27,7 +27,7 @@ NetGroup::MediaPacket::MediaPacket(const Mona::PoolBuffers& poolBuffers, const M
 }
 
 NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, bool publisher, RTMFPConnection& conn, double updatePeriod, UInt16 windowDuration) :
-	id(groupId), idTxt(groupTxt), stream(streamName), isPublisher(publisher), _conn(conn), _updatePeriod(updatePeriod*1000), _fragmentCounter(0),
+	idHex(groupId), idTxt(groupTxt), stream(streamName), isPublisher(publisher), _conn(conn), _updatePeriod(updatePeriod*1000), _fragmentCounter(0),
 	_lastSent(0), _pListener(NULL), _windowDuration(windowDuration*1000), _streamCode(0x22) { // TODO: change the 1024
 	onMedia = [this](bool reliable, AMF::ContentType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
@@ -88,7 +88,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		// Loop on each peer of the NetGroup
 		while (packet.available() > 4) {
 			if (packet.read32() != 0x0022210F) {
-				ERROR("Unexpected format for peer infos in the group message 3")
+				ERROR("Unexpected format for peer infos in the group message 0A")
 				break;
 			}
 			packet.read(PEER_ID_SIZE, tmpId);
@@ -102,15 +102,13 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		if (it == _mapPeers.end())
 			ERROR("Unable to find the peer ", peerId)
 		else {
+			INFO("Is publisher : ", isPublisher, " ; infos sent : ", it->second->publicationInfosSent)
 			if (!isPublisher)
 				it->second->sendGroupBegin();
 			// Send the publication infos if not already sent
 			else if (!it->second->publicationInfosSent)
 				it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size());
 		}
-
-		
-
 		// Answer with our group report if we are a player
 		/*if (!isPublisher)
 			writer.writeGroupReport(peerId);*/
@@ -166,6 +164,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			ERROR("Unable to find the peer ", peerId)
 		else {
 			// When we receive the 0E NetGroup message type we must send the group report
+			INFO("Sending the group report for ", peerId)
 			it->second->sendGroupReport(peerId);
 			it->second->sendGroupBegin();
 		}

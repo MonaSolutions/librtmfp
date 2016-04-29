@@ -533,13 +533,13 @@ AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* dat
 }
 
 void RTMFPWriter::writeGroup(const string& netGroup) {
-	string tmp(netGroup);
+	string tmp(netGroup.c_str()); // To avoid memory sharing (linux)
 	createMessage().writer().packet.write8(GroupStream::GROUP_INIT).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
 }
 
 void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const string& peerId/*, bool initiator*/) {
 
-	string id(peerId);
+	string id(peerId.c_str()); // To avoid memory sharing (linux)
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
 	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);
@@ -562,10 +562,11 @@ void RTMFPWriter::writeGroupBegin() {
 
 void RTMFPWriter::writeGroupReport(const string& targetId) {
 
+	string id(targetId.c_str()); // To avoid memory sharing (linux)
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_REPORT).write8(0x08).write(EXPAND("\x0D\x02\x7F\x00\x00\x01\x07\x8F"));
 	writer.write8(0x08).write(EXPAND("\x0A\x03\x7F\x00\x00\x01\x07\x8F"));
-	writer.write32(0x0022210F).write(targetId);
+	writer.write32(0x0022210F).write(Util::UnformatHex(id));
 	writer.write16(0x0008).write(EXPAND("\x0A\x00\x7F\x00\x00\x01\x07\x8F")).write8(0);
 }
 
