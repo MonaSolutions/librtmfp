@@ -119,7 +119,7 @@ void Publisher::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
 
 	// save video codec packet for future listeners
 	if (RTMFP::IsH264CodecInfos(data, size)) {
-		DEBUG("H264 codec infos received on publication ", _name)
+		INFO("H264 codec infos received on publication ", _name)
 		// h264 codec && settings codec informations
 		_videoCodecBuffer->resize(size, false);
 		memcpy(_videoCodecBuffer->data(), data, size);

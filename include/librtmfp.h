@@ -12,7 +12,7 @@ unsigned int RTMFP_Connect(const char* url, void (* onSocketError)(const char*),
 int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
 
 // Connect to a NetGroup (in the G:... form)
-int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName, int publisher, double availabilityUpdatePeriod, unsigned int windowDuration);
+int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName, int publisher, double availabilityUpdatePeriod, unsigned int windowDuration, int blocking);
 
 // RTMFP NetStream Play function
 // return : 1 if the request succeed, 0 otherwise

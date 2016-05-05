@@ -16,10 +16,14 @@ NetGroup::MediaPacket::MediaPacket(const Mona::PoolBuffers& poolBuffers, const M
 	// Splitted sequence number
 	if (splitId > 1)
 		writer.write8(splitId);
-	// Media type
-	writer.write8(type);
-	// Time on 4 bytes
-	writer.write32(time);
+
+	// Type and time, only for the first fragment
+	if (marker != GroupStream::GROUP_MEDIA_NEXT && marker != GroupStream::GROUP_MEDIA_END) {
+		// Media type
+		writer.write8(type);
+		// Time on 4 bytes
+		writer.write32(time);
+	}
 	// Payload
 	writer.write(data, size);
 	
@@ -45,8 +49,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			_mapTime2Fragment[time] = _fragmentCounter;
 
 			// Send fragment to peers (push mode)
-			/*for (auto it : _mapPeers)
-				it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.fragmentSize, _fragmentCounter);*/
+			for (auto it : _mapPeers)
+				it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.fragmentSize, _fragmentCounter);
 
 			pos += splitCounter > 1 ? NETGROUP_MAX_PACKET_SIZE : (end - pos);
 			splitCounter--;
@@ -55,18 +59,6 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	};
 	onGroupMedia = [this](const string& peerId, const string& streamName, const string& data, FlashWriter& writer) {
 		if (isPublisher) {
-			/*// First Viewer => create listener
-			if (!_pListener) {
-				Exception ex;
-				if (!(_pListener = _conn.startListening<GroupListener>(ex, streamName, idTxt))) {
-					WARN(ex.error()) // TODO : See if we can send a specific answer
-					return;
-				}
-				INFO("Stream ", streamName, " found, sending start answer")
-				// A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
-				_conn.setP2pPublisherReady();
-				_pListener->OnMedia::subscribe(onMedia);
-			}*/
 			if (streamName != stream)
 				ERROR("Stream ", streamName, " not found, ignoring the peer request")
 		}
@@ -102,7 +94,6 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		if (it == _mapPeers.end())
 			ERROR("Unable to find the peer ", peerId)
 		else {
-			INFO("Is publisher : ", isPublisher, " ; infos sent : ", it->second->publicationInfosSent)
 			if (!isPublisher)
 				it->second->sendGroupBegin();
 			// Send the publication infos if not already sent
@@ -130,7 +121,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				INFO("First push request, starting to play Stream ", stream)
 				// A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 				_pListener->OnMedia::subscribe(onMedia);
-				_conn.setP2pPublisherReady();
+				_conn.publishReady = true;
 			}
 		}
 	};
@@ -176,12 +167,31 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 }
 
 NetGroup::~NetGroup() {
-	DEBUG("Deletion of NetGroup ", idTxt)
+	
+}
+
+void NetGroup::close() {
+	DEBUG("Closing the NetGroup ", idTxt)
+
+	{ // TODO: delete fragments properly
+		lock_guard<recursive_mutex> lock(_fragmentMutex);
+		_fragments.clear();
+	}
+	/*auto it = _mapTime2Fragment.rbegin();
+	UInt32 lastTime = (it != _mapTime2Fragment.rend()) ? it->first : 0;*/
+	_mapTime2Fragment.clear();
 
 	if (_pListener) {
 		_pListener->OnMedia::unsubscribe(onMedia);
 		_conn.stopListening(idTxt);
 		_pListener = NULL;
+
+		// Send the close and UnpublishNotify messages
+		/*for (auto it : _mapPeers) {
+		if (it.second->connected) {
+		it.second->closeGroupStream(GroupStream::GROUP_MEDIA_START, _fragmentCounter, lastTime);
+		}
+		}*/
 	}
 
 	for (auto it : _mapPeers) {
@@ -194,11 +204,6 @@ NetGroup::~NetGroup() {
 		it.second->resetGroup();
 	}
 	_mapPeers.clear();
-
-	{ // TODO: delete fragments properly
-		lock_guard<recursive_mutex> lock(_fragmentMutex);
-		_fragments.clear();
-	}
 }
 
 void NetGroup::addPeer(string peerId, shared_ptr<P2PConnection> pPeer) {
@@ -212,10 +217,9 @@ void NetGroup::addPeer(string peerId, shared_ptr<P2PConnection> pPeer) {
 }
 
 void NetGroup::manage() {
-	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	// Send the last fragments (TODO: see if we can send them directly)
-	auto itFragment = (_lastSent==0)? _fragments.begin() : _fragments.find(_lastSent);
+	/*auto itFragment = (_lastSent==0)? _fragments.begin() : _fragments.find(_lastSent);
 	if (_lastSent != 0)
 		itFragment++;
 	for (itFragment; itFragment != _fragments.end(); itFragment++) {
@@ -224,17 +228,24 @@ void NetGroup::manage() {
 			it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.fragmentSize, itFragment->first);
 		}
 		_lastSent = itFragment->first;
-	}
+	}*/
 
 	// Send the report message
-	if (_lastReport.isElapsed((Int64)_updatePeriod) && updateFragmentMap()) {
+	if (_lastReport.isElapsed((Int64)_updatePeriod)) {
+		lock_guard<recursive_mutex> lock(_fragmentMutex);
+		DEBUG("Updating fragments map, ", Time::Now())
+		if (updateFragmentMap()) {
 
-		// Send to all neighbors
-		for (auto it : _mapPeers) {
-			INFO("Sending Report message (type 22) - counter : ", _fragmentCounter)
-			it.second->sendFragmentsMap(_reportBuffer.data(), _reportBuffer.size());
+			// Send to all neighbors
+			for (auto it : _mapPeers) {
+				if (it.second->connected) {
+					DEBUG("Sending Report message (type 22) to peer ", it.first, " - counter : ", _fragmentCounter)
+					it.second->sendFragmentsMap(_reportBuffer.data(), _reportBuffer.size());
+				}
+			}
+			_lastReport.update();
+			DEBUG("Updating fragments map end, ", Time::Now())
 		}
-		_lastReport.update();
 	}
 }
 
@@ -246,8 +257,11 @@ bool NetGroup::updateFragmentMap() {
 	auto it = _fragments.find(_fragmentCounter);
 	if (it != _fragments.end()) {
 		UInt32 end = it->second.time;
+
 		auto itTime = _mapTime2Fragment.lower_bound(end - _windowDuration);
-		if (itTime != _mapTime2Fragment.end()) {
+		if (itTime != _mapTime2Fragment.end() && (end - itTime->first) > _windowDuration)
+			itTime--; // To not delete more than the window duration
+		if (itTime != _mapTime2Fragment.end() && itTime != _mapTime2Fragment.begin()) {
 			_fragments.erase(_fragments.begin(), _fragments.find(itTime->second));
 			DEBUG("Deletion of fragments ", _mapTime2Fragment.begin()->second, " (", _mapTime2Fragment.begin()->first, ") to ", itTime->second, " (", itTime->first,')')
 			_mapTime2Fragment.erase(_mapTime2Fragment.begin(), itTime);

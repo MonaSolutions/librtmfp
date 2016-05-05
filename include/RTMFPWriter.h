@@ -86,6 +86,8 @@ public:
 	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size);
 	// Start to play the group stream
 	virtual void		writeGroupPlay(Mona::UInt8 mode);
+	// Send the UnpublishNotify and closeStream messages
+	//virtual void		sendGroupCloseStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 time, const std::string& streamName);
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);

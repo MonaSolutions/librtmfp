@@ -14,6 +14,8 @@ public:
 	NetGroup(const std::string& groupId, const std::string& groupTxt, const std::string& streamName, bool publisher, RTMFPConnection& conn, double updatePeriod, Mona::UInt16 windowDuration);
 	virtual ~NetGroup();
 
+	void close();
+
 	// Add a peer to the NetGroup map
 	void addPeer(std::string peerId, std::shared_ptr<P2PConnection> pPeer);
 

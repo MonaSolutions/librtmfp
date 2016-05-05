@@ -70,6 +70,9 @@ public:
 	// Start to play the group stream
 	virtual void			writeGroupPlay(Mona::UInt8 mode)=0;
 
+	// Send the UnpublishNotify and closeStream messages
+	//virtual void			sendGroupCloseStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime)=0;
+
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)
 

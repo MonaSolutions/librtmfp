@@ -594,8 +594,22 @@ void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 	flush(false);
 }
 
-/*bool RTMFPWriter::writeMedia(MediaType type,UInt32 time,PacketReader& packet,const Parameters& properties) {
-	if (type==INIT)
-		_resetStream = false;
-	return _resetStream ? false : FlashWriter::writeMedia(type,time,packet,properties);
+/*
+void RTMFPWriter::sendGroupCloseStream(UInt8 type, UInt64 fragmentCounter, UInt32 time, const string& streamName) {
+
+	AMFWriter& amf = createMessage().writer();
+	BinaryWriter& binary(amf.packet);
+	binary.write8(type);
+	binary.write7BitLongValue(fragmentCounter);
+	
+	writeAMFStatus(amf, "NetStream.Play.UnpublishNotify", streamName + " is now unpublished");
+	flush(false);
+
+	AMFWriter& amf2 = createMessage().writer();
+	BinaryWriter& binary2(amf2.packet);
+	binary2.write8(type);
+	binary2.write7BitLongValue(fragmentCounter);
+
+	writeInvocation(amf2, "closeStream");
+	flush();
 }*/

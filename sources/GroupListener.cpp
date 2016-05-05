@@ -85,22 +85,20 @@ void GroupListener::stopPublishing() {
 }
 
 
-void GroupListener::pushVideo(UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
+void GroupListener::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
 	/*if (!receiveVideo && !RTMFP::IsH264CodecInfos(data,size))
 		return;*/
 
 	if (!_codecInfosSent) {
-		if (RTMFP::IsKeyFrame(data, size)) {
-			_codecInfosSent = true;
-			if (!publication.videoCodecBuffer().empty() && !RTMFP::IsH264CodecInfos(data, size)) {
-				INFO("H264 codec infos sent to one listener of ", publication.name(), " publication")
-				pushVideo(time, publication.videoCodecBuffer()->data(), publication.videoCodecBuffer()->size());
-			}
-		}
-		else {
+		if (!pushVideoInfos(time, data, size)) {
 			DEBUG("Video frame dropped to wait first key frame");
 			return;
 		}
+	}
+	// Send codec infos periodically (ffmpeg issue)
+	else if (_lastCodecsTime.isElapsed(5000) && pushVideoInfos(time, data, size)) {
+		// TODO: make the time configurable
+		_lastCodecsTime.update();
 	}
 
 	/*if (!_pVideoWriter && !initWriters())
@@ -123,8 +121,20 @@ void GroupListener::pushVideo(UInt32 time, const Mona::UInt8* data, Mona::UInt32
 	OnMedia::raise(RTMFP::IsKeyFrame(data, size) || _reliable, AMF::VIDEO, _lastTime = (time + _seekTime), data, size);
 }
 
+bool GroupListener::pushVideoInfos(UInt32 time, const UInt8* data, UInt32 size) {
+	if (RTMFP::IsKeyFrame(data, size)) {
+		_codecInfosSent = true;
+		if (!publication.videoCodecBuffer().empty() && !RTMFP::IsH264CodecInfos(data, size)) {
+			INFO("H264 codec infos sent to one listener of ", publication.name(), " publication")
+			pushVideo(time, publication.videoCodecBuffer()->data(), publication.videoCodecBuffer()->size());
+		}
+		return true;
+	}
+	return false;
+}
 
-void GroupListener::pushAudio(UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
+
+void GroupListener::pushAudio(UInt32 time, const UInt8* data, UInt32 size) {
 	/*if (!receiveAudio && !RTMFP::IsAACCodecInfos(data, size))
 		return;*/
 

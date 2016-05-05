@@ -29,14 +29,14 @@ RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError,
 
 RTMFPConnection::~RTMFPConnection() {
 
+	// Close the NetGroup
+	if (_group)
+		_group->close();
+
 	// Close peers
 	for(auto it : _mapPeersByAddress) {
 		it.second->close();
 	}
-
-	// Delete Group
-	if (_group)
-		_group.reset();
 
 	// Close listener & publisher
 	if (_pListener && _pPublisher) {

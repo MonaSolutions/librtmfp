@@ -54,6 +54,7 @@ public:
 	void	sendGroupReport(const std::string& peerId) { if (_pStream) _pStream->sendGroupReport(*_pWriter, peerId); }
 	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size) { if (_pStream) _pStream->sendRaw(*_pWriter, data, size); }
 	void	sendGroupPlay(Mona::UInt8 mode) { if (_pStream) _pStream->sendGroupPlay(*_pWriter, mode); }
+	//void	closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime) { if (_pStream) _pStream->sendGroupCloseStream(type, fragmentCounter, lastTime); }
 
 private:
 	// Handle on fragment received

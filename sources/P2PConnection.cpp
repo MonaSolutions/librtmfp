@@ -343,6 +343,7 @@ void P2PConnection::sendGroupBegin() {
 				return;
 		}
 
+		INFO("Sending Group Begin message")
 		it->second->sendGroupBegin();
 		_groupBeginSent = true;
 	}
@@ -488,7 +489,7 @@ bool P2PConnection::isPushable(UInt8 rest) {
 }
 
 void P2PConnection::updatePlayMode(UInt8 mode) {
-	if (_pushMode != mode) {
+	if (_pReportFlow && _pushMode != mode) {
 		_pReportFlow->sendGroupPlay(mode);
 		_pushMode = mode;
 	}

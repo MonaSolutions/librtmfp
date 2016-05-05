@@ -35,6 +35,7 @@ private:
 	bool	firstTime() { return /*!_pVideoWriter && !_pAudioWriter &&*/ !_dataInitialized; }
 	//void	closeWriters();
 
+	bool	pushVideoInfos(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 	bool	pushAudioInfos(Mona::UInt32 time);
 
 	Mona::UInt32 			_startTime;
@@ -42,6 +43,7 @@ private:
 	bool					_firstTime;
 	Mona::UInt32			_seekTime;
 	bool					_codecInfosSent;
+	Mona::Time				_lastCodecsTime; // last time codecs have been sent
 
 	/*FlashWriter&			_writer;
 	FlashWriter*			_pAudioWriter;

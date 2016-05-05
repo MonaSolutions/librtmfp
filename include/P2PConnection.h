@@ -77,6 +77,9 @@ public:
 	// Send the group begin message (02 + 0E messages)
 	void sendGroupBegin();
 
+	// Send the UnpublishNotify and closeStream messages
+	//void closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime);
+
 	// Flush the connection
 	// marker values can be :
 	// - 0B for handshake

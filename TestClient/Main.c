@@ -314,7 +314,7 @@ int main(int argc,char* argv[]) {
 			}
 
 			if (netGroup)
-				RTMFP_Connect2Group(context, netGroup, publication, (_option == WRITE || _option == P2P_WRITE), updatePeriod, windowDuration);
+				RTMFP_Connect2Group(context, netGroup, publication, (_option == WRITE || _option == P2P_WRITE), updatePeriod, windowDuration, 1);
 			else if (_option == WRITE)
 				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
 			else if (_option == P2P_WRITE)

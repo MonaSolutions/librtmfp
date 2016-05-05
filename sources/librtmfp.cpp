@@ -76,7 +76,7 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 	return 1;
 }
 
-int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName, int publisher, double availabilityUpdatePeriod, unsigned int windowDuration) {
+int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName, int publisher, double availabilityUpdatePeriod, unsigned int windowDuration, int blocking) {
 
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
@@ -84,6 +84,14 @@ int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const c
 		pConn->connect2Group(netGroup, streamName, publisher==1, availabilityUpdatePeriod, windowDuration);
 
 	pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
+
+	if (blocking && publisher) {
+		while (!pConn->publishReady) {
+			pConn->publishSignal.wait(200);
+			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
+				return 0;
+		}
+	}
 
 	return 1;
 }
