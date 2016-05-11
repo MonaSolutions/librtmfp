@@ -258,11 +258,6 @@ void FlashStream::sendGroupMediaInfos(FlashWriter& writer, const string& stream,
 	writer.flush();
 }
 
-void FlashStream::sendGroupReport(FlashWriter& writer, const std::string& peerId) {
-	writer.writeGroupReport(peerId);
-	writer.flush();
-}
-
 void FlashStream::sendRaw(FlashWriter& writer, const UInt8* data, UInt32 size) {
 	writer.writeRaw(data, size);
 	writer.flush();

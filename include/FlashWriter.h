@@ -61,9 +61,6 @@ public:
 	// Send the Group begin message (02 + 0E)
 	virtual void			writeGroupBegin()=0;
 
-	// 3rd message when connecting to a peer from a group
-	virtual void			writeGroupReport(const std::string& targetId)=0;
-
 	// Request the stream in argument
 	virtual void			writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size)=0;
 

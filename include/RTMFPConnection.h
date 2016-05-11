@@ -64,6 +64,9 @@ public:
 	// Return the peer ID (for p2p childs)
 	virtual Mona::UInt8* peerId() { return _peerId; }
 
+	// Return the server address (for NetGroup)
+	const Mona::SocketAddress& serverAddress() { return _hostAddress; }
+
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal							connectSignal; // signal to wait connection
 	Mona::Signal							p2pPublishSignal; // signal to wait p2p publish

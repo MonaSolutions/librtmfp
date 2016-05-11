@@ -41,6 +41,8 @@ public:
 	// Return the tag used for this p2p connection (initiator mode)
 	const std::string&	getTag() { return _tag; }
 
+	const Mona::SocketAddress& peerAddress() { return _outAddress; }
+
 	// Manage all handshake messages (marker 0x0B)
 	virtual void manageHandshake(Mona::Exception& ex, Mona::BinaryReader& reader);
 
@@ -59,8 +61,8 @@ public:
 	// Write the Group publication infos
 	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
 
-	// Send the group report (messag 0A)
-	void sendGroupReport(const std::string& peerId);
+	// Send the group report (message 0A)
+	void sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);
 
 	// If packet is pushable : create the flow if necessary and send media
 	void sendMedia(const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 fragment, bool pull=false);
@@ -103,7 +105,7 @@ public:
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 
 	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
-	bool							firstFragmentMap; // True if the fragment map has not been send
+	Mona::UInt64					lastGroupReport; // Time in msec of First Group report received
 protected:
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer);
@@ -141,6 +143,7 @@ private:
 	Mona::UInt8					_pushMode; // Group Publish/Play Push mode
 
 	RTMFPFlow*					_pMediaFlow; // Flow for media packets
+	RTMFPFlow*					_pFragmentsFlow; // Flow for fragments Map messages and media related messages
 	RTMFPFlow*					_pReportFlow; // Flow for report messages
 
 	//std::string				_groupHex; // Group ID encrypted (double sha256) in Hex format

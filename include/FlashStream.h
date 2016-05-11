@@ -79,9 +79,6 @@ public:
 	// Send the group publication infos
 	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
 
-	// Send the group report
-	void sendGroupReport(FlashWriter& writer, const std::string& peerId);
-
 	// Send the media
 	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size);
 

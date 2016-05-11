@@ -33,6 +33,10 @@ private:
 	// Return False if there is no fragments, otherwise true
 	bool	updateFragmentMap();
 
+	// Build the Group Report for the peer in parameter
+	// Return false if the peer is not found
+	bool	buildGroupReport(const std::string& peerId);
+
 	// Fragments 
 	struct MediaPacket {
 
@@ -66,6 +70,7 @@ private:
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPConnection&										_conn; // RTMFPConnection related to
 	Mona::Time												_lastReport; // last Report Message time
+	Mona::Time												_lastFragmentsMap; // last Fragments Map Message time
 	Mona::Buffer											_reportBuffer; // Buffer for reporting messages
 
 	Mona::UInt64											_lastSent; // Last fragment id sent

@@ -560,16 +560,6 @@ void RTMFPWriter::writeGroupBegin() {
 	createMessage().writer().packet.write8(GroupStream::GROUP_NKNOWN2);
 }
 
-void RTMFPWriter::writeGroupReport(const string& targetId) {
-
-	string id(targetId.c_str()); // To avoid memory sharing (linux)
-	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_REPORT).write8(0x08).write(EXPAND("\x0D\x02\x7F\x00\x00\x01\x07\x8F"));
-	writer.write8(0x08).write(EXPAND("\x0A\x03\x7F\x00\x00\x01\x07\x8F"));
-	writer.write32(0x0022210F).write(Util::UnformatHex(id));
-	writer.write16(0x0008).write(EXPAND("\x0A\x00\x7F\x00\x00\x01\x07\x8F")).write8(0);
-}
-
 void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size) {
 
 	PacketWriter& writer = createMessage().writer().packet;

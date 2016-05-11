@@ -80,8 +80,6 @@ public:
 	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId/*, bool initiator*/);
 	// Send the Group begin message (02 + 0E)
 	virtual void		writeGroupBegin();
-	// 3rd message when connecting to a peer from a group (TODO: give the peer in binary format)
-	virtual void		writeGroupReport(const std::string& targetId);
 	// Play the stream in argument
 	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size);
 	// Start to play the group stream
