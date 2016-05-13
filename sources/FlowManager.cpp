@@ -34,7 +34,7 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 };
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-_nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0),
+_nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0), _codecInfosRead(false),
 	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _pubKey(0x80), _nonce(0x8B),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
@@ -58,7 +58,16 @@ _nextRTMFPWriterId(0),_firstRead(true),_firstWrite(true),_pLastWriter(NULL),_pIn
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
 	};
-	onMedia = [this](const std::string& peerId, const std::string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
+	onMedia = [this](const string& peerId, const string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
+
+		if (!audio && !_codecInfosRead) {
+			if (RTMFP::IsH264CodecInfos(packet.data(), packet.available()))
+				_codecInfosRead = true;
+			else {
+				DEBUG("Video frame dropped to wait first key frame");
+				return;
+			}
+		}
 
 		if(_firstMedia) {
 			_firstMedia=false;

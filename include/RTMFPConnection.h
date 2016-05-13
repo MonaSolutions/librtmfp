@@ -52,6 +52,12 @@ public:
 		return _pPublisher->addListener<ListenerType, Args...>(ex, peerId, args...);
 	}
 
+	// Push the media packet to write into a file
+	void pushMedia(const std::string& stream, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size, double lostRate, bool audio) { 
+		Mona::PacketReader reader(data, size);
+		onMedia("", stream, time, reader, lostRate, audio); 
+	}
+
 	// Remove the listener with peerId
 	void stopListening(const std::string& peerId);
 

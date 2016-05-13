@@ -5,7 +5,7 @@
 using namespace std;
 using namespace Mona;
 
-GroupStream::GroupStream(UInt16 id) : FlashStream(id), _splittedTime(0), _splittedLostRate(0.0), _splittedMediaType(0) {
+GroupStream::GroupStream(UInt16 id) : FlashStream(id) {
 	DEBUG("GroupStream ", id, " created")
 }
 
@@ -97,49 +97,45 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 		case GroupStream::GROUP_FRAGMENTS_MAP:
 			OnFragmentsMap::raise(_peerId, packet, writer);
 			break;
-		case GroupStream::GROUP_MEDIA_DATA:
-			DEBUG("GroupStream ", id, " - Group media message 20 : counter=", packet.read7BitLongValue())
-			return FlashStream::process(packet, writer, lostRate); // recursive call, can be audio/video packet or invocation
-		case GroupStream::GROUP_MEDIA_START: { // Start a splitted media sequence
-			UInt64 counter = packet.read7BitLongValue();
-			UInt8 splitNumber = packet.read8(); // counter of the splitted sequence
-			_splittedMediaType = packet.read8();
-			time = packet.read32();
+		case GroupStream::GROUP_MEDIA_DATA: {
 
-			DEBUG("GroupStream ", id, " - Group ", (_splittedMediaType == AMF::AUDIO ? "Audio" : (_splittedMediaType == AMF::VIDEO ? "Video" : "Unknown")), " Start Splitted media : counter=", counter, ", time=", time, ", splitNumber=", splitNumber)
-			if (_splittedMediaType == AMF::AUDIO || _splittedMediaType == AMF::VIDEO) {
-				_splittedTime = time;
-				_splittedLostRate = lostRate;
-				_splittedContent.clear();
-				Buffer::Append(_splittedContent, packet.current(), packet.available());
+			UInt64 counter = packet.read7BitLongValue();
+			DEBUG("GroupStream ", id, " - Group media message 20 : counter=", counter)
+			if (*packet.current() == AMF::AUDIO || *packet.current() == AMF::VIDEO) {
+				UInt8 mediaType = packet.read8();
+				time = packet.read32();
+				OnFragment::raise(_peerId, type, counter, 0, mediaType, time, packet, lostRate);
+				break;
 			}
 			else
-				ERROR("Media type ", Format<UInt8>("%02X", _splittedMediaType), " not supported (or data decoding error)")
+				return FlashStream::process(packet, writer, lostRate); // recursive call, can be invocation or other
+		} case GroupStream::GROUP_MEDIA_START: { // Start a splitted media sequence
+
+			UInt64 counter = packet.read7BitLongValue();
+			UInt8 splitNumber = packet.read8(); // counter of the splitted sequence
+			UInt8 mediaType = packet.read8();
+			time = packet.read32();
+
+			DEBUG("GroupStream ", id, " - Group ", (mediaType == AMF::AUDIO ? "Audio" : (mediaType == AMF::VIDEO ? "Video" : "Unknown")), " Start Splitted media : counter=", counter, ", time=", time, ", splitNumber=", splitNumber)
+			if (mediaType == AMF::AUDIO || mediaType == AMF::VIDEO)
+				OnFragment::raise(_peerId, type, counter, splitNumber, mediaType, time, packet, lostRate);
+			else
+				ERROR("Media type ", Format<UInt8>("%02X", mediaType), " not supported (or data decoding error)")
 			break;
 		}
 		case GroupStream::GROUP_MEDIA_NEXT: { // Continue a splitted media sequence
-			if (_splittedMediaType != AMF::AUDIO && _splittedMediaType != AMF::VIDEO)
-				break;
 
 			UInt64 counter = packet.read7BitLongValue();
 			UInt8 splitNumber = packet.read8(); // counter of the splitted sequence
 			DEBUG("GroupStream ", id, " - Group next Splitted media : counter=", counter, ", splitNumber=", splitNumber)
-			Buffer::Append(_splittedContent, packet.current(), packet.available());
+			OnFragment::raise(_peerId, type, counter, splitNumber, 0, 0, packet, lostRate);
 			break;
 		}
 		case GroupStream::GROUP_MEDIA_END: { // End of a splitted media sequence
-			if (_splittedMediaType != AMF::AUDIO && _splittedMediaType != AMF::VIDEO)
-				break;
 
 			UInt64 counter = packet.read7BitLongValue();
-			Buffer::Append(_splittedContent, packet.current(), packet.available());
-			PacketReader content(_splittedContent.data(), _splittedContent.size());
-
-			DEBUG("GroupStream ", id, " - Group ", (_splittedMediaType == AMF::AUDIO ? "Audio" : (_splittedMediaType == AMF::VIDEO ? "Video" : "Unknown")), " End splitted media : counter=", counter)
-			if (_splittedMediaType == AMF::AUDIO)
-				audioHandler(_splittedTime, content, lostRate);
-			else if (_splittedMediaType == AMF::VIDEO)
-				videoHandler(_splittedTime, content, lostRate);
+			DEBUG("GroupStream ", id, " - Group End splitted media : counter=", counter)
+			OnFragment::raise(_peerId, type, counter, 1, 0, 0, packet, lostRate);
 			break;
 		}
 

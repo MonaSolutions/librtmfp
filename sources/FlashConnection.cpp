@@ -26,6 +26,7 @@ FlashConnection::~FlashConnection() {
 		it.second->OnGroupPlayPull::unsubscribe((OnGroupPlayPull&)*this);
 		it.second->OnFragmentsMap::unsubscribe((OnFragmentsMap&)*this);
 		it.second->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
+		it.second->OnFragment::unsubscribe((OnFragment&)*this);
 	}
 }
 
@@ -63,6 +64,7 @@ FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStr
 	pStream->OnGroupPlayPull::subscribe((OnGroupPlayPull&)*this);
 	pStream->OnFragmentsMap::subscribe((OnFragmentsMap&)*this);
 	pStream->OnGroupBegin::subscribe((OnGroupBegin&)*this);
+	pStream->OnFragment::subscribe((OnFragment&)*this);
 
 	return pStream.get();
 }

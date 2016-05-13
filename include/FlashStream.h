@@ -18,6 +18,7 @@ namespace FlashEvents {
 	struct OnGroupPlayPull : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 	struct OnFragmentsMap : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 	struct OnGroupBegin : Mona::Event<void(const std::string& peerId, FlashWriter& writer)> {};
+	struct OnFragment : Mona::Event<void(const std::string& peerId, Mona::UInt8 type, Mona::UInt64 id, Mona::UInt8 splitNumber, Mona::UInt8 mediaType, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate)> {};
 };
 
 /**************************************************************
@@ -34,7 +35,8 @@ class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnGroupPlayPush,
 	public FlashEvents::OnGroupPlayPull,
 	public FlashEvents::OnFragmentsMap,
-	public FlashEvents::OnGroupBegin {
+	public FlashEvents::OnGroupBegin,
+	public FlashEvents::OnFragment {
 public:
 
 	FlashStream(Mona::UInt16 id);

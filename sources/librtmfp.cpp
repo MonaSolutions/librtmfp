@@ -81,9 +81,10 @@ int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const c
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (pConn)
-		pConn->connect2Group(netGroup, streamName, publisher==1, availabilityUpdatePeriod, windowDuration);
+		pConn->connect2Group(netGroup, streamName, publisher>0, availabilityUpdatePeriod, windowDuration);
 
-	pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
+	if (publisher>0)
+		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
 
 	if (blocking && publisher) {
 		while (!pConn->publishReady) {

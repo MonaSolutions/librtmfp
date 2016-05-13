@@ -177,6 +177,7 @@ protected:
 	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object
 	Mona::PoolThread*										_pThread; // Thread used to send last message
 
+private:
 	// Asynchronous read
 	struct RTMFPMediaPacket {
 
@@ -192,7 +193,5 @@ protected:
 	// Read
 	bool																		_firstMedia;
 	Mona::UInt32																_timeStart;
-
-	// Write members
-	bool																		_firstWrite; // True if the input file has already been read
+	bool																		_codecInfosRead; // Player : False until the video codec infos have been read
 };

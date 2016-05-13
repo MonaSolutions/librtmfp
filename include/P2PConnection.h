@@ -19,7 +19,8 @@ class P2PConnection : public FlowManager,
 	public FlashEvents::OnGroupPlayPush,
 	public FlashEvents::OnGroupPlayPull,
 	public FlashEvents::OnFragmentsMap,
-	public FlashEvents::OnGroupBegin {
+	public FlashEvents::OnGroupBegin,
+	public FlashEvents::OnFragment {
 	friend class RTMFPConnection;
 public:
 	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, const Mona::Buffer& pubKey, bool responder);
@@ -74,7 +75,7 @@ public:
 	void setPushMode(Mona::UInt8 mode);
 
 	// Update the Group Play Push mode
-	void updatePlayMode(Mona::UInt8 mode);
+	void sendPushMode(Mona::UInt8 mode);
 
 	// Send the group begin message (02 + 0E messages)
 	void sendGroupBegin();
@@ -140,7 +141,8 @@ private:
 	bool						_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	std::shared_ptr<NetGroup>	_group; // Group pointer if netgroup connection
 
-	Mona::UInt8					_pushMode; // Group Publish/Play Push mode
+	Mona::UInt8					_pushOutMode; // Group Publish Push mode
+	Mona::UInt8					_pushInMode; // Group Play Push mode
 
 	RTMFPFlow*					_pMediaFlow; // Flow for media packets
 	RTMFPFlow*					_pFragmentsFlow; // Flow for fragments Map messages and media related messages

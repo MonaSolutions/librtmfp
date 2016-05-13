@@ -32,11 +32,4 @@ public:
 
 protected:
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
-
-private:
-
-	Mona::UInt8		_splittedMediaType;
-	Mona::UInt32	_splittedTime;
-	double			_splittedLostRate;
-	Mona::Buffer	_splittedContent;
 };

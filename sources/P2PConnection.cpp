@@ -13,7 +13,7 @@ UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
-	_pListener(NULL), _pushMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), lastGroupReport(0), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_pListener(NULL), _pushOutMode(0), _pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), lastGroupReport(0), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_outAddress = _hostAddress = hostAddress;
 
@@ -29,6 +29,7 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 	_pMainStream->OnGroupPlayPull::subscribe((OnGroupPlayPull&)*this);
 	_pMainStream->OnFragmentsMap::subscribe((OnFragmentsMap&)*this);
 	_pMainStream->OnGroupBegin::subscribe((OnGroupBegin&)*this);
+	_pMainStream->OnFragment::subscribe((OnFragment&)*this);
 }
 
 P2PConnection::~P2PConnection() {
@@ -40,6 +41,7 @@ P2PConnection::~P2PConnection() {
 	_pMainStream->OnGroupPlayPull::unsubscribe((OnGroupPlayPull&)*this);
 	_pMainStream->OnFragmentsMap::unsubscribe((OnFragmentsMap&)*this);
 	_pMainStream->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
+	_pMainStream->OnFragment::unsubscribe((OnFragment&)*this);
 	close();
 	_pMediaFlow = NULL;
 	_parent = NULL;
@@ -59,7 +61,9 @@ RTMFPFlow* P2PConnection::createSpecialFlow(UInt64 id, const string& signature) 
 		RTMFPFlow* pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
 		pFlow->setPeerId(peerId);
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
-			_pReportFlow = pFlow; // Record the NetGroup
+			_pReportFlow = pFlow; // Record the NetGroup stream
+		else if (signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)
+			_pFragmentsFlow = pFlow; // Record the NetGroup Media Report stream
 		return pFlow;
 	}
 	return NULL;
@@ -479,16 +483,16 @@ void P2PConnection::sendFragmentsMap(const UInt8* data, UInt32 size) {
 
 void P2PConnection::setPushMode(UInt8 mode) {
 	INFO("Setting Group Push mode to ", Format<UInt8>("%.2x", mode));
-	_pushMode = mode;
+	_pushOutMode = mode;
 }
 
 bool P2PConnection::isPushable(UInt8 rest) {
-	return (_pushMode & (1 << rest)) > 0;
+	return (_pushOutMode & (1 << rest)) > 0;
 }
 
-void P2PConnection::updatePlayMode(UInt8 mode) {
-	if (_pFragmentsFlow && _pushMode != mode) {
+void P2PConnection::sendPushMode(UInt8 mode) {
+	if (_pFragmentsFlow && _pushInMode != mode) {
 		_pFragmentsFlow->sendGroupPlay(mode);
-		_pushMode = mode;
+		_pushInMode = mode;
 	}
 }

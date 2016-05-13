@@ -29,6 +29,26 @@ public:
 
 private:
 
+	// Fragments 
+	struct MediaPacket {
+
+		MediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 totalSize, Mona::UInt32 time, AMF::ContentType mediaType,
+			Mona::UInt64 fragmentId, Mona::UInt8 groupMarker, Mona::UInt8 splitId);
+
+		Mona::UInt32 payloadSize() { return pBuffer.size() - (payload - pBuffer.data()); };
+
+		Mona::PoolBuffer	pBuffer;
+		Mona::UInt32		time;
+		AMF::ContentType	type;
+		const Mona::UInt8*	payload; // Payload position
+		Mona::UInt8			marker;
+		Mona::UInt8			splittedId;
+	};
+	std::map<Mona::UInt64, MediaPacket>						_fragments;
+	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment;
+	Mona::UInt64											_fragmentCounter;
+	std::recursive_mutex									_fragmentMutex;
+
 	// Update the fragment map
 	// Return False if there is no fragments, otherwise true
 	bool	updateFragmentMap();
@@ -37,20 +57,8 @@ private:
 	// Return false if the peer is not found
 	bool	buildGroupReport(const std::string& peerId);
 
-	// Fragments 
-	struct MediaPacket {
-
-		MediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 time, AMF::ContentType type,
-			Mona::UInt64 fragmentId, Mona::UInt8 marker, Mona::UInt8 splitId);
-
-		Mona::PoolBuffer	pBuffer;
-		Mona::UInt32		time;
-		Mona::UInt16		fragmentSize;
-	};
-	std::map<Mona::UInt64, MediaPacket>						_fragments;
-	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment;
-	Mona::UInt64											_fragmentCounter;
-	std::recursive_mutex									_fragmentMutex;
+	// Push an arriving fragment to the peers and write into the output file (recursive function)
+	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator itFragment);
 
 	double													_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
 	Mona::UInt16											_windowDuration; // NetStream.multicastWindowDuration equivalent in msec
@@ -61,6 +69,7 @@ private:
 	FlashEvents::OnGroupPlayPull::Type						onGroupPlayPull;
 	FlashEvents::OnFragmentsMap::Type						onFragmentsMap;
 	FlashEvents::OnGroupBegin::Type							onGroupBegin;
+	FlashEvents::OnFragment::Type							onFragment;
 	GroupEvents::OnMedia::Type								onMedia;
 
 	Mona::Buffer											_streamCode; // 2101 + Random key on 32 bytes to be send in the publication infos packet
