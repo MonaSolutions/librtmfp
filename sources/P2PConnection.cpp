@@ -58,12 +58,17 @@ RTMFPFlow* P2PConnection::createSpecialFlow(UInt64 id, const string& signature) 
 		|| (signature.size() > 3 && signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0)) {  // NetGroup Media stream
 		shared_ptr<FlashStream> pStream;
 		_pMainStream->addStream(pStream, true);
-		RTMFPFlow* pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
-		pFlow->setPeerId(peerId);
-		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
-			_pReportFlow = pFlow; // Record the NetGroup stream
-		else if (signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)
-			_pFragmentsFlow = pFlow; // Record the NetGroup Media Report stream
+		RTMFPFlow* pFlow = NULL;
+		if (signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0 && _pFragmentsFlow)
+			pFlow = _pFragmentsFlow; // if Fragements flow exists already we keep the 1st one
+		else {
+			pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
+			pFlow->setPeerId(peerId);
+			if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
+				_pReportFlow = pFlow; // Record the NetGroup stream
+			else if (signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)
+				_pFragmentsFlow = pFlow; // Record the NetGroup Media Report stream
+		}
 		return pFlow;
 	}
 	return NULL;

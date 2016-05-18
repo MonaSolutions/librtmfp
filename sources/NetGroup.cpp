@@ -299,13 +299,14 @@ bool NetGroup::updateFragmentMap() {
 	}
 
 	// Generate the report message
-	if (_pListener) { // Publisher : We have all fragments
-		UInt64 firstFragment = _fragments.begin()->first;
-		UInt64 nbFragments = _fragmentCounter - firstFragment;
+	UInt64 firstFragment = _fragments.begin()->first;
+	UInt64 nbFragments = _fragmentCounter - firstFragment;
+	_reportBuffer.resize((UInt32)((nbFragments / 8) + 1) + Util::Get7BitValueSize(_fragmentCounter) + 1, false);
+	BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
+	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(_fragmentCounter);
 
-		_reportBuffer.resize((UInt32)((nbFragments / 8) + 1) + Util::Get7BitValueSize(_fragmentCounter) + 1, false);
-		BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
-		writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(_fragmentCounter);
+	if (isPublisher) { // Publisher : We have all fragments
+		
 		while (nbFragments > 8) {
 			writer.write8(0xFF);
 			nbFragments -= 8;
@@ -318,7 +319,17 @@ bool NetGroup::updateFragmentMap() {
 		writer.write8(lastByte);
 	}
 	else {
-		//TODO
+		// Loop on each byte
+		UInt64 index = _fragmentCounter-1;
+		while (index >= firstFragment) {
+
+			UInt8 currentByte = 0;
+			for (UInt8 fragment = 0; fragment < 8 && (index-fragment)>0; fragment++) {
+				if (_fragments.find(index - fragment) != _fragments.end())
+					currentByte += (1 << fragment);
+			}
+			index -= 8;
+		}
 	}
 
 	return true;
