@@ -533,13 +533,13 @@ AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* dat
 }
 
 void RTMFPWriter::writeGroup(const string& netGroup) {
-	string tmp(netGroup.c_str()); // To avoid memory sharing (linux)
+	string tmp(netGroup.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 	createMessage().writer().packet.write8(GroupStream::GROUP_INIT).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
 }
 
 void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const string& peerId/*, bool initiator*/) {
 
-	string id(peerId.c_str()); // To avoid memory sharing (linux)
+	string id(peerId.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
 	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);

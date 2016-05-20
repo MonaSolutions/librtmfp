@@ -44,6 +44,9 @@ public:
 	// Compute keys and init encoder and decoder
 	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, Mona::Buffer& sharedSecret, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
 
+	// Latency = ping / 2
+	Mona::UInt16							latency() { return (_ping >> 1); }
+
 	virtual Mona::UDPSocket&				socket() = 0;
 
 	/******* Internal functions for writers *******/
@@ -178,6 +181,12 @@ protected:
 	Mona::PoolThread*										_pThread; // Thread used to send last message
 
 private:
+
+	// Update the ping value
+	void setPing(Mona::UInt16 time, Mona::UInt16 timeEcho);
+
+	Mona::UInt16											_ping;
+
 	// Asynchronous read
 	struct RTMFPMediaPacket {
 

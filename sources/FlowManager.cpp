@@ -35,7 +35,7 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_timeReceived(0),_handshakeStep(0),_firstMedia(true),_timeStart(0), _codecInfosRead(false),
-	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _pubKey(0x80), _nonce(0x8B),
+	_died(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), _pThread(NULL), _farId(0), _pubKey(0x80), _nonce(0x8B), _ping(0),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
 	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
 	_pDefaultDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)) {
@@ -188,14 +188,7 @@ void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, 
 	case 0xFE: {
 		UInt16 time = RTMFP::TimeNow();
 		UInt16 timeEcho = reader.read16();
-		/*if (timeEcho>time) {
-		if (timeEcho - time<30)
-		time = 0;
-		else
-		time += 0xFFFF - timeEcho;
-		timeEcho = 0;
-		}
-		peer.setPing((time-timeEcho)*RTMFP_TIMESTAMP_SCALE);*/
+		setPing(time,timeEcho);
 	}
 	case 0xF9:
 	case 0xFA:
@@ -204,6 +197,18 @@ void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, 
 	default:
 		WARN("Unexpected RTMFP marker : ", Format<UInt8>("%02x", marker));
 	}
+}
+
+void FlowManager::setPing(UInt16 time, UInt16 timeEcho) {
+	if (timeEcho > time) {
+		if (timeEcho - time<30)
+			time = 0;
+		else
+			time += 0xFFFF - timeEcho;
+		timeEcho = 0;
+	}
+	UInt16 value = (time - timeEcho) * RTMFP_TIMESTAMP_SCALE;
+	_ping = (value == 0 ? 1 : value);
 }
 
 bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& nbRead) {

@@ -147,7 +147,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 					WARN(ex.error()) // TODO : See if we can send a specific answer
 					return;
 				}
-				INFO("First push request, starting to play Stream ", stream)
+				INFO("First viewer play request, starting to play Stream ", stream)
 				// A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 				_pListener->OnMedia::subscribe(onMedia);
 				_conn.publishReady = true;
@@ -186,7 +186,6 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			INFO("Sending the group report to ", peerId)
 			auto it = _mapPeers.find(peerId);
 			it->second->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
-			it->second->sendGroupBegin();
 		}
 	};
 
@@ -248,7 +247,6 @@ void NetGroup::addPeer(string peerId, shared_ptr<P2PConnection> pPeer) {
 }
 
 void NetGroup::manage() {
-
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	// Send the Fragments Map message
@@ -257,10 +255,8 @@ void NetGroup::manage() {
 
 			// Send to all neighbors
 			for (auto it : _mapPeers) {
-				if (it.second->connected) {
-					DEBUG("Sending Fragments Map message (type 22) to peer ", it.first, " - counter : ", _fragmentCounter)
+				if (it.second->connected)
 					it.second->sendFragmentsMap(_reportBuffer.data(), _reportBuffer.size());
-				}
 			}
 			_lastFragmentsMap.update();
 		}
@@ -287,6 +283,7 @@ bool NetGroup::updateFragmentMap() {
 	if (it != _fragments.end()) {
 		UInt32 end = it->second.time;
 
+		// TODO: See if we need to delete only on fragments map 'key' values
 		auto itTime = _mapTime2Fragment.lower_bound(end - _windowDuration);
 		if (itTime != _mapTime2Fragment.end() && (end - itTime->first) > _windowDuration)
 			itTime--; // To not delete more than the window duration
@@ -361,7 +358,7 @@ bool NetGroup::buildGroupReport(const string& peerId) {
 		// TODO: check if it is time since last report message
 		UInt8 timeElapsed = (UInt8)((itPeer.second->lastGroupReport > 0) ? ((Time::Now() - itPeer.second->lastGroupReport) / 1000) : 0);
 		DEBUG("Group 0A argument - Peer ", itPeer.first, " - elapsed : ", timeElapsed)
-		string id(itPeer.first.c_str());
+		string id(itPeer.first.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 		writer.write32(0x0022210F).write(Util::UnformatHex(id));
 		writer.write8(timeElapsed);
 		writer.write8(itPeer.second->peerAddress().host().size() + _conn.serverAddress().host().size() + 7);

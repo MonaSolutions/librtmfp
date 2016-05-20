@@ -408,7 +408,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		return true;
 	}
 
-	string id = it->second->peerId.c_str(); // To avoid memory sharing (linux)
+	string id = it->second->peerId.c_str(); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 	id = Util::UnformatHex(id);
 
 	SocketAddress address;
@@ -488,7 +488,7 @@ void RTMFPConnection::responderHandshake0(Exception& ex, BinaryReader& reader) {
 		reader.read(16, tag);
 		INFO("P2P Connection request from ", _outAddress.toString())
 
-		auto it = _mapPeersByAddress.lower_bound(_outAddress);
+		auto it = _mapPeersByAddress.find(_outAddress);
 		if (it != _mapPeersByAddress.end()) {
 			WARN("The peer is already connected to us (same address)")
 			return;
@@ -614,7 +614,7 @@ void RTMFPConnection::sendConnections() {
 		auto it = _mapPeersByTag.find(tag);
 		if (it != _mapPeersByTag.end()) {
 			INFO("Sending P2P handshake 30 to server (peerId : ", it->second->peerId, ")")
-			id = it->second->peerId.c_str();  // To avoid memory sharing (linux)
+			id = it->second->peerId.c_str(); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 			it->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), tag);
 			it->second->lastTry.start();
 			it->second->attempt++;

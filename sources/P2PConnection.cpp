@@ -467,6 +467,7 @@ void P2PConnection::sendGroupReport(const UInt8* data, UInt32 size) {
 		return;
 	}
 	_pReportFlow->sendRaw(data, size);
+	sendGroupBegin();
 }
 
 void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, bool pull) {
@@ -482,8 +483,10 @@ void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, b
 }
 
 void P2PConnection::sendFragmentsMap(const UInt8* data, UInt32 size) {
-	if (_pFragmentsFlow)
+	if (_pFragmentsFlow) {
+		DEBUG("Sending Fragments Map message (type 22) to peer ", peerId)
 		_pFragmentsFlow->sendRaw(data, size, true);
+	}
 }
 
 void P2PConnection::setPushMode(UInt8 mode) {
