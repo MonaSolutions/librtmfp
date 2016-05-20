@@ -33,8 +33,9 @@ To use it just do a git clone and run the following command in FFmpeg directory 
 ./configure --disable-yasm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-debug && make
 
 **Notes:**
- - You must install first librtmp and libspeex developer versions (-dev or -devel)
- - You can remove --enable-debug if you doesn't want to debug ffmpeg
+
+- You must install first librtmp and libspeex developer versions (-dev or -devel)
+- You can remove --enable-debug if you doesn't want to debug ffmpeg
 
 #### How to install librtmp and libspeex developer versions?
 
@@ -60,16 +61,17 @@ Please read the following page to have all informations about compilation with M
 
 The integration of FFmpeg on Windows require the use of mingw and yasm, so first install the prerequisites into a folder (for example *c:\99*) :
 
- * ​[C99-to-C89 Converter](https://github.com/libav/c99-to-c89/) & Wrapper if using MSVC 2012 or earlier.
- *​ [msinttypes](http://code.google.com/p/msinttypes/) if using MSVC 2012 or earlier.
- * ​[MSYS](http://www.mingw.org/)
- * ​[YASM](http://yasm.tortall.net/) (install the normal version, not the VS2010 version)
+- ​[C99-to-C89 Converter](https://github.com/libav/c99-to-c89/) & Wrapper if using MSVC 2012 or earlier.
+-​ [msinttypes](http://code.google.com/p/msinttypes/) if using MSVC 2012 or earlier.
+- ​[MSYS](http://www.mingw.org/)
+- ​[YASM](http://yasm.tortall.net/) (install the normal version, not the VS2010 version)
 
 **Note:** For MSYS after installing mingw-get you must :
- * Install msys with the following command :
+
+- Install msys with the following command :
  
      mingw-get install msys
- * Copy the **pr.exe** file from [msys-coreutils](http://sourceforge.net/projects/mingw/files/MSYS/Base/msys-core/_obsolete/coreutils-5.97-MSYS-1.0.11-2/coreutils-5.97-MSYS-1.0.11-snapshot.tar.bz2/download) image to the msys/bin folder.
+- Copy the **pr.exe** file from [msys-coreutils](http://sourceforge.net/projects/mingw/files/MSYS/Base/msys-core/_obsolete/coreutils-5.97-MSYS-1.0.11-2/coreutils-5.97-MSYS-1.0.11-snapshot.tar.bz2/download) image to the msys/bin folder.
  
 Then, you need to add the folder c:\c99 into your PATH environment variable.
 
