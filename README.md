@@ -62,7 +62,7 @@ Please read the following page to have all informations about compilation with M
 The integration of FFmpeg on Windows require the use of mingw and yasm, so first install the prerequisites into a folder (for example *c:\99*) :
 
 - ​[C99-to-C89 Converter](https://github.com/libav/c99-to-c89/) & Wrapper if using MSVC 2012 or earlier.
--​ [msinttypes](http://code.google.com/p/msinttypes/) if using MSVC 2012 or earlier.
+- [msinttypes](http://code.google.com/p/msinttypes/) if using MSVC 2012 or earlier.
 - ​[MSYS](http://www.mingw.org/)
 - ​[YASM](http://yasm.tortall.net/) (install the normal version, not the VS2010 version)
 
@@ -70,7 +70,14 @@ The integration of FFmpeg on Windows require the use of mingw and yasm, so first
 
 - Install msys with the following command :
  
-     mingw-get install msys
+
+```
+#!shell
+
+mingw-get install msys
+```
+
+
 - Copy the **pr.exe** file from [msys-coreutils](http://sourceforge.net/projects/mingw/files/MSYS/Base/msys-core/_obsolete/coreutils-5.97-MSYS-1.0.11-2/coreutils-5.97-MSYS-1.0.11-snapshot.tar.bz2/download) image to the msys/bin folder.
  
 Then, you need to add the folder c:\c99 into your PATH environment variable.
