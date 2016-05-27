@@ -265,4 +265,5 @@ void FlashStream::sendRaw(FlashWriter& writer, const UInt8* data, UInt32 size) {
 
 void FlashStream::sendGroupPlay(FlashWriter& writer, UInt8 mode) {
 	writer.writeGroupPlay(mode);
+	writer.flush();
 }

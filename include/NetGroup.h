@@ -7,6 +7,7 @@
 #include "GroupListener.h"
 
 #define NETGROUP_MAX_PACKET_SIZE		959
+#define MAX_FRAGMENT_MAP_SIZE			1024
 
 class P2PConnection;
 class NetGroup : public virtual Mona::Object {
@@ -45,7 +46,7 @@ private:
 		Mona::UInt8			splittedId;
 	};
 	std::map<Mona::UInt64, MediaPacket>						_fragments;
-	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment;
+	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
 	Mona::UInt64											_fragmentCounter;
 	std::recursive_mutex									_fragmentMutex;
 
@@ -57,10 +58,13 @@ private:
 	// Return false if the peer is not found
 	bool	buildGroupReport(const std::string& peerId);
 
-	// Push an arriving fragment to the peers and write into the output file (recursive function)
+	// Push an arriving fragment to the peers and write it into the output file (recursive function)
 	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator itFragment);
 
-	double													_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
+	// Calculate the pull & play mode balance and send the requests if needed
+	void	updatePlayMode();
+
+	Mona::Int64												_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
 	Mona::UInt16											_windowDuration; // NetStream.multicastWindowDuration equivalent in msec
 
 	FlashEvents::OnGroupMedia::Type							onGroupMedia;
@@ -78,9 +82,10 @@ private:
 	std::map<std::string, FlashWriter*>						_mapId2Writer; // Map of peers ID to report writers
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPConnection&										_conn; // RTMFPConnection related to
+	Mona::Time												_lastPlayUpdate; // last Play Pull & Push calculation
 	Mona::Time												_lastReport; // last Report Message time
 	Mona::Time												_lastFragmentsMap; // last Fragments Map Message time
 	Mona::Buffer											_reportBuffer; // Buffer for reporting messages
 
-	Mona::UInt64											_lastSent; // Last fragment id sent
+	bool													_firstPushMode; // True if no play push mode have been send for now
 };

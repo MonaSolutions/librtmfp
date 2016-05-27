@@ -13,7 +13,8 @@ UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
-	_pListener(NULL), _pushOutMode(0), _pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), lastGroupReport(0), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), lastGroupReport(0), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0),
+	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 
 	_outAddress = _hostAddress = hostAddress;
 
@@ -490,7 +491,7 @@ void P2PConnection::sendFragmentsMap(const UInt8* data, UInt32 size) {
 }
 
 void P2PConnection::setPushMode(UInt8 mode) {
-	INFO("Setting Group Push mode to ", Format<UInt8>("%.2x", mode));
+	INFO("Setting Group Push Out mode to ", Format<UInt8>("%.2x", mode), " for neighbor at address ", _outAddress.toString());
 	_pushOutMode = mode;
 }
 
@@ -499,8 +500,34 @@ bool P2PConnection::isPushable(UInt8 rest) {
 }
 
 void P2PConnection::sendPushMode(UInt8 mode) {
-	if (_pFragmentsFlow && _pushInMode != mode) {
+	if (_pFragmentsFlow && pushInMode != mode) {
+		INFO("Setting Group Push In mode to ", Format<UInt8>("%.2x", mode), " for neighbor at address ", _outAddress.toString());
+
 		_pFragmentsFlow->sendGroupPlay(mode);
-		_pushInMode = mode;
+		pushInMode = mode;
 	}
+}
+
+void P2PConnection::updateFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
+	_idFragmentMap = id;
+
+	_fragmentsMap.resize(size);
+	BinaryWriter writer(_fragmentsMap.data(), size);
+	writer.write(data, size);
+}
+
+bool P2PConnection::checkMask(UInt8 bitNumber) {
+	if (!_idFragmentMap)
+		return false;
+
+	if (_idFragmentMap % 8 == bitNumber)
+		return true;
+
+	UInt64 lastFragment = _idFragmentMap - (_idFragmentMap % 8);
+	lastFragment += ((_idFragmentMap % 8) > bitNumber) ? bitNumber : bitNumber - 8;
+
+	DEBUG("Searching ", lastFragment, " into ", Format<UInt8>("%.2x", *_fragmentsMap.data()), " ; (current id : ", _idFragmentMap, ") ; result = ", 
+		((*_fragmentsMap.data()) & (1 << (8 - (_idFragmentMap - lastFragment)))) > 0, " ; bit number : ", bitNumber)
+
+	return ((*_fragmentsMap.data()) & (1 << (8 - (_idFragmentMap - lastFragment)))) > 0;
 }

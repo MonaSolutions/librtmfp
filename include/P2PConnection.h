@@ -35,6 +35,12 @@ public:
 	// Set the tag used for this connection (responder mode)
 	void setTag(const std::string& tag) { _tag = tag; }
 
+	// Update the Group Fragments map
+	void updateFragmentsMap(Mona::UInt64 id, const Mona::UInt8* data, Mona::UInt32 size);
+
+	// Return True if bit number is available in the fragments map (for push out mode)
+	bool checkMask(Mona::UInt8 bitNumber);
+
 	// Set the group
 	void setGroup(std::shared_ptr<NetGroup> group) { _group = group; }
 	void resetGroup() { _group.reset(); }
@@ -107,6 +113,9 @@ public:
 
 	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
 	Mona::UInt64					lastGroupReport; // Time in msec of First Group report received
+
+	Mona::UInt8						pushInMode; // Group Play Push mode
+
 protected:
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer);
@@ -142,14 +151,11 @@ private:
 	std::shared_ptr<NetGroup>	_group; // Group pointer if netgroup connection
 
 	Mona::UInt8					_pushOutMode; // Group Publish Push mode
-	Mona::UInt8					_pushInMode; // Group Play Push mode
 
 	RTMFPFlow*					_pMediaFlow; // Flow for media packets
 	RTMFPFlow*					_pFragmentsFlow; // Flow for fragments Map messages and media related messages
 	RTMFPFlow*					_pReportFlow; // Flow for report messages
 
-	//std::string				_groupHex; // Group ID encrypted (double sha256) in Hex format
-	//std::string				_groupTxt; // Group ID in plain text (without ending zeroes)
-
-	//FlashStream::OnGroupMedia::Type	onGroupMedia; // Called when a peer signal us that their is a stream available in the NetGroup
+	Mona::Buffer				_fragmentsMap; // Last Fragments Map received
+	Mona::UInt64				_idFragmentMap; // Last Fragments Map id
 };
