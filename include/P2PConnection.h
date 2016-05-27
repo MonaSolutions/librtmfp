@@ -102,9 +102,6 @@ public:
 	// Create a flow for special signatures (NetGroup)
 	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
 
-	// Does the connection is terminated? => can be deleted by parent
-	bool						consumed() { return _died; }
-
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
 	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
 
@@ -126,7 +123,7 @@ protected:
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
 	
-	// Close the conection properly
+	// Close the connection properly
 	virtual void				close();
 
 private:

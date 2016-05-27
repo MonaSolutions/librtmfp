@@ -531,8 +531,10 @@ void RTMFPConnection::manage() {
 	auto it = _mapPeersByAddress.begin();
 	while (it != _mapPeersByAddress.end()) {
 		shared_ptr<P2PConnection>& pPeer(it->second);
-		if (pPeer->consumed()) { // delete if dead
+		if (pPeer->failed()) { // delete if dead
 			NOTE("Deletion of p2p connection to ", _outAddress.toString())
+			if (_group)
+				_group->removePeer(pPeer->peerId);
 			_mapPeersByAddress.erase(it++);
 			continue;
 		}

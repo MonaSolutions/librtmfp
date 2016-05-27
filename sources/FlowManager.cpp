@@ -215,7 +215,7 @@ bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& 
 	
 	nbRead = 0;
 	if (_died)
-		return false; // to stop the parent loop
+		return true; // do not stop the parent loop
 
 	lock_guard<recursive_mutex> lock(_readMutex);
 	if (!_mediaPackets[peerId].empty()) {
@@ -282,7 +282,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			writeMessage(0x0C, 0);
 			break;
 		case 0x4c : // P2P closing session (only for p2p I think)
-			INFO("P2P Session at ", _outAddress.toString(), " is closed")
+			INFO("P2P Session at ", _outAddress.toString(), " is closing")
 			connected = false;
 			close();
 			return;

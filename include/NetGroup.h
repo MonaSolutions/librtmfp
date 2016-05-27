@@ -18,7 +18,10 @@ public:
 	void close();
 
 	// Add a peer to the NetGroup map
-	void addPeer(std::string peerId, std::shared_ptr<P2PConnection> pPeer);
+	void addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
+
+	// Remove a peer from the NetGroup map
+	void removePeer(const std::string& peerId);
 
 	// Send report requests (messages 0A, 22)
 	void manage();
@@ -29,6 +32,8 @@ public:
 	const bool isPublisher;
 
 private:
+
+	void removePeer(const std::pair<std::string, std::shared_ptr<P2PConnection>>& itPeer);
 
 	// Fragments 
 	struct MediaPacket {

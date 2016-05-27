@@ -53,8 +53,10 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				_mapTime2Fragment[time] = _fragmentCounter;
 
 			// Send fragment to peers (push mode)
-			for (auto it : _mapPeers)
-				it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), _fragmentCounter);
+			for (auto it : _mapPeers) {
+				if (it.second->connected)
+					it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), _fragmentCounter);
+			}
 
 			pos += splitCounter > 1 ? NETGROUP_MAX_PACKET_SIZE : (end - pos);
 			splitCounter--;
@@ -74,8 +76,10 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		// Send fragment to peers (push mode)
 		if (newFragment) {
-			for (auto it : _mapPeers)
-				it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), id);
+			for (auto it : _mapPeers) {
+				if (it.second->connected)
+					it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), id);
+			}
 		}
 
 		if (marker == GroupStream::GROUP_MEDIA_DATA || marker == GroupStream::GROUP_MEDIA_START)
@@ -113,9 +117,13 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	};
 	onGroupReport = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		string key1, key2, keyPeer, tmpId;
-		DEBUG("Group message 0A - 1st parameter : ", Util::FormatHex(BIN packet.read(8, key1).data(), 8, LOG_BUFFER))
+
+		packet.read(8, key1);
 		UInt8 size = packet.read8();
-		DEBUG("Group message 0A - 2nd parameter : ", Util::FormatHex(BIN packet.read(size, key2).data(), 8, LOG_BUFFER))
+		packet.read(size, key2);
+		
+		DEBUG("Group message 0A - 1st parameter : ", Util::FormatHex(BIN key1.data(), key2.size(), LOG_BUFFER))
+		DEBUG("Group message 0A - 2nd parameter : ", Util::FormatHex(BIN key2.data(), key2.size(), LOG_BUFFER))
 
 		// Loop on each peer of the NetGroup
 		while (packet.available() > 4) {
@@ -124,10 +132,13 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				break;
 			}
 			packet.read(PEER_ID_SIZE, tmpId);
-			DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN tmpId.data(), PEER_ID_SIZE, LOG_BUFFER))
-			DEBUG("Group message 0A - Time elapsed : ", packet.read7BitLongValue())
+			UInt64 time = packet.read7BitLongValue();
 			size = packet.read8();
-			DEBUG("Group message 0A - infos : ", Util::FormatHex(BIN packet.read(size, keyPeer).data(), size, LOG_BUFFER))
+			packet.read(size, keyPeer);
+
+			DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN tmpId.data(), PEER_ID_SIZE, LOG_BUFFER))
+			DEBUG("Group message 0A - Time elapsed : ", time)
+			DEBUG("Group message 0A - infos : ", Util::FormatHex(BIN keyPeer.data(), size, LOG_BUFFER))
 		}
 
 		auto it = _mapPeers.find(peerId);
@@ -205,7 +216,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			// When we receive the 0E NetGroup message type we must send the group report
 			INFO("Sending the group report to ", peerId)
 			auto it = _mapPeers.find(peerId);
-			it->second->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
+			if (it != _mapPeers.end())
+				it->second->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
 		}
 	};
 
@@ -242,20 +254,14 @@ void NetGroup::close() {
 		}*/
 	}
 
-	for (auto it : _mapPeers) {
-		it.second->OnGroupMedia::unsubscribe(onGroupMedia);
-		it.second->OnGroupReport::unsubscribe(onGroupReport);
-		it.second->OnGroupPlayPush::unsubscribe(onGroupPlayPush);
-		it.second->OnGroupPlayPull::unsubscribe(onGroupPlayPull);
-		it.second->OnFragmentsMap::unsubscribe(onFragmentsMap);
-		it.second->OnGroupBegin::unsubscribe(onGroupBegin);
-		it.second->OnFragment::unsubscribe(onFragment);
-		it.second->resetGroup();
-	}
+	for (auto it : _mapPeers)
+		removePeer(it);
 	_mapPeers.clear();
 }
 
-void NetGroup::addPeer(string peerId, shared_ptr<P2PConnection> pPeer) {
+void NetGroup::addPeer(const string& peerId, shared_ptr<P2PConnection> pPeer) {
+	lock_guard<recursive_mutex> lock(_fragmentMutex);
+
 	_mapPeers.emplace(peerId, pPeer);
 	pPeer->OnGroupMedia::subscribe(onGroupMedia);
 	pPeer->OnGroupReport::subscribe(onGroupReport);
@@ -264,6 +270,27 @@ void NetGroup::addPeer(string peerId, shared_ptr<P2PConnection> pPeer) {
 	pPeer->OnFragmentsMap::subscribe(onFragmentsMap);
 	pPeer->OnGroupBegin::subscribe(onGroupBegin);
 	pPeer->OnFragment::subscribe(onFragment);
+}
+
+void NetGroup::removePeer(const string& peerId) {
+	lock_guard<recursive_mutex> lock(_fragmentMutex);
+
+	auto it = _mapPeers.find(peerId);
+	if (it != _mapPeers.end())
+		removePeer(*it);
+}
+
+void NetGroup::removePeer(const pair<string, shared_ptr<P2PConnection>>& itPeer) {
+	INFO("Deleting peer ", itPeer.first, " from the NetGroup map of peers")
+
+	itPeer.second->OnGroupMedia::unsubscribe(onGroupMedia);
+	itPeer.second->OnGroupReport::unsubscribe(onGroupReport);
+	itPeer.second->OnGroupPlayPush::unsubscribe(onGroupPlayPush);
+	itPeer.second->OnGroupPlayPull::unsubscribe(onGroupPlayPull);
+	itPeer.second->OnFragmentsMap::unsubscribe(onFragmentsMap);
+	itPeer.second->OnGroupBegin::unsubscribe(onGroupBegin);
+	itPeer.second->OnFragment::unsubscribe(onFragment);
+	itPeer.second->resetGroup();
 }
 
 void NetGroup::manage() {
@@ -290,9 +317,8 @@ void NetGroup::manage() {
 	if (_lastReport.isElapsed(3000)) { // TODO: add to configuration
 		
 		for (auto it : _mapPeers) {
-			if (buildGroupReport(it.first)) {
+			if (it.second->connected && buildGroupReport(it.first))
 				it.second->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
-			}
 		}
 		_lastReport.update();
 	}
@@ -478,7 +504,8 @@ void NetGroup::updatePlayMode() {
 
 	UInt16 totalMode = 0;
 	for (auto it : _mapPeers) {
-		totalMode += it.second->pushInMode;
+		if (it.second->connected)
+			totalMode += it.second->pushInMode;
 	}
 
 	if (totalMode == 0xFF)
@@ -500,7 +527,7 @@ void NetGroup::updatePlayMode() {
 	// TODO: create and use the bestPeers map
 	vector<shared_ptr<P2PConnection>> possiblePeers;
 	for (auto itPeer : _mapPeers) {
-		if (itPeer.second->checkMask(bitNumber))
+		if (itPeer.second->connected && itPeer.second->checkMask(bitNumber))
 			possiblePeers.push_back(itPeer.second);
 	}
 	
