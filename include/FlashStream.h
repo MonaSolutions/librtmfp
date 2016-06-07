@@ -12,7 +12,7 @@ namespace FlashEvents {
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
 	struct OnNewPeer : Mona::Event<void(const std::string& groupId, const std::string& peerId)> {};
 	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {};
-	struct OnGroupMedia : Mona::Event<void(const std::string& peerId, const std::string& streamName, const std::string& data, FlashWriter& writer)> {};
+	struct OnGroupMedia : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, const std::string& streamName, FlashWriter& writer)> {};
 	struct OnGroupReport : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 	struct OnGroupPlayPush: Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)>{};
 	struct OnGroupPlayPull : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};

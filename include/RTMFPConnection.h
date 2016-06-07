@@ -67,8 +67,8 @@ public:
 	// Called by P2PConnection when the responder receive the caller peerId to update the group if needed
 	void updatePeerId(const Mona::SocketAddress& peerAddress, const std::string& peerId);
 
-	// Return the peer ID (for p2p childs)
-	virtual Mona::UInt8* peerId() { return _peerId; }
+	// Return the peer ID in hex format
+	const std::string peerId() { return _peerTxtId; }
 
 	// Return the server address (for NetGroup)
 	const Mona::SocketAddress& serverAddress() { return _hostAddress; }
@@ -95,8 +95,8 @@ protected:
 	// Handle new peer in a Netgroup : connect to the peer
 	void handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
 
-	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
-	virtual void handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
+	// Handle a Writer close message (type 5E)
+	virtual void handleWriterFailed(RTMFPWriter* pWriter);
 
 	// Handle a P2P address exchange message
 	void handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
@@ -153,6 +153,7 @@ private:
 
 	std::string														_url; // RTMFP url of the application (base handshake)
 	Mona::UInt8														_peerId[0x20]; // my peer ID (computed with HMAC-SHA256)
+	std::string														_peerTxtId; // my peer ID in hex format
 
 	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
 	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p

@@ -23,6 +23,9 @@ public:
 	// Remove a peer from the NetGroup map
 	void removePeer(const std::string& peerId);
 
+	// Set the node Id of a peer
+	void updateNodeId(const std::string& id, const std::string& nodeId);
+
 	// Send report requests (messages 0A, 22)
 	void manage();
 
@@ -55,6 +58,9 @@ private:
 	Mona::UInt64											_fragmentCounter;
 	std::recursive_mutex									_fragmentMutex;
 
+	// Erase old fragments (called before generating the fragments map)
+	void	eraseOldFragments();
+
 	// Update the fragment map
 	// Return False if there is no fragments, otherwise true
 	bool	updateFragmentMap();
@@ -68,6 +74,9 @@ private:
 
 	// Calculate the pull & play mode balance and send the requests if needed
 	void	updatePlayMode();
+
+	// Calculate the Best list and connect/disconnect to peers
+	void	manageBestList();
 
 	Mona::Int64												_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
 	Mona::UInt16											_windowDuration; // NetStream.multicastWindowDuration equivalent in msec
@@ -83,11 +92,12 @@ private:
 
 	Mona::Buffer											_streamCode; // 2101 + Random key on 32 bytes to be send in the publication infos packet
 
+	std::map<std::string,std::string>						_mapNodesId; // Map of Nodes ID to peers ID
 	std::map<std::string, std::shared_ptr<P2PConnection>>	_mapPeers; // Map of peers ID to p2p connections
-	std::map<std::string, FlashWriter*>						_mapId2Writer; // Map of peers ID to report writers
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPConnection&										_conn; // RTMFPConnection related to
 	Mona::Time												_lastPlayUpdate; // last Play Pull & Push calculation
+	Mona::Time												_lastBestCalculation; // last Best list calculation
 	Mona::Time												_lastReport; // last Report Message time
 	Mona::Time												_lastFragmentsMap; // last Fragments Map Message time
 	Mona::Buffer											_reportBuffer; // Buffer for reporting messages

@@ -336,7 +336,7 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 	writer.write(_pubKey);
 
 	EVP_Digest(writer.data()+idPos, writer.size()-idPos, _peerId, NULL, EVP_sha256(), NULL);
-	INFO("peer id : \n", Util::FormatHex(_peerId, sizeof(_peerId), LOG_BUFFER))
+	INFO("peer id : \n", Util::FormatHex(_peerId, sizeof(_peerId), _peerTxtId))
 
 	_nonce.resize(0x4C, false);
 	BinaryWriter nonceWriter(_nonce.data(), 0x4C);
@@ -368,7 +368,7 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 
 	auto it = _mapPeersByTag.find(tagReceived);
 	if (it == _mapPeersByTag.end()) {
-		WARN("Handshake 70 received but no p2p connection found with tag (possible old request)")
+		DEBUG("Handshake 70 received but no p2p connection found with tag (possible old request)")
 		return true;
 	}
 
@@ -404,7 +404,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 
 	auto it = _mapPeersByTag.find(tagReceived);
 	if (it == _mapPeersByTag.end()) {
-		WARN("Handshake 71 received but no p2p connection found with tag (possible old request)")
+		DEBUG("Handshake 71 received but no p2p connection found with tag (possible old request)")
 		return true;
 	}
 
@@ -724,10 +724,9 @@ void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& pe
 	connect2Peer(peerId.c_str(), _group->stream.c_str());
 }
 
-void RTMFPConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
-	ERROR("Cannot handle group handshake message on a RTMFP Connection") // target error (shouldn't happen)
+void RTMFPConnection::handleWriterFailed(RTMFPWriter* pWriter) {
+	pWriter->fail("Writer terminated on connection");
 }
-
 
 void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
 	// Handle 0x0f message from server (a peer is about to contact us)

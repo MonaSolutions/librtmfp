@@ -15,6 +15,9 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
 	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), lastGroupReport(0), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0),
 	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
+		handleGroupHandshake(groupId, key, peerId);
+	};
 
 	_outAddress = _hostAddress = hostAddress;
 
@@ -101,8 +104,11 @@ void P2PConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 		responderHandshake1(ex, reader); break;
 	case 0x78:
 		initiatorHandshake2(ex, reader); break;
+	case 0x70:
+		DEBUG("Unexpected p2p handshake type 70 (possible repeated request)")
+		break;
 	default:
-		ex.set(Exception::PROTOCOL, "Unexpected p2p handshake type : ", type);
+		ex.set(Exception::PROTOCOL, "Unexpected p2p handshake type : ", Format<UInt8>("%.2x", (UInt8)type));
 		break;
 	}
 }
@@ -409,11 +415,13 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 	}
 	string idReceived, myId;
 	Util::FormatHex(BIN id.data(), PEER_ID_SIZE, idReceived);
-	Util::FormatHex(_parent->peerId(), PEER_ID_SIZE, myId);
-	if (String::ICompare(idReceived, myId) != 0) {
+	if (String::ICompare(idReceived, _parent->peerId()) != 0) {
 		ERROR("Our peer ID was expected but received : ", idReceived)
 		return;
 	}
+
+	_nodeId = key;
+	_group->updateNodeId(id, key);
 
 	// Send the group connection request to peer if not already sent
 	if (!_groupConnectSent) {
@@ -437,17 +445,27 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 	}
 }
 
+void P2PConnection::handleWriterFailed(RTMFPWriter* pWriter) {
+	if (pWriter->flowId == _pReportFlow->id) {
+		INFO("Far peer has closed the NetGroup main writer, closing the connection...")
+		close();
+	}
+}
+
 void P2PConnection::close() {
 	_group.reset();
 
-	if (connected)
+	if (connected) {
 		writeMessage(0x5E, 0);
+		connected = false;
+	}
 
 	if (_pListener) {
 		_parent->stopListening(peerId);
 		_pListener = NULL;
 	}
 
+	// TODO: check if necessary, it could send a 5C message which has nothing to do with P2P
 	FlowManager::close();
 }
 

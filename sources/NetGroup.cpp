@@ -66,13 +66,20 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	onFragment = [this](const string& peerId, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, PacketReader& packet, double lostRate) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
 
-		// TODO: check the fragment and return if it is wrong
+		// TODO: check the fragment with pull & push modes and return if it is wrong
+
+		auto itFragment = _fragments.lower_bound(id);
+		if (itFragment != _fragments.end() && itFragment->first == id) {
+			WARN("Fragment ", id, " already received, ignored")
+			return;
+		}
+
 		bool newFragment = _fragments.empty() || id > _fragments.rbegin()->first;
 
 		// Add the fragment to the map
 		UInt32 bufferSize = packet.available() + 1 + 5 * (marker == GroupStream::GROUP_MEDIA_START || marker == GroupStream::GROUP_MEDIA_DATA) + (splitedNumber > 1) + Util::Get7BitValueSize(id);
-		auto itFragment = _fragments.emplace(piecewise_construct, forward_as_tuple(id), forward_as_tuple(_conn.poolBuffers(), packet.current(), packet.available(), bufferSize, time, (AMF::ContentType)mediaType,
-			id, marker, splitedNumber)).first;
+		itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(id), forward_as_tuple(_conn.poolBuffers(), packet.current(), packet.available(), bufferSize, time, (AMF::ContentType)mediaType,
+			id, marker, splitedNumber));
 
 		// Send fragment to peers (push mode)
 		if (newFragment) {
@@ -88,16 +95,15 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		// Push the fragment to the output file (if ordered)
 		pushFragment(itFragment);
 	};
-	onGroupMedia = [this](const string& peerId, const string& streamName, const string& data, FlashWriter& writer) {
+	onGroupMedia = [this](const string& peerId, PacketReader& packet, const string& streamName, FlashWriter& writer) {
 		if (streamName == stream) {
 			if (isPublisher) {
-				BinaryReader reader(BIN data.data(), data.size());
-				string farCode;
-				reader.read<string>(0x22, farCode);
+				Buffer farCode;
+				packet.read(0x22, farCode);
 
 				// Another stream code => we must accept and send our stream code
 				if (memcmp(_streamCode.data(), farCode.data(), 0x22) != 0) {
-					writer.writeGroupMedia(streamName, BIN data.data(), 0x22);
+					writer.writeGroupMedia(streamName, farCode.data(), 0x22);
 					auto it = _mapPeers.find(peerId);
 					if (it == _mapPeers.end())
 						ERROR("Unable to find the peer ", peerId)
@@ -107,8 +113,27 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			}
 			else {
 				NOTE("Starting to listen to publication ", streamName)
-				writer.writeGroupMedia(streamName, BIN data.data(), 0x22);
+				packet.read(0x22, _streamCode);
+				writer.writeGroupMedia(streamName, _streamCode.data(), 0x22);
 			}
+
+			// The meaning of the rest is unknown for now
+			string data;
+			UInt8 size = packet.read8();
+			if (packet.read(size, data) != "\x02")
+				WARN("Unexpected 1st argument value in Group publication : ", Util::UnformatHex(data))
+			size = packet.read8();
+			if (packet.read(size, data) != "\x03\xBE\x40")
+				WARN("Unexpected 2nd argument value in Group publication : ", Util::UnformatHex(data))
+			size = packet.read8();
+			if (packet.read(size, data) != "\x04\x92\xA7\x60")
+				WARN("Unexpected 3rd argument value in Group publication : ", Util::UnformatHex(data))
+			size = packet.read8();
+			if (packet.read(size, data) != "\x05\x64")
+				WARN("Unexpected 4th argument value in Group publication : ", Util::UnformatHex(data))
+			size = packet.read8();
+			if (packet.read(size, data) != "\x07\x93\x44")
+				WARN("Unexpected 5th argument value in Group publication : ", Util::UnformatHex(data))
 		}
 		else {
 			INFO("New stream available in the group but not registered : ", streamName)
@@ -116,7 +141,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		}
 	};
 	onGroupReport = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
-		string key1, key2, keyPeer, tmpId;
+		lock_guard<recursive_mutex> lock(_fragmentMutex);
+		string key1, key2, keyPeer, tmpId, newPeerId;
 
 		packet.read(8, key1);
 		UInt8 size = packet.read8();
@@ -136,9 +162,13 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			size = packet.read8();
 			packet.read(size, keyPeer);
 
-			DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN tmpId.data(), PEER_ID_SIZE, LOG_BUFFER))
+			DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN tmpId.data(), PEER_ID_SIZE, newPeerId))
 			DEBUG("Group message 0A - Time elapsed : ", time)
 			DEBUG("Group message 0A - infos : ", Util::FormatHex(BIN keyPeer.data(), size, LOG_BUFFER))
+			if (_mapPeers.find(newPeerId) == _mapPeers.end() && newPeerId != _conn.peerId()) {
+				INFO("A new peer has been found, we connect to him (Heard list size : ", _mapNodesId.size()+1, ")")
+				_conn.connect2Peer(newPeerId.c_str(), stream.c_str());
+			}
 		}
 
 		auto it = _mapPeers.find(peerId);
@@ -296,9 +326,19 @@ void NetGroup::removePeer(const pair<string, shared_ptr<P2PConnection>>& itPeer)
 void NetGroup::manage() {
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
+	// Manage the Best list
+	if (_lastBestCalculation.isElapsed(1000)) {
+
+		manageBestList();
+		_lastBestCalculation.update();
+	}
+
 	// Send the push & pull requests
-	if (!isPublisher && _lastPlayUpdate.isElapsed(2000)) // TODO: add to configuration
+	if (!isPublisher && _lastPlayUpdate.isElapsed(2000)) { // TODO: add to configuration
+
 		updatePlayMode();
+		_lastPlayUpdate.update();
+	}
 
 	// Send the Fragments Map message
 	if (_lastFragmentsMap.isElapsed(_updatePeriod)) {
@@ -313,6 +353,8 @@ void NetGroup::manage() {
 		}
 	}
 
+	// TODO: Send Pull request(s) if needed
+
 	// Send the Group Report message (0A)
 	if (_lastReport.isElapsed(3000)) { // TODO: add to configuration
 		
@@ -324,11 +366,94 @@ void NetGroup::manage() {
 	}
 }
 
-bool NetGroup::updateFragmentMap() {
-	if (_fragments.empty())
-		return false;
+void NetGroup::manageBestList() {
+	if (_mapPeers.empty())
+		return;
 
-	// Erase old fragments
+	map<string, string> bestList;
+
+	// Find the 6 closest peers
+	map<string, string>::iterator itClosest1, itClosest2;
+	itClosest1 = itClosest2 = _mapNodesId.lower_bound(_conn.peerId());
+	if (itClosest1 != _mapNodesId.end()) {
+
+		if (_mapNodesId.size() <= 6) {
+			for (auto it : _mapNodesId)
+				bestList.emplace(it.second, it.second);
+		}
+		else { // More than 6 peers
+
+			for (int i = 0; i < 3; i++) {
+				bestList.emplace(itClosest1->second, itClosest1->second);
+				--itClosest1;
+
+				if (itClosest1 == _mapNodesId.end()) // if we reach the first peer we restart from the end
+					itClosest1 = _mapNodesId.find(_mapNodesId.rbegin()->first);
+			}
+
+			for (int j = 0; j < 3; j++) {
+				++itClosest2;
+				if (itClosest2 == _mapNodesId.end()) // if we reach the end we restart from the beginning
+					itClosest2 = _mapNodesId.begin();
+
+				bestList.emplace(itClosest2->second, itClosest2->second);
+			}
+		}
+	}
+
+	if (_mapNodesId.size() <= 6)
+		return;
+
+	// Find 2 log(N) peers with location + 1/2, 1/4, 1/8 ...
+	if (_mapNodesId.size() > 13) {
+		UInt32 count = (UInt32)(2 * log2(_mapNodesId.size() - 1));
+		if (count > _mapNodesId.size() - 13)
+			count = _mapNodesId.size() - 13;
+
+		auto itNode = _mapNodesId.lower_bound(_conn.peerId());
+		UInt32 rest = distance(itNode, _mapNodesId.end());
+		UInt32 step = _mapNodesId.size() / (2*count);
+		for (; count > 0; count--) {
+			if (rest < step) {
+				itNode = _mapNodesId.begin();
+				rest = _mapNodesId.size();
+			}
+			advance(itNode, step);
+			rest -= step;
+			bestList.emplace(itNode->second, itNode->second);
+		}
+	}
+
+	// Find the 6 lowest latency
+	map<UInt16, string> mapLatency2Peer;
+	for (auto it : _mapPeers) // First, order the peers by latency
+		mapLatency2Peer[it.second->latency()] = it.first;
+	auto itLatency = mapLatency2Peer.begin();
+	for (int i = 0; i < 6; i++) {
+		bestList.emplace(itLatency->second, itLatency->second);
+		itLatency++;
+	}
+
+	// Add one random peer
+	auto itRandom = _mapNodesId.begin();
+	advance(itRandom, Util::Random<UInt32>() % _mapNodesId.size());
+	bestList.emplace(itRandom->second, itRandom->second);
+
+	// Close old peers
+	for (auto it : _mapPeers) {
+		if (bestList.find(it.first) == bestList.end())
+			it.second->close();
+	}
+
+	// Connect to new peers
+	for (auto it : bestList) {
+		if (_mapPeers.find(it.first) == _mapPeers.end())
+			_conn.connect2Peer(it.first.c_str(), stream.c_str());
+	}
+}
+
+void NetGroup::eraseOldFragments() {
+
 	auto it = _fragments.rbegin();
 	if (it != _fragments.rend()) {
 		UInt32 end = it->second.time;
@@ -338,7 +463,7 @@ bool NetGroup::updateFragmentMap() {
 			itTime--; // To not delete more than the window duration
 		if (itTime != _mapTime2Fragment.end() && itTime != _mapTime2Fragment.begin()) {
 
-			// Get the first fragment before itTime->second (which is a reference)
+			// Get the first fragment before itTime->second (To be sure to begin with a reference)
 			auto itFragment = _fragments.find(itTime->second);
 			--itFragment;
 			if (_fragmentCounter < itFragment->first) {
@@ -350,7 +475,7 @@ bool NetGroup::updateFragmentMap() {
 			--itTime;
 			DEBUG("Deletion of fragments ", _mapTime2Fragment.begin()->second, " (", _mapTime2Fragment.begin()->first, ") to ",
 				itTime->second, " (", itTime->first, ") - current time : ", end)
-			_mapTime2Fragment.erase(_mapTime2Fragment.begin(), itTime);
+				_mapTime2Fragment.erase(_mapTime2Fragment.begin(), itTime);
 
 			// Try to push again the last fragments
 			auto itLast = _fragments.find(_fragmentCounter + 1);
@@ -358,6 +483,14 @@ bool NetGroup::updateFragmentMap() {
 				pushFragment(itLast);
 		}
 	}
+}
+
+bool NetGroup::updateFragmentMap() {
+	if (_fragments.empty())
+		return false;
+
+	// First we erase old fragments
+	eraseOldFragments();
 
 	// Generate the report message
 	UInt64 firstFragment = _fragments.begin()->first;
@@ -367,7 +500,7 @@ bool NetGroup::updateFragmentMap() {
 	BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
 	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(lastFragment);
 
-	if (isPublisher) { // Publisher : We have all fragments
+	if (isPublisher) { // Publisher : We have all fragments, faster treatment
 		
 		while (nbFragments > 8) {
 			writer.write8(0xFF);
@@ -423,7 +556,7 @@ bool NetGroup::buildGroupReport(const string& peerId) {
 	for (auto itPeer : _mapPeers) {
 		// TODO: check if it is time since last report message
 		UInt8 timeElapsed = (UInt8)((itPeer.second->lastGroupReport > 0) ? ((Time::Now() - itPeer.second->lastGroupReport) / 1000) : 0);
-		DEBUG("Group 0A argument - Peer ", itPeer.first, " - elapsed : ", timeElapsed)
+		DEBUG("Group 0A argument - Peer ", itPeer.first, " - elapsed : ", timeElapsed, " (latency : ", itPeer.second->latency(),")")
 		string id(itPeer.first.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 		writer.write32(0x0022210F).write(Util::UnformatHex(id));
 		writer.write8(timeElapsed);
@@ -502,6 +635,7 @@ void NetGroup::updatePlayMode() {
 	if (_mapPeers.empty())
 		return;
 
+	// Calculate the current mode
 	UInt16 totalMode = 0;
 	for (auto it : _mapPeers) {
 		if (it.second->connected)
@@ -539,6 +673,18 @@ void NetGroup::updatePlayMode() {
 		}
 
 		(*itRandom)->sendPushMode((*itRandom)->pushInMode + toAdd);
-	} else
+	}
+	else {
 		WARN("No peer available for the mask ", Format<UInt8>("%.2x", toAdd))
+		return;
+	}
+
+	if ((toAdd + totalMode) == 0xFF)
+		INFO("NetGroup Push mode completed (0xFF reached)")
+}
+
+void NetGroup::updateNodeId(const string& id, const string& nodeId) {
+	lock_guard<recursive_mutex> lock(_fragmentMutex);
+
+	_mapNodesId[nodeId] = id;
 }

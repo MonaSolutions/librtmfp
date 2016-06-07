@@ -55,16 +55,14 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 	onPlay = [this](const string& streamName, FlashWriter& writer) {
 		return handlePlay(streamName, writer);
 	};
-	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
-		handleGroupHandshake(groupId, key, peerId);
-	};
 	onMedia = [this](const string& peerId, const string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
-		if (!audio && !_codecInfosRead) {
-			if (RTMFP::IsH264CodecInfos(packet.data(), packet.available()))
+		if (!_codecInfosRead) {
+			if (!audio && RTMFP::IsH264CodecInfos(packet.data(), packet.available()))
 				_codecInfosRead = true;
 			else {
-				DEBUG("Video frame dropped to wait first key frame");
+				if (!audio)
+					DEBUG("Video frame dropped to wait first key frame");
 				return;
 			}
 		}
@@ -116,7 +114,6 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 	_pMainStream->OnStatus::subscribe(onStatus);
 	_pMainStream->OnMedia::subscribe(onMedia);
 	_pMainStream->OnPlay::subscribe(onPlay);
-	_pMainStream->OnGroupHandshake::subscribe(onGroupHandshake);
 }
 
 FlowManager::~FlowManager() {
@@ -148,7 +145,6 @@ FlowManager::~FlowManager() {
 		_pMainStream->OnStatus::unsubscribe(onStatus);
 		_pMainStream->OnMedia::unsubscribe(onMedia);
 		_pMainStream->OnPlay::unsubscribe(onPlay);
-		_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
 		_pMainStream.reset();
 	}
 }
@@ -300,8 +296,8 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			UInt64 id = message.read7BitLongValue();
 
 			RTMFPWriter* pRTMFPWriter = writer(id);
-			if(pRTMFPWriter)
-				pRTMFPWriter->fail("Writer terminated on connection");
+			if (pRTMFPWriter)
+				handleWriterFailed(pRTMFPWriter);
 			else
 				WARN("RTMFPWriter ", id, " unfound for failed signal on connection");
 			break;

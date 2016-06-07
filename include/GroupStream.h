@@ -12,9 +12,11 @@ public:
 		GROUP_MEDIA_END		= 0x00, // End of a NetGroup splitted media data
 		GROUP_INIT			= 0x01, // Init a Group session with a peer
 		GROUP_DATA			= 0x02, // NetGroup data message
-		GROUP_MEMBER		= 0x0B, // NetGroup member
-		GROUP_NKNOWN2		= 0x0E, // unknown NetGroup type 2
 		GROUP_REPORT		= 0x0A, // NetGroup Report
+		GROUP_MEMBER		= 0x0B, // NetGroup member
+		GROUP_NKNOWN		= 0x0C, // UNknown NetGroup type (close message?)
+		GROUP_BEGIN			= 0x0E, // Group Begin message
+		GROUP_BEGIN_NEAREST	= 0x0F, // Group Begin message in mode NetGroupReceiveMode.NEAREST
 		GROUP_MEDIA_NEXT	= 0x10, // Continuation of a NetGroup splitted media data
 		GROUP_MEDIA_DATA	= 0x20, // Audio/Video data
 		GROUP_INFOS			= 0x21, // Media stream infos

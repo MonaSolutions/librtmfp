@@ -102,6 +102,9 @@ public:
 	// Create a flow for special signatures (NetGroup)
 	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
 
+	// Close the connection properly
+	virtual void				close();
+
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
 	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
 
@@ -117,23 +120,23 @@ protected:
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer);
 
-	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
-	virtual void				handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
+	// Handle a Writer close message (type 5E)
+	virtual void				handleWriterFailed(RTMFPWriter* pWriter);
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
-	
-	// Close the connection properly
-	virtual void				close();
 
 private:
 	// Return true if the new fragment is pushable (according to the Group push mode)
 	bool						isPushable(Mona::UInt8 rest);
 
+	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
+	void						handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
+
 	RTMFPConnection*			_parent; // RTMFPConnection related to
 	FlashListener*				_pListener; // Listener of the main publication (only one by intance)
 	Mona::UInt32				_sessionId; // id of the P2P session;
-	std::string					_farKey; // Key of the server/peer
+	std::string					_farKey; // Public Key of the server/peer (for shared key determination)
 	std::string					_farNonce; // Nonce of the distant peer
 
 	// Play/Publish command
@@ -146,6 +149,7 @@ private:
 	bool						_groupConnectSent; // True if group connection request has been sent to peer
 	bool						_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	std::shared_ptr<NetGroup>	_group; // Group pointer if netgroup connection
+	std::string					_nodeId; // Group Node Id of the far peer (32 bytes identifier)
 
 	Mona::UInt8					_pushOutMode; // Group Publish Push mode
 
@@ -155,4 +159,7 @@ private:
 
 	Mona::Buffer				_fragmentsMap; // Last Fragments Map received
 	Mona::UInt64				_idFragmentMap; // Last Fragments Map id
+
+
+	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)
 };

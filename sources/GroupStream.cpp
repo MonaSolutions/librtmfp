@@ -58,7 +58,14 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			INFO("GroupStream ", id, " - NetGroup data message type : ", value)
 			break;
 		}
-		case GroupStream::GROUP_NKNOWN2:
+		/*case GroupStream::GROUP_NKNOWN:
+			INFO("GroupStream ", id, " - NetGroup 0C message type")
+			break;*/
+		case GroupStream::GROUP_BEGIN_NEAREST:
+			INFO("GroupStream ", id, " - NetGroup 0F (Begin nearest) message type")
+			OnGroupBegin::raise(_peerId, writer);
+			break;
+		case GroupStream::GROUP_BEGIN:
 			INFO("GroupStream ", id, " - NetGroup 0E message type")
 			OnGroupBegin::raise(_peerId, writer);
 			break;
@@ -83,13 +90,12 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			OnGroupPlayPull::raise(_peerId, packet, writer);
 			break;
 		case GroupStream::GROUP_INFOS: { // contain the stream name of an eventual publication
-			string streamName, data;
+			string streamName;
 			UInt8 sizeName = packet.read8();
 			if (sizeName > 1) {
 				packet.next(); // 00
 				packet.read(sizeName-1, streamName);
-				packet.read(packet.available(), data);
-				OnGroupMedia::raise(_peerId, streamName, data, writer);
+				OnGroupMedia::raise(_peerId, packet, streamName, writer);
 			}
 			DEBUG("GroupStream ", id, " - Group Media Infos (type 21) : ", streamName)
 			break;

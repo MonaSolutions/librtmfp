@@ -38,9 +38,6 @@ public:
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
 
-	// Return the peer ID (for p2p childs of RTMFPConnection)
-	virtual Mona::UInt8* peerId() { return NULL; }
-
 	// Compute keys and init encoder and decoder
 	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, Mona::Buffer& sharedSecret, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
 
@@ -79,8 +76,8 @@ protected:
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
 
-	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
-	virtual void				handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id)=0;
+	// Handle a Writer close message (type 5E)
+	virtual void				handleWriterFailed(RTMFPWriter* pWriter) = 0;
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader) = 0;
@@ -165,7 +162,6 @@ protected:
 	FlashConnection::OnStatus::Type						onStatus; // NetConnection or NetStream status event
 	FlashConnection::OnMedia::Type						onMedia; // Received when we receive media (audio/video)
 	FlashConnection::OnPlay::Type						onPlay; // Received when we receive media (audio/video)
-	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)
 	Mona::UDPSocket::OnError::Type						onError; // TODO: delete this if not needed
 	Mona::UDPSocket::OnPacket::Type						onPacket; // Main input event, received on each raw packet
 

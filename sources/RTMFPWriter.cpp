@@ -557,7 +557,7 @@ void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const
 void RTMFPWriter::writeGroupBegin() {
 	createMessage().writer().packet.write8(AMF::ABORT);
 	flush(false); // TODO: see if needed
-	createMessage().writer().packet.write8(GroupStream::GROUP_NKNOWN2);
+	createMessage().writer().packet.write8(GroupStream::GROUP_BEGIN);
 }
 
 void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size) {
