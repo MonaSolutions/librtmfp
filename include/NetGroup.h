@@ -8,6 +8,7 @@
 
 #define NETGROUP_MAX_PACKET_SIZE		959
 #define MAX_FRAGMENT_MAP_SIZE			1024
+#define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
 
 class P2PConnection;
 class NetGroup : public virtual Mona::Object {
@@ -17,14 +18,17 @@ public:
 
 	void close();
 
+	// Add a peer to the Heard List
+	void addPeer2HeardList(const std::string& peerId);
+
 	// Add a peer to the NetGroup map
-	void addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
+	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
 
 	// Remove a peer from the NetGroup map
 	void removePeer(const std::string& peerId);
 
-	// Set the node Id of a peer
-	void updateNodeId(const std::string& id, const std::string& nodeId);
+	// Return True if the peer doesn't already exists and if the group ID match our group ID
+	bool checkPeer(const std::string& groupId, const std::string& peerId);
 
 	// Send report requests (messages 0A, 22)
 	void manage();
@@ -36,7 +40,16 @@ public:
 
 private:
 
-	void removePeer(const std::pair<std::string, std::shared_ptr<P2PConnection>>& itPeer);
+	// Calculate the estimation of the number of peers (this is the same as Flash NetGroup.estimatedMemberCount)
+	double estimatedPeersCount();
+
+	// Calculate the number of neighbors we must connect to (2*log2(N)+13)
+	Mona::UInt32 targetNeighborsCount();
+
+	// Return the Group Address calculated from a Peer ID
+	static const std::string& GetGroupAddressFromPeerId(const std::string& peerId, std::string& groupAddress);
+
+	void removePeer(std::map<std::string, std::shared_ptr<P2PConnection>>::iterator& itPeer);
 
 	// Fragments 
 	struct MediaPacket {
@@ -90,9 +103,11 @@ private:
 	FlashEvents::OnFragment::Type							onFragment;
 	GroupEvents::OnMedia::Type								onMedia;
 
+	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 	Mona::Buffer											_streamCode; // 2101 + Random key on 32 bytes to be send in the publication infos packet
 
-	std::map<std::string,std::string>						_mapNodesId; // Map of Nodes ID to peers ID
+	std::map<std::string, std::string>						_mapHeardList; // Map of peer ID to Group address
+	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID
 	std::map<std::string, std::shared_ptr<P2PConnection>>	_mapPeers; // Map of peers ID to p2p connections
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPConnection&										_conn; // RTMFPConnection related to

@@ -19,7 +19,7 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 		handleGroupHandshake(groupId, key, peerId);
 	};
 
-	_outAddress = _hostAddress = hostAddress;
+	_outAddress = _targetAddress = hostAddress;
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
@@ -34,6 +34,7 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 	_pMainStream->OnFragmentsMap::subscribe((OnFragmentsMap&)*this);
 	_pMainStream->OnGroupBegin::subscribe((OnGroupBegin&)*this);
 	_pMainStream->OnFragment::subscribe((OnFragment&)*this);
+	_pMainStream->OnGroupHandshake::subscribe(onGroupHandshake);
 }
 
 P2PConnection::~P2PConnection() {
@@ -46,6 +47,7 @@ P2PConnection::~P2PConnection() {
 	_pMainStream->OnFragmentsMap::unsubscribe((OnFragmentsMap&)*this);
 	_pMainStream->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
 	_pMainStream->OnFragment::unsubscribe((OnFragment&)*this);
+	_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
 	close();
 	_pMediaFlow = NULL;
 	_parent = NULL;
@@ -66,6 +68,7 @@ RTMFPFlow* P2PConnection::createSpecialFlow(UInt64 id, const string& signature) 
 		if (signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0 && _pFragmentsFlow)
 			pFlow = _pFragmentsFlow; // if Fragements flow exists already we keep the 1st one
 		else {
+			INFO("Creating new flow (", id, ") for P2PConnection ", peerId)
 			pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
 			pFlow->setPeerId(peerId);
 			if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
@@ -134,7 +137,7 @@ void P2PConnection::responderHandshake0(Exception& ex, string tag, const SocketA
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x70).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 
 	// Before sending we set connection parameters
-	_outAddress = _hostAddress = address;
+	_outAddress = _targetAddress = address;
 	_farId = 0;
 
 	FlowManager::flush(0x0B, writer.size());
@@ -175,10 +178,10 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	reader.read(0x80, _farKey);
 
 	// Read peerId and update the parent
-	UInt8 id[32];
+	UInt8 id[PEER_ID_SIZE];
 	EVP_Digest(reader.data() + idPos, 0x84, id, NULL, EVP_sha256(), NULL);
-	INFO("peer ID calculated from public key : ", Util::FormatHex(id, sizeof(id), peerId))
-	_parent->updatePeerId(_outAddress, peerId);
+	INFO("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
+	_parent->addPeer2HeardList(_outAddress, peerId);
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -219,6 +222,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	DEBUG("Responder Nonce : ", Util::FormatHex(BIN _nonce.data(), 0x49, LOG_BUFFER))
 
 	_handshakeStep = 2;
+	_parent->addPeer2Group(_outAddress, peerId); // TODO: see if we must check the result
 }
 
 void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, const SocketAddress& address) {
@@ -272,7 +276,7 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 	writer.write8(0x58);
 
 	// Before sending we set connection parameters
-	_outAddress = _hostAddress = address;
+	_outAddress = _targetAddress = address;
 	_farId = 0;
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
@@ -318,6 +322,7 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 	_handshakeStep = 3;
 	connected = true;
+	_parent->addPeer2Group(_outAddress, peerId);
 	NOTE("P2P Connection ", _sessionId, " is now connected to ", peerId)
 
 	if (_group) {
@@ -355,14 +360,13 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 void P2PConnection::sendGroupBegin() {
 	if (!_groupBeginSent) {
-		auto it = _flows.find(2);
-		if (it == _flows.end()) {
-			ERROR("Unable to find the flow 2 for NetGroup communication")
-				return;
+		if (!_pReportFlow) {
+			ERROR("Unable to find the Report flow (2) for NetGroup communication")
+			return;
 		}
 
 		INFO("Sending Group Begin message")
-		it->second->sendGroupBegin();
+		_pReportFlow->sendGroupBegin();
 		_groupBeginSent = true;
 	}
 }
@@ -413,15 +417,12 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 		ERROR("Unexpected group ID received : ", groupId, "\nExpected : ", _group->idHex)
 		return;
 	}
-	string idReceived, myId;
+	string idReceived;
 	Util::FormatHex(BIN id.data(), PEER_ID_SIZE, idReceived);
 	if (String::ICompare(idReceived, _parent->peerId()) != 0) {
 		ERROR("Our peer ID was expected but received : ", idReceived)
 		return;
 	}
-
-	_nodeId = key;
-	_group->updateNodeId(id, key);
 
 	// Send the group connection request to peer if not already sent
 	if (!_groupConnectSent) {
@@ -433,14 +434,13 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), BIN _farNonce.data(), _farNonce.size(), mdp1);
 		hmac.compute(EVP_sha256(), _group->idTxt.data(), _group->idTxt.size(), mdp1, Crypto::HMAC::SIZE, mdp2);
 
-		auto it = _flows.find(2);
-		if (it == _flows.end()) {
-			ERROR("Unable to find the flow 2 for NetGroup communication")
+		if (!_pReportFlow) {
+			ERROR("Unable to find the Report flow (2) for NetGroup communication")
 			return;
 		}
 
 		INFO("Sending group connection answer to peer")
-		it->second->sendGroupPeerConnect(_group->idHex, mdp2, peerId/*, false*/);
+		_pReportFlow->sendGroupPeerConnect(_group->idHex, mdp2, peerId/*, false*/);
 		_groupConnectSent = true;
 	}
 }
@@ -495,7 +495,8 @@ void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, b
 
 	if (!_pMediaFlow) {
 		string signature("\x00\x47\x52\x12", 4);
-		_pMediaFlow = createFlow(signature);
+		if (!(_pMediaFlow = createFlow(signature)))
+			return;
 		_pMediaFlow->setPeerId(peerId);
 	}
 	_pMediaFlow->sendRaw(data, size);

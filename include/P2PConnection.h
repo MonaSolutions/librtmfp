@@ -46,7 +46,7 @@ public:
 	void resetGroup() { _group.reset(); }
 
 	// Return the tag used for this p2p connection (initiator mode)
-	const std::string&	getTag() { return _tag; }
+	const std::string&	tag() { return _tag; }
 
 	const Mona::SocketAddress& peerAddress() { return _outAddress; }
 
@@ -111,9 +111,10 @@ public:
 	std::string						peerId; // Peer Id of the peer connected
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 
+	// NetGroup members
+
 	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
 	Mona::UInt64					lastGroupReport; // Time in msec of First Group report received
-
 	Mona::UInt8						pushInMode; // Group Play Push mode
 
 protected:
@@ -149,7 +150,6 @@ private:
 	bool						_groupConnectSent; // True if group connection request has been sent to peer
 	bool						_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	std::shared_ptr<NetGroup>	_group; // Group pointer if netgroup connection
-	std::string					_nodeId; // Group Node Id of the far peer (32 bytes identifier)
 
 	Mona::UInt8					_pushOutMode; // Group Publish Push mode
 

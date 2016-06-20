@@ -2,8 +2,7 @@
 #include "FlashConnection.h"
 #include "GroupStream.h"
 #include "ParameterWriter.h"
-#include "Mona/HostEntry.h"
-#include "Mona/DNS.h"
+#include "Mona/IPAddress.h"
 #include "Mona/Logs.h"
 
 using namespace std;
@@ -126,11 +125,9 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 void FlashConnection::sendPeerInfo(FlashWriter& writer,UInt16 port) {
 	AMFWriter& amfWriter = writer.writeInvocation("setPeerInfo");
 
-	Exception ex;
-	HostEntry host;
-	DNS::ThisHost(ex, host);
+	vector<IPAddress> addresses = IPAddress::Locals();
 	string buf;
-	for(auto it : host.addresses()) {
+	for(auto it : addresses) {
 		if(it.family() == IPAddress::IPv4) {
 			String::Format(buf, it.toString(), ":", port);
 			amfWriter.writeString(buf.c_str(), buf.size());

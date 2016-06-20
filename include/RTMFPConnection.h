@@ -18,8 +18,11 @@ public:
 	// Connect to the specified url, return true if the command succeed
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
 
-	// Connect to a peer of the RTMFP server (Direct P2P) and start playing streamName
+	// Connect to a peer passing by the RTMFP server and start playing streamName
 	void connect2Peer(const char* peerId, const char* streamName);
+
+	// Connect to a peer directly and start playing streamName (Called by NetGroup)
+	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const Mona::SocketAddress& address);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	void connect2Group(const char* netGroup, const char* streamName, bool publisher, double availabilityUpdatePeriod, Mona::UInt16 windowDuration);
@@ -65,13 +68,16 @@ public:
 	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
 	// Called by P2PConnection when the responder receive the caller peerId to update the group if needed
-	void updatePeerId(const Mona::SocketAddress& peerAddress, const std::string& peerId);
+	void addPeer2HeardList(const Mona::SocketAddress& peerAddress, const std::string& peerId);
+
+	// Called by P2PConnection when we are connected to the peer
+	bool addPeer2Group(const Mona::SocketAddress& peerAddress, const std::string& peerId);
 
 	// Return the peer ID in hex format
 	const std::string peerId() { return _peerTxtId; }
 
 	// Return the server address (for NetGroup)
-	const Mona::SocketAddress& serverAddress() { return _hostAddress; }
+	const Mona::SocketAddress& serverAddress() { return _targetAddress; }
 
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal							connectSignal; // signal to wait connection
@@ -143,8 +149,11 @@ private:
 	// Send handshake for group connection
 	void sendGroupConnection(const std::string& netGroup);
 
+	// Create a P2PConnection
+	std::shared_ptr<P2PConnection> createP2PConnection(const char* peerId, const char* streamOrTag, const Mona::SocketAddress& address, bool responder);
+
 	bool															_waitConnect; // True if we are waiting for a normal connection request to be sent
-	std::deque<std::string>											_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
+	std::vector<std::string>										_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
 	std::deque<std::string>											_waitingGroup; // queue of waiting connections to groups
 	std::recursive_mutex											_mutexConnections; // mutex for waiting connections (normal or p2p)
 

@@ -135,7 +135,7 @@ protected:
 	Mona::UInt32						_farId; // Session id
 
 	Mona::SocketAddress					_outAddress; // current address used for sending
-	Mona::SocketAddress					_hostAddress; // host address
+	Mona::SocketAddress					_targetAddress; // host address for RTMFPConnection and peer address for P2PConnection
 	Mona::Time							_lastPing;
 	Mona::UInt64						_nextRTMFPWriterId;
 	Mona::Time							_lastKeepAlive; // last time a keepalive request has been received

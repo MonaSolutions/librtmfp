@@ -98,8 +98,11 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 		// Handshake or session decoder?
 		RTMFPEngine* pDecoder = getDecoder(idStream, address);
 
-		if(!pDecoder->process((UInt8*)pBuffer.data(),pBuffer.size())) {
-			WARN("Bad RTMFP CRC sum computing (idstream: ", idStream, ", address : ", address.toString(),")")
+		Buffer copy(pBuffer.size());
+		memcpy(copy.data(), pBuffer.data(), pBuffer.size());
+		if(!pDecoder->process(BIN pBuffer.data(),pBuffer.size())) {
+			WARN("Bad RTMFP CRC sum computing (idstream: ", idStream, ", address : ", address.toString(), ")")
+			DUMP("RTMFP", copy.data(), copy.size(), "Raw request : ")
 			return;
 		} else
 			handleMessage(ex, pBuffer, address);
@@ -210,7 +213,7 @@ void FlowManager::setPing(UInt16 time, UInt16 timeEcho) {
 bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& nbRead) {
 	
 	nbRead = 0;
-	if (_died)
+	if (!connected || _died)
 		return true; // do not stop the parent loop
 
 	lock_guard<recursive_mutex> lock(_readMutex);
@@ -629,7 +632,7 @@ void FlowManager::sendHandshake0(HandshakeType type, const string& epd, const st
 void FlowManager::flushWriters() {
 	// Every 25s : ping
 	if (_lastPing.isElapsed(25000) && connected) {
-		_outAddress.set(_hostAddress); // To avoid sending to the wrong address
+		_outAddress.set(_targetAddress); // To avoid sending to the wrong address
 		writeMessage(0x01, 0); // TODO: send only if needed
 		flush(false, 0x89);
 		_lastPing.update();
