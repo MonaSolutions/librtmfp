@@ -134,6 +134,9 @@ private:
 	// TODO: see if we need to implement it
 	bool sendP2pRequests(Mona::Exception& ex, Mona::BinaryReader& reader);
 
+	// Read the redirection addresses and send new handshake 30 if not connected
+	void handleRedirection(Mona::Exception& ex, Mona::BinaryReader& reader);
+
 	// Send the second handshake message
 	void sendHandshake1(Mona::Exception& ex, Mona::BinaryReader& reader);
 

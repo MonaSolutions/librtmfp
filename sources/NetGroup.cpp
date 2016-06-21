@@ -254,7 +254,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				if ((addressType&0x0F) == RTMFP::ADDRESS_PUBLIC && address.family() == IPAddress::IPv4) {// TODO: Handle ivp6
 					DEBUG("Group message 0A - IP Address : ", address.toString())
 
-					addPeer2HeardList(newPeerId);
+					addPeer2HeardList(newPeerId.c_str());  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 					if (_mapHeardList.size() < targetCount)
 						_conn.connect2Peer(newPeerId.c_str(), stream.c_str(), rawId, address);
 				}

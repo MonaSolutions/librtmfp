@@ -305,30 +305,9 @@ void RTMFPConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 		break;
 	case 0x71:
 		if (!connected) {
-			DEBUG("Redirection messsage, sending back the handshake 0")
-			UInt8 tagSize = reader.read8();
-			if (tagSize != 16) {
-				ex.set(Exception::PROTOCOL, "Unexpected tag size : ", tagSize);
-				return;
-			}
-			string tagReceived;
-			reader.read(16, tagReceived);
-			if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
-				ex.set(Exception::PROTOCOL, "Unexpected tag received : ", tagReceived);
-				return;
-			}
-			SocketAddress address;
-			while (reader.available() && *reader.current() != 0xFF) {
-				UInt8 addressType = reader.read8();
-				RTMFP::ReadAddress(reader, address, addressType);
-				DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
-
-				// Send handshake 30 request to the current address
-				_outAddress = address;
-				sendHandshake0(BASE_HANDSHAKE, _url, _tag);
-			}
+			handleRedirection(ex, reader);
 		} else
-			sendP2pRequests(ex, reader); 
+			sendP2pRequests(ex, reader); // it is a p2p redirection
 		break;
 	case 0x78:
 		sendConnect(ex, reader); break;
@@ -338,11 +317,46 @@ void RTMFPConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 	}
 }
 
+void RTMFPConnection::handleRedirection(Exception& ex, BinaryReader& reader) {
+	if (_handshakeStep > 1) {
+		DEBUG("Redirection message ignored, we have already received handshake 70")
+		return;
+	}
+
+	DEBUG("Redirection messsage, sending back the handshake 0")
+	UInt8 tagSize = reader.read8();
+	if (tagSize != 16) {
+		ex.set(Exception::PROTOCOL, "Unexpected tag size : ", tagSize);
+		return;
+	}
+	string tagReceived;
+	reader.read(16, tagReceived);
+	if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
+		ex.set(Exception::PROTOCOL, "Unexpected tag received : ", tagReceived);
+		return;
+	}
+	SocketAddress address;
+	while (reader.available() && *reader.current() != 0xFF) {
+		UInt8 addressType = reader.read8();
+		RTMFP::ReadAddress(reader, address, addressType);
+		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
+
+		// Send handshake 30 request to the current address
+		_outAddress = address;
+		sendHandshake0(BASE_HANDSHAKE, _url, _tag);
+	}
+}
+
 void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 
 	if (_handshakeStep != 1) {
 		ex.set(Exception::PROTOCOL, "Unexpected Handshake 70 received at step ", _handshakeStep);
 		return;
+	}
+
+	if (_outAddress != _targetAddress) {
+		INFO("Updating server address to ", _outAddress.toString())
+		_targetAddress = _outAddress;
 	}
 
 	// Read & check handshake0's response
@@ -475,8 +489,10 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 
 		// Send handshake 30 request to the current address
 		// TODO: Record the address to ignore if it has already been received
-		it->second->_outAddress = address;
-		it->second->sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
+		if ((addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC) {
+			it->second->_outAddress = address;
+			it->second->sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
+		}
 	}
 	return true;
 }
@@ -755,13 +771,13 @@ void RTMFPConnection::onPublished(FlashWriter& writer) {
 }
 
 RTMFPEngine* RTMFPConnection::getDecoder(UInt32 idStream, const SocketAddress& address) {
+	if (address == _targetAddress)
+		return FlowManager::getDecoder(idStream, address);
+
 	auto it = _mapPeersByAddress.find(address);
-	if (it != _mapPeersByAddress.end()) {
-		//TRACE("P2P RTMFP request")
+	if (it != _mapPeersByAddress.end())
 		return it->second->getDecoder(idStream, address);
-	}
-	
-	//TRACE("Normal RTMFP request")
+
 	return FlowManager::getDecoder(idStream, address);
 }
 
