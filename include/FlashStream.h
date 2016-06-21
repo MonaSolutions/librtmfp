@@ -73,7 +73,7 @@ public:
 	void sendGroupConnect(FlashWriter& writer, const std::string& groupId);
 
 	// Send the group connection request to the peer
-	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId /*, bool initiator*/);
+	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const char* rawId /*, bool initiator*/);
 
 	// Send the group begin message (02 + 0E)
 	void sendGroupBegin(FlashWriter& writer);
@@ -95,7 +95,6 @@ protected:
 	virtual void	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 	virtual void	videoHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 
-	std::string		_targetID; // Peer ID of the target in hex format
 	std::string		_peerId; // Peer ID of the target in plain text
 	std::string		_groupId; // Group ID (only for NetGroup stream)
 

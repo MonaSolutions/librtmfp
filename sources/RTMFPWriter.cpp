@@ -537,13 +537,12 @@ void RTMFPWriter::writeGroup(const string& netGroup) {
 	createMessage().writer().packet.write8(GroupStream::GROUP_INIT).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
 }
 
-void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const string& peerId/*, bool initiator*/) {
+void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const char* rawId/*, bool initiator*/) {
 
-	string id(peerId.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
 	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);
-	writer.write32(0x2303210F).write(Util::UnformatHex(id)); // binary format
+	writer.write32(0x2303).write(rawId, PEER_ID_SIZE+2); // binary format
 
 	// Send this only if we are the responder
 	/*if (!initiator) {

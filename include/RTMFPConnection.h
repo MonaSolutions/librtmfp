@@ -68,13 +68,16 @@ public:
 	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
 	// Called by P2PConnection when the responder receive the caller peerId to update the group if needed
-	void addPeer2HeardList(const Mona::SocketAddress& peerAddress, const std::string& peerId);
+	void addPeer2HeardList(const Mona::SocketAddress& peerAddress, const std::string& peerId, const char* rawId);
 
 	// Called by P2PConnection when we are connected to the peer
 	bool addPeer2Group(const Mona::SocketAddress& peerAddress, const std::string& peerId);
 
 	// Return the peer ID in hex format
 	const std::string peerId() { return _peerTxtId; }
+
+	// Return the peer ID in bin format
+	const Mona::UInt8* rawId() { return _rawId; }
 
 	// Return the server address (for NetGroup)
 	const Mona::SocketAddress& serverAddress() { return _targetAddress; }
@@ -164,7 +167,8 @@ private:
 	std::map<std::string, std::shared_ptr<P2PConnection>>			_mapPeersByTag; // Initiator connections waiting an answer (70 or 71)
 
 	std::string														_url; // RTMFP url of the application (base handshake)
-	Mona::UInt8														_peerId[0x20]; // my peer ID (computed with HMAC-SHA256)
+	std::string														_rawUrl; // Header (420A) + Url to be sent in handshake 30
+	Mona::UInt8														_rawId[PEER_ID_SIZE+2]; // my peer ID (computed with HMAC-SHA256) in binary format
 	std::string														_peerTxtId; // my peer ID in hex format
 
 	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server

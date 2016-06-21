@@ -56,7 +56,7 @@ public:
 	virtual void			writeGroup(const std::string& netGroup)=0;
 
 	// Note: netGroup must be in hexa format (64 bytes)
-	virtual void			writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId/*, bool initiator*/)=0;
+	virtual void			writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const char* rawId/*, bool initiator*/)=0;
 
 	// Send the Group begin message (02 + 0E)
 	virtual void			writeGroupBegin()=0;

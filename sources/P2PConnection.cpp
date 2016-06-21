@@ -12,7 +12,7 @@ using namespace std;
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
-	_responder(responder), peerId(id), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
+	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
 	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), lastGroupReport(0), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0),
 	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
@@ -26,6 +26,9 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 
 	BinaryWriter writer2(_pubKey.data(), _pubKey.size());
 	writer2.write(pubKey.data(), pubKey.size()); // copy parent public key
+
+	if (peerId != "unknown")
+		Util::UnformatHex(BIN peerId.data(), peerId.size(), rawId, true);
 
 	_pMainStream->OnGroupMedia::subscribe((OnGroupMedia&)*this);
 	_pMainStream->OnGroupReport::subscribe((OnGroupReport&)*this);
@@ -146,7 +149,7 @@ void P2PConnection::responderHandshake0(Exception& ex, string tag, const SocketA
 
 void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 
-	if (_handshakeStep > 2) {
+	if (_handshakeStep > 1) {
 		ex.set(Exception::PROTOCOL, "Unexpected handshake type 38 (step : ", _handshakeStep, ")");
 		return;
 	}
@@ -180,8 +183,10 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	// Read peerId and update the parent
 	UInt8 id[PEER_ID_SIZE];
 	EVP_Digest(reader.data() + idPos, 0x84, id, NULL, EVP_sha256(), NULL);
+	if (peerId == "unknown")
+		rawId.append(STR id, PEER_ID_SIZE);
 	INFO("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
-	_parent->addPeer2HeardList(_outAddress, peerId);
+	_parent->addPeer2HeardList(_outAddress, peerId, rawId.c_str());
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -278,6 +283,7 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 	// Before sending we set connection parameters
 	_outAddress = _targetAddress = address;
 	_farId = 0;
+	_parent->addPeer2HeardList(_outAddress, peerId, rawId.c_str());
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	if (!ex) {
@@ -341,7 +347,7 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 
 		INFO("Sending group connection request to peer")
 		_rawResponse = true;
-		_pReportFlow->sendGroupPeerConnect(_group->idHex, mdp2, peerId);
+		_pReportFlow->sendGroupPeerConnect(_group->idHex, mdp2, rawId.c_str());
 		_groupConnectSent = true;
 		sendGroupBegin();
 	}
@@ -440,7 +446,7 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 		}
 
 		INFO("Sending group connection answer to peer")
-		_pReportFlow->sendGroupPeerConnect(_group->idHex, mdp2, peerId/*, false*/);
+		_pReportFlow->sendGroupPeerConnect(_group->idHex, mdp2, rawId.c_str()/*, false*/);
 		_groupConnectSent = true;
 	}
 }

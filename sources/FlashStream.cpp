@@ -239,12 +239,8 @@ void FlashStream::sendGroupConnect(FlashWriter& writer, const string& groupId) {
 	writer.flush();
 }
 
-void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const string& peerId/*, bool initiator*/) {
-	// Record target peer ID in binary format
-	_targetID.assign(peerId.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-	Util::UnformatHex(_targetID);
-
-	writer.writePeerGroup(netGroup, key, peerId/*, initiator*/);
+void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const char* rawId/*, bool initiator*/) {
+	writer.writePeerGroup(netGroup, key, rawId/*, initiator*/);
 	writer.flush();
 }
 

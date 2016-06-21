@@ -10,6 +10,8 @@
 #define MAX_FRAGMENT_MAP_SIZE			1024
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
 
+class MediaPacket;
+class GroupNode;
 class P2PConnection;
 class NetGroup : public virtual Mona::Object {
 public:
@@ -19,7 +21,7 @@ public:
 	void close();
 
 	// Add a peer to the Heard List
-	void addPeer2HeardList(const std::string& peerId);
+	void addPeer2HeardList(const std::string& peerId, const char* rawId, const Mona::SocketAddress& address);
 
 	// Add a peer to the NetGroup map
 	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
@@ -47,25 +49,10 @@ private:
 	Mona::UInt32 targetNeighborsCount();
 
 	// Return the Group Address calculated from a Peer ID
-	static const std::string& GetGroupAddressFromPeerId(const std::string& peerId, std::string& groupAddress);
+	static const std::string& GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
 
 	void removePeer(std::map<std::string, std::shared_ptr<P2PConnection>>::iterator& itPeer);
 
-	// Fragments 
-	struct MediaPacket {
-
-		MediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 totalSize, Mona::UInt32 time, AMF::ContentType mediaType,
-			Mona::UInt64 fragmentId, Mona::UInt8 groupMarker, Mona::UInt8 splitId);
-
-		Mona::UInt32 payloadSize() { return pBuffer.size() - (payload - pBuffer.data()); };
-
-		Mona::PoolBuffer	pBuffer;
-		Mona::UInt32		time;
-		AMF::ContentType	type;
-		const Mona::UInt8*	payload; // Payload position
-		Mona::UInt8			marker;
-		Mona::UInt8			splittedId;
-	};
 	std::map<Mona::UInt64, MediaPacket>						_fragments;
 	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
 	Mona::UInt64											_fragmentCounter;
@@ -106,7 +93,7 @@ private:
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 	Mona::Buffer											_streamCode; // 2101 + Random key on 32 bytes to be send in the publication infos packet
 
-	std::map<std::string, std::string>						_mapHeardList; // Map of peer ID to Group address
+	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID
 	std::map<std::string, std::shared_ptr<P2PConnection>>	_mapPeers; // Map of peers ID to p2p connections
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)

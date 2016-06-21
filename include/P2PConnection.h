@@ -106,8 +106,9 @@ public:
 	virtual void				close();
 
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
-	Mona::Stopwatch					lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
+	Mona::Time						lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
 
+	std::string						rawId; // Peer Id in binary format + header (210f)
 	std::string						peerId; // Peer Id of the peer connected
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 

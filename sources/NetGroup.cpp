@@ -10,37 +10,56 @@ using namespace std;
 	#define sscanf sscanf_s
 #endif
 
-NetGroup::MediaPacket::MediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 totalSize, Mona::UInt32 time, AMF::ContentType mediaType,
-	UInt64 fragmentId, UInt8 groupMarker, UInt8 splitId) : splittedId(splitId), type(mediaType), marker(groupMarker), /*fragmentSize(0),*/ time(time), pBuffer(poolBuffers, totalSize) {
-	BinaryWriter writer(pBuffer->data(), totalSize);
+class GroupNode : public virtual Object {
+public:
+	GroupNode(const string& rawPeerId, const string& groupId, const SocketAddress& addr) : rawId(rawPeerId), groupAddress(groupId), address(addr) {}
 
-	// AMF Group marker
-	writer.write8(marker);
-	// Fragment Id
-	writer.write7BitLongValue(fragmentId);
-	// Splitted sequence number
-	if (splitId > 1)
-		writer.write8(splitId);
+	string rawId;
+	string groupAddress;
+	SocketAddress address;
+};
 
-	// Type and time, only for the first fragment
-	if (marker != GroupStream::GROUP_MEDIA_NEXT && marker != GroupStream::GROUP_MEDIA_END) {
-		// Media type
-		writer.write8(type);
-		// Time on 4 bytes
-		writer.write32(time);
+// Fragment instance
+class MediaPacket : public virtual Object {
+public:
+	MediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 totalSize, Mona::UInt32 time, AMF::ContentType mediaType,
+		UInt64 fragmentId, UInt8 groupMarker, UInt8 splitId) : splittedId(splitId), type(mediaType), marker(groupMarker), time(time), pBuffer(poolBuffers, totalSize) {
+		BinaryWriter writer(pBuffer->data(), totalSize);
+
+		// AMF Group marker
+		writer.write8(marker);
+		// Fragment Id
+		writer.write7BitLongValue(fragmentId);
+		// Splitted sequence number
+		if (splitId > 1)
+			writer.write8(splitId);
+
+		// Type and time, only for the first fragment
+		if (marker != GroupStream::GROUP_MEDIA_NEXT && marker != GroupStream::GROUP_MEDIA_END) {
+			// Media type
+			writer.write8(type);
+			// Time on 4 bytes
+			writer.write32(time);
+		}
+		// Payload
+		payload = writer.data() + writer.size(); // TODO: check if it is the correct pos
+		writer.write(data, size);
 	}
-	// Payload
-	payload = writer.data() + writer.size(); // TODO: check if it is the correct pos
-	writer.write(data, size);
-}
 
-const string& NetGroup::GetGroupAddressFromPeerId(const std::string& peerId, std::string& groupAddress) {
-	Buffer buff(PEER_ID_SIZE + 2);
-	String::Format(buff, "210f", peerId);
-	Util::UnformatHex(buff);
+	UInt32 payloadSize() { return pBuffer.size() - (payload - pBuffer.data()); }
+
+	PoolBuffer			pBuffer;
+	UInt32				time;
+	AMF::ContentType	type;
+	const UInt8*		payload; // Payload position
+	UInt8				marker;
+	UInt8				splittedId;
+};
+
+const string& NetGroup::GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress) {
 	
 	UInt8 tmp[PEER_ID_SIZE];
-	EVP_Digest(buff.data(), buff.size(), tmp, NULL, EVP_sha256(), NULL);
+	EVP_Digest(rawId, PEER_ID_SIZE+2, tmp, NULL, EVP_sha256(), NULL);
 	INFO("Group address : ", Util::FormatHex(tmp, PEER_ID_SIZE, groupAddress))
 	return groupAddress;
 }
@@ -186,19 +205,19 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			string data;
 			UInt8 size = packet.read8();
 			if (packet.read(size, data) != "\x02")
-				WARN("Unexpected 1st argument value in Group publication : ", Util::UnformatHex(data))
+				WARN("Unexpected 1st argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
 			size = packet.read8();
 			if (packet.read(size, data) != "\x03\xBE\x40")
-				WARN("Unexpected 2nd argument value in Group publication : ", Util::UnformatHex(data))
+				WARN("Unexpected 2nd argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
 			size = packet.read8();
 			if (packet.read(size, data) != "\x04\x92\xA7\x60")
-				WARN("Unexpected 3rd argument value in Group publication : ", Util::UnformatHex(data))
+				WARN("Unexpected 3rd argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
 			size = packet.read8();
 			if (packet.read(size, data) != "\x05\x64")
-				WARN("Unexpected 4th argument value in Group publication : ", Util::UnformatHex(data))
+				WARN("Unexpected 4th argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
 			size = packet.read8();
 			if (packet.read(size, data) != "\x07\x93\x44")
-				WARN("Unexpected 5th argument value in Group publication : ", Util::UnformatHex(data))
+				WARN("Unexpected 5th argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
 		}
 		else {
 			INFO("New stream available in the group but not registered : ", streamName)
@@ -221,20 +240,21 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		// Loop on each peer of the NetGroup
 		while (packet.available() > 4) {
 			size = packet.read16();
-			if (size == 0) {
+			if (size < 2)
 				continue;
-			}
-			UInt16 marker = packet.read16();
-			packet.read(size-2, rawId);
-			if (marker != 0x210F)
+			else if (size > packet.available())
+				size = packet.available();
+			packet.read(size, rawId);
+			bool unknown = String::ICompare(rawId, "\x21\x0F" , 2)!=0;
+			if (unknown)
 				DEBUG("Group message 0A - Unknown parameter : ", Util::FormatHex(BIN rawId.data(), size, LOG_BUFFER))
 			else
-				DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN rawId.data(), PEER_ID_SIZE, newPeerId))
+				DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN rawId.data()+2, PEER_ID_SIZE, newPeerId))
 			UInt64 time = packet.read7BitLongValue();
 			DEBUG("Group message 0A - Time elapsed : ", time)
 
 			size = packet.read8();
-			if (marker != 0x210F || newPeerId == _conn.peerId() || _mapHeardList.find(newPeerId) != _mapHeardList.end()) {
+			if (unknown || newPeerId == _conn.peerId() || _mapHeardList.find(newPeerId) != _mapHeardList.end()) {
 				packet.next(size);
 				continue;
 			}
@@ -254,7 +274,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				if ((addressType&0x0F) == RTMFP::ADDRESS_PUBLIC && address.family() == IPAddress::IPv4) {// TODO: Handle ivp6
 					DEBUG("Group message 0A - IP Address : ", address.toString())
 
-					addPeer2HeardList(newPeerId.c_str());  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
+					addPeer2HeardList(newPeerId.c_str(), rawId.c_str(), address);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 					if (_mapHeardList.size() < targetCount)
 						_conn.connect2Peer(newPeerId.c_str(), stream.c_str(), rawId, address);
 				}
@@ -339,7 +359,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		}
 	};
 
-	GetGroupAddressFromPeerId(_conn.peerId(), _myGroupAddress);
+	GetGroupAddressFromPeerId(STR _conn.rawId(), _myGroupAddress);
 	BinaryWriter writer(_streamCode.data(), _streamCode.size());
 	writer.write16(0x2101);
 	Util::Random((UInt8*)_streamCode.data()+2, 0x20); // random serie of 32 bytes
@@ -378,7 +398,7 @@ void NetGroup::close() {
 		removePeer(itPeer);
 }
 
-void NetGroup::addPeer2HeardList(const string& peerId) {
+void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const SocketAddress& address) {
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	auto it = _mapHeardList.lower_bound(peerId);
@@ -388,8 +408,8 @@ void NetGroup::addPeer2HeardList(const string& peerId) {
 	}
 
 	string groupAddress;
-	_mapGroupAddress.emplace(GetGroupAddressFromPeerId(peerId, groupAddress), peerId);
-	it = _mapHeardList.emplace_hint(it, peerId.c_str(), groupAddress);
+	_mapGroupAddress.emplace(GetGroupAddressFromPeerId(rawId, groupAddress), peerId);
+	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(rawId, groupAddress, address));
 	INFO("Peer ", it->first, " added to heard list")
 }
 
@@ -423,17 +443,15 @@ void NetGroup::removePeer(const string& peerId) {
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	auto it = _mapPeers.find(peerId);
-	if (it == _mapPeers.end()) {
+	if (it == _mapPeers.end())
 		DEBUG("The peer ", peerId, " is already removed from the best list")
-		return;
-	}
-	
-	removePeer(it);
+	else
+		removePeer(it);
 
 	// The peer is disconnected, we remove it from the heard list
 	auto it2 = _mapHeardList.find(peerId);
 	if (it2 != _mapHeardList.end()) {
-		_mapGroupAddress.erase(it2->second);
+		_mapGroupAddress.erase(it2->second.groupAddress);
 		_mapHeardList.erase(it2);
 		INFO("Peer ", peerId, " deleted from the heard list")
 	}
@@ -494,7 +512,7 @@ void NetGroup::manage() {
 	// TODO: Send Pull request(s) if needed
 
 	// Send the Group Report message (0A) to a random connected peer
-	if (_lastReport.isElapsed(3000)) { // TODO: add to configuration
+	if (_lastReport.isElapsed(5000)) { // TODO: add to configuration
 		
 		UInt32 index = Util::Random<UInt32>() % _mapPeers.size();
 		auto itRandom = _mapPeers.begin();
@@ -571,16 +589,17 @@ void NetGroup::manageBestList() {
 				count = _mapGroupAddress.size() - bests;
 
 			auto itNode = _mapGroupAddress.lower_bound(_myGroupAddress);
-			UInt32 rest = (itNode == _mapGroupAddress.end()) ? _mapGroupAddress.size() - 1 : distance(itNode, _mapGroupAddress.end()) - 1;
+			UInt32 rest = (_mapGroupAddress.size() / 2) - 1;
 			UInt32 step = rest / (2 * count);
 			for (; count > 0; count--) {
-				if (rest < step) {
+				if (distance(itNode, _mapGroupAddress.end()) <= step) {
 					itNode = _mapGroupAddress.begin();
-					rest = _mapGroupAddress.size();
 				}
 				advance(itNode, step);
-				rest -= step;
-				bestList.emplace(itNode->second); // TODO: if not added go to next?
+				while (!bestList.emplace(itNode->second).second) { // If not added go to next
+					if (++itNode == _mapGroupAddress.end())
+						itNode = _mapGroupAddress.begin();
+				}
 			}
 		}
 	}
@@ -600,8 +619,13 @@ void NetGroup::manageBestList() {
 
 	// Connect to new peers
 	for (auto it : bestList) {
-		if (_mapPeers.find(it) == _mapPeers.end())
-			_conn.connect2Peer(it.c_str(), stream.c_str());
+		if (_mapPeers.find(it) == _mapPeers.end()) {
+			auto itNode = _mapHeardList.find(it);
+			if (itNode == _mapHeardList.end())
+				WARN("Unable to find the peer ", it) // implementation error, should not happen
+			else
+				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.rawId, itNode->second.address);
+		}
 	}
 
 	INFO("End of best list calculation, neighbor count : ", bestList.size())
@@ -716,8 +740,7 @@ bool NetGroup::buildGroupReport(const string& peerId) {
 		// TODO: check if it is time since last report message
 		UInt8 timeElapsed = (UInt8)((itPeer.second->lastGroupReport > 0) ? ((Time::Now() - itPeer.second->lastGroupReport) / 1000) : 0);
 		DEBUG("Group 0A argument - Peer ", itPeer.first, " - elapsed : ", timeElapsed, " (latency : ", itPeer.second->latency(),")")
-		string id(itPeer.first.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-		writer.write32(0x0022210F).write(Util::UnformatHex(id));
+		writer.write32(0x0022).write(itPeer.second->rawId);
 		writer.write8(timeElapsed);
 		writer.write8(itPeer.second->peerAddress().host().size() + _conn.serverAddress().host().size() + 7);
 		writer.write8(0x0A);
@@ -794,7 +817,7 @@ void NetGroup::updatePlayMode() {
 	if (_mapPeers.empty())
 		return;
 
-	INFO("Peers connected : ", _mapPeers.size(), " ; Peers known : ", _mapGroupAddress.size())
+	INFO("Peers connected : ", _mapPeers.size(), " ; Peers known : ", _mapHeardList.size())
 
 	// Calculate the current mode
 	UInt16 totalMode = 0;

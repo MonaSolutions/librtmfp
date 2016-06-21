@@ -609,18 +609,13 @@ bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const stri
 	return true;
 }
 
-void FlowManager::sendHandshake0(HandshakeType type, const string& epd, const string& tag) {
+void FlowManager::sendHandshake0(const string& epd, const string& tag) {
 	// (First packets are encoded with default key)
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
 	writer.clear(RTMFP_HEADER_SIZE + 3); // header + type and size
 
-	//if(type == P2P_HANDSHAKE) {
-		writer.write7BitLongValue(epd.size() + 2);
-		writer.write7BitLongValue(epd.size() + 1);
-	//} else
-	//	writer.write16((UInt16)(epd.size() + 1));
-	writer.write8(type); // handshake type
-	writer.write(epd);
+	writer.write7BitLongValue(epd.size());
+	writer.write(epd.data(), epd.size());
 
 	writer.write(tag);
 

@@ -123,8 +123,7 @@ protected:
 	};
 
 	// Send the first handshake message (with rtmfp url/peerId + tag)
-	// TODO: see if we can move this in RTMFPConnection
-	void sendHandshake0(HandshakeType type, const std::string& epd, const std::string& tag);
+	void sendHandshake0(const std::string& epd, const std::string& tag);
 
 	virtual RTMFPEngine*	getDecoder(Mona::UInt32 idStream, const Mona::SocketAddress& address) { return (idStream == 0) ? _pDefaultDecoder.get() : _pDecoder.get(); }
 

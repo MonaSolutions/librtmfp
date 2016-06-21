@@ -48,7 +48,7 @@ public:
 	void	createStream() { if (_pStream) _pStream->createStream(*_pWriter); }
 	void	sendPeerInfo(Mona::UInt16 port) { if (_pStream) _pStream->sendPeerInfo(*_pWriter, port); }
 	void	sendGroupConnect(const std::string& netGroup) { if (_pStream) _pStream->sendGroupConnect(*_pWriter, netGroup); }
-	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const std::string& peerId/*, bool initiator*/) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, peerId/*, initiator*/); }
+	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const char* rawId/*, bool initiator*/) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, rawId/*, initiator*/); }
 	void	sendGroupBegin() { if (_pStream) _pStream->sendGroupBegin(*_pWriter); }
 	void	sendGroupMediaInfos(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size) { if (_pStream) _pStream->sendGroupMediaInfos(*_pWriter, stream, data, size); }
 	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size, bool flush=false) { 

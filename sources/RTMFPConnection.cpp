@@ -78,7 +78,9 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 		return false;
 	}
 
-	 _url = url;
+	_url = url;
+	RTMFP::Write7BitValue(_rawUrl, strlen(url)+1);
+	String::Append(_rawUrl, '\x0A', url);
 	string tmpHost = host;
 	if (!strrchr(host, ':'))
 		tmpHost += ":1935"; // default port
@@ -128,16 +130,13 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 	if (pPeer)
 		_waitingPeers.push_back(pPeer->tag());
-
-	if (_group && peerId != "unknown")
-		_group->addPeer2HeardList(peerId);
 }
 
 void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const string& rawId, const SocketAddress& address) {
 	// Check if the peer is not already in the waiting queue
 	for (auto it = _mapPeersByTag.begin(); it != _mapPeersByTag.end(); it++) {
 		if (it->second->peerId == peerId) {
-			DEBUG("Connection ignored, we are already connecting to ", peerId)
+			TRACE("Connection ignored, we are already connecting to ", peerId)
 			return;
 		}
 	}
@@ -146,8 +145,8 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 
 	// Send the handshake 30 to peer
 	if (pPeer) {
-		pPeer->sendHandshake0(P2P_HANDSHAKE, rawId, pPeer->tag());
-		pPeer->lastTry.start();
+		pPeer->sendHandshake0(rawId, pPeer->tag());
+		pPeer->lastTry.update();
 		pPeer->attempt++;
 	}
 }
@@ -343,7 +342,7 @@ void RTMFPConnection::handleRedirection(Exception& ex, BinaryReader& reader) {
 
 		// Send handshake 30 request to the current address
 		_outAddress = address;
-		sendHandshake0(BASE_HANDSHAKE, _url, _tag);
+		sendHandshake0(_rawUrl, _tag);
 	}
 }
 
@@ -405,8 +404,10 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 	writer.write16(0x1D02); // (signature)
 	writer.write(_pubKey);
 
-	EVP_Digest(writer.data()+idPos, writer.size()-idPos, _peerId, NULL, EVP_sha256(), NULL);
-	INFO("peer id : \n", Util::FormatHex(_peerId, sizeof(_peerId), _peerTxtId))
+	_rawId[0] = '\x21';
+	_rawId[1] = '\x0f';
+	EVP_Digest(writer.data()+idPos, writer.size()-idPos, _rawId+2, NULL, EVP_sha256(), NULL);
+	INFO("Peer ID : \n", Util::FormatHex(_rawId+2, PEER_ID_SIZE, _peerTxtId))
 
 	_nonce.resize(0x4C, false);
 	BinaryWriter nonceWriter(_nonce.data(), 0x4C);
@@ -446,13 +447,10 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 
 	// Add the connection to map by addresses and send the handshake 38
 	auto itAddress = _mapPeersByAddress.emplace(_outAddress, it->second).first;
-	itAddress->second->initiatorHandshake70(ex, reader, _outAddress);
-	if (ex)
-		return false;
-
 	// Delete the temporary pointer
 	_mapPeersByTag.erase(it);
-	return true;
+	itAddress->second->initiatorHandshake70(ex, reader, _outAddress);
+	return !ex;
 }
 
 bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
@@ -478,9 +476,6 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		return true;
 	}
 
-	string id = it->second->peerId.c_str(); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-	id = Util::UnformatHex(id);
-
 	SocketAddress address;
 	while (reader.available() && *reader.current() != 0xFF) {
 		UInt8 addressType = reader.read8();
@@ -491,7 +486,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		// TODO: Record the address to ignore if it has already been received
 		if ((addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC) {
 			it->second->_outAddress = address;
-			it->second->sendHandshake0(P2P_HANDSHAKE, id, tagReceived);
+			it->second->sendHandshake0(it->second->rawId, tagReceived);
 		}
 	}
 	return true;
@@ -690,21 +685,19 @@ void RTMFPConnection::sendConnections() {
 	// Send normal connection request
 	if(_waitConnect) {
 		INFO("Connecting to ", _targetAddress.toString(), "...")
-		sendHandshake0(BASE_HANDSHAKE, _url, _tag);
+		sendHandshake0(_rawUrl, _tag);
 		_waitConnect=false;
 	}
 
 	// Send waiting p2p connections
-	string id;
 	auto itTag = _waitingPeers.begin();
 	while (connected && itTag != _waitingPeers.end()) {
 
 		auto it = _mapPeersByTag.find(*itTag);
 		if (it != _mapPeersByTag.end()) {
 			INFO("Sending P2P handshake 30 to server (peerId : ", it->second->peerId, ")")
-			id = it->second->peerId.c_str(); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-			it->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), *itTag);
-			it->second->lastTry.start();
+			it->second->sendHandshake0(it->second->rawId, *itTag);
+			it->second->lastTry.update();
 			it->second->attempt++;
 		}
 		else
@@ -724,21 +717,21 @@ void RTMFPConnection::sendConnections() {
 	// TODO: make the attempt and elapsed count parametrable
 	auto itPeer = _mapPeersByTag.begin();
 	while (itPeer != _mapPeersByTag.end()) {
-		if (!itPeer->second->_responder && (itPeer->second->lastTry.elapsed() > 1500)) { // initiators
-			if (itPeer->second->attempt > 5) {
-				WARN("P2P handshake with ", itPeer->second->peerId," has reached 6 attempts without answer, deleting session...")
+		if (!itPeer->second->_responder && (itPeer->second->lastTry.isElapsed(itPeer->second->attempt * 1000))) { // initiators
+			if (itPeer->second->attempt >= 11) {
+				WARN("P2P handshake with ", itPeer->second->peerId," has reached 11 attempts without answer, deleting session...")
 				if (_group)
 					_group->removePeer(itPeer->second->peerId);
 				_mapPeersByTag.erase(itPeer++);
 				continue;
 			}
 
-			string id = itPeer->second->peerId.c_str();  // To avoid memory sharing (linux)
+			// TODO: check if we need to separate tries to server and to peer
 			itPeer->second->_outAddress = (_group)? itPeer->second->peerAddress() : _targetAddress;
 			INFO("Sending new P2P handshake 30 to ", itPeer->second->_outAddress.toString(), " (peerId : ", itPeer->second->peerId, ")")
-			itPeer->second->sendHandshake0(P2P_HANDSHAKE, Util::UnformatHex(id), itPeer->first);
-			itPeer->second->lastTry.restart();
+			itPeer->second->sendHandshake0(itPeer->second->rawId, itPeer->first);
 			itPeer->second->attempt++;
+			itPeer->second->lastTry.update();
 		}
 		++itPeer;
 	}
@@ -835,9 +828,9 @@ void RTMFPConnection::sendGroupConnection(const string& netGroup) {
 	pFlow->sendGroupConnect(netGroup);
 }
 
-void RTMFPConnection::addPeer2HeardList(const SocketAddress& peerAddress, const string& peerId) {
+void RTMFPConnection::addPeer2HeardList(const SocketAddress& peerAddress, const string& peerId, const char* rawId) {
 	if (_group)
-		_group->addPeer2HeardList(peerId); // Inform the NetGroup about the new peer
+		_group->addPeer2HeardList(peerId, rawId, peerAddress); // Inform the NetGroup about the new peer
 
 	// If there is a waiting connexion to that peer, destroy it
 	lock_guard<recursive_mutex> lock(_mutexConnections);
