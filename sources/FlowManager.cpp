@@ -101,7 +101,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 		Buffer copy(pBuffer.size());
 		memcpy(copy.data(), pBuffer.data(), pBuffer.size());
 		if(!pDecoder->process(BIN pBuffer.data(),pBuffer.size())) {
-			WARN("Bad RTMFP CRC sum computing (idstream: ", idStream, ", address : ", address.toString(), ")")
+			ERROR("Bad RTMFP CRC sum computing (idstream: ", idStream, ", address : ", address.toString(), ")")
 			DUMP("RTMFP", copy.data(), copy.size(), "Raw request : ")
 			return;
 		} else
@@ -414,6 +414,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 					// TODO: commented because it replace other events (NetConnection.Connect.Rejected)
 					// fail(); // If connection fails, log is already displayed, and so fail the whole session!
 				}
+				handleFlowClosed(pFlow->id); // If we need to make something before deleting a Flow
 				_flows.erase(pFlow->id);
 				delete pFlow;
 			}

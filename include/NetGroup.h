@@ -5,6 +5,7 @@
 #include "FlashStream.h"
 #include "RTMFPConnection.h"
 #include "GroupListener.h"
+#include <set>
 
 #define NETGROUP_MAX_PACKET_SIZE		959
 #define MAX_FRAGMENT_MAP_SIZE			1024
@@ -27,7 +28,7 @@ public:
 	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
 
 	// Remove a peer from the NetGroup map
-	void removePeer(const std::string& peerId);
+	void removePeer(const std::string& peerId, bool full);
 
 	// Return True if the peer doesn't already exists and if the group ID match our group ID
 	bool checkPeer(const std::string& groupId, const std::string& peerId);
@@ -67,7 +68,7 @@ private:
 
 	// Build the Group Report for the peer in parameter
 	// Return false if the peer is not found
-	bool	buildGroupReport(const std::string& peerId);
+	void	sendGroupReport(std::map<std::string, std::shared_ptr<P2PConnection>>::iterator itPeer);
 
 	// Push an arriving fragment to the peers and write it into the output file (recursive function)
 	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator itFragment);
@@ -75,8 +76,11 @@ private:
 	// Calculate the pull & play mode balance and send the requests if needed
 	void	updatePlayMode();
 
-	// Calculate the Best list and connect/disconnect to peers
-	void	manageBestList();
+	// Calculate the Best list from a group address
+	void	buildBestList(const std::string& groupAddress, std::set<std::string>& bestList);
+
+	// Connect and disconnect peers to fit the best list
+	void	manageBestConnections(std::set<std::string>& bestList);
 
 	Mona::Int64												_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
 	Mona::UInt16											_windowDuration; // NetStream.multicastWindowDuration equivalent in msec

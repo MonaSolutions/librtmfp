@@ -36,6 +36,8 @@ public:
 
 	void	fail(const std::string& error);
 
+	void	close();
+
 	bool	consumed() { return _completed; }
 
 	// Record the far peer Id to identify the media source
@@ -51,14 +53,9 @@ public:
 	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const char* rawId/*, bool initiator*/) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, rawId/*, initiator*/); }
 	void	sendGroupBegin() { if (_pStream) _pStream->sendGroupBegin(*_pWriter); }
 	void	sendGroupMediaInfos(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size) { if (_pStream) _pStream->sendGroupMediaInfos(*_pWriter, stream, data, size); }
-	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size, bool flush=false) { 
-		if (_pStream) {
-			/*if (flush) 
-				_pWriter->flush();*/
+	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size) { 
+		if (_pStream)
 			_pStream->sendRaw(*_pWriter, data, size); 
-			/*if (flush)
-				_pWriter->flush();*/
-		}
 	}
 	void	sendGroupPlay(Mona::UInt8 mode) { if (_pStream) _pStream->sendGroupPlay(*_pWriter, mode); }
 	//void	closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime) { if (_pStream) _pStream->sendGroupCloseStream(type, fragmentCounter, lastTime); }

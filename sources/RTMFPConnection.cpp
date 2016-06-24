@@ -616,7 +616,7 @@ void RTMFPConnection::manage() {
 		if (pPeer->failed()) { // delete if dead
 			NOTE("Deletion of p2p connection to ", pPeer->peerAddress().toString())
 			if (_group)
-				_group->removePeer(pPeer->peerId);
+				_group->removePeer(pPeer->peerId, !pPeer->isGroupDeletion);
 			_mapPeersByAddress.erase(it++);
 			continue;
 		}
@@ -721,7 +721,7 @@ void RTMFPConnection::sendConnections() {
 			if (itPeer->second->attempt >= 11) {
 				WARN("P2P handshake with ", itPeer->second->peerId," has reached 11 attempts without answer, deleting session...")
 				if (_group)
-					_group->removePeer(itPeer->second->peerId);
+					_group->removePeer(itPeer->second->peerId, true);
 				_mapPeersByTag.erase(itPeer++);
 				continue;
 			}

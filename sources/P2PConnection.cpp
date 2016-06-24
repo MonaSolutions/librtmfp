@@ -13,7 +13,7 @@ UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
-	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), lastGroupReport(0), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0),
+	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), isGroupDeletion(false),
 	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
@@ -52,8 +52,20 @@ P2PConnection::~P2PConnection() {
 	_pMainStream->OnFragment::unsubscribe((OnFragment&)*this);
 	_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
 	close();
-	_pMediaFlow = NULL;
+	_pMediaFlow = _pReportFlow = _pFragmentsFlow = NULL;
 	_parent = NULL;
+}
+
+void P2PConnection::handleFlowClosed(UInt64 idFlow) {
+	if (_pMediaFlow && idFlow == _pMediaFlow->id)
+		_pMediaFlow = NULL;
+	else if (_pReportFlow && idFlow == _pReportFlow->id) {
+		_pReportFlow = NULL;
+		INFO("Far peer has closed the NetGroup main writer, closing the connection...")
+		close();
+	} 
+	else if (_pFragmentsFlow && idFlow == _pFragmentsFlow->id)
+		_pFragmentsFlow = NULL;
 }
 
 UDPSocket&	P2PConnection::socket() { 
@@ -164,21 +176,17 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	reader.read(0x40, cookie);
 
 	UInt32 publicKeySize = reader.read7BitValue();
-	if (publicKeySize != 0x84) {
-		ex.set(Exception::PROTOCOL, "Public key size should be 132 bytes but found : ", publicKeySize);
-		return;
-	}
+	if (publicKeySize != 0x84)
+		DEBUG("Public key size should be 132 bytes but found : ", publicKeySize);
 	UInt32 idPos = reader.position(); // record position for peer ID determination
-	if ((publicKeySize = reader.read7BitValue()) != 0x82) {
-		ex.set(Exception::PROTOCOL, "Public key size should be 130 bytes but found : ", publicKeySize);
-		return;
-	}
+	if ((publicKeySize = reader.read7BitValue()) != 0x82)
+		DEBUG("Public key size should be 130 bytes but found : ", publicKeySize);
 	UInt16 signature = reader.read16();
 	if (signature != 0x1D02) {
 		ex.set(Exception::PROTOCOL, "Expected signature 1D02 but found : ", Format<UInt16>("%.4x", signature));
 		return;
 	}
-	reader.read(0x80, _farKey);
+	reader.read(publicKeySize-2, _farKey);
 
 	// Read peerId and update the parent
 	UInt8 id[PEER_ID_SIZE];
@@ -452,7 +460,7 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 }
 
 void P2PConnection::handleWriterFailed(RTMFPWriter* pWriter) {
-	if (pWriter->flowId == _pReportFlow->id) {
+	if (_pReportFlow && pWriter->flowId == _pReportFlow->id) {
 		INFO("Far peer has closed the NetGroup main writer, closing the connection...")
 		close();
 	}
@@ -462,6 +470,7 @@ void P2PConnection::close() {
 	_group.reset();
 
 	if (connected) {
+		closeGroup();
 		writeMessage(0x5E, 0);
 		connected = false;
 	}
@@ -511,7 +520,7 @@ void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, b
 void P2PConnection::sendFragmentsMap(const UInt8* data, UInt32 size) {
 	if (_pFragmentsFlow) {
 		DEBUG("Sending Fragments Map message (type 22) to peer ", peerId)
-		_pFragmentsFlow->sendRaw(data, size, true);
+		_pFragmentsFlow->sendRaw(data, size);
 	}
 }
 
@@ -555,4 +564,12 @@ bool P2PConnection::checkMask(UInt8 bitNumber) {
 		((*_fragmentsMap.data()) & (1 << (8 - (_idFragmentMap - lastFragment)))) > 0, " ; bit number : ", bitNumber)
 
 	return ((*_fragmentsMap.data()) & (1 << (8 - (_idFragmentMap - lastFragment)))) > 0;
+}
+
+void P2PConnection::closeGroup() {
+
+	if (_pReportFlow)
+		_pReportFlow->close();
+	if (_pFragmentsFlow)
+		_pFragmentsFlow->close();
 }

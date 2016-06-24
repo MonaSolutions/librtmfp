@@ -85,6 +85,9 @@ protected:
 	// Handle message (after hanshake0)
 	virtual void				handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
 
+	// Called before deleting an RTMFPFlow
+	virtual void				handleFlowClosed(Mona::UInt64 idFlow) {}
+
 	// Close the conection properly
 	virtual void				close();
 

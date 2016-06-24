@@ -86,6 +86,9 @@ public:
 	// Send the group begin message (02 + 0E messages)
 	void sendGroupBegin();
 
+	// Close the Group connection to peer
+	void closeGroup();
+
 	// Send the UnpublishNotify and closeStream messages
 	//void closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime);
 
@@ -113,10 +116,9 @@ public:
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 
 	// NetGroup members
-
 	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
-	Mona::UInt64					lastGroupReport; // Time in msec of First Group report received
 	Mona::UInt8						pushInMode; // Group Play Push mode
+	bool							isGroupDeletion; // True if we disconnect because of the best list managment
 
 protected:
 	// Handle play request (only for P2PConnection)
@@ -127,6 +129,9 @@ protected:
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
+
+	// Called before deleting an RTMFPFlow
+	virtual void				handleFlowClosed(Mona::UInt64 idFlow);
 
 private:
 	// Return true if the new fragment is pushable (according to the Group push mode)

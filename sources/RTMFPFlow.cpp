@@ -111,11 +111,18 @@ void RTMFPFlow::complete() {
 
 void RTMFPFlow::fail(const string& error) {
 	ERROR("RTMFPFlow ",id," failed, ",error);
+	close();
+}
+
+void RTMFPFlow::close() {
 	if (_completed)
 		return;
-	BinaryWriter& writer = _band.writeMessage(0x5e,Util::Get7BitValueSize(id)+1);
+	if (_pWriter)
+		_pWriter->close();
+	BinaryWriter& writer = _band.writeMessage(0x5e, Util::Get7BitValueSize(id) + 1);
 	writer.write7BitLongValue(id);
-	writer.write8(0); // unknown
+	writer.write8(0); // finishing marker
+	_pWriter->flush();
 }
 
 void RTMFPFlow::commit() {
