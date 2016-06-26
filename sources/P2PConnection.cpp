@@ -13,7 +13,7 @@ UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
-	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), isGroupDeletion(false),
+	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), groupReportInitiator(false),
 	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
@@ -51,7 +51,7 @@ P2PConnection::~P2PConnection() {
 	_pMainStream->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
 	_pMainStream->OnFragment::unsubscribe((OnFragment&)*this);
 	_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
-	close();
+	close(true);
 	_pMediaFlow = _pReportFlow = _pFragmentsFlow = NULL;
 	_parent = NULL;
 }
@@ -62,7 +62,7 @@ void P2PConnection::handleFlowClosed(UInt64 idFlow) {
 	else if (_pReportFlow && idFlow == _pReportFlow->id) {
 		_pReportFlow = NULL;
 		INFO("Far peer has closed the NetGroup main writer, closing the connection...")
-		close();
+		close(true);
 	} 
 	else if (_pFragmentsFlow && idFlow == _pFragmentsFlow->id)
 		_pFragmentsFlow = NULL;
@@ -462,23 +462,27 @@ void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::
 void P2PConnection::handleWriterFailed(RTMFPWriter* pWriter) {
 	if (_pReportFlow && pWriter->flowId == _pReportFlow->id) {
 		INFO("Far peer has closed the NetGroup main writer, closing the connection...")
-		close();
+		close(true);
 	}
 }
 
-void P2PConnection::close() {
+void P2PConnection::close(bool full) {
 	_group.reset();
 
 	if (connected) {
 		closeGroup();
 		writeMessage(0x5E, 0);
 		connected = false;
+		_handshakeStep = 0;
 	}
 
 	if (_pListener) {
 		_parent->stopListening(peerId);
 		_pListener = NULL;
 	}
+
+	if (!full)
+		return;
 
 	// TODO: check if necessary, it could send a 5C message which has nothing to do with P2P
 	FlowManager::close();

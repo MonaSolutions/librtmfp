@@ -106,7 +106,7 @@ public:
 	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
 
 	// Close the connection properly
-	virtual void				close();
+	virtual void				close(bool full);
 
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
 	Mona::Time						lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
@@ -118,7 +118,7 @@ public:
 	// NetGroup members
 	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
 	Mona::UInt8						pushInMode; // Group Play Push mode
-	bool							isGroupDeletion; // True if we disconnect because of the best list managment
+	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
 
 protected:
 	// Handle play request (only for P2PConnection)

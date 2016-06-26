@@ -82,6 +82,9 @@ private:
 	// Connect and disconnect peers to fit the best list
 	void	manageBestConnections(std::set<std::string>& bestList);
 
+	// Read a pair of addresses and add peer to lists if neaded
+	void readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId, bool noPeerID);
+
 	Mona::Int64												_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
 	Mona::UInt16											_windowDuration; // NetStream.multicastWindowDuration equivalent in msec
 

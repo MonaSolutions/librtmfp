@@ -228,7 +228,6 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
 		string key1, key2, tmp, newPeerId, rawId;
 		UInt32 targetCount = targetNeighborsCount();
-		SocketAddress address;
 
 		packet.read(8, key1);
 		UInt16 size = packet.read8();
@@ -239,54 +238,35 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		// Loop on each peer of the NetGroup
 		while (packet.available() > 4) {
-			size = packet.read16();
-			if (size < 2)
-				continue;
-			else if (size > packet.available())
-				size = packet.available();
-			packet.read(size, rawId);
-			bool unknown = String::ICompare(rawId, "\x21\x0F" , 2)!=0;
-			if (unknown)
-				DEBUG("Group message 0A - Unknown parameter : ", Util::FormatHex(BIN rawId.data(), size, LOG_BUFFER))
+			UInt8 zeroMarker = packet.read8();
+			if (zeroMarker != 00) {
+				ERROR("Unexpected marker : ", Format<UInt8>("%.2x", zeroMarker), " - Expected 00")
+				break;
+			}
+			size = packet.read8();
+			if (size == 0x22) {
+				packet.read(size, rawId);
+				Util::FormatHex(BIN rawId.data() + 2, PEER_ID_SIZE, newPeerId);
+				if (String::ICompare(rawId, "\x21\x0F", 2) != 0) {
+					ERROR("Unexpected parameter : ", newPeerId, " - Expected Peer Id")
+					break;
+				}
+				DEBUG("Group message 0A - Peer ID : ", newPeerId)
+			}
+			else if (size > 7)
+				readAddress(packet, size, targetCount, newPeerId, rawId, true);
 			else
-				DEBUG("Group message 0A - Peer ID : ", Util::FormatHex(BIN rawId.data()+2, PEER_ID_SIZE, newPeerId))
+				DEBUG("Empty parameter...")
+
 			UInt64 time = packet.read7BitLongValue();
 			DEBUG("Group message 0A - Time elapsed : ", time)
 
-			size = packet.read8();
+			size = packet.read8(); // Address size
 
-			if (!unknown) {
-				auto itNode = _mapHeardList.find(newPeerId);
-				if (itNode != _mapHeardList.end())
-					DEBUG("Group message 0A - Group Address : ", itNode->second.groupAddress)
-			}
-
-			if (unknown || newPeerId == _conn.peerId() || _mapHeardList.find(newPeerId) != _mapHeardList.end()) {
+			if (size < 0x08 || newPeerId == _conn.peerId() || _mapHeardList.find(newPeerId) != _mapHeardList.end())
 				packet.next(size);
-				continue;
-			}
-
-			// New peer, get the address and try to connect to him
-			UInt8 addressMarker = packet.read8();
-			--size;
-			if (addressMarker != 0x0A) {
-				WARN("Unexpected address marker : ", Format<UInt8>("%.2x", addressMarker))
-				packet.next(size);
-				break;
-			}
-			while (size > 0) {
-				
-				UInt8 addressType = packet.read8();
-				RTMFP::ReadAddress(packet, address, addressType);
-				if ((addressType&0x0F) == RTMFP::ADDRESS_PUBLIC && address.family() == IPAddress::IPv4) {// TODO: Handle ivp6
-					DEBUG("Group message 0A - IP Address : ", address.toString())
-
-					addPeer2HeardList(newPeerId.c_str(), rawId.c_str(), address);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-					if (_mapHeardList.size() < targetCount)
-						_conn.connect2Peer(newPeerId.c_str(), stream.c_str(), rawId, address);
-				}
-				size -= 3 + ((address.family() == IPAddress::IPv6) ? sizeof(in6_addr) : sizeof(in_addr));
-			}
+			else // New peer, get the address and try to connect to him
+				readAddress(packet, size, targetCount, newPeerId, rawId, false);
 		}
 
 		auto it = _mapPeers.find(peerId);
@@ -302,6 +282,11 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			// Send the publication infos if not already sent
 			else if (!it->second->publicationInfosSent)
 				it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size());
+
+			if (!it->second->groupReportInitiator)
+				sendGroupReport(it);
+			else 
+				it->second->groupReportInitiator = false;
 		}
 	};
 	onGroupPlayPush = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
@@ -362,8 +347,10 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		 // When we receive the 0E NetGroup message type we must send the group report
 		auto it = _mapPeers.find(peerId);
-		if (it != _mapPeers.end())
+		if (it != _mapPeers.end()) {
+			it->second->groupReportInitiator = true;
 			sendGroupReport(it);
+		}
 	};
 
 	GetGroupAddressFromPeerId(STR _conn.rawId(), _myGroupAddress);
@@ -531,8 +518,10 @@ void NetGroup::manage() {
 		UInt32 index = Util::Random<UInt32>() % _mapPeers.size();
 		auto itRandom = _mapPeers.begin();
 		advance(itRandom, index);
-		if (itRandom->second->connected)
+		if (itRandom->second->connected) {
+			itRandom->second->groupReportInitiator = true;
 			sendGroupReport(itRandom);
+		}
 
 		_lastReport.update();
 	}
@@ -870,8 +859,7 @@ void NetGroup::manageBestConnections(set<string>& bestList) {
 	while (it2Close != _mapPeers.end()) {
 		if (bestList.find(it2Close->first) == bestList.end()) {
 			p2Close = it2Close->second;
-			p2Close->isGroupDeletion = true;
-			p2Close->close();
+			p2Close->close(false);
 		}
 		it2Close++;
 	}
@@ -885,5 +873,32 @@ void NetGroup::manageBestConnections(set<string>& bestList) {
 			else
 				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.rawId, itNode->second.address);
 		}
+	}
+}
+
+void NetGroup::readAddress(PacketReader& packet, UInt16 size, UInt32 targetCount, const string& newPeerId, const string& rawId, bool noPeerID) {
+	UInt8 addressMarker = packet.read8();
+	--size;
+	if (addressMarker != 0x0A) {
+		ERROR("Unexpected address marker : ", Format<UInt8>("%.2x", addressMarker))
+		packet.next(size);
+		return;
+	}
+
+	// Read all addresses
+	SocketAddress address;
+	while (size > 0) {
+
+		UInt8 addressType = packet.read8();
+		RTMFP::ReadAddress(packet, address, addressType);
+		if (!noPeerID && (addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC && address.family() == IPAddress::IPv4) { // TODO: Handle ivp6
+			DEBUG("Group message 0A - IP Address : ", address.toString())
+
+			// New Peer ID => we add it to heard list and connect to him if possible
+			addPeer2HeardList(newPeerId.c_str(), rawId.c_str(), address);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
+			if (_mapHeardList.size() < targetCount)
+				_conn.connect2Peer(newPeerId.c_str(), stream.c_str(), rawId, address);
+		}
+		size -= 3 + ((address.family() == IPAddress::IPv6) ? sizeof(in6_addr) : sizeof(in_addr));
 	}
 }

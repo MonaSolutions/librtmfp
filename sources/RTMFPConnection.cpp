@@ -34,9 +34,8 @@ RTMFPConnection::~RTMFPConnection() {
 		_group->close();
 
 	// Close peers
-	for(auto it : _mapPeersByAddress) {
-		it.second->close();
-	}
+	for(auto it : _mapPeersByAddress)
+		it.second->close(true);
 
 	// Close listener & publisher
 	if (_pListener && _pPublisher) {
@@ -616,7 +615,7 @@ void RTMFPConnection::manage() {
 		if (pPeer->failed()) { // delete if dead
 			NOTE("Deletion of p2p connection to ", pPeer->peerAddress().toString())
 			if (_group)
-				_group->removePeer(pPeer->peerId, !pPeer->isGroupDeletion);
+				_group->removePeer(pPeer->peerId, true);
 			_mapPeersByAddress.erase(it++);
 			continue;
 		}
