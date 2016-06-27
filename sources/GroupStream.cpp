@@ -58,9 +58,9 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			INFO("GroupStream ", id, " - NetGroup data message type : ", value)
 			break;
 		}
-		/*case GroupStream::GROUP_NKNOWN:
-			INFO("GroupStream ", id, " - NetGroup 0C message type")
-			break;*/
+		case GroupStream::GROUP_NKNOWN:
+			WARN("GroupStream ", id, " - Unknown NetGroup 0C message type")
+			break;
 		case GroupStream::GROUP_BEGIN_NEAREST:
 			INFO("GroupStream ", id, " - NetGroup 0F (Begin nearest) message type")
 			OnGroupBegin::raise(_peerId, writer);
@@ -71,15 +71,6 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			break;
 		case GroupStream::GROUP_REPORT: {
 			INFO("GroupStream ", id, " - NetGroup Report (type 0A)")
-			UInt8 size = packet.read8();
-			while (size == 1) {
-				packet.next();
-				size = packet.read8();
-			}
-			if (size != 8) {
-				ERROR("Unexpected 1st parameter size in group message 3")
-				break;
-			}
 			OnGroupReport::raise(_peerId, packet, writer);
 			break;
 		}

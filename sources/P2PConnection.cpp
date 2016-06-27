@@ -194,7 +194,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	if (peerId == "unknown")
 		rawId.append(STR id, PEER_ID_SIZE);
 	INFO("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
-	_parent->addPeer2HeardList(_outAddress, peerId, rawId.c_str());
+	_parent->addPeer2HeardList(_outAddress, peerId, rawId.data());
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -291,7 +291,7 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 	// Before sending we set connection parameters
 	_outAddress = _targetAddress = address;
 	_farId = 0;
-	_parent->addPeer2HeardList(_outAddress, peerId, rawId.c_str());
+	_parent->addPeer2HeardList(_outAddress, peerId, rawId.data());
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	if (!ex) {
@@ -421,11 +421,11 @@ void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader
 }
 
 void P2PConnection::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
-	
+
 	if (!_group) {
-		ERROR("Group Handshake on a normal p2p connection")
-		return;
-	}
+			ERROR("Group Handshake on a normal p2p connection")
+			return;
+		}
 
 	if (String::ICompare(groupId, _group->idHex) != 0) {
 		ERROR("Unexpected group ID received : ", groupId, "\nExpected : ", _group->idHex)
@@ -471,9 +471,9 @@ void P2PConnection::close(bool full) {
 
 	if (connected) {
 		closeGroup();
-		writeMessage(0x5E, 0);
 		connected = false;
 		_handshakeStep = 0;
+		_groupConnectSent = false;
 	}
 
 	if (_pListener) {

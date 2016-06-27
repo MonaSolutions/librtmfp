@@ -11,7 +11,7 @@ using namespace std;
 
 class GroupNode : public virtual Object {
 public:
-	GroupNode(const string& rawPeerId, const string& groupId, const SocketAddress& addr) : rawId(rawPeerId), groupAddress(groupId), address(addr), lastGroupReport(0) {}
+	GroupNode(const char* rawPeerId, const string& groupId, const SocketAddress& addr) : rawId(rawPeerId, PEER_ID_SIZE+2), groupAddress(groupId), address(addr), lastGroupReport(0) {}
 
 	string rawId;
 	string groupAddress;
@@ -229,12 +229,22 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		string key1, key2, tmp, newPeerId, rawId;
 		UInt32 targetCount = targetNeighborsCount();
 
+		UInt8 size1st = packet.read8();
+		while (size1st == 1) { // TODO: check what this means
+			packet.next();
+			size1st = packet.read8();
+		}
+		if (size1st != 8) {
+			ERROR("Unexpected 1st parameter size in Group Report : ", size1st)
+			return;
+		}
+
 		packet.read(8, key1);
 		UInt16 size = packet.read8();
 		packet.read(size, key2);
 		
-		DEBUG("Group message 0A - 1st parameter : ", Util::FormatHex(BIN key1.data(), key2.size(), LOG_BUFFER))
-		DEBUG("Group message 0A - 2nd parameter : ", Util::FormatHex(BIN key2.data(), key2.size(), LOG_BUFFER))
+		DEBUG("Group Report - 1st parameter : ", Util::FormatHex(BIN key1.data(), key1.size(), LOG_BUFFER))
+		DEBUG("Group Report - 2nd parameter : ", Util::FormatHex(BIN key2.data(), key2.size(), LOG_BUFFER))
 
 		// Loop on each peer of the NetGroup
 		while (packet.available() > 4) {
@@ -251,7 +261,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 					ERROR("Unexpected parameter : ", newPeerId, " - Expected Peer Id")
 					break;
 				}
-				DEBUG("Group message 0A - Peer ID : ", newPeerId)
+				DEBUG("Group Report - Peer ID : ", newPeerId)
 			}
 			else if (size > 7)
 				readAddress(packet, size, targetCount, newPeerId, rawId, true);
@@ -259,7 +269,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				DEBUG("Empty parameter...")
 
 			UInt64 time = packet.read7BitLongValue();
-			DEBUG("Group message 0A - Time elapsed : ", time)
+			DEBUG("Group Report - Time elapsed : ", time)
 
 			size = packet.read8(); // Address size
 
@@ -702,10 +712,11 @@ void NetGroup::sendGroupReport(std::map<std::string, std::shared_ptr<P2PConnecti
 	for (auto it1 : bestList) {
 		itNode = _mapHeardList.find(it1);
 		if (itNode != _mapHeardList.end())
-			sizeTotal += itNode->second.address.host().size() + serverHostSize + PEER_ID_SIZE + 13;
+			sizeTotal += itNode->second.address.host().size() + serverHostSize + PEER_ID_SIZE + 12 + ((itNode->second.lastGroupReport > 0) ? Util::Get7BitValueSize((Time::Now() - itNode->second.lastGroupReport) / 1000) : 1);
 	}
-	_reportBuffer.resize(sizeTotal, false);
+	_reportBuffer.resize(sizeTotal);
 
+	INFO("Report BUffer size : ", _reportBuffer.size(), " ; ", sizeTotal)
 	BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
 	writer.write8(0x0A);
 	writer.write8(itPeer->second->peerAddress().host().size() + 4);
@@ -714,22 +725,23 @@ void NetGroup::sendGroupReport(std::map<std::string, std::shared_ptr<P2PConnecti
 	writer.write8(serverHostSize + 4);
 	writer.write8(0x0A);
 	RTMFP::WriteAddress(writer, _conn.serverAddress(), RTMFP::ADDRESS_REDIRECTION);
+	writer.write8(0);
 
 	for (auto it2 : bestList) {
 		itNode = _mapHeardList.find(it2);
 		if (itNode != _mapHeardList.end()) {
 
-			UInt8 timeElapsed = (UInt8)((itNode->second.lastGroupReport > 0) ? ((Time::Now() - itNode->second.lastGroupReport) / 1000) : 0);
+			UInt64 timeElapsed = (UInt64)((itNode->second.lastGroupReport > 0) ? ((Time::Now() - itNode->second.lastGroupReport) / 1000) : 0);
 			DEBUG("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed) //, " (latency : ", itPeer.second->latency(), ")")
-			writer.write32(0x0022).write(itNode->second.rawId);
-			writer.write8(timeElapsed);
+			writer.write8(0x22).write(itNode->second.rawId.data(), PEER_ID_SIZE+2);
+			writer.write7BitLongValue(timeElapsed);
 			writer.write8(itNode->second.address.host().size() + serverHostSize + 7);
 			writer.write8(0x0A);
 			RTMFP::WriteAddress(writer, _conn.serverAddress(), RTMFP::ADDRESS_REDIRECTION);
 			RTMFP::WriteAddress(writer, itNode->second.address, RTMFP::ADDRESS_PUBLIC);
+			writer.write8(0);
 		}
 	}
-	writer.write8(0);
 
 	INFO("Sending the group report to ", itPeer->first)
 	itPeer->second->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
@@ -860,7 +872,8 @@ void NetGroup::manageBestConnections(set<string>& bestList) {
 		if (bestList.find(it2Close->first) == bestList.end()) {
 			p2Close = it2Close->second;
 			p2Close->close(false);
-		}
+			//removePeer(it2Close);
+		} //else
 		it2Close++;
 	}
 
@@ -892,10 +905,10 @@ void NetGroup::readAddress(PacketReader& packet, UInt16 size, UInt32 targetCount
 		UInt8 addressType = packet.read8();
 		RTMFP::ReadAddress(packet, address, addressType);
 		if (!noPeerID && (addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC && address.family() == IPAddress::IPv4) { // TODO: Handle ivp6
-			DEBUG("Group message 0A - IP Address : ", address.toString())
+			DEBUG("Group Report - IP Address : ", address.toString())
 
 			// New Peer ID => we add it to heard list and connect to him if possible
-			addPeer2HeardList(newPeerId.c_str(), rawId.c_str(), address);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
+			addPeer2HeardList(newPeerId.c_str(), rawId.data(), address);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 			if (_mapHeardList.size() < targetCount)
 				_conn.connect2Peer(newPeerId.c_str(), stream.c_str(), rawId, address);
 		}
