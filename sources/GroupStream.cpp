@@ -110,7 +110,9 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 
 			UInt64 counter = packet.read7BitLongValue();
 			UInt8 splitNumber = packet.read8(); // counter of the splitted sequence
-			UInt8 mediaType = packet.read8();
+			UInt8 mediaType = splitNumber; // In rare case the splitNumber is not written so it is the media type
+			if ((*packet.current()) == AMF::AUDIO || (*packet.current()) == AMF::VIDEO)
+				mediaType = packet.read8();
 			time = packet.read32();
 
 			DEBUG("GroupStream ", id, " - Group ", (mediaType == AMF::AUDIO ? "Audio" : (mediaType == AMF::VIDEO ? "Video" : "Unknown")), " Start Splitted media : counter=", counter, ", time=", time, ", splitNumber=", splitNumber)

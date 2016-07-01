@@ -56,6 +56,7 @@ private:
 
 	std::map<Mona::UInt64, MediaPacket>						_fragments;
 	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
+	std::set<Mona::UInt64>									_waitingFragments; // List of waiting fragments in Pull requests
 	Mona::UInt64											_fragmentCounter;
 	std::recursive_mutex									_fragmentMutex;
 
@@ -73,8 +74,11 @@ private:
 	// Push an arriving fragment to the peers and write it into the output file (recursive function)
 	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator itFragment);
 
-	// Calculate the pull & play mode balance and send the requests if needed
+	// Calculate the push play mode balance and send the requests if needed
 	void	updatePlayMode();
+
+	// Send the Pull requests if needed
+	void	sendPullRequests();
 
 	// Calculate the Best list from a group address
 	void	buildBestList(const std::string& groupAddress, std::set<std::string>& bestList);
@@ -83,7 +87,7 @@ private:
 	void	manageBestConnections(std::set<std::string>& bestList);
 
 	// Read a pair of addresses and add peer to lists if neaded
-	void readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId, bool noPeerID);
+	void	readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId, bool noPeerID);
 
 	Mona::Int64												_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
 	Mona::UInt16											_windowDuration; // NetStream.multicastWindowDuration equivalent in msec

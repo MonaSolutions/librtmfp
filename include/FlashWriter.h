@@ -67,6 +67,9 @@ public:
 	// Start to play the group stream
 	virtual void			writeGroupPlay(Mona::UInt8 mode)=0;
 
+	// Send a pull request to a peer (message 2B)
+	virtual void			writeGroupPull(Mona::UInt64 index)=0;
+
 	// Send the UnpublishNotify and closeStream messages
 	//virtual void			sendGroupCloseStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime)=0;
 

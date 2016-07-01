@@ -41,6 +41,9 @@ public:
 	// Return True if bit number is available in the fragments map (for push out mode)
 	bool checkMask(Mona::UInt8 bitNumber);
 
+	// Return True if the fragment is available
+	bool hasFragment(Mona::UInt64 index);
+
 	// Set the group
 	void setGroup(std::shared_ptr<NetGroup> group) { _group = group; }
 	void resetGroup() { _group.reset(); }
@@ -86,8 +89,14 @@ public:
 	// Send the group begin message (02 + 0E messages)
 	void sendGroupBegin();
 
+	// Send a pull request (2B)
+	void sendPull(Mona::UInt64 index);
+
 	// Close the Group connection to peer
 	void closeGroup();
+
+	// Return the last fragment available
+	Mona::UInt64 lastFragment() { return (_lastId>0)? _lastId : _idFragmentMap; }
 
 	// Send the UnpublishNotify and closeStream messages
 	//void closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime);
@@ -164,7 +173,8 @@ private:
 	RTMFPFlow*					_pReportFlow; // Flow for report messages
 
 	Mona::Buffer				_fragmentsMap; // Last Fragments Map received
-	Mona::UInt64				_idFragmentMap; // Last Fragments Map id
+	Mona::UInt64				_idFragmentMap; // Last ID from the Fragments Map
+	Mona::UInt64				_lastId; // Last Fragment ID received
 
 
 	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)

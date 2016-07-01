@@ -572,6 +572,11 @@ void RTMFPWriter::writeGroupPlay(UInt8 mode) {
 	writer.write8(GroupStream::GROUP_PLAY_PUSH).write8(mode);
 }
 
+void RTMFPWriter::writeGroupPull(UInt64 index) {
+	PacketWriter& writer = createMessage().writer().packet;
+	writer.write8(GroupStream::GROUP_PLAY_PULL).write7BitLongValue(index);
+}
+
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 	if(reliable || state()==OPENING) {
 		createMessage().writer().packet.write(data,size);

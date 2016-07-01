@@ -13,7 +13,7 @@ UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _groupConnectSent(false), _groupBeginSent(false), publicationInfosSent(false),
-	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), groupReportInitiator(false),
+	_pListener(NULL), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), _lastId(0), groupReportInitiator(false),
 	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
@@ -504,7 +504,7 @@ void P2PConnection::sendGroupReport(const UInt8* data, UInt32 size) {
 		ERROR("Unable to find the Report flow (2) for NetGroup communication")
 		return;
 	}
-	_pReportFlow->sendRaw(data, size);
+	_pReportFlow->sendRaw(data, size, true);
 	sendGroupBegin();
 }
 
@@ -518,13 +518,13 @@ void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, b
 			return;
 		_pMediaFlow->setPeerId(peerId);
 	}
-	_pMediaFlow->sendRaw(data, size);
+	_pMediaFlow->sendRaw(data, size, false);
 }
 
 void P2PConnection::sendFragmentsMap(const UInt8* data, UInt32 size) {
 	if (_pFragmentsFlow) {
 		DEBUG("Sending Fragments Map message (type 22) to peer ", peerId)
-		_pFragmentsFlow->sendRaw(data, size);
+		_pFragmentsFlow->sendRaw(data, size, true);
 	}
 }
 
@@ -549,6 +549,8 @@ void P2PConnection::sendPushMode(UInt8 mode) {
 void P2PConnection::updateFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
 	_idFragmentMap = id;
 
+	if (size > MAX_FRAGMENT_MAP_SIZE)
+		WARN("Size of fragment map > max size : ", size)
 	_fragmentsMap.resize(size);
 	BinaryWriter writer(_fragmentsMap.data(), size);
 	writer.write(data, size);
@@ -561,13 +563,42 @@ bool P2PConnection::checkMask(UInt8 bitNumber) {
 	if (_idFragmentMap % 8 == bitNumber)
 		return true;
 
+	// Determine the last fragment with bit mask
 	UInt64 lastFragment = _idFragmentMap - (_idFragmentMap % 8);
 	lastFragment += ((_idFragmentMap % 8) > bitNumber) ? bitNumber : bitNumber - 8;
 
-	DEBUG("Searching ", lastFragment, " into ", Format<UInt8>("%.2x", *_fragmentsMap.data()), " ; (current id : ", _idFragmentMap, ") ; result = ", 
-		((*_fragmentsMap.data()) & (1 << (8 - (_idFragmentMap - lastFragment)))) > 0, " ; bit number : ", bitNumber)
+	DEBUG("Searching ", lastFragment, " into ", Format<UInt8>("%.2x", *_fragmentsMap.data()), " ; (current id : ", _idFragmentMap, ") ; result = ",
+		((*_fragmentsMap.data()) & (1 << (8 - _idFragmentMap + lastFragment))) > 0, " ; bit : ", bitNumber, " ; address : ", _targetAddress.toString(), " ; latency : ", latency())
 
-	return ((*_fragmentsMap.data()) & (1 << (8 - (_idFragmentMap - lastFragment)))) > 0;
+	return ((*_fragmentsMap.data()) & (1 << (8 - _idFragmentMap + lastFragment))) > 0;
+}
+
+bool P2PConnection::hasFragment(UInt64 index) {
+	if (!_idFragmentMap || _idFragmentMap < index) {
+		DEBUG("Searching ", index, " impossible, current id : ", _idFragmentMap)
+		return false; // No Fragment or index too recent
+	}
+
+	if (_idFragmentMap == index)
+		return true;
+
+	UInt32 offset = (UInt32)((_idFragmentMap - index) / 8);
+	UInt32 rest = 7 - ((_idFragmentMap - index) % 8);
+	if (offset > _fragmentsMap.size())
+		return false; // Fragment deleted from buffer
+
+	DEBUG("Searching ", index, " into ", Format<UInt8>("%.2x", *(_fragmentsMap.data() + offset)), " ; (current id : ", _idFragmentMap, ", offset : ", offset, ") ; result = ",
+		(*(_fragmentsMap.data() + offset) & (1 << rest)) > 0)
+
+	return (*(_fragmentsMap.data() + offset) & (1 << rest)) > 0;
+}
+
+void P2PConnection::sendPull(UInt64 index) {
+	if (_pFragmentsFlow) {
+		INFO("Sending pull request for fragment ", index, " to peer ", _targetAddress.toString());
+
+		_pFragmentsFlow->sendGroupPull(index);
+	}
 }
 
 void P2PConnection::closeGroup() {

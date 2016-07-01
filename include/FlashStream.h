@@ -82,10 +82,13 @@ public:
 	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
 
 	// Send the media
-	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size);
+	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size, bool flush);
 
 	// Send the group play message (type 23)
 	void sendGroupPlay(FlashWriter& writer, Mona::UInt8 mode);
+
+	// Send a group pull request (type 2B)
+	void sendGroupPull(FlashWriter& writer, Mona::UInt64 index) { writer.writeGroupPull(index); }
 
 	// Record target peer ID for identifying media source (play mode)
 	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }

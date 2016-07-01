@@ -86,6 +86,8 @@ public:
 	virtual void		writeGroupPlay(Mona::UInt8 mode);
 	// Send the UnpublishNotify and closeStream messages
 	//virtual void		sendGroupCloseStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 time, const std::string& streamName);
+	// Send a pull request to a peer (message 2B)
+	virtual void		writeGroupPull(Mona::UInt64 index);
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);

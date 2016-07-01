@@ -331,10 +331,10 @@ int main(int argc,char* argv[]) {
 				onManage();
 				SLEEP(1000);
 			}
-			closeFiles();
 
 			printf("Closing connection...\n");
 			RTMFP_Close(context);
+			closeFiles();
 		}
 
 		fclose(pLogFile);
