@@ -36,6 +36,7 @@ To use it just do a git clone and run the following command in FFmpeg directory 
 
 - You must install first librtmp and libspeex developer versions (-dev or -devel)
 - You can remove --enable-debug if you doesn't want to debug ffmpeg
+- Install SDL-devel (or libsdl-dev) if you want to compile ffplay
 
 #### How to install librtmp and libspeex developer versions?
 
