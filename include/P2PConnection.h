@@ -69,7 +69,7 @@ public:
 	bool initiatorHandshake2(Mona::Exception& ex, Mona::BinaryReader& reader);
 
 	// Write the Group publication infos
-	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
+	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration);
 
 	// Send the group report (message 0A)
 	void sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);

@@ -114,7 +114,7 @@ UInt32 NetGroup::targetNeighborsCount() {
 }
 
 NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, bool publisher, RTMFPConnection& conn, double updatePeriod, UInt16 windowDuration) :
-	idHex(groupId), idTxt(groupTxt), stream(streamName), isPublisher(publisher), _conn(conn), _updatePeriod((Int64)updatePeriod*1000), _fragmentCounter(0),
+	idHex(groupId), idTxt(groupTxt), stream(streamName), isPublisher(publisher), _conn(conn), _updatePeriod((UInt64)(updatePeriod*1000)), _fragmentCounter(0),
 	_firstPushMode(true), _pListener(NULL), _windowDuration(windowDuration*1000), _streamCode(0x22) {
 	onMedia = [this](bool reliable, AMF::ContentType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
@@ -182,49 +182,68 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		// Push the fragment to the output file (if ordered)
 		pushFragment(itFragment);
 	};
-	onGroupMedia = [this](const string& peerId, PacketReader& packet, const string& streamName, FlashWriter& writer) {
-		if (streamName == stream) {
-			if (isPublisher) {
-				Buffer farCode;
-				packet.read(0x22, farCode);
+	onGroupMedia = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
+		string streamName;
+		const UInt8* posStart = packet.current() - 1; // Record the whole packet for sending back
 
-				// Another stream code => we must accept and send our stream code
-				if (memcmp(_streamCode.data(), farCode.data(), 0x22) != 0) {
-					writer.writeGroupMedia(streamName, farCode.data(), 0x22);
-					auto it = _mapPeers.find(peerId);
-					if (it == _mapPeers.end())
-						ERROR("Unable to find the peer ", peerId)
-					else if (!it->second->publicationInfosSent)
-						it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size());
-				}
-			}
-			else {
-				NOTE("Starting to listen to publication ", streamName)
-				packet.read(0x22, _streamCode);
-				writer.writeGroupMedia(streamName, _streamCode.data(), 0x22);
-			}
-
-			// The meaning of the rest is unknown for now
-			string data;
-			UInt8 size = packet.read8();
-			if (packet.read(size, data) != "\x02")
-				WARN("Unexpected 1st argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
-			size = packet.read8();
-			if (packet.read(size, data) != "\x03\xBE\x40")
-				WARN("Unexpected 2nd argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
-			size = packet.read8();
-			if (packet.read(size, data) != "\x04\x92\xA7\x60")
-				WARN("Unexpected 3rd argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
-			size = packet.read8();
-			if (packet.read(size, data) != "\x05\x64")
-				WARN("Unexpected 4th argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
-			size = packet.read8();
-			if (packet.read(size, data) != "\x07\x93\x44")
-				WARN("Unexpected 5th argument value in Group publication : ", Util::FormatHex(BIN data.data(), data.size(), LOG_BUFFER))
+		// Read the name
+		UInt8 sizeName = packet.read8();
+		if (sizeName <= 1) {
+			WARN("New stream available without name")
+			return;
 		}
-		else {
+		packet.next(); // 00
+		packet.read(sizeName - 1, streamName);
+		if (streamName != stream) {
 			INFO("New stream available in the group but not registered : ", streamName)
 			return;
+		}
+
+		if (isPublisher) {
+			Buffer farCode;
+			packet.read(0x22, farCode);
+
+			// Another stream code => we must accept and send our stream code
+			if (memcmp(_streamCode.data(), farCode.data(), 0x22) != 0) {
+				writer.writeRaw(posStart, packet.size() - (posStart - packet.data())); // Return the request to accept
+				auto it = _mapPeers.find(peerId);
+				if (it == _mapPeers.end())
+					ERROR("Unable to find the peer ", peerId)
+				else if (!it->second->publicationInfosSent)
+					it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size(), _updatePeriod, _windowDuration);
+			}
+		}
+		else {
+			NOTE("Starting to listen to publication ", streamName)
+			packet.read(0x22, _streamCode);
+			writer.writeRaw(posStart, packet.size() - (posStart-packet.data())); // Return the request to accept
+		}
+
+		// Properties of the NetGroup stream
+		UInt8 size = 0, id = 0;
+		while (packet.available()) {
+			if ((size = packet.read8()) == 0)
+				continue;
+			id = packet.read8();
+			switch (id) {
+				case NETGROUP_UNKNWON_PARAMETER:
+					break;
+				case NETGROUP_WINDOW_DURATION:
+					INFO("Window Duration : ", packet.read7BitLongValue(), "ms")
+					break;
+				case NETGROUP_OBJECT_ENCODING:
+					INFO("Object Encoding : ", packet.read7BitLongValue())
+					break;
+				case NETGROUP_UPDATE_PERIOD:
+					INFO("Avaibility Update period : ", packet.read7BitLongValue(), "ms")
+					break;
+				case NETGROUP_SEND_TO_ALL:
+					INFO("Availability Send To All : ON")
+					break;
+				case NETROUP_FETCH_PERIOD:
+					INFO("Avaibility Fetch period : ", packet.read7BitLongValue(), "ms")
+					break;
+			}
 		}
 	};
 	onGroupReport = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
@@ -294,7 +313,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				it->second->sendGroupBegin();
 			// Send the publication infos if not already sent
 			else if (!it->second->publicationInfosSent)
-				it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size());
+				it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size(), _updatePeriod, _windowDuration);
 
 			if (!it->second->groupReportInitiator)
 				sendGroupReport(it);
@@ -336,10 +355,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	};
 	onFragmentsMap = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		UInt64 counter = packet.read7BitLongValue();
-		UInt8 last = *(packet.current() + (packet.available() - 1)), i = 1;
-		for (; (last >> 1) > 0; i++)
-			last >>= 1;
-		DEBUG("Group Fragments map (type 22) received : ", counter, " ; last : ", counter - ((packet.available()-1)*8 + i))
+		DEBUG("Group Fragments map (type 22) received : ", counter)
 
 		// Player? => update play mode if needed
 		if (!isPublisher) {
@@ -665,7 +681,7 @@ bool NetGroup::updateFragmentMap() {
 	// Generate the report message
 	UInt64 firstFragment = _fragments.begin()->first;
 	UInt64 lastFragment = _fragments.rbegin()->first;
-	UInt64 nbFragments = lastFragment - firstFragment - 1;
+	UInt64 nbFragments = lastFragment - firstFragment; // -1 TODO: check that;
 	_reportBuffer.resize((UInt32)((nbFragments / 8) + 1) + Util::Get7BitValueSize(lastFragment) + 1, false);
 	BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
 	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(lastFragment);

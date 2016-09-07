@@ -16,6 +16,15 @@ class GroupNode;
 class P2PConnection;
 class NetGroup : public virtual Mona::Object {
 public:
+	enum MULTICAST_PARAMETERS {
+		NETGROUP_UNKNWON_PARAMETER = 2,
+		NETGROUP_WINDOW_DURATION = 3,
+		NETGROUP_OBJECT_ENCODING = 4,
+		NETGROUP_UPDATE_PERIOD = 5,
+		NETGROUP_SEND_TO_ALL = 6,
+		NETROUP_FETCH_PERIOD = 7
+	};
+
 	NetGroup(const std::string& groupId, const std::string& groupTxt, const std::string& streamName, bool publisher, RTMFPConnection& conn, double updatePeriod, Mona::UInt16 windowDuration);
 	virtual ~NetGroup();
 

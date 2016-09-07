@@ -81,14 +81,8 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			OnGroupPlayPull::raise(_peerId, packet, writer);
 			break;
 		case GroupStream::GROUP_INFOS: { // contain the stream name of an eventual publication
-			string streamName;
-			UInt8 sizeName = packet.read8();
-			if (sizeName > 1) {
-				packet.next(); // 00
-				packet.read(sizeName-1, streamName);
-				OnGroupMedia::raise(_peerId, packet, streamName, writer);
-			}
-			DEBUG("GroupStream ", id, " - Group Media Infos (type 21) : ", streamName)
+			DEBUG("GroupStream ", id, " - Group Media Infos (type 21)")
+			OnGroupMedia::raise(_peerId, packet, writer);
 			break;
 		}
 		case GroupStream::GROUP_FRAGMENTS_MAP:

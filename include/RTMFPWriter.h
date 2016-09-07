@@ -81,7 +81,7 @@ public:
 	// Send the Group begin message (02 + 0E)
 	virtual void		writeGroupBegin();
 	// Play the stream in argument
-	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size);
+	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration);
 	// Start to play the group stream
 	virtual void		writeGroupPlay(Mona::UInt8 mode);
 	// Send the UnpublishNotify and closeStream messages

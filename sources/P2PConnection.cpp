@@ -488,13 +488,13 @@ void P2PConnection::close(bool full) {
 	FlowManager::close();
 }
 
-void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt32 size) {
+void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt32 size, UInt64 updatePeriod, UInt16 windowDuration) {
 
 	INFO("Sending the stream infos for stream '", stream, "'")
 	string signature("\x00\x47\x52\x11", 4);
 	_pFragmentsFlow = createFlow(signature);
 	_pFragmentsFlow->setPeerId(peerId);
-	_pFragmentsFlow->sendGroupMediaInfos(stream, data, size);
+	_pFragmentsFlow->sendGroupMediaInfos(stream, data, size, updatePeriod, windowDuration);
 	publicationInfosSent = true;
 }
 
@@ -548,6 +548,8 @@ void P2PConnection::sendPushMode(UInt8 mode) {
 
 void P2PConnection::updateFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
 	_idFragmentMap = id;
+	if (!size)
+		return; // 0 size protection
 
 	if (size > MAX_FRAGMENT_MAP_SIZE)
 		WARN("Size of fragment map > max size : ", size)

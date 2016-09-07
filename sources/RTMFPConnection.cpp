@@ -483,9 +483,17 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 
 		// Send handshake 30 request to the current address
 		// TODO: Record the address to ignore if it has already been received
-		if ((addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC) {
+		switch (addressType & 0x0F) {
+		case RTMFP::ADDRESS_PUBLIC:
+			DEBUG("Sending p2p handshake 30 to peer")
 			it->second->_outAddress = address;
 			it->second->sendHandshake0(it->second->rawId, tagReceived);
+			break;
+		case RTMFP::ADDRESS_REDIRECTION:
+			DEBUG("Sending handshake 30 to far server - requesting addresses")
+			it->second->_outAddress = address;
+			it->second->sendHandshake0(it->second->rawId, tagReceived);
+			break;
 		}
 	}
 	return true;

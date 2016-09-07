@@ -12,7 +12,7 @@ namespace FlashEvents {
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
 	struct OnNewPeer : Mona::Event<void(const std::string& groupId, const std::string& peerId)> {};
 	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {};
-	struct OnGroupMedia : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, const std::string& streamName, FlashWriter& writer)> {};
+	struct OnGroupMedia : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 	struct OnGroupReport : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 	struct OnGroupPlayPush: Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)>{};
 	struct OnGroupPlayPull : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
@@ -79,7 +79,7 @@ public:
 	void sendGroupBegin(FlashWriter& writer);
 
 	// Send the group publication infos
-	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size);
+	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration);
 
 	// Send the media
 	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size, bool flush);

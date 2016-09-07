@@ -559,12 +559,17 @@ void RTMFPWriter::writeGroupBegin() {
 	createMessage().writer().packet.write8(GroupStream::GROUP_BEGIN);
 }
 
-void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size) {
+void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size, UInt64 updatePeriod, UInt16 windowDuration) {
 
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
 	writer.write(data, size);
-	writer.write("\x01\x02\x03\x03\xBE\x40\x04\x04\x92\xA7\x60\x02\x05\x64\x03\x07\x93\x44"); // TODO: find what is means
+	writer.write("\x01\x02"); // Fixed value
+	//TODO: 6 - Availability Send To All
+	writer.write8(1 + Util::Get7BitValueSize(UInt32(windowDuration))).write8('\x03').write7BitLongValue(windowDuration);
+	writer.write("\x04\x04\x92\xA7\x60"); // Object encoding?
+	writer.write8(1 + Util::Get7BitValueSize(updatePeriod)).write8('\x05').write7BitLongValue(updatePeriod);
+	writer.write("\x03\x07\x93\x44"); // Fetch period
 }
 
 void RTMFPWriter::writeGroupPlay(UInt8 mode) {

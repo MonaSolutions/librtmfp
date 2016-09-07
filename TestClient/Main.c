@@ -20,9 +20,11 @@
 #endif
 
 // Global variables declaration
-#define BUFFER_SIZE			20480
-static char				buf[BUFFER_SIZE];
-static unsigned int		cursor = BUFFER_SIZE; // File reader cursor
+#define MAX_BUFFER_SIZE			20480
+#define MIN_BUFFER_SIZE			2048
+static char				buf[MAX_BUFFER_SIZE];
+static unsigned int		cursor = 0; // File reader cursor
+static unsigned int		bufferSize = MIN_BUFFER_SIZE; // Buffer current size used
 static unsigned short	endOfWrite = 0; // If >0 write is finished
 static unsigned int		context = 0;
 static FILE *			pInFile = NULL; // Input file for publication
@@ -162,6 +164,30 @@ FILE* getFile(const char* peerId) {
 	return NULL;
 }
 
+// Resize the buffer parameters and move data if needed
+void resizeBuffer(int read) {
+	int ratio = 0;
+
+	if (read == 0) { // nothing read, buffer too short
+		onLog(0, 7, __FILE__, __LINE__, "Buffer too short, increasing...");
+		cursor += (bufferSize - cursor);
+		bufferSize += MIN_BUFFER_SIZE;
+		if (bufferSize > MAX_BUFFER_SIZE) {
+			endOfWrite = terminating = 1; // Error encountered
+			onLog(0, 3, __FILE__, __LINE__, "The current stream size is too long, exiting...");
+		}
+		return;
+	}
+	// Something has been read, we need to move the remaining data
+	cursor = bufferSize - read;
+	memcpy(buf, buf + read, cursor); // Move remaining data to the start of the buffer
+
+	// Resize the buffer to keep max remaining data + MIN_BUFFER_SIZE
+	ratio = ((bufferSize - cursor) / MIN_BUFFER_SIZE);
+	if (ratio > 0)
+		bufferSize -= ratio * MIN_BUFFER_SIZE;
+}
+
 void onSocketError(const char* error) {
 	onLog(0, 7, "Main.cpp", __LINE__, error);
 }
@@ -197,48 +223,43 @@ void onMedia(const char * peerId,const char* stream, unsigned int time,const cha
 
 // Call each second to read/write asynchronously
 void onManage() {
-	int read = 0, res = 0, towrite = BUFFER_SIZE;
+	int read = 0, towrite = MIN_BUFFER_SIZE;
 	unsigned int i = 0;
 
 	// Asynchronous read
 	if (_option == ASYNC_READ) {
 		if (nbPeers>0) {
 			for (i = 0; i < nbPeers; i++) {
-				if ((read = RTMFP_Read(listPeers[i], context, buf, BUFFER_SIZE))>0)
+				if ((read = RTMFP_Read(listPeers[i], context, buf, MIN_BUFFER_SIZE))>0)
 					fwrite(buf, sizeof(char), read, listFiles[i]);
 			}
 		}
-		else if((read = RTMFP_Read("",context,buf,BUFFER_SIZE))>0)
+		else if((read = RTMFP_Read("",context,buf, MIN_BUFFER_SIZE))>0)
 			fwrite(buf, sizeof(char), read, pOutFile);
 	}
 	// Write
 	else if ((_option == WRITE || _option == P2P_WRITE) && !endOfWrite) {
 
 		// First we read the file
-		if (cursor != 0) {
-			towrite = fread(buf + (BUFFER_SIZE - cursor), sizeof(char), cursor, pInFile) + (BUFFER_SIZE - cursor);
-			if ((res = ferror(pInFile)) > 0) {
-				endOfWrite = 1;
-				onLog(0, 3, "Main.lua", __LINE__, "Error while reading the input file, closing...");
-				terminating=1; // Error encountered
-				return;
-			}
-			else if ((res = feof(pInFile)) > 0) {
-				onLog(0, 5, "Main.lua", __LINE__, "End of file reached, we send last data and unpublish");
-				endOfWrite = 1;
-				RTMFP_Write(context, buf, towrite);
-				if (_option == WRITE)
-					RTMFP_ClosePublication(context, publication);
-				return;
-			}
+		towrite = fread(buf + cursor, sizeof(char), bufferSize - cursor, pInFile) + cursor;
+		if (ferror(pInFile) > 0) {
+			endOfWrite = terminating = 1; // Error encountered
+			onLog(0, 3, __FILE__, __LINE__, "Error while reading the input file, closing...");
+			return;
+		}
+		else if (feof(pInFile) > 0) {
+			onLog(0, 5, __FILE__, __LINE__, "End of file reached, we send last data and unpublish");
+			endOfWrite = 1;
+			RTMFP_Write(context, buf, towrite);
+			if (_option == WRITE)
+				RTMFP_ClosePublication(context, publication);
+			return;
 		}
 
 		if ((read = RTMFP_Write(context, buf, towrite)) < 0)
-			terminating=1; // Error encountered
-		else if (!endOfWrite) {
-			if ((cursor = read) > 0)
-				memcpy(buf, buf + cursor, BUFFER_SIZE - cursor); // Move buffer
-		}
+			terminating = 1; // Error encountered
+		else if (!endOfWrite)
+			resizeBuffer(read);
 	}
 }
 
@@ -329,7 +350,7 @@ int main(int argc,char* argv[]) {
 			initFiles();
 			while (!IsInterrupted(NULL)) {
 				onManage();
-				SLEEP(1000);
+				SLEEP(100);
 			}
 
 			printf("Closing connection...\n");
