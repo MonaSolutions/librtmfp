@@ -518,7 +518,7 @@ void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, b
 			return;
 		_pMediaFlow->setPeerId(peerId);
 	}
-	_pMediaFlow->sendRaw(data, size, false);
+	_pMediaFlow->sendRaw(data, size, true);
 }
 
 void P2PConnection::sendFragmentsMap(const UInt8* data, UInt32 size) {

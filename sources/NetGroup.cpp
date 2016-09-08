@@ -682,7 +682,7 @@ bool NetGroup::updateFragmentMap() {
 	UInt64 firstFragment = _fragments.begin()->first;
 	UInt64 lastFragment = _fragments.rbegin()->first;
 	UInt64 nbFragments = lastFragment - firstFragment; // -1 TODO: check that;
-	_reportBuffer.resize((UInt32)((nbFragments / 8) + 1) + Util::Get7BitValueSize(lastFragment) + 1, false);
+	_reportBuffer.resize((UInt32)((nbFragments / 8) + ((nbFragments % 8) > 0)) + Util::Get7BitValueSize(lastFragment) + 1, false);
 	BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
 	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(lastFragment);
 
