@@ -35,6 +35,11 @@ public:
 	// return false if the client is not ready to publish, otherwise true
 	bool write(const Mona::UInt8* buf, Mona::UInt32 size, int& pos);
 
+	// Call a function of a server, peer or NetGroup
+	// param peerId If set to 0 the call we be done to the server, if set to "all" to all the peers of a NetGroup, and to a peer otherwise
+	// return 1 if the call succeed, 0 otherwise
+	unsigned int callFunction(const char* function, int nbArgs, const char** args, const char* peerId = 0);
+
 	// Called by Invoker every second to manage connection (flush and ping)
 	void manage();
 

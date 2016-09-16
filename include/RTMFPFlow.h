@@ -59,6 +59,7 @@ public:
 		if (_pStream)
 			_pStream->sendRaw(*_pWriter, data, size, flush); 
 	}
+	void	call(const char* function, int nbArgs, const char** args) { if (_pStream) _pStream->call(*_pWriter, function, nbArgs, args); }
 	void	sendGroupPlay(Mona::UInt8 mode) { if (_pStream) _pStream->sendGroupPlay(*_pWriter, mode); }
 	//void	closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime) { if (_pStream) _pStream->sendGroupCloseStream(type, fragmentCounter, lastTime); }
 	void	sendGroupPull(Mona::UInt64 index) { if (_pStream) _pStream->sendGroupPull(*_pWriter, index); }

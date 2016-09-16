@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <time.h>
+#include <sys/timeb.h>
 
 #if defined(_WIN32)
 	#define FATAL_COLOR 12
@@ -62,7 +63,9 @@ void onLog(unsigned int threadID, int level, const char* fileName, long line, co
 	END_CONSOLE_TEXT_COLOR;
 
 	if (pLogFile) {
-		fprintf(pLogFile, "%.2d/%.2d %.2d:%.2d:%.2d\t%s %s[%ld] %s\n", tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, logType, fileName, line, message);
+		struct timeb msec;
+		ftime(&msec);
+		fprintf(pLogFile, "%.2d/%.2d %.2d:%.2d:%.2d.%d\t%s %s[%ld] %s\n", tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, msec.millitm / 100, logType, fileName, line, message);
 		fflush(pLogFile);
 	}
 }

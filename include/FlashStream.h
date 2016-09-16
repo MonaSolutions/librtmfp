@@ -69,6 +69,9 @@ public:
 	// Send the setPeerInfo request to the RTMFP server
 	virtual void sendPeerInfo(FlashWriter& writer, Mona::UInt16 port);
 
+	// Call a function on the far side
+	void call(FlashWriter& writer, const char* function, int nbArgs, const char** args);
+
 	// Send the group connection request to the server
 	void sendGroupConnect(FlashWriter& writer, const std::string& groupId);
 

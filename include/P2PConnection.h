@@ -35,18 +35,9 @@ public:
 	// Set the tag used for this connection (responder mode)
 	void setTag(const std::string& tag) { _tag = tag; }
 
-	// Update the Group Fragments map
-	void updateFragmentsMap(Mona::UInt64 id, const Mona::UInt8* data, Mona::UInt32 size);
-
-	// Return True if bit number is available in the fragments map (for push out mode)
-	bool checkMask(Mona::UInt8 bitNumber);
-
-	// Return True if the fragment is available
-	bool hasFragment(Mona::UInt64 index);
-
-	// Set the group
-	void setGroup(std::shared_ptr<NetGroup> group) { _group = group; }
-	void resetGroup() { _group.reset(); }
+	// Call a function on the peer side
+	// return 0 if it fails, 1 otherwise
+	unsigned int callFunction(const char* function, int nbArgs, const char** args);
 
 	// Return the tag used for this p2p connection (initiator mode)
 	const std::string&	tag() { return _tag; }
@@ -68,6 +59,37 @@ public:
 	// Send the third P2P initiator handshake message
 	bool initiatorHandshake2(Mona::Exception& ex, Mona::BinaryReader& reader);
 
+	// Flush the connection
+	// marker values can be :
+	// - 0B for handshake
+	// - 0A for raw response in P2P mode (only for responder)
+	// - 8A for AMF responde in P2P mode (only for responder)
+	// - 4A for acknowlegment in P2P mode (TODO: see if it is needed)
+	virtual void				flush(bool echoTime, Mona::UInt8 marker);
+
+	virtual void				initWriter(const std::shared_ptr<RTMFPWriter>& pWriter);
+
+	// Create a flow for special signatures (NetGroup)
+	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
+
+	// Close the connection properly
+	virtual void				close(bool full);
+
+	/*** NetGroup functions ***/
+
+	// Update the Group Fragments map
+	void updateFragmentsMap(Mona::UInt64 id, const Mona::UInt8* data, Mona::UInt32 size);
+
+	// Return True if bit number is available in the fragments map (for push out mode)
+	bool checkMask(Mona::UInt8 bitNumber);
+
+	// Return True if the fragment is available
+	bool hasFragment(Mona::UInt64 index);
+
+	// Set the group
+	void setGroup(std::shared_ptr<NetGroup> group) { _group = group; }
+	void resetGroup() { _group.reset(); }
+
 	// Write the Group publication infos
 	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration);
 
@@ -77,8 +99,9 @@ public:
 	// If packet is pushable : create the flow if necessary and send media
 	void sendMedia(const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 fragment, bool pull=false);
 
-	// Send the report message
-	void sendFragmentsMap(const Mona::UInt8* data, Mona::UInt32 size);
+	// Send the Fragments map message
+	// param lastFragment : latest fragment in the message
+	void sendFragmentsMap(Mona::UInt64 lastFragment, const Mona::UInt8* data, Mona::UInt32 size);
 
 	// Set the Group Publish Push mode (after a message 23)
 	void setPushMode(Mona::UInt8 mode);
@@ -96,26 +119,9 @@ public:
 	void closeGroup();
 
 	// Return the last fragment available
-	Mona::UInt64 lastFragment() { return (_lastId>0)? _lastId : _idFragmentMap; }
+	Mona::UInt64 lastFragment() { return _idFragmentMap; }
 
-	// Send the UnpublishNotify and closeStream messages
-	//void closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime);
-
-	// Flush the connection
-	// marker values can be :
-	// - 0B for handshake
-	// - 0A for raw response in P2P mode (only for responder)
-	// - 8A for AMF responde in P2P mode (only for responder)
-	// - 4A for acknowlegment in P2P mode (TODO: see if it is needed)
-	virtual void				flush(bool echoTime, Mona::UInt8 marker);
-
-	virtual void				initWriter(const std::shared_ptr<RTMFPWriter>& pWriter);
-
-	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
-
-	// Close the connection properly
-	virtual void				close(bool full);
+	/*** Public members ***/
 
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
 	Mona::Time						lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
@@ -173,8 +179,8 @@ private:
 	RTMFPFlow*					_pReportFlow; // Flow for report messages
 
 	Mona::Buffer				_fragmentsMap; // Last Fragments Map received
-	Mona::UInt64				_idFragmentMap; // Last ID from the Fragments Map
-	Mona::UInt64				_lastId; // Last Fragment ID received
+	Mona::UInt64				_idFragmentMap; // Last ID received from the Fragments Map
+	Mona::UInt64				_lastIdSent; // Last ID sent in the Fragments map
 
 
 	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)

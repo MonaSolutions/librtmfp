@@ -166,14 +166,14 @@ void FlowManager::handleMessage(Exception& ex, const Mona::PoolBuffer& pBuffer, 
 	_outAddress.set(address);
 
 	BinaryReader reader(pBuffer.data(), pBuffer->size());
+	reader.next(2); // TODO: CRC, don't share this part in onPacket() 
 
-	_timeReceived = reader.read16();
 	if (Logs::GetLevel() >= 7)
 		DUMP("RTMFP", reader.current(), reader.available(), "Request from ", _outAddress.toString())
 
 	UInt8 marker = reader.read8();
-	reader.next(2);
-	//reader.shrink(reader.read16()); // length (TODO: it seems that ams length can be wrong, to check)
+	_timeReceived = reader.read16();
+	_lastReceptionTime.update();
 
 	// Handshake
 	if (marker == 0x0B) {
@@ -549,8 +549,8 @@ void FlowManager::flush(bool echoTime, UInt8 marker) {
 		BinaryWriter& packet(_pSender->packet);
 
 		// After 30 sec, send packet without echo time
-		/*if(peer.lastReceptionTime.isElapsed(30000))
-		echoTime = false;*/
+		if(_lastReceptionTime.isElapsed(30000))
+			echoTime = false;
 
 		if (echoTime)
 			marker += 4;
@@ -560,7 +560,7 @@ void FlowManager::flush(bool echoTime, UInt8 marker) {
 		BinaryWriter writer(packet.data() + 6, 5);
 		writer.write8(marker).write16(RTMFP::TimeNow());
 		if (echoTime)
-			writer.write16(_timeReceived); // TODO: +RTMFP::Time(peer.lastReceptionTime.elapsed()));
+			writer.write16(_timeReceived + RTMFP::Time(_lastReceptionTime.elapsed()));
 
 		_pSender->farId = _farId;
 		_pSender->address.set(_outAddress); // set the right address for sending

@@ -2,7 +2,7 @@
 #include "FlashWriter.h"
 
 class Publisher;
-class Listener : virtual Mona::Object {
+class Listener : public virtual Mona::Object {
 public:
 	Listener(Publisher& publication, const std::string& identifier);
 	virtual ~Listener() {}

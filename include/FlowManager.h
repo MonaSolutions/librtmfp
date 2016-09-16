@@ -133,7 +133,6 @@ protected:
 	void flushWriters();
 
 	Mona::UInt8							_handshakeStep; // Handshake step (3 possible states)
-	Mona::UInt16						_timeReceived; // last time received
 	Mona::UInt32						_farId; // Session id
 
 	Mona::SocketAddress					_outAddress; // current address used for sending
@@ -184,6 +183,9 @@ private:
 	void setPing(Mona::UInt16 time, Mona::UInt16 timeEcho);
 
 	Mona::UInt16											_ping;
+
+	Mona::UInt16											_timeReceived; // last time received
+	Mona::Time												_lastReceptionTime; // time of last "time" received
 
 	// Asynchronous read
 	struct RTMFPMediaPacket {

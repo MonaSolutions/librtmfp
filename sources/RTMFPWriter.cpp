@@ -542,7 +542,7 @@ void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
 	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);
-	writer.write32(0x2303).write(rawId, PEER_ID_SIZE+2); // binary format
+	writer.write16(0x2303).write(rawId, PEER_ID_SIZE+2); // binary format
 
 	// Send this only if we are the responder
 	/*if (!initiator) {

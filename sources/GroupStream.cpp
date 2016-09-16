@@ -92,14 +92,13 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 
 			UInt64 counter = packet.read7BitLongValue();
 			DEBUG("GroupStream ", id, " - Group media message 20 : counter=", counter)
-			if (*packet.current() == AMF::AUDIO || *packet.current() == AMF::VIDEO) {
-				UInt8 mediaType = packet.read8();
-				time = packet.read32();
-				OnFragment::raise(_peerId, type, counter, 0, mediaType, time, packet, lostRate);
-				break;
-			}
-			else
+			
+			UInt8 mediaType = packet.read8();
+			time = packet.read32();
+			OnFragment::raise(_peerId, type, counter, 0, mediaType, time, packet, lostRate);
+			if (mediaType != AMF::AUDIO && mediaType != AMF::VIDEO)
 				return FlashStream::process(packet, writer, lostRate); // recursive call, can be invocation or other
+			break;
 		} case GroupStream::GROUP_MEDIA_START: { // Start a splitted media sequence
 
 			UInt64 counter = packet.read7BitLongValue();
@@ -112,7 +111,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			DEBUG("GroupStream ", id, " - Group ", (mediaType == AMF::AUDIO ? "Audio" : (mediaType == AMF::VIDEO ? "Video" : "Unknown")), " Start Splitted media : counter=", counter, ", time=", time, ", splitNumber=", splitNumber)
 			if (mediaType == AMF::AUDIO || mediaType == AMF::VIDEO)
 				OnFragment::raise(_peerId, type, counter, splitNumber, mediaType, time, packet, lostRate);
-			else
+			else // TODO: Support other types (functions) with splitted fragments
 				ERROR("Media type ", Format<UInt8>("%02X", mediaType), " not supported (or data decoding error)")
 			break;
 		}

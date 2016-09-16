@@ -232,6 +232,35 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 	return _pPublisher->publish(buf, size, pos);
 }
 
+unsigned int RTMFPConnection::callFunction(const char* function, int nbArgs, const char** args, const char* peerId) {
+	// Server call
+	if (!peerId) {
+		map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
+		RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
+		if (pFlow) {
+			pFlow->call(function, nbArgs, args);
+			return 1;
+		}
+		ERROR("Unable to find the flow 2 for sending the function call")
+	}
+	// NetGroup call
+	else if (strcmp(peerId, "all") == 0) {
+		if (_group)
+			return _group->callFunction(function, nbArgs, args);
+
+	}
+	// Peer call
+	else {
+		for (auto &it : _mapPeersByAddress) {
+			if (it.second->peerId == peerId)
+				return it.second->callFunction(function, nbArgs, args);
+		}
+		ERROR("Unable to find the peer", peerId, " for sending the function call")
+	}
+
+	return 0;
+}
+
 void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 	DEBUG("Stream ", idStream, " created, sending command...")
 

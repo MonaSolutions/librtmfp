@@ -42,6 +42,12 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext, char *buf, unsigne
 // return the number of bytes used
 int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int size);
 
+// Call a function of a server, peer or NetGroup
+// param peerId If set to 0 the call we be done to the server, if set to "all" to all the peers of a NetGroup, and to a peer otherwise
+// return 1 if the call succeed, 0 otherwise
+// TODO: add callback
+unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId);
+
 // Set log callback
 void RTMFP_LogSetCallback(void (* onLog)(unsigned int, int, const char*, long, const char*));
 

@@ -21,7 +21,7 @@
 
 // Global variables declaration
 #define MAX_BUFFER_SIZE			20480
-#define MIN_BUFFER_SIZE			2048
+#define MIN_BUFFER_SIZE			1536
 static char				buf[MAX_BUFFER_SIZE];
 static unsigned int		cursor = 0; // File reader cursor
 static unsigned int		bufferSize = MIN_BUFFER_SIZE; // Buffer current size used
@@ -350,7 +350,7 @@ int main(int argc,char* argv[]) {
 			initFiles();
 			while (!IsInterrupted(NULL)) {
 				onManage();
-				SLEEP(100);
+				SLEEP(50); // delay between each async IO (in msec)
 			}
 
 			printf("Closing connection...\n");

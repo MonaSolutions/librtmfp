@@ -45,6 +45,10 @@ public:
 	// Send report requests (messages 0A, 22)
 	void manage();
 
+	// Call a function on the peer side
+	// return 0 if it fails, 1 otherwise
+	unsigned int callFunction(const char* function, int nbArgs, const char** args);
+
 	const std::string idHex;	// Group ID in hex format
 	const std::string idTxt;	// Group ID in plain text (without final zeroes)
 	const std::string stream;	// Stream name
@@ -73,8 +77,8 @@ private:
 	void	eraseOldFragments();
 
 	// Update the fragment map
-	// Return False if there is no fragments, otherwise true
-	bool	updateFragmentMap();
+	// Return 0 if there is no fragments, otherwise the last fragment number
+	Mona::UInt64	updateFragmentMap();
 
 	// Build the Group Report for the peer in parameter
 	// Return false if the peer is not found

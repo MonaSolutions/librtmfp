@@ -229,6 +229,15 @@ void FlashStream::publish(FlashWriter& writer,const string& name) {
 	writer.flush();
 }
 
+void FlashStream::call(FlashWriter& writer, const char* function, int nbArgs, const char** args) {
+	AMFWriter& amfWriter = writer.writeInvocation(function, true);
+	for (int i = 0; i < nbArgs; i++) {
+		if (args[i])
+			amfWriter.writeString(args[i], strlen(args[i]));
+	}
+	writer.flush();
+}
+
 void FlashStream::sendPeerInfo(FlashWriter& writer,UInt16 port) {
 	ERROR("sendPeerInfo request can only be sent by Main stream")
 }
@@ -241,7 +250,6 @@ void FlashStream::sendGroupConnect(FlashWriter& writer, const string& groupId) {
 
 void FlashStream::sendGroupPeerConnect(FlashWriter& writer, const string& netGroup, const UInt8* key, const char* rawId/*, bool initiator*/) {
 	writer.writePeerGroup(netGroup, key, rawId/*, initiator*/);
-	writer.flush();
 }
 
 void FlashStream::sendGroupBegin(FlashWriter& writer) {

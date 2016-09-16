@@ -45,6 +45,7 @@ public:
 		if (_direction == DECRYPT) { // check CRC
 			Mona::BinaryReader reader(data, size);
 			Mona::UInt16 crc(reader.read16());
+			// TODO: return the binary reader object
 			return (Mona::Crypto::ComputeCRC(reader) == crc);
 		}
 		return true;
