@@ -60,7 +60,8 @@ const string& NetGroup::GetGroupAddressFromPeerId(const char* rawId, std::string
 	
 	UInt8 tmp[PEER_ID_SIZE];
 	EVP_Digest(rawId, PEER_ID_SIZE+2, tmp, NULL, EVP_sha256(), NULL);
-	TRACE("Group address : ", Util::FormatHex(tmp, PEER_ID_SIZE, groupAddress))
+	Util::FormatHex(tmp, PEER_ID_SIZE, groupAddress);
+	TRACE("Group address : ", groupAddress)
 	return groupAddress;
 }
 

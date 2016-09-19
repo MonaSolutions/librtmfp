@@ -256,6 +256,7 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 
 	UInt32 keySize = (UInt32)reader.read7BitLongValue();
 	if (keySize != 0x82) {
+		// TODO: support other size (0x81 can happen)
 		ex.set(Exception::PROTOCOL, "Unexpected responder key size : ", keySize);
 		return;
 	}
