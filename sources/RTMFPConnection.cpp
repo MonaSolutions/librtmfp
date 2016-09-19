@@ -131,7 +131,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 		_waitingPeers.push_back(pPeer->tag());
 }
 
-void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const string& rawId, const SocketAddress& address) {
+void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const string& rawId, const SocketAddress& address, const SocketAddress& hostAddress) {
 	// Check if the peer is not already in the waiting queue
 	for (auto it = _mapPeersByTag.begin(); it != _mapPeersByTag.end(); it++) {
 		if (it->second->peerId == peerId) {
@@ -141,6 +141,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 	}
 
 	std::shared_ptr<P2PConnection> pPeer = createP2PConnection(peerId, streamName, address, false);
+	pPeer->updateHostAddress(hostAddress);
 
 	// Send the handshake 30 to peer
 	if (pPeer) {
@@ -482,7 +483,7 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 }
 
 bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
-	DEBUG("Server has sent to us the peer addresses")
+	DEBUG("Server has sent to us the peer addresses of responders") // (here we are the initiator)
 
 	if (!connected) {
 		ex.set(Exception::PROTOCOL, "Handshake type 71 received but the connection is not established");
@@ -504,6 +505,15 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		return true;
 	}
 
+	// Check if too many attempts
+	if (it->second->attempt >= 11) {
+		WARN("P2P handshake with ", it->second->peerId, " has reached 11 attempts without answer, deleting session...")
+		if (_group)
+			_group->removePeer(it->second->peerId, true);
+		_mapPeersByTag.erase(it);
+		return false;
+	}
+
 	SocketAddress address;
 	while (reader.available() && *reader.current() != 0xFF) {
 		UInt8 addressType = reader.read8();
@@ -513,16 +523,15 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		// Send handshake 30 request to the current address
 		// TODO: Record the address to ignore if it has already been received
 		switch (addressType & 0x0F) {
-		case RTMFP::ADDRESS_PUBLIC:
-			DEBUG("Sending p2p handshake 30 to peer")
-			it->second->_outAddress = address;
-			it->second->sendHandshake0(it->second->rawId, tagReceived);
-			break;
-		case RTMFP::ADDRESS_REDIRECTION:
-			DEBUG("Sending handshake 30 to far server - requesting addresses")
-			it->second->_outAddress = address;
-			it->second->sendHandshake0(it->second->rawId, tagReceived);
-			break;
+			case RTMFP::ADDRESS_REDIRECTION:
+				it->second->updateHostAddress(address);
+			case RTMFP::ADDRESS_PUBLIC:
+				DEBUG("Sending p2p handshake 30 to ", ((addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC ? "peer" : "far server - requesting addresses"))
+				it->second->_outAddress = address;
+				it->second->sendHandshake0(it->second->rawId, tagReceived);
+				it->second->attempt++;
+				it->second->lastTry.update();
+				break;
 		}
 	}
 	return true;
@@ -753,7 +762,7 @@ void RTMFPConnection::sendConnections() {
 	// TODO: make the attempt and elapsed count parametrable
 	auto itPeer = _mapPeersByTag.begin();
 	while (itPeer != _mapPeersByTag.end()) {
-		if (!itPeer->second->_responder && (itPeer->second->lastTry.isElapsed(itPeer->second->attempt * 1000))) { // initiators
+		if (itPeer->second->lastTry.isElapsed(itPeer->second->attempt * 1000)) {
 			if (itPeer->second->attempt >= 11) {
 				WARN("P2P handshake with ", itPeer->second->peerId," has reached 11 attempts without answer, deleting session...")
 				if (_group)
@@ -762,8 +771,11 @@ void RTMFPConnection::sendConnections() {
 				continue;
 			}
 
-			// TODO: check if we need to separate tries to server and to peer
-			itPeer->second->_outAddress = (_group)? itPeer->second->peerAddress() : _targetAddress;
+			if (itPeer->second->_responder) // responders
+				itPeer->second->_outAddress = itPeer->second->hostAddress();
+			else // initiators
+				itPeer->second->_outAddress = (_group) ? itPeer->second->peerAddress() : _targetAddress;
+
 			INFO("Sending new P2P handshake 30 to ", itPeer->second->_outAddress.toString(), " (peerId : ", itPeer->second->peerId, ")")
 			itPeer->second->sendHandshake0(itPeer->second->rawId, itPeer->first);
 			itPeer->second->attempt++;
@@ -864,9 +876,9 @@ void RTMFPConnection::sendGroupConnection(const string& netGroup) {
 	pFlow->sendGroupConnect(netGroup);
 }
 
-void RTMFPConnection::addPeer2HeardList(const SocketAddress& peerAddress, const string& peerId, const char* rawId) {
+void RTMFPConnection::addPeer2HeardList(const SocketAddress& peerAddress, const SocketAddress& hostAddress, const string& peerId, const char* rawId) {
 	if (_group)
-		_group->addPeer2HeardList(peerId, rawId, peerAddress); // Inform the NetGroup about the new peer
+		_group->addPeer2HeardList(peerId, rawId, peerAddress, hostAddress); // Inform the NetGroup about the new peer
 
 	// If there is a waiting connexion to that peer, destroy it
 	lock_guard<recursive_mutex> lock(_mutexConnections);

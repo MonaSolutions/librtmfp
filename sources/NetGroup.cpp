@@ -11,11 +11,14 @@ using namespace std;
 
 class GroupNode : public virtual Object {
 public:
-	GroupNode(const char* rawPeerId, const string& groupId, const SocketAddress& addr) : rawId(rawPeerId, PEER_ID_SIZE+2), groupAddress(groupId), address(addr), lastGroupReport(0) {}
+	GroupNode(const char* rawPeerId, const string& groupId, const SocketAddress& addr, const SocketAddress& host) :
+		rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), address(addr), hostAddress(host), lastGroupReport(0) {
+	}
 
 	string rawId;
 	string groupAddress;
 	SocketAddress address;
+	SocketAddress hostAddress;
 	UInt64 lastGroupReport; // Time in msec of last Group report received
 };
 
@@ -426,7 +429,7 @@ void NetGroup::close() {
 		removePeer(itPeer);
 }
 
-void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const SocketAddress& address) {
+void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const SocketAddress& address, const SocketAddress& hostAddress) {
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	auto it = _mapHeardList.lower_bound(peerId);
@@ -437,7 +440,7 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 
 	string groupAddress;
 	_mapGroupAddress.emplace(GetGroupAddressFromPeerId(rawId, groupAddress), peerId);
-	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(rawId, groupAddress, address));
+	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(rawId, groupAddress, address, hostAddress));
 	INFO("Peer ", it->first, " added to heard list")
 }
 
@@ -734,12 +737,12 @@ void NetGroup::sendGroupReport(std::map<std::string, std::shared_ptr<P2PConnecti
 	buildBestList(itNode->second.groupAddress, bestList);
 
 	// Calculate the total size to allocate sufficient memory
-	UInt32 serverHostSize = _conn.serverAddress().host().size();
-	UInt32 sizeTotal = (UInt32)(itPeer->second->peerAddress().host().size() + serverHostSize + 12);
+	UInt32 sizeTotal = (UInt32)(itPeer->second->peerAddress().host().size() + _conn.serverAddress().host().size() + 12);
 	for (auto it1 : bestList) {
 		itNode = _mapHeardList.find(it1);
 		if (itNode != _mapHeardList.end())
-			sizeTotal += itNode->second.address.host().size() + serverHostSize + PEER_ID_SIZE + 12 + ((itNode->second.lastGroupReport > 0) ? Util::Get7BitValueSize((Time::Now() - itNode->second.lastGroupReport) / 1000) : 1);
+			sizeTotal += itNode->second.hostAddress.host().size();
+			sizeTotal += itNode->second.address.host().size() + PEER_ID_SIZE + 12 + ((itNode->second.lastGroupReport > 0) ? Util::Get7BitValueSize((Time::Now() - itNode->second.lastGroupReport) / 1000) : 1);
 	}
 	_reportBuffer.resize(sizeTotal);
 
@@ -748,7 +751,7 @@ void NetGroup::sendGroupReport(std::map<std::string, std::shared_ptr<P2PConnecti
 	writer.write8(itPeer->second->peerAddress().host().size() + 4);
 	writer.write8(0x0D);
 	RTMFP::WriteAddress(writer, itPeer->second->peerAddress(), RTMFP::ADDRESS_PUBLIC);
-	writer.write8(serverHostSize + 4);
+	writer.write8(_conn.serverAddress().host().size() + 4);
 	writer.write8(0x0A);
 	RTMFP::WriteAddress(writer, _conn.serverAddress(), RTMFP::ADDRESS_REDIRECTION);
 	writer.write8(0);
@@ -761,9 +764,9 @@ void NetGroup::sendGroupReport(std::map<std::string, std::shared_ptr<P2PConnecti
 			TRACE("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed) //, " (latency : ", itPeer.second->latency(), ")")
 			writer.write8(0x22).write(itNode->second.rawId.data(), PEER_ID_SIZE+2);
 			writer.write7BitLongValue(timeElapsed);
-			writer.write8(itNode->second.address.host().size() + serverHostSize + 7);
+			writer.write8(itNode->second.address.host().size() + itNode->second.hostAddress.host().size() + 7);
 			writer.write8(0x0A);
-			RTMFP::WriteAddress(writer, _conn.serverAddress(), RTMFP::ADDRESS_REDIRECTION);
+			RTMFP::WriteAddress(writer, itNode->second.hostAddress, RTMFP::ADDRESS_REDIRECTION);
 			RTMFP::WriteAddress(writer, itNode->second.address, RTMFP::ADDRESS_PUBLIC);
 			writer.write8(0);
 		}
@@ -890,9 +893,11 @@ void NetGroup::updatePlayMode() {
 	}
 
 	// Log part
-	for (auto it : _mapPeers) {
-		if (it.second->connected && it.second->pushInMode)
-			DEBUG("Push mode In to ", Format<UInt8>("%.2x", it.second->pushInMode), " with : ", it.second->peerAddress().toString())
+	if (Logs::GetLevel() >= Logger::LEVEL_TRACE) {
+		for (auto it : _mapPeers) {
+			if (it.second->connected && it.second->pushInMode)
+				TRACE("Push mode In to ", Format<UInt8>("%.2x", it.second->pushInMode), " with : ", it.second->peerAddress().toString())
+		}
 	}
 
 	if ((toAdd + totalMode) == 0xFF)
@@ -920,7 +925,7 @@ void NetGroup::manageBestConnections(set<string>& bestList) {
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", it) // implementation error, should not happen
 			else
-				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.rawId, itNode->second.address);
+				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.rawId, itNode->second.address, itNode->second.hostAddress);
 		}
 	}
 }
@@ -935,20 +940,29 @@ void NetGroup::readAddress(PacketReader& packet, UInt16 size, UInt32 targetCount
 	}
 
 	// Read all addresses
-	SocketAddress address;
+	SocketAddress address, peerAddress, hostAddress(_conn.serverAddress());
 	while (size > 0) {
 
 		UInt8 addressType = packet.read8();
 		RTMFP::ReadAddress(packet, address, addressType);
-		if (!noPeerID && (addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC && address.family() == IPAddress::IPv4) { // TODO: Handle ivp6
-			TRACE("Group Report - IP Address : ", address.toString())
+		if (!noPeerID && address.family() == IPAddress::IPv4) { // TODO: Handle ivp6
 
-			// New Peer ID => we add it to heard list and connect to him if possible
-			addPeer2HeardList(newPeerId.c_str(), rawId.data(), address);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-			if (_mapHeardList.size() < targetCount)
-				_conn.connect2Peer(newPeerId.c_str(), stream.c_str(), rawId, address);
+			switch (addressType & 0x0F) {
+				case RTMFP::ADDRESS_PUBLIC:
+					peerAddress = address; break;
+				case RTMFP::ADDRESS_REDIRECTION:
+					hostAddress = address; break;
+			}
+			TRACE("Group Report - IP Address : ", address.toString(), " - type : ", addressType)
 		}
 		size -= 3 + ((address.family() == IPAddress::IPv6) ? sizeof(in6_addr) : sizeof(in_addr));
+	}
+
+	// New Peer ID & address not null => we add it to heard list and connect to him if possible
+	if (peerAddress) {
+		addPeer2HeardList(newPeerId.c_str(), rawId.data(), address, hostAddress);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
+		if (_mapHeardList.size() < targetCount) // TODO: check that
+			_conn.connect2Peer(newPeerId.c_str(), stream.c_str(), rawId, address, hostAddress);
 	}
 }
 

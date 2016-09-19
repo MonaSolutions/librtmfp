@@ -42,7 +42,8 @@ public:
 	// Return the tag used for this p2p connection (initiator mode)
 	const std::string&	tag() { return _tag; }
 
-	const Mona::SocketAddress& peerAddress() { return _outAddress; }
+	const Mona::SocketAddress& peerAddress() { return _targetAddress; }
+	const Mona::SocketAddress& hostAddress() { return _hostAddress; }
 
 	// Manage all handshake messages (marker 0x0B)
 	virtual void manageHandshake(Mona::Exception& ex, Mona::BinaryReader& reader);
@@ -74,6 +75,9 @@ public:
 
 	// Close the connection properly
 	virtual void				close(bool full);
+
+	// Update the host address of the peer
+	void updateHostAddress(const Mona::SocketAddress& address);
 
 	/*** NetGroup functions ***/
 
@@ -160,6 +164,8 @@ private:
 	Mona::UInt32				_sessionId; // id of the P2P session;
 	std::string					_farKey; // Public Key of the server/peer (for shared key determination)
 	std::string					_farNonce; // Nonce of the distant peer
+
+	Mona::SocketAddress			_hostAddress; // Address of the server related to this peer
 
 	// Play/Publish command
 	std::string					_streamName; // playing stream name

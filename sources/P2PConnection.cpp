@@ -14,12 +14,12 @@ UInt32 P2PConnection::P2PSessionCounter = 2000000;
 P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _pListener(NULL), _groupBeginSent(false), publicationInfosSent(false),
 	_lastIdSent(0), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), groupReportInitiator(false), _groupConnectSent(false),
-	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _hostAddress(hostAddress) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
 	};
 
-	_outAddress = _targetAddress = hostAddress;
+	_outAddress = _targetAddress = hostAddress; // update addresses
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
@@ -70,6 +70,11 @@ void P2PConnection::handleFlowClosed(UInt64 idFlow) {
 
 UDPSocket&	P2PConnection::socket() { 
 	return _parent->socket(); 
+}
+
+void P2PConnection::updateHostAddress(const Mona::SocketAddress& address) { 
+	DEBUG("Updating host address of peer ", peerId, " to ", address.toString())
+	_hostAddress = address;
 }
 
 RTMFPFlow* P2PConnection::createSpecialFlow(UInt64 id, const string& signature) {
@@ -195,7 +200,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	if (peerId == "unknown")
 		rawId.append(STR id, PEER_ID_SIZE);
 	INFO("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
-	_parent->addPeer2HeardList(_outAddress, peerId, rawId.data());
+	_parent->addPeer2HeardList(_outAddress, _hostAddress, peerId, rawId.data());
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -293,7 +298,7 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 	// Before sending we set connection parameters
 	_outAddress = _targetAddress = address;
 	_farId = 0;
-	_parent->addPeer2HeardList(_outAddress, peerId, rawId.data());
+	_parent->addPeer2HeardList(_outAddress, _hostAddress, peerId, rawId.data());
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	if (!ex) {

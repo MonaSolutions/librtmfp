@@ -22,7 +22,7 @@ public:
 	void connect2Peer(const char* peerId, const char* streamName);
 
 	// Connect to a peer directly and start playing streamName (Called by NetGroup)
-	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const Mona::SocketAddress& address);
+	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const Mona::SocketAddress& address, const Mona::SocketAddress& hostAddress);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	void connect2Group(const char* netGroup, const char* streamName, bool publisher, double availabilityUpdatePeriod, Mona::UInt16 windowDuration);
@@ -73,7 +73,7 @@ public:
 	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
 	// Called by P2PConnection when the responder receive the caller peerId to update the group if needed
-	void addPeer2HeardList(const Mona::SocketAddress& peerAddress, const std::string& peerId, const char* rawId);
+	void addPeer2HeardList(const Mona::SocketAddress& peerAddress, const Mona::SocketAddress& hostAddress, const std::string& peerId, const char* rawId);
 
 	// Called by P2PConnection when we are connected to the peer
 	bool addPeer2Group(const Mona::SocketAddress& peerAddress, const std::string& peerId);

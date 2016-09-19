@@ -31,7 +31,7 @@ public:
 	void close();
 
 	// Add a peer to the Heard List
-	void addPeer2HeardList(const std::string& peerId, const char* rawId, const Mona::SocketAddress& address);
+	void addPeer2HeardList(const std::string& peerId, const char* rawId, const Mona::SocketAddress& address, const Mona::SocketAddress& hostAddress);
 
 	// Add a peer to the NetGroup map
 	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
