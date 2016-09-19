@@ -11,7 +11,7 @@
 using namespace Mona;
 using namespace std;
 
-RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _pListener(NULL),
+RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _pListener(NULL), _connectAttempt(0),
 	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), publishReady(false), connectReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onStreamCreated = [this](UInt16 idStream) {
 		handleStreamCreated(idStream);
@@ -732,6 +732,19 @@ void RTMFPConnection::sendConnections() {
 		INFO("Connecting to ", _targetAddress.toString(), "...")
 		sendHandshake0(_rawUrl, _tag);
 		_waitConnect=false;
+		_connectAttempt++;
+		_lastAttempt.update();
+	}
+	else if (_handshakeStep == 1 && _connectAttempt <= 11 && _lastAttempt.isElapsed(1000)) {
+		if (_connectAttempt > 10) {
+			_connectAttempt++;
+			_pOnSocketError("librtmpf has reached 11 attempts of connection to the server without answer");
+			return;
+		}
+		INFO("Sending new connection request to ", _targetAddress.toString(), "...")
+		sendHandshake0(_rawUrl, _tag);
+		_connectAttempt++;
+		_lastAttempt.update();
 	}
 
 	// Send waiting p2p connections

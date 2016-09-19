@@ -164,6 +164,8 @@ private:
 	std::shared_ptr<P2PConnection> createP2PConnection(const char* peerId, const char* streamOrTag, const Mona::SocketAddress& address, bool responder);
 
 	bool															_waitConnect; // True if we are waiting for a normal connection request to be sent
+	Mona::UInt8														_connectAttempt; // Counter of connection attempts to the server
+	Mona::Time														_lastAttempt; // Last attempt to connect to the server
 	std::vector<std::string>										_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
 	std::deque<std::string>											_waitingGroup; // queue of waiting connections to groups
 	std::recursive_mutex											_mutexConnections; // mutex for waiting connections (normal or p2p)
