@@ -103,7 +103,7 @@ shared_ptr<P2PConnection> RTMFPConnection::createP2PConnection(const char* peerI
 	INFO("Connecting to peer ", peerId, "...")
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, address, _pubKey, responder));
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, address, responder));
 	string tag;
 	
 	if (responder) {
@@ -359,8 +359,8 @@ void RTMFPConnection::handleRedirection(Exception& ex, BinaryReader& reader) {
 	}
 	string tagReceived;
 	reader.read(16, tagReceived);
-	if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
-		ex.set(Exception::PROTOCOL, "Unexpected tag received : ", tagReceived);
+	if (memcmp(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
+		ex.set(Exception::PROTOCOL, "Unexpected tag received");
 		return;
 	}
 	SocketAddress address;
@@ -395,8 +395,8 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 	}
 	string tagReceived;
 	reader.read(16, tagReceived);
-	if (String::ICompare(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
-		ex.set(Exception::PROTOCOL, "Unexpected tag received : ", tagReceived);
+	if (memcmp(tagReceived.c_str(), (const char*)_tag.data(), 16) != 0) {
+		ex.set(Exception::PROTOCOL, "Unexpected tag received");
 		return;
 	}
 
@@ -425,6 +425,7 @@ void RTMFPConnection::sendHandshake1(Exception& ex, BinaryReader& reader) {
 
 	if (!_diffieHellman.initialize(ex))
 		return;
+	_pubKey.resize(_diffieHellman.publicKeySize(ex));
 	_diffieHellman.readPublicKey(ex, _pubKey.data());
 	writer.write7BitLongValue(_pubKey.size() + 4);
 
@@ -553,7 +554,7 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 
 	string nonce;
 	reader.read(nonceSize, nonce);
-	if (String::ICompare(nonce, "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
+	if (memcmp(nonce.data(), "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
 		ex.set(Exception::PROTOCOL, "Incorrect nonce : ", nonce);
 		return false;
 	}

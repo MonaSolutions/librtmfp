@@ -151,7 +151,6 @@ protected:
 	Mona::DiffieHellman					_diffieHellman;
 	Mona::Buffer						_sharedSecret; 
 	std::string							_tag;
-	Mona::Buffer						_pubKey;
 	Mona::Buffer						_nonce;
 
 	// External Callbacks to link with parent

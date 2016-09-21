@@ -11,7 +11,7 @@ using namespace std;
 
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
-P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, const Buffer& pubKey, bool responder) :
+P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, bool responder) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _pListener(NULL), _groupBeginSent(false), publicationInfosSent(false),
 	_lastIdSent(0), _pushOutMode(0), pushInMode(0), _pMediaFlow(NULL), _pFragmentsFlow(NULL), _pReportFlow(NULL), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), groupReportInitiator(false), _groupConnectSent(false),
 	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _hostAddress(hostAddress) {
@@ -23,9 +23,6 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
-
-	BinaryWriter writer2(_pubKey.data(), _pubKey.size());
-	writer2.write(pubKey.data(), pubKey.size()); // copy parent public key
 
 	if (peerId != "unknown")
 		Util::UnformatHex(BIN peerId.data(), peerId.size(), rawId, true);
@@ -151,9 +148,9 @@ void P2PConnection::responderHandshake0(Exception& ex, string tag, const SocketA
 	writer.write8(COOKIE_SIZE);
 	writer.write(cookie, COOKIE_SIZE);
 
-	writer.write7BitValue(_pubKey.size() + 2);
+	writer.write7BitValue(_parent->publicKey().size() + 2);
 	writer.write16(0x1D02); // (signature)
-	writer.write(_pubKey);
+	writer.write(_parent->publicKey());
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x70).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 
@@ -280,10 +277,10 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 	writer.write7BitLongValue(cookieSize);
 	writer.write(cookie); // Resend cookie
 
-	writer.write7BitLongValue(_pubKey.size() + 4);
-	writer.write7BitValue(_pubKey.size() + 2);
+	writer.write7BitLongValue(_parent->publicKey().size() + 4);
+	writer.write7BitValue(_parent->publicKey().size() + 2);
 	writer.write16(0x1D02); // (signature)
-	writer.write(_pubKey);
+	writer.write(_parent->publicKey());
 
 	_nonce.resize(0x4C,false);
 	BinaryWriter nonceWriter(_nonce.data(), 0x4C);

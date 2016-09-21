@@ -87,6 +87,9 @@ public:
 	// Return the server address (for NetGroup)
 	const Mona::SocketAddress& serverAddress() { return _targetAddress; }
 
+	// Return the public key for Diffie Hellman encryption/decryption
+	const Mona::Buffer& publicKey() { return _pubKey; }
+
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal							connectSignal; // signal to wait connection
 	Mona::Signal							p2pPublishSignal; // signal to wait p2p publish
@@ -162,6 +165,8 @@ private:
 
 	// Create a P2PConnection
 	std::shared_ptr<P2PConnection> createP2PConnection(const char* peerId, const char* streamOrTag, const Mona::SocketAddress& address, bool responder);
+
+	Mona::Buffer													_pubKey; // Diffie Hellman public key for server and P2P handshakes
 
 	bool															_waitConnect; // True if we are waiting for a normal connection request to be sent
 	Mona::UInt8														_connectAttempt; // Counter of connection attempts to the server

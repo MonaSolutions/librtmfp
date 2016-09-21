@@ -23,7 +23,7 @@ class P2PConnection : public FlowManager,
 	public FlashEvents::OnFragment {
 	friend class RTMFPConnection;
 public:
-	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, const Mona::Buffer& pubKey, bool responder);
+	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, bool responder);
 
 	virtual ~P2PConnection();
 
