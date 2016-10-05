@@ -83,6 +83,9 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 		_pOnSocketError(ex.error());
 	};
 	onPacket = [this](PoolBuffer& pBuffer, const SocketAddress& address) {
+		if (_died)
+			return; // ignore
+
 		// Decode the RTMFP data
 		Exception ex;
 		if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
@@ -277,12 +280,11 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 #endif
 			break;
 		case 0x0c:
-			ex.set(Exception::PROTOCOL, "Failed on server side");
-			writeMessage(0x0C, 0);
+			WARN("Message 0C received (possibly wrong packet sent), we must close the session");
+			handleProtocolFailed();
 			break;
 		case 0x4c : // P2P closing session (only for p2p I think)
 			INFO("P2P Session at ", _outAddress.toString(), " is closing")
-			connected = false;
 			close();
 			return;
 		case 0x01: // KeepAlive
@@ -445,6 +447,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 	}
 
 	RTMFPFlow* pFlow;
+	Exception ex;
 
 	// get flash stream process engine related by signature
 	if (signature.size() > 4 && signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0) { // NetConnection
@@ -479,9 +482,8 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		}
 
 	}
-	else if (!(pFlow = createSpecialFlow(id, signature))) {
-		string tmp;
-		ERROR("Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow")
+	else if (!(pFlow = createSpecialFlow(ex, id, signature))) {
+		ERROR(ex.error())
 		return NULL;
 	}
 
@@ -592,7 +594,7 @@ bool FlowManager::computeKeys(Exception& ex, const string& farPubKey, const stri
 	if (ex)
 		return false;
 
-	DEBUG("Shared secret : ", Util::FormatHex(sharedSecret.data(), sharedSecret.size(), LOG_BUFFER))
+	DUMP("RTMFP", sharedSecret.data(), sharedSecret.size(), "Shared secret :")
 
 	PacketWriter packet(_pInvoker->poolBuffers);
 	if (packet.size() > 0) {

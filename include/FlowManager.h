@@ -75,6 +75,9 @@ protected:
 
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
+	
+	// Handle a 0C Message
+	virtual void handleProtocolFailed() = 0;
 
 	// Handle a Writer close message (type 5E)
 	virtual void				handleWriterFailed(RTMFPWriter* pWriter) = 0;
@@ -102,7 +105,7 @@ protected:
 	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);
 
 	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature) = 0;
+	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature) = 0;
 
 	// Initialize the packet in the RTMFPSender
 	Mona::UInt8*				packet();

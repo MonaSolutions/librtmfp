@@ -36,6 +36,9 @@ bool FlashStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 
 	// if exception, it closes the connection, and print an ERROR message
 	switch(type) {
+		case AMF::ABORT: // TODO: check what it is (in a NetGroup communication)
+			INFO("Unknown 02 packet type : ", Util::FormatHex(packet.current(), packet.available(), LOG_BUFFER), " (peerId : ", _peerId, ")")
+			break;
 
 		case AMF::AUDIO:
 			audioHandler(time,packet, lostRate);

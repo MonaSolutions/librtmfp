@@ -66,8 +66,6 @@ public:
 		ADDRESS_REDIRECTION=3
 	};
 
-	static bool						GetLocalIPAddresses(Mona::Exception& ex, std::vector<Mona::IPAddress>& addresses);
-
 	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, Mona::UInt8 addressType);
 	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
@@ -90,5 +88,25 @@ public:
 	static bool						IsAACCodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && (*data >> 4) == 0x0A && data[1] == 0; }
 
 	static bool						IsH264CodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && *data == 0x17 && data[1] == 0; }
+
+	// Return a random iterator from a container which respect the isAllowed condition
+	template<class ContainerType, typename Iterator>
+	static bool getRandomIt(ContainerType& container, Iterator& itResult, std::function<bool(const Iterator&)> isAllowed) {
+		if (container.empty())
+			return false;
+
+		auto itRandom = container.begin();
+		advance(itRandom, Mona::Util::Random<Mona::UInt32>() % container.size());
+
+		itResult = itRandom;
+		while (!isAllowed(itResult)) {
+			if (++itResult == container.end())
+				itResult = container.begin();
+
+			if (itResult == itRandom) // No match
+				return false;
+		}
+		return true;
+	}
 };
 

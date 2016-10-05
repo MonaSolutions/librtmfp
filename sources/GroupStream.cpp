@@ -30,6 +30,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			break;
 		}
 		case GroupStream::GROUP_INIT: {
+			INFO("GroupStream ", id, " - NetGroup Peer Connection (type 01)")
 			if (packet.read16() != 0x4100) {
 				ERROR("Unexpected format for NetGroup ID header")
 				break;

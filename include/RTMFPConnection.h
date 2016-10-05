@@ -112,6 +112,9 @@ protected:
 	// Handle new peer in a Netgroup : connect to the peer
 	void handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
 
+	// Handle a 0C Message
+	virtual void handleProtocolFailed();
+
 	// Handle a Writer close message (type 5E)
 	virtual void handleWriterFailed(RTMFPWriter* pWriter);
 
@@ -134,7 +137,7 @@ protected:
 	virtual void onPublished(FlashWriter& writer);
 
 	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
+	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature);
 
 private:
 

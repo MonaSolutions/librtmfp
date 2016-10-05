@@ -39,6 +39,9 @@ public:
 	// Remove a peer from the NetGroup map
 	void removePeer(const std::string& peerId, bool full);
 
+	// Called by peer when far peer close the Group Report writer
+	void peerIsClosingNetgroup(const std::string& peerId);
+
 	// Return True if the peer doesn't already exists and if the group ID match our group ID
 	bool checkPeer(const std::string& groupId, const std::string& peerId);
 
@@ -56,6 +59,9 @@ public:
 
 private:
 
+	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PConnection>>
+	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PConnection>>::iterator
+
 	// Calculate the estimation of the number of peers (this is the same as Flash NetGroup.estimatedMemberCount)
 	double estimatedPeersCount();
 
@@ -65,7 +71,7 @@ private:
 	// Return the Group Address calculated from a Peer ID
 	static const std::string& GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
 
-	void removePeer(std::map<std::string, std::shared_ptr<P2PConnection>>::iterator& itPeer);
+	void removePeer(MAP_PEERS_ITERATOR_TYPE& itPeer);
 
 	std::map<Mona::UInt64, MediaPacket>						_fragments;
 	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
@@ -82,13 +88,13 @@ private:
 
 	// Build the Group Report for the peer in parameter
 	// Return false if the peer is not found
-	void	sendGroupReport(std::map<std::string, std::shared_ptr<P2PConnection>>::iterator itPeer);
+	void	sendGroupReport(const MAP_PEERS_ITERATOR_TYPE& itPeer);
 
 	// Push an arriving fragment to the peers and write it into the output file (recursive function)
-	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator itFragment);
+	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator& itFragment);
 
 	// Calculate the push play mode balance and send the requests if needed
-	void	updatePlayMode();
+	void	updatePushMode();
 
 	// Send the Pull requests if needed
 	void	sendPullRequests();
@@ -115,11 +121,11 @@ private:
 	GroupEvents::OnMedia::Type								onMedia;
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
-	Mona::Buffer											_streamCode; // 2101 + Random key on 32 bytes to be send in the publication infos packet
+	Mona::Buffer											_streamCode; // 2101 + Random key on 32 bytes identifying the publication (for group media info message)
 
 	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID
-	std::map<std::string, std::shared_ptr<P2PConnection>>	_mapPeers; // Map of peers ID to p2p connections
+	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPConnection&										_conn; // RTMFPConnection related to
 	Mona::Time												_lastPlayUpdate; // last Play Pull & Push calculation
@@ -129,4 +135,9 @@ private:
 	Mona::Buffer											_reportBuffer; // Buffer for reporting messages
 
 	bool													_firstPushMode; // True if no play push mode have been send for now
+
+	// Pushers calculation
+	Mona::UInt8												_currentPushMask; // current mask analyzed
+	std::string												_currentPushPeer; // current pusher analyzed
+	bool													_currentPushIsBad; // True if the pusher analyzed asn't send any fragment for now
 };

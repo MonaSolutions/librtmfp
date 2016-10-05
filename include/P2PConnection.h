@@ -71,7 +71,7 @@ public:
 	virtual void				initWriter(const std::shared_ptr<RTMFPWriter>& pWriter);
 
 	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*			createSpecialFlow(Mona::UInt64 id, const std::string& signature);
+	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature);
 
 	// Close the connection properly
 	virtual void				close(bool full);
@@ -125,6 +125,9 @@ public:
 	// Return the last fragment available
 	Mona::UInt64 lastFragment() { return _idFragmentMap; }
 
+	// Send the Group Peer Connect request
+	void sendGroupPeerConnect();
+
 	/*** Public members ***/
 
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
@@ -138,10 +141,14 @@ public:
 	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
+	bool							badPusher; // True if this peer is not pushing when asked
 
 protected:
 	// Handle play request (only for P2PConnection)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer);
+
+	// Handle a 0C Message
+	virtual void handleProtocolFailed();
 
 	// Handle a Writer close message (type 5E)
 	virtual void				handleWriterFailed(RTMFPWriter* pWriter);
@@ -174,20 +181,20 @@ private:
 	bool						_rawResponse; // next message is a raw response? TODO: make it nicer
 
 	// Group members
-	bool						_groupConnectSent; // True if group connection request has been sent to peer
-	bool						_groupBeginSent; // True if the group messages 02 + 0E have been sent
-	std::shared_ptr<NetGroup>	_group; // Group pointer if netgroup connection
+	std::shared_ptr<Mona::Buffer>	_groupConnectKey; // Encrypted key used to connect to the peer
+	bool							_groupConnectSent; // True if group connection request has been sent to peer
+	bool							_groupBeginSent; // True if the group messages 02 + 0E have been sent
+	std::shared_ptr<NetGroup>		_group; // Group pointer if netgroup connection
 
-	Mona::UInt8					_pushOutMode; // Group Publish Push mode
+	Mona::UInt8						_pushOutMode; // Group Publish Push mode
 
-	RTMFPFlow*					_pMediaFlow; // Flow for media packets
-	RTMFPFlow*					_pFragmentsFlow; // Flow for fragments Map messages and media related messages
-	RTMFPFlow*					_pReportFlow; // Flow for report messages
+	RTMFPFlow*						_pMediaFlow; // Flow for media packets
+	RTMFPFlow*						_pFragmentsFlow; // Flow for fragments Map messages and media related messages
+	RTMFPFlow*						_pReportFlow; // Flow for report messages
 
-	Mona::Buffer				_fragmentsMap; // Last Fragments Map received
-	Mona::UInt64				_idFragmentMap; // Last ID received from the Fragments Map
-	Mona::UInt64				_lastIdSent; // Last ID sent in the Fragments map
-
+	Mona::Buffer					_fragmentsMap; // Last Fragments Map received
+	Mona::UInt64					_idFragmentMap; // Last ID received from the Fragments Map
+	Mona::UInt64					_lastIdSent; // Last ID sent in the Fragments map
 
 	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)
 };

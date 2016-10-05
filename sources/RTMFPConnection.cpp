@@ -61,13 +61,15 @@ RTMFPConnection::~RTMFPConnection() {
 	}
 }
 
-RTMFPFlow* RTMFPConnection::createSpecialFlow(UInt64 id, const string& signature) {
+RTMFPFlow* RTMFPConnection::createSpecialFlow(Exception& ex, UInt64 id, const string& signature) {
 	if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
 		shared_ptr<FlashStream> pStream;
 		_pMainStream->addStream(pStream, true);
 		RTMFPFlow* pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
 		return pFlow;
 	}
+	string tmp;
+	ex.set(Exception::PROTOCOL, "Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow");
 	return NULL;
 }
 
@@ -137,6 +139,18 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 		if (it->second->peerId == peerId) {
 			TRACE("Connection ignored, we are already connecting to ", peerId)
 			return;
+		}
+	}
+
+	// NetGroup : Check if we are not already connected to peer
+	if (_group) {
+		for (auto itAddress = _mapPeersByAddress.begin(); itAddress != _mapPeersByAddress.end(); itAddress++) {
+			if (itAddress->second->peerId == peerId && itAddress->second->connected) {
+				DEBUG("Peer ", itAddress->second->peerId, " already connected, sending NetGroup connection request...")
+				if (addPeer2Group(itAddress->first, itAddress->second->peerId))
+					itAddress->second->sendGroupPeerConnect();
+				return;
+			}
 		}
 	}
 
@@ -857,6 +871,10 @@ void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& pe
 	connect2Peer(peerId.c_str(), _group->stream.c_str());
 }
 
+void RTMFPConnection::handleProtocolFailed() {
+	writeMessage(0x0C, 0);
+}
+
 void RTMFPConnection::handleWriterFailed(RTMFPWriter* pWriter) {
 	pWriter->fail("Writer terminated on connection");
 }
@@ -924,5 +942,5 @@ bool RTMFPConnection::addPeer2Group(const SocketAddress& peerAddress, const stri
 			return true;
 		}
 	}
-	return true;
+	return false;
 }
