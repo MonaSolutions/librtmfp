@@ -23,7 +23,8 @@ class P2PConnection : public FlowManager,
 	public FlashEvents::OnFragment {
 	friend class RTMFPConnection;
 public:
-	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, bool responder);
+	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, 
+		RTMFP::AddressType addressType, bool responder);
 
 	virtual ~P2PConnection();
 
@@ -142,6 +143,7 @@ public:
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
 	bool							badPusher; // True if this peer is not pushing when asked
+	RTMFP::AddressType				peerType; // Address Type (Local or Public) of the peer
 
 protected:
 	// Handle play request (only for P2PConnection)

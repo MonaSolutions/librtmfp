@@ -123,6 +123,7 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 }
 
 void FlashConnection::sendPeerInfo(FlashWriter& writer,UInt16 port) {
+	INFO("Sending peer info (port : ", port,")")
 	AMFWriter& amfWriter = writer.writeInvocation("setPeerInfo");
 
 	vector<IPAddress> addresses = IPAddress::Locals();

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "P2PConnection.h"
+#include "Mona/HostEntry.h"
 #include <list>
 
 /**************************************************
@@ -22,7 +23,7 @@ public:
 	void connect2Peer(const char* peerId, const char* streamName);
 
 	// Connect to a peer directly and start playing streamName (Called by NetGroup)
-	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const Mona::SocketAddress& address, const Mona::SocketAddress& hostAddress);
+	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const Mona::SocketAddress& address, RTMFP::AddressType addressType, const Mona::SocketAddress& hostAddress);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	void connect2Group(const char* netGroup, const char* streamName, bool publisher, double availabilityUpdatePeriod, Mona::UInt16 windowDuration);
@@ -167,11 +168,12 @@ private:
 	void sendGroupConnection(const std::string& netGroup);
 
 	// Create a P2PConnection
-	std::shared_ptr<P2PConnection> createP2PConnection(const char* peerId, const char* streamOrTag, const Mona::SocketAddress& address, bool responder);
+	std::shared_ptr<P2PConnection> createP2PConnection(const char* peerId, const char* streamOrTag, const Mona::SocketAddress& address, RTMFP::AddressType addressType, bool responder);
 
 	Mona::Buffer													_pubKey; // Diffie Hellman public key for server and P2P handshakes
 
-	bool															_waitConnect; // True if we are waiting for a normal connection request to be sent
+	std::string														_port; // server port
+	Mona::HostEntry													_host; // host entry (containing all host addresses)
 	Mona::UInt8														_connectAttempt; // Counter of connection attempts to the server
 	Mona::Time														_lastAttempt; // Last attempt to connect to the server
 	std::vector<std::string>										_waitingPeers; // queue of tag from waiting p2p connection request (initiators)

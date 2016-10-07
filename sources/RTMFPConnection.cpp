@@ -6,13 +6,14 @@
 #include "RTMFPFlow.h"
 #include "Listener.h"
 #include "NetGroup.h"
+#include "Mona/DNS.h"
 #include "Mona/Logs.h"
 
 using namespace Mona;
 using namespace std;
 
 RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _pListener(NULL), _connectAttempt(0),
-	_nbCreateStreams(0), _waitConnect(false), p2pPublishReady(false), publishReady(false), connectReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_nbCreateStreams(0), _port("1935"), p2pPublishReady(false), publishReady(false), connectReady(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onStreamCreated = [this](UInt16 idStream) {
 		handleStreamCreated(idStream);
 	};
@@ -83,29 +84,27 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	RTMFP::Write7BitValue(_rawUrl, strlen(url)+1);
 	String::Append(_rawUrl, '\x0A', url);
 	string tmpHost = host;
-	if (!strrchr(host, ':'))
-		tmpHost += ":1935"; // default port
+	const char* port = strrchr(host, ':');
+	if (port) {
+		_port = (port + 1);
+		tmpHost[port-host] = '\0';
+	}
 
-	if (!_targetAddress.setWithDNS(ex, tmpHost) || !_outAddress.set(_targetAddress))
+	// TODO: Create an RTMFPConnection for each _host.addresses()
+	if (!DNS::Resolve(ex, tmpHost, _host) && !_targetAddress.setWithDNS(ex, tmpHost, _port))
 		return false;
 
 	_pSocket.reset(new UDPSocket(_pInvoker->sockets, true));
 	_pSocket->OnError::subscribe(onError);
 	_pSocket->OnPacket::subscribe(onPacket);
-
-	{
-		// Wait the next handle before sending first handshake request
-		lock_guard<recursive_mutex> lock(_mutexConnections);
-		_waitConnect=true;
-	}
-	return !ex;
+	return true;
 }
 
-shared_ptr<P2PConnection> RTMFPConnection::createP2PConnection(const char* peerId, const char* streamOrTag, const SocketAddress& address, bool responder) {
+shared_ptr<P2PConnection> RTMFPConnection::createP2PConnection(const char* peerId, const char* streamOrTag, const SocketAddress& address, RTMFP::AddressType addressType, bool responder) {
 	INFO("Connecting to peer ", peerId, "...")
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, address, responder));
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, address, addressType, responder));
 	string tag;
 	
 	if (responder) {
@@ -125,7 +124,7 @@ shared_ptr<P2PConnection> RTMFPConnection::createP2PConnection(const char* peerI
 }
 
 void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
-	std::shared_ptr<P2PConnection> pPeer = createP2PConnection(peerId, streamName, _targetAddress, false);
+	std::shared_ptr<P2PConnection> pPeer = createP2PConnection(peerId, streamName, _targetAddress, RTMFP::ADDRESS_PUBLIC, false);
 	
 	// Add the connection request to the queue
 	lock_guard<recursive_mutex> lock(_mutexConnections);
@@ -133,7 +132,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 		_waitingPeers.push_back(pPeer->tag());
 }
 
-void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const string& rawId, const SocketAddress& address, const SocketAddress& hostAddress) {
+void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const string& rawId, const SocketAddress& address, RTMFP::AddressType addressType, const SocketAddress& hostAddress) {
 	// Check if the peer is not already in the waiting queue
 	for (auto it = _mapPeersByTag.begin(); it != _mapPeersByTag.end(); it++) {
 		if (it->second->peerId == peerId) {
@@ -154,7 +153,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 		}
 	}
 
-	std::shared_ptr<P2PConnection> pPeer = createP2PConnection(peerId, streamName, address, false);
+	std::shared_ptr<P2PConnection> pPeer = createP2PConnection(peerId, streamName, address, addressType, false);
 	pPeer->updateHostAddress(hostAddress);
 
 	// Send the handshake 30 to peer
@@ -540,8 +539,10 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		switch (addressType & 0x0F) {
 			case RTMFP::ADDRESS_REDIRECTION:
 				it->second->updateHostAddress(address);
+			case RTMFP::ADDRESS_LOCAL:
 			case RTMFP::ADDRESS_PUBLIC:
-				DEBUG("Sending p2p handshake 30 to ", ((addressType & 0x0F) == RTMFP::ADDRESS_PUBLIC ? "peer" : "far server - requesting addresses"))
+				DEBUG("Sending p2p handshake 30 to ", ((addressType & 0x0F) != RTMFP::ADDRESS_REDIRECTION ? "peer" : "far server - requesting addresses"))
+				it->second->peerType = (RTMFP::AddressType)addressType;
 				it->second->_outAddress = address;
 				it->second->sendHandshake0(it->second->rawId, tagReceived);
 				it->second->attempt++;
@@ -633,7 +634,7 @@ void RTMFPConnection::responderHandshake0(Exception& ex, BinaryReader& reader) {
 			else if (_group) { // NetGroup : we accept direct connexions
 				DEBUG("It is a direct P2P connection request from the NetGroup")
 
-				if (!(pPeerConnection = createP2PConnection("unknown", tag.c_str(), _outAddress, true)))
+				if (!(pPeerConnection = createP2PConnection("unknown", tag.c_str(), _outAddress, RTMFP::ADDRESS_PUBLIC, true)))
 					return;
 			}
 			else {
@@ -742,22 +743,30 @@ void RTMFPConnection::createWaitingStreams() {
 void RTMFPConnection::sendConnections() {
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 
-	// Send normal connection request
-	if(_waitConnect) {
-		INFO("Connecting to ", _targetAddress.toString(), "...")
-		sendHandshake0(_rawUrl, _tag);
-		_waitConnect=false;
-		_connectAttempt++;
-		_lastAttempt.update();
-	}
-	else if (_handshakeStep == 1 && _connectAttempt <= 11 && _lastAttempt.isElapsed(1000)) {
+	// Send server connection request
+	if ((!_host.addresses().empty() || _targetAddress) && _connectAttempt == 0 || _handshakeStep == 1 && _connectAttempt <= 11 && _lastAttempt.isElapsed(1000)) {
 		if (_connectAttempt > 10) {
 			_connectAttempt++;
 			_pOnSocketError("librtmpf has reached 11 attempts of connection to the server without answer");
 			return;
 		}
-		INFO("Sending new connection request to ", _targetAddress.toString(), "...")
-		sendHandshake0(_rawUrl, _tag);
+
+		Exception ex;
+		if (_host.addresses().empty()) {
+			_outAddress.set(_targetAddress);
+			INFO("Connecting to ", _targetAddress.toString(), "...")
+			sendHandshake0(_rawUrl, _tag);
+		}
+		else {
+			for (auto itAddress : _host.addresses()) {
+				if (_targetAddress.set(ex, itAddress, _port) && _outAddress.set(_targetAddress)) {
+					INFO("Connecting to ", _targetAddress.toString(), "...")
+					sendHandshake0(_rawUrl, _tag);
+				}
+				else
+					WARN("Error while reading host address : ", ex.error())
+			}
+		}
 		_connectAttempt++;
 		_lastAttempt.update();
 	}
@@ -818,10 +827,8 @@ bool RTMFPConnection::onConnect(Mona::Exception& ex) {
 	// Record port for setPeerInfo request
 	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
 	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
-	if (pFlow) {
-		INFO("Sending peer info...")
+	if (pFlow)
 		pFlow->sendPeerInfo(_pSocket->address().port());
-	}
 
 	// We are connected : unlock the possible blocking RTMFP_Connect function
 	connectReady = true;
@@ -910,7 +917,7 @@ void RTMFPConnection::sendGroupConnection(const string& netGroup) {
 
 void RTMFPConnection::addPeer2HeardList(const SocketAddress& peerAddress, const SocketAddress& hostAddress, const string& peerId, const char* rawId) {
 	if (_group)
-		_group->addPeer2HeardList(peerId, rawId, peerAddress, hostAddress); // Inform the NetGroup about the new peer
+		_group->addPeer2HeardList(peerId, rawId, peerAddress, RTMFP::ADDRESS_PUBLIC, hostAddress); // Inform the NetGroup about the new peer
 
 	// If there is a waiting connexion to that peer, destroy it
 	lock_guard<recursive_mutex> lock(_mutexConnections);

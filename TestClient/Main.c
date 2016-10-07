@@ -104,12 +104,12 @@ unsigned int flip24(unsigned int value) { return ((value >> 16) & 0x000000FF) | 
 unsigned int flip32(unsigned int value) { return ((value >> 24) & 0x000000FF) | ((value >> 8) & 0x0000FF00) | ((value << 8) & 0x00FF0000) | ((value << 24) & 0xFF000000); }
 
 // Open the out/in files
-void initFiles() {
+void initFiles(const char* mediaFile) {
 	unsigned int i = 0;
 
 	if (_option == WRITE || _option == P2P_WRITE) {
-		if (openFile(&pInFile, "out.flv", "rb"))
-			printf("Input file out.flv opened\n");
+		if (openFile(&pInFile, mediaFile, "rb"))
+			printf("Input file %s opened\n", mediaFile);
 	}
 	else if (nbPeers > 0) {
 		for (i = 0; i < nbPeers; i++) {
@@ -122,9 +122,9 @@ void initFiles() {
 		}
 	}
 	else { // Normal read file
-		if (!openFile(&pOutFile, "out.flv", "wb+"))
+		if (!openFile(&pOutFile, mediaFile, "wb+"))
 			return;
-		printf("Output file out.flv opened\n");
+		printf("Output file %s opened\n", mediaFile);
 		if (_option == SYNC_READ)
 			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pOutFile);
 	}
@@ -274,6 +274,7 @@ int main(int argc,char* argv[]) {
 	unsigned short	audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	double			updatePeriod = 0.2;
 	unsigned int	windowDuration = 10;
+	const char		*logFile = "log.0", *mediaFile = "out.flv";
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
 	for(i; i<argc; i++) {
@@ -288,7 +289,11 @@ int main(int argc,char* argv[]) {
 		else if (stricmp(argv[i], "--dump") == 0) {
 			RTMFP_ActiveDump();
 			RTMFP_DumpSetCallback(onDump);
-		} 
+		}
+		else if (strlen(argv[i]) > 10 && strnicmp(argv[i], "--logfile=", 10) == 0)
+			logFile = argv[i] + 10;
+		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--mediaFile=", 12) == 0)
+			mediaFile = argv[i] + 12;
 		else if (stricmp(argv[i], "--audioUnbuffered") == 0) // for publish mode
 			audioReliable = 0;
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
@@ -317,7 +322,7 @@ int main(int argc,char* argv[]) {
 		printf("Cannot catch SIGINT\n");
 
 	// Open log file
-	if (openFile(&pLogFile, "log.0", "w")) {
+	if (openFile(&pLogFile, logFile, "w")) {
 
 		RTMFP_LogSetCallback(onLog);
 		RTMFP_InterruptSetCallback(IsInterrupted, NULL);
@@ -331,7 +336,7 @@ int main(int argc,char* argv[]) {
 				nbPeers = 1;
 				listPeers[0] = (char*)peerId;
 				listStreams[0] = publication;
-				listFileNames[0] = "out.flv";
+				listFileNames[0] = (char*)mediaFile;
 			}
 
 			if (netGroup)
@@ -347,7 +352,7 @@ int main(int argc,char* argv[]) {
 			else if (_option == SYNC_READ || _option == ASYNC_READ)
 				RTMFP_Play(context, publication);
 
-			initFiles();
+			initFiles(mediaFile);
 			while (!IsInterrupted(NULL)) {
 				onManage();
 				SLEEP(50); // delay between each async IO (in msec)
