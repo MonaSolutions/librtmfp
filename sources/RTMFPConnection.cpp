@@ -81,23 +81,24 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	}
 
 	_url = url;
-	RTMFP::Write7BitValue(_rawUrl, strlen(url)+1);
+	RTMFP::Write7BitValue(_rawUrl, strlen(url) + 1);
 	String::Append(_rawUrl, '\x0A', url);
 	string tmpHost = host;
 	const char* port = strrchr(host, ':');
 	if (port) {
 		_port = (port + 1);
-		tmpHost[port-host] = '\0';
+		tmpHost[port - host] = '\0';
 	}
 
 	// TODO: Create an RTMFPConnection for each _host.addresses()
-	if (!DNS::Resolve(ex, tmpHost, _host) && !_targetAddress.setWithDNS(ex, tmpHost, _port))
-		return false;
-
-	_pSocket.reset(new UDPSocket(_pInvoker->sockets, true));
-	_pSocket->OnError::subscribe(onError);
-	_pSocket->OnPacket::subscribe(onPacket);
-	return true;
+	if (DNS::Resolve(ex, tmpHost, _host) || _targetAddress.setWithDNS(ex, tmpHost, _port)) {
+		lock_guard<recursive_mutex> lock(_mutexConnections);
+		_pSocket.reset(new UDPSocket(_pInvoker->sockets, true));
+		_pSocket->OnError::subscribe(onError);
+		_pSocket->OnPacket::subscribe(onPacket);
+		return true;
+	}
+	return false;
 }
 
 shared_ptr<P2PConnection> RTMFPConnection::createP2PConnection(const char* peerId, const char* streamOrTag, const SocketAddress& address, RTMFP::AddressType addressType, bool responder) {
