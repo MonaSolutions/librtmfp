@@ -58,9 +58,10 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 	onMedia = [this](const string& peerId, const string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
 		if (!_codecInfosRead) {
-			if (!audio && RTMFP::IsH264CodecInfos(packet.data(), packet.available()))
+			if (!audio && RTMFP::IsH264CodecInfos(packet.data(), packet.available())) {
+				INFO("Video codec infos found, starting to read")
 				_codecInfosRead = true;
-			else {
+			} else {
 				if (!audio)
 					DEBUG("Video frame dropped to wait first key frame");
 				return;
@@ -70,7 +71,8 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 		if(_firstMedia) {
 			_firstMedia=false;
 			_timeStart=time; // to set to 0 the first packets
-		}
+		} else if (time < _timeStart)
+			DEBUG("Packet ignored because it is older (",time,") than start time (",_timeStart,")")
 
 		if (_pOnMedia) // Synchronous read
 			_pOnMedia(peerId.c_str(), stream.c_str(), time-_timeStart, (const char*)packet.current(), packet.available(), audio);
