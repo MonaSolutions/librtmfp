@@ -485,8 +485,8 @@ void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt
 
 	INFO("Sending the stream infos for stream '", stream, "'")
 	string signature("\x00\x47\x52\x11", 4);
-	if (!_pFragmentsFlow)
-		_pFragmentsFlow = createFlow(signature);
+	if (!_pFragmentsFlow && !(_pFragmentsFlow = createFlow(signature)))
+		return;
 	_pFragmentsFlow->setPeerId(peerId);
 	_pFragmentsFlow->sendGroupMediaInfos(stream, data, size, updatePeriod, windowDuration);
 }

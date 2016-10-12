@@ -121,7 +121,7 @@ private:
 	GroupEvents::OnMedia::Type								onMedia;
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
-	Mona::Buffer											_streamCode; // 2101 + Random key on 32 bytes identifying the publication (for group media info message)
+	std::unique_ptr<Mona::Buffer>							_pStreamCode; // 2101 + Random key on 32 bytes identifying the publication (for group media info message)
 
 	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID

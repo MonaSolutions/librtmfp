@@ -760,7 +760,9 @@ void RTMFPConnection::sendConnections() {
 		}
 		else {
 			for (auto itAddress : _host.addresses()) {
-				if (_targetAddress.set(ex, itAddress, _port) && _outAddress.set(_targetAddress)) {
+				if (itAddress.family() == IPAddress::IPv6)
+					DEBUG("Ignored address ", itAddress.toString(), ", IPV6 not supported yet") // TODO: support IPV6
+				else if (_targetAddress.set(ex, itAddress, _port) && _outAddress.set(_targetAddress)) {
 					INFO("Connecting to ", _targetAddress.toString(), "...")
 					sendHandshake0(_rawUrl, _tag);
 				}

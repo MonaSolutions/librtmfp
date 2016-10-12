@@ -120,7 +120,7 @@ UInt32 NetGroup::targetNeighborsCount() {
 
 NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, bool publisher, RTMFPConnection& conn, double updatePeriod, UInt16 windowDuration) :
 	idHex(groupId), idTxt(groupTxt), stream(streamName), isPublisher(publisher), _conn(conn), _updatePeriod((UInt64)(updatePeriod*1000)), _fragmentCounter(0),
-	_firstPushMode(true), _pListener(NULL), _windowDuration(windowDuration*1000), _streamCode(0x22), _currentPushMask(0), _currentPushIsBad(true) {
+	_firstPushMode(true), _pListener(NULL), _windowDuration(windowDuration*1000), _currentPushMask(0), _currentPushIsBad(true) {
 	onMedia = [this](bool reliable, AMF::ContentType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
 		const UInt8* pos = data;
@@ -144,8 +144,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			// Send fragment to peers (push mode)
 			for (auto it : _mapPeers) {
 				// Send Group media infos if not already sent
-				if (!it.second->publicationInfosSent) {
-					it.second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size(), _updatePeriod, _windowDuration);
+				if (!it.second->publicationInfosSent && it.second->groupReportInitiator) {
+					it.second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), _updatePeriod, _windowDuration);
 					it.second->publicationInfosSent = true;
 				}
 
@@ -235,10 +235,10 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		packet.read(0x22, farCode);
 		if (isPublisher) {
 			// Another stream code => we must accept and send our stream code
-			if (memcmp(_streamCode.data(), farCode.data(), 0x22) != 0) {
+			if (memcmp(_pStreamCode->data(), farCode.data(), 0x22) != 0) {
 				writer.writeRaw(posStart, packet.size() - (posStart - packet.data())); // Return the request to accept
 				if (!it->second->publicationInfosSent) {
-					it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size(), _updatePeriod, _windowDuration);
+					it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), _updatePeriod, _windowDuration);
 					it->second->publicationInfosSent = true;
 				}
 			}
@@ -247,11 +247,12 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			NOTE("Starting to listen to publication ", streamName)
 
 			// Save the key if first time received
-			if (_streamCode.data()[0] == 0) {
+			if (!_pStreamCode) {
+				_pStreamCode.reset(new Buffer(0x22));
 				DEBUG("Saving the key ", Util::FormatHex(BIN farCode.data(), 0x22, LOG_BUFFER))
-				memcpy(_streamCode.data(), farCode.data(), 0x22);
+				memcpy(_pStreamCode->data(), farCode.data(), 0x22);
 			}
-			it->second->sendGroupMedia(stream, _streamCode.data(), _streamCode.size(), _updatePeriod, _windowDuration);
+			it->second->sendGroupMedia(stream, farCode.data(), farCode.size(), _updatePeriod, _windowDuration);
 			it->second->publicationInfosSent = true;
 		}
 
@@ -360,6 +361,13 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			_lastReport.update();
 		} else
 			it->second->groupReportInitiator = false;
+
+		// Send the Group Media info if not already sent
+		if (!it->second->publicationInfosSent && _pStreamCode) {
+			it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), _updatePeriod, _windowDuration);
+			it->second->publicationInfosSent = true;
+		}
+
 	};
 	onGroupPlayPush = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
@@ -416,11 +424,10 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 	// If Publisher we generate the stream key
 	if (isPublisher) {
-		BinaryWriter writer(_streamCode.data(), _streamCode.size());
-		writer.write16(0x2101);
-		Util::Random((UInt8*)_streamCode.data() + 2, 0x20); // random serie of 32 bytes
-	} else 
-		memset(_streamCode.data(), 0, _streamCode.size());
+		_pStreamCode.reset(new Buffer(0x22));
+		_pStreamCode->data()[0] = 0x21; _pStreamCode->data()[1] = 0x01;
+		Util::Random((UInt8*)_pStreamCode->data() + 2, 0x20); // random serie of 32 bytes
+	}
 }
 
 NetGroup::~NetGroup() {

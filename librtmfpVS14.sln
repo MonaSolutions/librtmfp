@@ -1,11 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Express 2013 for Windows Desktop
-VisualStudioVersion = 12.0.31101.0
+# Visual Studio Express 14 for Windows Desktop
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "librtmfp", "librtmfpVS14.vcxproj", "{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "librtmfpVS14", "librtmfpVS14.vcxproj", "{1FF3D6E9-073D-4A6B-A057-547496C0B8EA}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestClient", "TestClient\TestClientVS14.vcxproj", "{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TestClientVS14", "TestClient\TestClientVS14.vcxproj", "{94E71824-F20F-4A3A-AD3A-B2D3E75FC8EE}"
 	ProjectSection(ProjectDependencies) = postProject
 		{1FF3D6E9-073D-4A6B-A057-547496C0B8EA} = {1FF3D6E9-073D-4A6B-A057-547496C0B8EA}
 	EndProjectSection
