@@ -276,13 +276,16 @@ void RTMFPWriter::acknowledgment(PacketReader& packet) {
 void RTMFPWriter::manage(Exception& ex) {
 	if(!consumed() && !_band.failed()) {
 		
-		if(_trigger.raise(ex))
+		// if some acknowlegment has not been received we send the messages back (8 times, with progressive occurences)
+		if (_trigger.raise(ex)) {
+			TRACE("Sending back repeatable messages (cycle : ", _trigger.cycle(), ")")
 			raiseMessage();
-
-		/*if (ex) {
-			fail("RTMFPWriter can't deliver its data, "+ex.error());
+		}
+		// When the peer/server doesn't send acknowledgment since a while we close the writer
+		else if (ex) {
+			fail("RTMFPWriter can't deliver its data, ",ex.error());
 			return;
-		}*/
+		}
 	}
 	if(critical && state()==CLOSED) {
 		ex.set(Exception::NETWORK, "Main flow writer closed, session is closing");

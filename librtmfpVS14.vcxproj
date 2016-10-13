@@ -116,6 +116,7 @@
     <ClInclude Include="include\RTMFPLogger.h" />
     <ClInclude Include="include\RTMFPMessage.h" />
     <ClInclude Include="include\RTMFPSender.h" />
+    <ClInclude Include="include\RTMFPTrigger.h" />
     <ClInclude Include="include\RTMFPWriter.h" />
     <ClInclude Include="include\StringWriter.h" />
   </ItemGroup>
@@ -140,6 +141,7 @@
     <ClCompile Include="sources\RTMFPConnection.cpp" />
     <ClCompile Include="sources\RTMFPFlow.cpp" />
     <ClCompile Include="sources\RTMFPSender.cpp" />
+    <ClCompile Include="sources\RTMFPTrigger.cpp" />
     <ClCompile Include="sources\RTMFPWriter.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

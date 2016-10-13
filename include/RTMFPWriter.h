@@ -3,7 +3,7 @@
 
 #include "Mona/Mona.h"
 #include "RTMFP.h"
-#include "Mona/Trigger.h"
+#include "RTMFPTrigger.h"
 #include "BandWriter.h"
 #include "RTMFPMessage.h"
 #include "FlashWriter.h"
@@ -103,7 +103,7 @@ private:
 	RTMFPMessageBuffered&	createMessage();
 	AMFWriter&				write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL, Mona::UInt32 size=0);
 
-	Mona::Trigger				_trigger; // count the number of sended cycles for managing repeated/lost counts
+	RTMFPTrigger				_trigger; // count the number of sended cycles for managing repeated/lost counts
 	std::deque<RTMFPMessage*>	_messages; // queue of messages to send
 	Mona::UInt64				_stage; // stage (index) of the last message sent
 	std::deque<RTMFPMessage*>	_messagesSent; // queue of messages to send back or consider lost if delay is elapsed

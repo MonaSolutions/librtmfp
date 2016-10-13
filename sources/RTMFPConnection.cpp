@@ -93,7 +93,7 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	// TODO: Create an RTMFPConnection for each _host.addresses()
 	if (DNS::Resolve(ex, tmpHost, _host) || _targetAddress.setWithDNS(ex, tmpHost, _port)) {
 		lock_guard<recursive_mutex> lock(_mutexConnections);
-		_pSocket.reset(new UDPSocket(_pInvoker->sockets, true));
+		_pSocket.reset(new UDPSocket(_pInvoker->sockets));
 		_pSocket->OnError::subscribe(onError);
 		_pSocket->OnPacket::subscribe(onPacket);
 		return true;
