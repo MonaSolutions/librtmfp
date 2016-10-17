@@ -411,7 +411,7 @@ bool P2PConnection::handlePlay(const string& streamName, FlashWriter& writer) {
 }
 
 void P2PConnection::handleProtocolFailed() {
-	writeMessage(0x4C, 0);
+	close(true);
 }
 
 void P2PConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
@@ -524,7 +524,6 @@ void P2PConnection::sendFragmentsMap(UInt64 lastFragment, const UInt8* data, UIn
 }
 
 void P2PConnection::setPushMode(UInt8 mode) {
-	INFO("Setting Group Push Out mode to ", Format<UInt8>("%.2x", mode), " for neighbor at address ", _outAddress.toString());
 	_pushOutMode = mode;
 }
 

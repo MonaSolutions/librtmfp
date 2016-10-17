@@ -243,7 +243,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				}
 			}
 		}
-		else {
+		else if (!it->second->publicationInfosSent) {
 			NOTE("Starting to listen to publication ", streamName)
 
 			// Save the key if first time received
@@ -371,21 +371,21 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	};
 	onGroupPlayPush = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
+		DEBUG("Group Push Out mode received from peer ", peerId, " : ", Format<UInt8>("%.2x", *packet.current()))
 		auto it = _mapPeers.find(peerId);
-		if (it == _mapPeers.end())
-			ERROR("Unable to find the peer ", peerId)
-		else
+		if (it != _mapPeers.end())
 			it->second->setPushMode(packet.read8());
 	};
 	onGroupPlayPull = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
-		DEBUG("Group Pull message (2B) recevied")
 		auto itFragment = _fragments.find(packet.read7BitLongValue());
 		auto it = _mapPeers.find(peerId);
 
 		// Send fragment to peer (pull mode)
-		if (itFragment != _fragments.end() && it != _mapPeers.end())
+		if (itFragment != _fragments.end() && it != _mapPeers.end()) {
+			TRACE("Group Pull message received from peer ", peerId, " - fragment : ", itFragment->first)
 			it->second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), itFragment->first, true);
+		}
 	};
 	onFragmentsMap = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		UInt64 counter = packet.read7BitLongValue();
@@ -399,6 +399,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			if (it == _mapPeers.end())
 				ERROR("Unable to find the peer ", peerId)
 			else {
+				// TODO: see if we must also record the fragment map when we are the publisher
 				it->second->updateFragmentsMap(counter, packet.current(), packet.available());
 				if (_firstPushMode) {
 					updatePushMode();
@@ -409,15 +410,17 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		packet.next(packet.available());
 	};
 	onGroupBegin = [this](const string& peerId, FlashWriter& writer) {
-		lock_guard<recursive_mutex> lock(_fragmentMutex); // TODO: not sure it is needed
+		lock_guard<recursive_mutex> lock(_fragmentMutex);
 
-		 // When we receive the 0E NetGroup message type we must send the group report
+		 // When we receive the 0E NetGroup message type we must send the group report if not already sent
 		auto it = _mapPeers.find(peerId);
-		if (it != _mapPeers.end()) {
-			it->second->groupReportInitiator = true;
-			sendGroupReport(it);
-			_lastReport.update();
-		}
+		auto itNode = _mapHeardList.find(peerId);
+		if (it == _mapPeers.end() || itNode == _mapHeardList.end() || itNode->second.lastGroupReport >= 0)
+			return;
+
+		it->second->groupReportInitiator = true;
+		sendGroupReport(it);
+		_lastReport.update();
 	};
 
 	GetGroupAddressFromPeerId(STR _conn.rawId(), _myGroupAddress);

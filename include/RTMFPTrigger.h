@@ -13,7 +13,7 @@ public:
 	void start();
 	void reset();
 	void stop() { _running = false; }
-	Mona::Int8 cycle() { return _cycles; }
+	Mona::Int8 cycle() { return _cycle; }
 private:
 	Mona::Time		_timeElapsed;
 	Mona::Int8		_cycle;

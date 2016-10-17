@@ -71,7 +71,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			OnGroupBegin::raise(_peerId, writer);
 			break;
 		case GroupStream::GROUP_REPORT: {
-			INFO("GroupStream ", id, " - NetGroup Report (type 0A)")
+			INFO("GroupStream ", id, " - NetGroup Report received from ", _peerId)
 			OnGroupReport::raise(_peerId, packet, writer);
 			break;
 		}

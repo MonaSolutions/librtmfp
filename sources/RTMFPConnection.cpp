@@ -882,7 +882,8 @@ void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& pe
 }
 
 void RTMFPConnection::handleProtocolFailed() {
-	writeMessage(0x0C, 0);
+	//writeMessage(0x0C, 0);
+	close();
 }
 
 void RTMFPConnection::handleWriterFailed(RTMFPWriter* pWriter) {
