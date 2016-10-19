@@ -8,6 +8,7 @@
 #include "NetGroup.h"
 #include "Mona/DNS.h"
 #include "Mona/Logs.h"
+#include "librtmfp.h"
 
 using namespace Mona;
 using namespace std;
@@ -165,11 +166,11 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 	}
 }
 
-void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName, bool publisher, double availabilityUpdatePeriod, UInt16 windowDuration) {
+void RTMFPConnection::connect2Group(const char* streamName, RTMFPGroupConfig* parameters) {
 
-	INFO("Connecting to group ", netGroup, "...")
+	INFO("Connecting to group ", parameters->netGroup, "...")
 
-	if (strncmp("G:", netGroup, 2) != 0) {
+	if (strncmp("G:", parameters->netGroup, 2) != 0) {
 		ERROR("Group ID not well formated, it must begin with 'G:'")
 		return;
 	}
@@ -179,15 +180,15 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 	const char* endMarker = NULL;
 
 	// Create the reader of NetGroup ID
-	Buffer buff(strlen(netGroup));
-	Util::UnformatHex(BIN (netGroup + 2), strlen(netGroup), buff);
+	Buffer buff(strlen(parameters->netGroup));
+	Util::UnformatHex(BIN (parameters->netGroup + 2), strlen(parameters->netGroup), buff);
 	BinaryReader reader(buff.data(), buff.size());
 
 	// Read each NetGroup parameters and save group version + end marker
 	while (reader.available() > 0) {
 		UInt8 size = reader.read8();
 		if (size == 0) {
-			endMarker = netGroup + 2*reader.position();
+			endMarker = parameters->netGroup + 2*reader.position();
 			break;
 		}
 		else if (reader.available() < size)
@@ -203,7 +204,7 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 		ERROR("Group ID not well formated")
 		return;
 	}
-	string groupTxt(netGroup, endMarker), groupHex;
+	string groupTxt(parameters->netGroup, endMarker), groupHex;
 
 	// Compute the encrypted group specifier ID (2 consecutive sha256)
 	UInt8 encryptedGroup[32];
@@ -214,7 +215,7 @@ void RTMFPConnection::connect2Group(const char* netGroup, const char* streamName
 	DEBUG("Encrypted Group Id : ", groupHex)
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	_group.reset(new NetGroup(groupHex, groupTxt, streamName, publisher, *this, availabilityUpdatePeriod, windowDuration));
+	_group.reset(new NetGroup(groupHex, groupTxt, streamName, *this, parameters));
 	_waitingGroup.push_back(groupHex);
 }
 

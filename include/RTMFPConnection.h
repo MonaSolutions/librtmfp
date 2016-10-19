@@ -10,6 +10,7 @@ RTMFPConnection represents a connection to the
 RTMFP Server
 */
 class NetGroup;
+struct RTMFPGroupConfig;
 class RTMFPConnection : public FlowManager {
 public:
 	RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
@@ -26,7 +27,7 @@ public:
 	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const Mona::SocketAddress& address, RTMFP::AddressType addressType, const Mona::SocketAddress& hostAddress);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
-	void connect2Group(const char* netGroup, const char* streamName, bool publisher, double availabilityUpdatePeriod, Mona::UInt16 windowDuration);
+	void connect2Group(const char* streamName, RTMFPGroupConfig* parameters);
 
 	// Asynchronous read (buffered)
 	// return false if end of buf has been reached

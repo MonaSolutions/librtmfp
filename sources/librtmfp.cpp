@@ -17,35 +17,53 @@ static std::shared_ptr<RTMFPLogger> GlobalLogger; // handle log messages
 static int		(*GlobalInterruptCb)(void*) = NULL;
 static void*	GlobalInterruptArg = NULL;
 
-void initLogger() {
+void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
+	if (!config) {
+		ERROR("config parameter must be not null")
+		return;
+	}
+
+	// Init global variables (logger & invoker)
 	if (!GlobalLogger) {
 		GlobalLogger.reset(new RTMFPLogger());
 		Logs::SetLogger(*GlobalLogger);
 	}
-}
-
-unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent,	OnMediaEvent pOnMedia, int blocking) {
-	if (!pOnSocketError || !pOnStatusEvent) {
-		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
-			return 0;
-	}
-
-	initLogger();
-
-	// Start Socket Manager if needed
 	if (!GlobalInvoker) {
 		GlobalInvoker.reset(new Invoker(0));
 		if (!GlobalInvoker->start()) {
-			return 0;
+			GlobalInvoker.reset();
+			return;
 		}
 	}
+
+	memset(config, 0, sizeof(RTMFPConfig));
+
+	if (!groupConfig)
+		return; // ignore groupConfig if not set
+
+	memset(groupConfig, 0, sizeof(RTMFPGroupConfig));
+	groupConfig->availabilityUpdatePeriod = 100;
+	groupConfig->relayMargin = 2000;
+	groupConfig->windowDuration = 8000;
+}
+
+unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
+	if (!parameters->pOnSocketError || !parameters->pOnStatusEvent) {
+		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
+		return 0;
+	}
+	else if (!GlobalLogger || !GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it before trying to connect")
+		return 0;
+	}
+
 
 	// Get hostname, port and publication name
 	string host, publication, query;
 	Util::UnpackUrl(url, host, publication, query);
 
 	Exception ex;
-	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(GlobalInvoker.get(), pOnSocketError, pOnStatusEvent, pOnMedia));
+	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(GlobalInvoker.get(), parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
 	if (!pConn->connect(ex, url, host.c_str())) {
 		ERROR("Error in connect : ", ex.error())
@@ -53,7 +71,7 @@ unsigned int RTMFP_Connect(const char* url, OnSocketError pOnSocketError, OnStat
 		return 0;
 	}
 
-	if (blocking) {
+	if (parameters->isBlocking) {
 		while (!pConn->connectReady) {
 			pConn->connectSignal.wait(200);
 			if (GlobalInterruptCb(GlobalInterruptArg) == 1) {
@@ -76,17 +94,17 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 	return 1;
 }
 
-int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName, int publisher, double availabilityUpdatePeriod, unsigned int windowDuration, int blocking) {
+int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters) {
 
 	shared_ptr<RTMFPConnection> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (pConn)
-		pConn->connect2Group(netGroup, streamName, publisher>0, availabilityUpdatePeriod, windowDuration);
+		pConn->connect2Group(streamName, parameters);
 
-	if (publisher>0)
+	if (parameters->isPublisher > 0)
 		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
 
-	if (blocking && publisher) {
+	if (parameters->isBlocking && parameters->isPublisher) {
 		while (!pConn->publishReady) {
 			pConn->publishSignal.wait(200);
 			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
@@ -232,7 +250,9 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 }
 
 void RTMFP_LogSetCallback(void(* onLog)(unsigned int, int, const char*, long, const char*)) {
-	initLogger();
+	if (!GlobalLogger || !GlobalInvoker)
+		ERROR("RTMFP_Init() has not been called, please call it first")
+
 	GlobalLogger->setLogCallback(onLog);
 }
 
@@ -241,7 +261,8 @@ void RTMFP_LogSetLevel(int level) {
 }
 
 void RTMFP_DumpSetCallback(void(*onDump)(const char*, const void*, unsigned int)) {
-	initLogger();
+	if (!GlobalLogger || !GlobalInvoker)
+		ERROR("RTMFP_Init() has not been called, please call it first")
 	GlobalLogger->setDumpCallback(onDump);
 }
 
@@ -270,7 +291,8 @@ void RTMFP_GetPublicationAndUrlFromUri(char* uri, char** publication) {
 }
 
 void RTMFP_ActiveDump() {
-	initLogger();
+	if (!GlobalLogger || !GlobalInvoker)
+		ERROR("RTMFP_Init() has not been called, please call it first")
 	Logs::SetDump("RTMFP");
 }
 

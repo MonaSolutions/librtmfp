@@ -14,16 +14,36 @@
 extern "C" {
 #endif
 
+LIBRTMFP_API typedef struct RTMFPGroupConfig {
+	const char*		netGroup; // [Required] netGroup identifier (groupspec)
+	short			isPublisher; // False by default, if True the stream will be published
+	short			isBlocking; // False by default, if True the function will return only when the first peer is connected
+	unsigned int	availabilityUpdatePeriod; // 100 by default, it is the time (in msec) between each fragments map messages (multicastAvailabilityUpdatePeriod)
+	short			availabilitySendToAll; // False by default, if True send the fragments map to all peer (multicastAvailabilitySendToAll)
+	unsigned int	windowDuration; // 8000 by default, it is the time (in msec) to bufferize and keep fragments available
+	unsigned int	relayMargin; // 2000 by default, it is additional time (in msec) to keep the fragments available
+} RTMFPGroupConfig;
+
+LIBRTMFP_API typedef struct RTMFPConfig {
+	short	isBlocking; // False by default, if True the function will return only when we are connected
+	void	(*pOnSocketError)(const char*); // Socket Error callback
+	void	(*pOnStatusEvent)(const char*, const char*); // RTMFP Status Event callback
+	void	(*pOnMedia)(const char *, const char*, unsigned int, const char*, unsigned int, int); // In synchronous read mode this callback is called when receiving data
+} RTMFPConfig;
+
+// This function MUST be called before any other
+// Initialize the RTMFP parameters with default values
+LIBRTMFP_API void RTMFP_Init(RTMFPConfig*, RTMFPGroupConfig*);
+
 // RTMFP Connection function
 // return : index of the connection's context
-LIBRTMFP_API unsigned int RTMFP_Connect(const char* url, void (* onSocketError)(const char*), void (* onStatusEvent)(const char*,const char*), 
-				void (* onMedia)(const char *, const char*, unsigned int, const char*, unsigned int,int), int blocking);
+LIBRTMFP_API unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters);
 
 // Connect to a peer via RTMFP P2P Connection (must be connected) and start playing streamName
 LIBRTMFP_API  int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
 
 // Connect to a NetGroup (in the G:... form)
-LIBRTMFP_API int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* netGroup, const char* streamName, int publisher, double availabilityUpdatePeriod, unsigned int windowDuration, int blocking);
+LIBRTMFP_API int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters);
 
 // RTMFP NetStream Play function
 // return : 1 if the request succeed, 0 otherwise

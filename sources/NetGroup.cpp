@@ -1,6 +1,7 @@
 #include "NetGroup.h"
 #include "P2PConnection.h"
 #include "GroupStream.h"
+#include "librtmfp.h"
 
 using namespace Mona;
 using namespace std;
@@ -118,16 +119,15 @@ UInt32 NetGroup::targetNeighborsCount() {
 	return targetNeighbor;
 }
 
-NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, bool publisher, RTMFPConnection& conn, double updatePeriod, UInt16 windowDuration) :
-	idHex(groupId), idTxt(groupTxt), stream(streamName), isPublisher(publisher), _conn(conn), _updatePeriod((UInt64)(updatePeriod*1000)), _fragmentCounter(0),
-	_firstPushMode(true), _pListener(NULL), _windowDuration(windowDuration*1000), _currentPushMask(0), _currentPushIsBad(true) {
+NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, RTMFPConnection& conn, RTMFPGroupConfig* parameters) : groupParameters(parameters),
+	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _fragmentCounter(0), _firstPushMode(true), _pListener(NULL), _currentPushMask(0), _currentPushIsBad(true) {
 	onMedia = [this](bool reliable, AMF::ContentType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
 		const UInt8* pos = data;
 		const UInt8* end = data + size;
 		UInt8 splitCounter = size / NETGROUP_MAX_PACKET_SIZE + ((size % NETGROUP_MAX_PACKET_SIZE) > 1);
 		UInt8 marker = GroupStream::GROUP_MEDIA_DATA ;
-		TRACE("Creating fragments ", _fragmentCounter + 1, " to ", _fragmentCounter + splitCounter)
+		TRACE("Creating fragments ", _fragmentCounter + 1, " to ", _fragmentCounter + splitCounter, " - time : ", time)
 		while (splitCounter > 0) {
 			if (size > NETGROUP_MAX_PACKET_SIZE)
 				marker = splitCounter == 1 ? GroupStream::GROUP_MEDIA_END : (pos == data ? GroupStream::GROUP_MEDIA_START : GroupStream::GROUP_MEDIA_NEXT);
@@ -145,7 +145,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			for (auto it : _mapPeers) {
 				// Send Group media infos if not already sent
 				if (!it.second->publicationInfosSent && it.second->groupReportInitiator) {
-					it.second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), _updatePeriod, _windowDuration);
+					it.second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration);
 					it.second->publicationInfosSent = true;
 				}
 
@@ -233,12 +233,12 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		Buffer farCode;
 		packet.read(0x22, farCode);
-		if (isPublisher) {
+		if (groupParameters->isPublisher) {
 			// Another stream code => we must accept and send our stream code
 			if (memcmp(_pStreamCode->data(), farCode.data(), 0x22) != 0) {
 				writer.writeRaw(posStart, packet.size() - (posStart - packet.data())); // Return the request to accept
 				if (!it->second->publicationInfosSent) {
-					it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), _updatePeriod, _windowDuration);
+					it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration);
 					it->second->publicationInfosSent = true;
 				}
 			}
@@ -252,7 +252,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				DEBUG("Saving the key ", Util::FormatHex(BIN farCode.data(), 0x22, LOG_BUFFER))
 				memcpy(_pStreamCode->data(), farCode.data(), 0x22);
 			}
-			it->second->sendGroupMedia(stream, farCode.data(), farCode.size(), _updatePeriod, _windowDuration);
+			it->second->sendGroupMedia(stream, farCode.data(), farCode.size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration);
 			it->second->publicationInfosSent = true;
 		}
 
@@ -344,7 +344,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			itNode->second.lastGroupReport = Time::Now(); // Record the time of last Group Report received to build our Group Report
 
 		// First Viewer = > create listener
-		if (isPublisher && !_pListener) {
+		if (groupParameters->isPublisher && !_pListener) {
 			Exception ex;
 			if (!(_pListener = _conn.startListening<GroupListener>(ex, stream, idTxt))) {
 				WARN(ex.error()) // TODO : See if we can send a specific answer
@@ -364,7 +364,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		// Send the Group Media info if not already sent
 		if (!it->second->publicationInfosSent && _pStreamCode) {
-			it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), _updatePeriod, _windowDuration);
+			it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration);
 			it->second->publicationInfosSent = true;
 		}
 
@@ -392,7 +392,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		DEBUG("Group Fragments map (type 22) received from ", peerId, " : ", counter)
 
 		// Player? => update play mode if needed
-		if (!isPublisher) {
+		if (!groupParameters->isPublisher) {
 			lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 			auto it = _mapPeers.find(peerId);
@@ -402,7 +402,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				// TODO: see if we must also record the fragment map when we are the publisher
 				it->second->updateFragmentsMap(counter, packet.current(), packet.available());
 				if (_firstPushMode) {
-					updatePushMode();
+					sendPushRequests();
 					_firstPushMode = false;
 				}
 			}
@@ -426,7 +426,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	GetGroupAddressFromPeerId(STR _conn.rawId(), _myGroupAddress);
 
 	// If Publisher we generate the stream key
-	if (isPublisher) {
+	if (groupParameters->isPublisher) {
 		_pStreamCode.reset(new Buffer(0x22));
 		_pStreamCode->data()[0] = 0x21; _pStreamCode->data()[1] = 0x01;
 		Util::Random((UInt8*)_pStreamCode->data() + 2, 0x20); // random serie of 32 bytes
@@ -434,7 +434,6 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 }
 
 NetGroup::~NetGroup() {
-	
 }
 
 void NetGroup::close() {
@@ -576,13 +575,20 @@ void NetGroup::manage() {
 
 	// Send the Fragments Map message
 	UInt64 lastFragment(0);
-	if (_lastFragmentsMap.isElapsed(_updatePeriod)) {
+	if (_lastFragmentsMap.isElapsed(groupParameters->availabilityUpdatePeriod)) {
 		if (lastFragment = updateFragmentMap()) {
 
 			// Send to all neighbors
-			for (auto it : _mapPeers) {
-				if (it.second->connected)
-					it.second->sendFragmentsMap(lastFragment, _reportBuffer.data(), _reportBuffer.size());
+			if (groupParameters->availabilitySendToAll) {
+				for (auto it : _mapPeers) {
+					if (it.second->publicationInfosSent)
+						it.second->sendFragmentsMap(lastFragment, _reportBuffer.data(), _reportBuffer.size());
+				}
+			} // Or just one peer at random
+			else {
+				auto itRandom = _mapPeers.begin();
+				if (RTMFP::getRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { return it->second->publicationInfosSent; }))
+					itRandom->second->sendFragmentsMap(lastFragment, _reportBuffer.data(), _reportBuffer.size());
 			}
 			_lastFragmentsMap.update();
 		}
@@ -600,10 +606,10 @@ void NetGroup::manage() {
 	}
 
 	// Send the Push & Pull requests
-	if (!isPublisher && _lastPlayUpdate.isElapsed(2000)) { // TODO: add to configuration (is this the fetch period?)
+	if (!groupParameters->isPublisher && _lastPlayUpdate.isElapsed(NETGROUP_PUSH_DELAY)) { // TODO: add to configuration (is this the fetch period?)
 
 		sendPullRequests();
-		updatePushMode();
+		sendPushRequests();
 		_lastPlayUpdate.update();
 	}
 }
@@ -690,7 +696,7 @@ void NetGroup::eraseOldFragments() {
 		return;
 
 	UInt32 end = _fragments.rbegin()->second.time;
-	UInt32 time2Keep = end - (_windowDuration + 2000); // +2s is Relay Margin
+	UInt32 time2Keep = end - (groupParameters->windowDuration + groupParameters->relayMargin);
 	auto itTime = _mapTime2Fragment.lower_bound(time2Keep);
 
 	// To not delete more than the window duration
@@ -741,7 +747,7 @@ UInt64 NetGroup::updateFragmentMap() {
 	if (!nbFragments)
 		return true;
 
-	if (isPublisher) { // Publisher : We have all fragments, faster treatment
+	if (groupParameters->isPublisher) { // Publisher : We have all fragments, faster treatment
 		
 		while (nbFragments > 8) {
 			writer.write8(0xFF);
@@ -893,7 +899,7 @@ bool NetGroup::pushFragment(map<UInt64, MediaPacket>::iterator& itFragment) {
 	return false;
 }
 
-void NetGroup::updatePushMode() {
+void NetGroup::sendPushRequests() {
 	if (_mapPeers.empty())
 		return;
 

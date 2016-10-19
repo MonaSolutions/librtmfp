@@ -266,26 +266,37 @@ void onManage() {
 ////////////////////////////////////////////////////////
 // Main Function
 int main(int argc,char* argv[]) {
-	char 			url[1024];
-	int				i=1;
-	unsigned int	indexPeer = 0;
-	const char*		peerId = NULL;
-	const char*		netGroup = NULL;
-	unsigned short	audioReliable = 1, videoReliable = 1, p2pPlay = 1;
-	double			updatePeriod = 0.2;
-	unsigned int	windowDuration = 10;
-	const char		*logFile = "log.0", *mediaFile = "out.flv";
+	char 				url[1024];
+	int					i=1;
+	unsigned int		indexPeer = 0;
+	const char*			peerId = NULL;
+	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
+	const char			*logFile = "log.0", *mediaFile = "out.flv";
+	RTMFPConfig			config;
+	RTMFPGroupConfig	groupConfig;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
+	// First, init the RTMFP parameters
+	RTMFP_Init(&config, &groupConfig);
+	config.pOnSocketError = onSocketError;
+	config.pOnStatusEvent = onStatusEvent;
+	config.pOnMedia = onMedia;
+	config.isBlocking = groupConfig.isBlocking = 1;
+
 	for(i; i<argc; i++) {
-		if (stricmp(argv[i], "--syncread")==0) // default
+		if (stricmp(argv[i], "--syncread") == 0) // default
 			_option = SYNC_READ;
-		else if (stricmp(argv[i], "--asyncread")==0)
+		else if (stricmp(argv[i], "--asyncread") == 0) {
 			_option = ASYNC_READ;
-		else if (stricmp(argv[i], "--write")==0)
+			config.pOnMedia = NULL;
+		} else if (stricmp(argv[i], "--write") == 0) {
 			_option = WRITE;
-		else if (stricmp(argv[i], "--p2pWrite")==0)
+			groupConfig.isPublisher = 1;
+		} 
+		else if (stricmp(argv[i], "--p2pWrite") == 0) {
 			_option = P2P_WRITE;
+			groupConfig.isPublisher = 1;
+		}
 		else if (stricmp(argv[i], "--dump") == 0) {
 			RTMFP_ActiveDump();
 			RTMFP_DumpSetCallback(onDump);
@@ -299,15 +310,15 @@ int main(int argc,char* argv[]) {
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
 			videoReliable = 0;
 		else if (strlen(argv[i]) > 15 && strnicmp(argv[i], "--updatePeriod=", 15)==0) // for NetGroup mode (multicastAvailabilityUpdatePeriod)
-			sscanf(argv[i] + 15, "%lf", &updatePeriod);
+			groupConfig.availabilityUpdatePeriod = atoi(argv[i] + 15);
 		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--windowDuration=", 17) == 0) // for NetGroup mode (multicastWindowDuration)
-			windowDuration = atoi(argv[i] + 17);
+			groupConfig.windowDuration = atoi(argv[i] + 17);
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
 			snprintf(url, 1024, "%s", argv[i] + 6);
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) // p2p direct
 			peerId = argv[i] + 9;
 		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--netGroup=", 11) == 0) // groupspec for NetGroup
-			netGroup = argv[i] + 11;
+			groupConfig.netGroup = argv[i] + 11;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
 			RTMFP_LogSetLevel(atoi(argv[i] + 6));
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--peersFile=", 12) == 0) // p2p direct with multiple peers
@@ -329,7 +340,7 @@ int main(int argc,char* argv[]) {
 		RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 
 		printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
-		context = RTMFP_Connect(url, onSocketError, onStatusEvent, (_option == SYNC_READ) ? onMedia : NULL, 1);
+		context = RTMFP_Connect(url, &config);
 
 		if (context) {
 			if (peerId != NULL) {
@@ -339,8 +350,8 @@ int main(int argc,char* argv[]) {
 				listFileNames[0] = (char*)mediaFile;
 			}
 
-			if (netGroup)
-				RTMFP_Connect2Group(context, netGroup, publication, (_option == WRITE || _option == P2P_WRITE), updatePeriod, windowDuration, 1);
+			if (groupConfig.netGroup)
+				RTMFP_Connect2Group(context, publication, &groupConfig);
 			else if (_option == WRITE)
 				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
 			else if (_option == P2P_WRITE)

@@ -10,10 +10,12 @@
 #define NETGROUP_MAX_PACKET_SIZE		959
 #define MAX_FRAGMENT_MAP_SIZE			1024
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
+#define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
 
 class MediaPacket;
 class GroupNode;
 class P2PConnection;
+struct RTMFPGroupConfig;
 class NetGroup : public virtual Mona::Object {
 public:
 	enum MULTICAST_PARAMETERS {
@@ -25,7 +27,7 @@ public:
 		NETROUP_FETCH_PERIOD = 7
 	};
 
-	NetGroup(const std::string& groupId, const std::string& groupTxt, const std::string& streamName, bool publisher, RTMFPConnection& conn, double updatePeriod, Mona::UInt16 windowDuration);
+	NetGroup(const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPConnection& conn, RTMFPGroupConfig* parameters);
 	virtual ~NetGroup();
 
 	void close();
@@ -51,11 +53,11 @@ public:
 	// Call a function on the peer side
 	// return 0 if it fails, 1 otherwise
 	unsigned int callFunction(const char* function, int nbArgs, const char** args);
-
-	const std::string idHex;	// Group ID in hex format
-	const std::string idTxt;	// Group ID in plain text (without final zeroes)
-	const std::string stream;	// Stream name
-	const bool isPublisher;
+	
+	const std::string					idHex;	// Group ID in hex format
+	const std::string					idTxt;	// Group ID in plain text (without final zeroes)
+	const std::string					stream;	// Stream name
+	RTMFPGroupConfig*					groupParameters; // NetGroup parameters
 
 private:
 
@@ -94,7 +96,7 @@ private:
 	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator& itFragment);
 
 	// Calculate the push play mode balance and send the requests if needed
-	void	updatePushMode();
+	void	sendPushRequests();
 
 	// Send the Pull requests if needed
 	void	sendPullRequests();
@@ -107,9 +109,6 @@ private:
 
 	// Read a pair of addresses and add peer to lists if neaded
 	void	readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId, bool noPeerID);
-
-	Mona::Int64												_updatePeriod; // NetStream.multicastAvailabilityUpdatePeriod equivalent in msec
-	Mona::UInt16											_windowDuration; // NetStream.multicastWindowDuration equivalent in msec
 
 	FlashEvents::OnGroupMedia::Type							onGroupMedia;
 	FlashEvents::OnGroupReport::Type						onGroupReport;
