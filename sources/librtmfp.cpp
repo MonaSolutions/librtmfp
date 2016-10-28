@@ -44,6 +44,7 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
 	memset(groupConfig, 0, sizeof(RTMFPGroupConfig));
 	groupConfig->availabilityUpdatePeriod = 100;
 	groupConfig->relayMargin = 2000;
+	groupConfig->fetchPeriod = 2500;
 	groupConfig->windowDuration = 8000;
 }
 

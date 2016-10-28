@@ -260,8 +260,8 @@ void FlashStream::sendGroupBegin(FlashWriter& writer) {
 	writer.flush();
 }
 
-void FlashStream::sendGroupMediaInfos(FlashWriter& writer, const string& stream, const UInt8* data, UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration) {
-	writer.writeGroupMedia(stream, data, size, updatePeriod, windowDuration);
+void FlashStream::sendGroupMediaInfos(FlashWriter& writer, const string& stream, const UInt8* data, UInt32 size, UInt64 updatePeriod, UInt16 windowDuration, UInt16 fetchPeriod) {
+	writer.writeGroupMedia(stream, data, size, updatePeriod, windowDuration, fetchPeriod);
 }
 
 void FlashStream::sendRaw(FlashWriter& writer, const UInt8* data, UInt32 size, bool flush) {

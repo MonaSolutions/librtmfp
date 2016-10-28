@@ -11,6 +11,7 @@
 #define MAX_FRAGMENT_MAP_SIZE			1024
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
 #define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
+#define NETGROUP_PULL_DELAY				100		// delay between each pull request (in msec)
 
 class MediaPacket;
 class GroupNode;
@@ -60,7 +61,6 @@ public:
 	RTMFPGroupConfig*					groupParameters; // NetGroup parameters
 
 private:
-
 	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PConnection>>
 	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PConnection>>::iterator
 
@@ -74,12 +74,6 @@ private:
 	static const std::string& GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
 
 	void removePeer(MAP_PEERS_ITERATOR_TYPE& itPeer);
-
-	std::map<Mona::UInt64, MediaPacket>						_fragments;
-	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
-	std::set<Mona::UInt64>									_waitingFragments; // List of waiting fragments in Pull requests
-	Mona::UInt64											_fragmentCounter;
-	std::recursive_mutex									_fragmentMutex;
 
 	// Erase old fragments (called before generating the fragments map)
 	void	eraseOldFragments();
@@ -110,6 +104,14 @@ private:
 	// Read a pair of addresses and add peer to lists if neaded
 	void	readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId, bool noPeerID);
 
+	// Go to the next peer for pull or push
+	bool	getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment);
+
+	std::map<Mona::UInt64, MediaPacket>						_fragments;
+	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
+	Mona::UInt64											_fragmentCounter;
+	std::recursive_mutex									_fragmentMutex;
+
 	FlashEvents::OnGroupMedia::Type							onGroupMedia;
 	FlashEvents::OnGroupReport::Type						onGroupReport;
 	FlashEvents::OnGroupPlayPush::Type						onGroupPlayPush;
@@ -125,18 +127,32 @@ private:
 	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
+	MAP_PEERS_ITERATOR_TYPE									_itPullPeer; // Current peer for pull request
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPConnection&										_conn; // RTMFPConnection related to
-	Mona::Time												_lastPlayUpdate; // last Play Pull & Push calculation
+	Mona::Time												_lastPushUpdate; // last Play Push calculation
+	Mona::Time												_lastPullUpdate; // last Play Pull calculation
 	Mona::Time												_lastBestCalculation; // last Best list calculation
-	Mona::Time												_lastReport; // last Report Message time
-	Mona::Time												_lastFragmentsMap; // last Fragments Map Message time
+	Mona::Time												_lastReport; // last Report Message calculation
+	Mona::Time												_lastFragmentsMap; // last Fragments Map Message calculation
 	Mona::Buffer											_reportBuffer; // Buffer for reporting messages
 
-	bool													_firstPushMode; // True if no play push mode have been send for now
-
 	// Pushers calculation
+	bool													_firstPushMode; // True if no play push mode have been send for now
 	Mona::UInt8												_currentPushMask; // current mask analyzed
 	std::string												_currentPushPeer; // current pusher analyzed
 	bool													_currentPushIsBad; // True if the pusher analyzed asn't send any fragment for now
+
+	// Pull calculation
+	struct PullRequest : public Object {
+		PullRequest(std::string id) : peerId(id) {}
+
+		std::string peerId; // Id of the peer to which we have send the pull request
+		Mona::Time time; // Time when the request have been done
+	};
+	std::map<Mona::UInt64, PullRequest>						_mapWaitingFragments; // Map of waiting fragments in Pull requests to peer Id
+	std::map<Mona::Int64, Mona::UInt64>						_mapPullTime2Fragment; // Map of reception time to fragments map id (used for pull requests)
+
+	Mona::UInt64											_lastFragmentMapId; // Last Fragments map Id received (used for pull requests)
+	Mona::UInt64											_currentPullFragment; // Current pull fragment index
 };

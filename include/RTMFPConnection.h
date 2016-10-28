@@ -200,7 +200,7 @@ private:
 	FlashConnection::OnNewPeer::Type								onNewPeer; // Received when a we receive the ID of a new peer in a NetGroup
 
 	// Publish/Play commands
-	struct StreamCommand {
+	struct StreamCommand : public Object {
 		StreamCommand(CommandType t, const char* v, bool aReliable, bool vReliable) : type(t), value(v), audioReliable(aReliable), videoReliable(vReliable) {}
 
 		CommandType		type;

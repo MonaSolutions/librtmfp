@@ -67,7 +67,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			OnGroupBegin::raise(_peerId, writer);
 			break;
 		case GroupStream::GROUP_BEGIN:
-			INFO("GroupStream ", id, " - NetGroup 0E message type")
+			INFO("GroupStream ", id, " - NetGroup Begin received from ", _peerId)
 			OnGroupBegin::raise(_peerId, writer);
 			break;
 		case GroupStream::GROUP_REPORT: {
@@ -82,7 +82,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			OnGroupPlayPull::raise(_peerId, packet, writer);
 			break;
 		case GroupStream::GROUP_INFOS: { // contain the stream name of an eventual publication
-			DEBUG("GroupStream ", id, " - Group Media Infos (type 21)")
+			DEBUG("GroupStream ", id, " - Group Media Infos received from ", _peerId)
 			OnGroupMedia::raise(_peerId, packet, writer);
 			break;
 		}

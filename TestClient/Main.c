@@ -313,6 +313,8 @@ int main(int argc,char* argv[]) {
 			groupConfig.availabilityUpdatePeriod = atoi(argv[i] + 15);
 		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--windowDuration=", 17) == 0) // for NetGroup mode (multicastWindowDuration)
 			groupConfig.windowDuration = atoi(argv[i] + 17);
+		else if (strlen(argv[i]) > 14 && strnicmp(argv[i], "--fetchPeriod=", 14) == 0) // for NetGroup mode (multicastFetchPeriod)
+			groupConfig.fetchPeriod = atoi(argv[i] + 14);
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
 			snprintf(url, 1024, "%s", argv[i] + 6);
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) // p2p direct

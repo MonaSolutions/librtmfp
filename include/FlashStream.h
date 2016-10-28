@@ -82,7 +82,7 @@ public:
 	void sendGroupBegin(FlashWriter& writer);
 
 	// Send the group publication infos
-	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration);
+	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration, Mona::UInt16 fetchPeriod);
 
 	// Send the media
 	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size, bool flush);

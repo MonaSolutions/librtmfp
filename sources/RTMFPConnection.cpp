@@ -286,7 +286,7 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 		ERROR("created stream without command")
 		return;
 	}
-	const StreamCommand command = _waitingCommands.back();
+	const StreamCommand& command = _waitingCommands.back();
 
 	// Manage publisher if it is a publish command
 	if (command.type == NETSTREAM_PUBLISH) {

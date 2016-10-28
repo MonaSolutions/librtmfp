@@ -82,7 +82,8 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 		}
 	};
 	onError = [this](const Exception& ex) {
-		_pOnSocketError(ex.error());
+		string buffer;
+		_pOnSocketError(String::Format(buffer, ex.error(), " on connection to ", _targetAddress.toString()).c_str());
 	};
 	onPacket = [this](PoolBuffer& pBuffer, const SocketAddress& address) {
 		if (_died)
@@ -90,9 +91,10 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 
 		// Decode the RTMFP data
 		Exception ex;
+		string buffer;
 		if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
 			ex.set(Exception::PROTOCOL, "Invalid RTMFP packet");
-			_pOnSocketError(ex.error());
+			_pOnSocketError(String::Format(buffer, ex.error(), " on connection to ", _targetAddress.toString()).c_str());
 			return;
 		}
 
@@ -113,7 +115,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 			handleMessage(ex, pBuffer, address);
 
 		if (ex)
-			_pOnSocketError(ex.error());
+			_pOnSocketError(String::Format(buffer, ex.error(), " on connection to ", _targetAddress.toString()).c_str());
 	};
 
 	_pFlowNull.reset(new RTMFPFlow(0,String::Empty,_pMainStream,poolBuffers(), *this));

@@ -481,14 +481,14 @@ void P2PConnection::sendGroupBegin() {
 	}
 }
 
-void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt32 size, UInt64 updatePeriod, UInt16 windowDuration) {
+void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt32 size, UInt64 updatePeriod, UInt16 windowDuration, UInt16 fetchPeriod) {
 
 	INFO("Sending the stream infos for stream '", stream, "'")
 	string signature("\x00\x47\x52\x11", 4);
 	if (!_pFragmentsFlow && !(_pFragmentsFlow = createFlow(signature)))
 		return;
 	_pFragmentsFlow->setPeerId(peerId);
-	_pFragmentsFlow->sendGroupMediaInfos(stream, data, size, updatePeriod, windowDuration);
+	_pFragmentsFlow->sendGroupMediaInfos(stream, data, size, updatePeriod, windowDuration, fetchPeriod);
 }
 
 // TODO: see if necessary (seems just a sendRaw)
@@ -517,7 +517,7 @@ void P2PConnection::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, b
 
 void P2PConnection::sendFragmentsMap(UInt64 lastFragment, const UInt8* data, UInt32 size) {
 	if (_pFragmentsFlow && lastFragment != _lastIdSent) {
-		DEBUG("Sending Fragments Map message (type 22) to peer ", peerId)
+		DEBUG("Sending Fragments Map message (type 22) to peer ", peerId, " (", lastFragment,")")
 		_pFragmentsFlow->sendRaw(data, size, true);
 		_lastIdSent = lastFragment;
 	}
@@ -578,14 +578,17 @@ bool P2PConnection::checkMask(UInt8 bitNumber) {
 }
 
 bool P2PConnection::hasFragment(UInt64 index) {
-	if (!_idFragmentMap || (_idFragmentMap < index) && (*_fragmentsMap.data() != 0xFF)) {
+	if (!_idFragmentMap || (_idFragmentMap < index)) {
 		TRACE("Searching ", index, " impossible into ", peerId, ", current id : ", _idFragmentMap)
 		return false; // No Fragment or index too recent
 	}
-
-	if (_idFragmentMap == index || (_idFragmentMap < index) && (*_fragmentsMap.data() == 0xFF)) { // TODO: check if 2nd condition is right
+	else if (_idFragmentMap == index) {
 		TRACE("Searching ", index, " OK into ", peerId, ", current id : ", _idFragmentMap)
 		return true; // Fragment is the last one or peer has all fragments
+	}
+	else if (_setPullBlacklist.find(index) != _setPullBlacklist.end()) {
+		TRACE("Searching ", index, " impossible into ", peerId, " a request has already failed")
+		return false;
 	}
 
 	UInt32 offset = (UInt32)((_idFragmentMap - index) / 8);
@@ -603,7 +606,7 @@ bool P2PConnection::hasFragment(UInt64 index) {
 
 void P2PConnection::sendPull(UInt64 index) {
 	if (_pFragmentsFlow) {
-		DEBUG("Sending pull request for fragment ", index, " to peer ", _targetAddress.toString());
+		DEBUG("Sending pull request for fragment ", index, " to peer ", peerId);
 		_pFragmentsFlow->sendGroupPull(index);
 	}
 }
@@ -636,4 +639,8 @@ void P2PConnection::sendGroupPeerConnect() {
 	_pReportFlow->sendGroupPeerConnect(_group->idHex, _groupConnectKey->data(), rawId.c_str());
 	_groupConnectSent = true;
 	sendGroupBegin();
+}
+
+void P2PConnection::addPullBlacklist(UInt64 idFragment) {
+	_setPullBlacklist.emplace(idFragment);
 }

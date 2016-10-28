@@ -3,6 +3,7 @@
 
 #include "FlowManager.h"
 #include "Mona/StopWatch.h"
+#include <set>
 
 #define COOKIE_SIZE	0x40
 
@@ -96,7 +97,7 @@ public:
 	void resetGroup() { _group.reset(); }
 
 	// Write the Group publication infos
-	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration);
+	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration, Mona::UInt16 fetchPeriod);
 
 	// Send the group report (message 0A)
 	void sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);
@@ -123,11 +124,11 @@ public:
 	// Close the Group connection to peer
 	void closeGroup();
 
-	// Return the last fragment available
-	Mona::UInt64 lastFragment() { return _idFragmentMap; }
-
 	// Send the Group Peer Connect request
 	void sendGroupPeerConnect();
+
+	// Add a fragment to the blacklist of pull to avoid a new pull request for this peer
+	void addPullBlacklist(Mona::UInt64 idFragment);
 
 	/*** Public members ***/
 
@@ -197,6 +198,8 @@ private:
 	Mona::Buffer					_fragmentsMap; // Last Fragments Map received
 	Mona::UInt64					_idFragmentMap; // Last ID received from the Fragments Map
 	Mona::UInt64					_lastIdSent; // Last ID sent in the Fragments map
+
+	std::set<Mona::UInt64>			_setPullBlacklist; // set of fragments blacklisted for pull requests to this peer
 
 	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)
 };
