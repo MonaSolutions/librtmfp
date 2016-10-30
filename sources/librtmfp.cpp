@@ -69,6 +69,10 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
 	groupConfig->windowDuration = 8000;
 }
 
+int RTMFP_LibVersion() {
+	return RTMFP_LIB_VERSION;
+}
+
 unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	if (!parameters->pOnSocketError || !parameters->pOnStatusEvent) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")

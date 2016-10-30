@@ -92,8 +92,11 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 		if(_firstMedia) {
 			_firstMedia=false;
 			_timeStart=time; // to set to 0 the first packets
-		} else if (time < _timeStart)
-			DEBUG("Packet ignored because it is older (",time,") than start time (",_timeStart,")")
+		}
+		else if (time < _timeStart) {
+			DEBUG("Packet ignored because it is older (", time, ") than start time (", _timeStart, ")")
+			return;
+		}
 
 		if (_pOnMedia) // Synchronous read
 			_pOnMedia(peerId.c_str(), stream.c_str(), time-_timeStart, (const char*)packet.current(), packet.available(), audio);

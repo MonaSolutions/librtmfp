@@ -127,6 +127,9 @@ private:
 	// Go to the next peer for pull or push
 	bool	getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment);
 
+	// Send the fragment pull request to the next available peer
+	bool	sendPullToNextPeer(Mona::UInt64 idFragment);
+
 	std::map<Mona::UInt64, MediaPacket>						_fragments;
 	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
 	Mona::UInt64											_fragmentCounter;

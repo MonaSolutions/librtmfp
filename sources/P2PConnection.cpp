@@ -612,8 +612,8 @@ bool P2PConnection::hasFragment(UInt64 index) {
 		return false;
 	}
 
-	UInt32 offset = (UInt32)((_idFragmentMap - index) / 8);
-	UInt32 rest = 7 - ((_idFragmentMap - index) % 8);
+	UInt32 offset = (UInt32)((_idFragmentMap - index - 1) / 8);
+	UInt32 rest = ((_idFragmentMap - index - 1) % 8);
 	if (offset > _fragmentsMap.size()) {
 		TRACE("Searching ", index, " impossible into ", peerId, ", out of buffer")
 		return false; // Fragment deleted from buffer

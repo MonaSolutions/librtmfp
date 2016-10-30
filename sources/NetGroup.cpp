@@ -1090,13 +1090,17 @@ void NetGroup::sendPullRequests() {
 		auto itRandom1 = _mapPeers.begin();
 		_itPullPeer = _mapPeers.begin();
 		if (RTMFP::getRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom1, [this](const MAP_PEERS_ITERATOR_TYPE& it) { return it->second->publicationInfosSent && it->second->hasFragment(_currentPullFragment); })) {
-			TRACE("sendPullRequests - first fragment found")
+			TRACE("sendPullRequests - first fragment found : ", _currentPullFragment)
 			if (RTMFP::getRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, _itPullPeer, [this](const MAP_PEERS_ITERATOR_TYPE& it) { return it->second->publicationInfosSent && it->second->hasFragment(_currentPullFragment + 1); })) {
-				TRACE("sendPullRequests - second fragment found")
-				itRandom1->second->sendPull(_currentPullFragment);
-				_itPullPeer->second->sendPull(_currentPullFragment + 1);
-				_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment++), forward_as_tuple(itRandom1->first.c_str()));
-				_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment), forward_as_tuple(_itPullPeer->first.c_str()));
+				TRACE("sendPullRequests - second fragment found : ", _currentPullFragment + 1)
+				if (_fragments.find(_currentPullFragment) != _fragments.end()) {
+					itRandom1->second->sendPull(_currentPullFragment);
+					_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment), forward_as_tuple(itRandom1->first.c_str()));
+				}
+				if (_fragments.find(++_currentPullFragment) != _fragments.end()) {
+					_itPullPeer->second->sendPull(_currentPullFragment);
+					_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment), forward_as_tuple(_itPullPeer->first.c_str()));
+				}
 				return;
 			}
 		}
@@ -1113,10 +1117,13 @@ void NetGroup::sendPullRequests() {
 
 			// Fetch period elapsed? => blacklist the peer and send back the request to another peer
 			if (itPull->second.time.isElapsed(groupParameters->fetchPeriod)) {
-				_itPullPeer->second->addPullBlacklist(itPull->first);
-				if (getNextPeer(_itPullPeer, true, itPull->first)) {
-					DEBUG("sendPullRequests - sending back the pull request for fragment ", itPull->first)
-					_itPullPeer->second->sendPull(itPull->first);
+
+				WARN("sendPullRequests - ", groupParameters->fetchPeriod, "ms without receiving fragment ", itPull->first, ", blacklisting peer ", itPull->second.peerId)
+				auto itPeer = _mapPeers.find(itPull->second.peerId);
+				if (itPeer != _mapPeers.end())
+					itPeer->second->addPullBlacklist(itPull->first);
+				
+				if (sendPullToNextPeer(itPull->first)) {
 					itPull->second.peerId = _itPullPeer->first.c_str();
 					itPull->second.time.update();
 				}
@@ -1125,25 +1132,25 @@ void NetGroup::sendPullRequests() {
 	}
 
 	// Find the holes and send pull requests
-	for (auto itFragment = _fragments.lower_bound(_currentPullFragment); itFragment != _fragments.end() && itFragment->first <= lastFragment; itFragment++) {
-		// Is there a hole?
-		if (_currentPullFragment + 1 < itFragment->first) {
-			for (UInt64 i = _currentPullFragment + 1; i < itFragment->first; i++) {
+	for (; _currentPullFragment < lastFragment; _currentPullFragment++) {
 
-				// Send the Pull request to the first available peer
-				if (getNextPeer(_itPullPeer, true, i)) {
-					_itPullPeer->second->sendPull(i);
-					_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(i), forward_as_tuple(_itPullPeer->first.c_str()));
-				}
-				else {
-					WARN("sendPullRequests - No peer found for fragment ", i)
-					return;
-				}
-			}
-		}
-		_currentPullFragment = itFragment->first;
+		if (_fragments.find(_currentPullFragment + 1) == _fragments.end() && !sendPullToNextPeer(_currentPullFragment + 1))
+				break; // we wait for the fragment to be available
 	}
+
 	TRACE("sendPullRequests - Pull requests done : ", _mapWaitingFragments.size(), " waiting fragments (current : ", _currentPullFragment, "; last Fragment : ", lastFragment, ")")
+}
+
+bool NetGroup::sendPullToNextPeer(UInt64 idFragment) {
+
+	if (!getNextPeer(_itPullPeer, true, idFragment)) {
+		WARN("sendPullRequests - No peer found for fragment ", idFragment)
+		return false;
+	}
+	
+	_itPullPeer->second->sendPull(idFragment);
+	_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(idFragment), forward_as_tuple(_itPullPeer->first.c_str()));
+	return true;
 }
 
 bool NetGroup::getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, UInt64 idFragment) {

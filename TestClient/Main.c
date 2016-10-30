@@ -267,7 +267,7 @@ void onManage() {
 // Main Function
 int main(int argc,char* argv[]) {
 	char 				url[1024];
-	int					i=1;
+	int					i=1, version = 0;
 	unsigned int		indexPeer = 0;
 	const char*			peerId = NULL;
 	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
@@ -333,6 +333,9 @@ int main(int argc,char* argv[]) {
 
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
 		printf("Cannot catch SIGINT\n");
+
+	version = RTMFP_LibVersion();
+	printf("Librtmfp version %u.%u.%u\n", (version >> 24) & 0xFF, (version >> 16) & 0xFF, version & 0xFFFF);
 
 	// Open log file
 	if (openFile(&pLogFile, logFile, "w")) {

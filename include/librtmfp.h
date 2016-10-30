@@ -56,6 +56,12 @@ LIBRTMFP_API typedef struct RTMFPConfig {
 // Initialize the RTMFP parameters with default values
 LIBRTMFP_API void RTMFP_Init(RTMFPConfig*, RTMFPGroupConfig*);
 
+// Return the version of librtmfp
+// First byte : (main version)
+// 2nd byte : feature number
+// 3-4th bytes : minor correction number
+LIBRTMFP_API int RTMFP_LibVersion();
+
 // RTMFP Connection function
 // return : index of the connection's context
 LIBRTMFP_API unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters);
