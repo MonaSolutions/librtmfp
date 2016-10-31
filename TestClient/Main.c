@@ -104,30 +104,32 @@ unsigned int flip24(unsigned int value) { return ((value >> 16) & 0x000000FF) | 
 unsigned int flip32(unsigned int value) { return ((value >> 24) & 0x000000FF) | ((value >> 8) & 0x0000FF00) | ((value << 8) & 0x00FF0000) | ((value << 24) & 0xFF000000); }
 
 // Open the out/in files
-void initFiles(const char* mediaFile) {
+short initFiles(const char* mediaFile) {
 	unsigned int i = 0;
 
 	if (_option == WRITE || _option == P2P_WRITE) {
-		if (openFile(&pInFile, mediaFile, "rb"))
-			printf("Input file %s opened\n", mediaFile);
+		if (!openFile(&pInFile, mediaFile, "rb"))
+			return 0;
+		printf("Input file %s opened\n", mediaFile);
 	}
 	else if (nbPeers > 0) {
 		for (i = 0; i < nbPeers; i++) {
-			if (openFile(&listFiles[i], listFileNames[i], "wb+")) {
-				printf("Output file %s opened\n", listFileNames[i]);
+			if (!openFile(&listFiles[i], listFileNames[i], "wb+"))
+				return 0;
 
-				if (_option == SYNC_READ)
-					fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, listFiles[i]);
-			}
+			printf("Output file %s opened\n", listFileNames[i]);
+			if (_option == SYNC_READ)
+				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, listFiles[i]);
 		}
 	}
 	else { // Normal read file
 		if (!openFile(&pOutFile, mediaFile, "wb+"))
-			return;
+			return 0;
 		printf("Output file %s opened\n", mediaFile);
 		if (_option == SYNC_READ)
 			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pOutFile);
 	}
+	return 1;
 }
 
 // Close all files
@@ -238,7 +240,7 @@ void onManage() {
 			fwrite(buf, sizeof(char), read, pOutFile);
 	}
 	// Write
-	else if ((_option == WRITE || _option == P2P_WRITE) && !endOfWrite) {
+	else if (pInFile && (_option == WRITE || _option == P2P_WRITE) && !endOfWrite) {
 
 		// First we read the file
 		towrite = fread(buf + cursor, sizeof(char), bufferSize - cursor, pInFile) + cursor;
@@ -355,23 +357,26 @@ int main(int argc,char* argv[]) {
 				listFileNames[0] = (char*)mediaFile;
 			}
 
-			if (groupConfig.netGroup)
-				RTMFP_Connect2Group(context, publication, &groupConfig);
-			else if (_option == WRITE)
-				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
-			else if (_option == P2P_WRITE)
-				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
-			else if (nbPeers > 0) { // P2p Play
-				for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
-					RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer]);
-			}
-			else if (_option == SYNC_READ || _option == ASYNC_READ)
-				RTMFP_Play(context, publication);
+			// Open IO files and start the streaming
+			if (initFiles(mediaFile)) {
 
-			initFiles(mediaFile);
-			while (!IsInterrupted(NULL)) {
-				onManage();
-				SLEEP(50); // delay between each async IO (in msec)
+				if (groupConfig.netGroup)
+					RTMFP_Connect2Group(context, publication, &groupConfig);
+				else if (_option == WRITE)
+					RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
+				else if (_option == P2P_WRITE)
+					RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
+				else if (nbPeers > 0) { // P2p Play
+					for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
+						RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer]);
+				}
+				else if (_option == SYNC_READ || _option == ASYNC_READ)
+					RTMFP_Play(context, publication);
+
+				while (!IsInterrupted(NULL)) {
+					onManage();
+					SLEEP(50); // delay between each async IO (in msec)
+				}
 			}
 
 			printf("Closing connection...\n");

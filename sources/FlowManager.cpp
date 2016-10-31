@@ -79,7 +79,7 @@ _nextRTMFPWriterId(0),_firstRead(true),_pLastWriter(NULL),_pInvoker(invoker),_ti
 	onMedia = [this](const string& peerId, const string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
 		if (!_codecInfosRead) {
-			if (!audio && RTMFP::IsH264CodecInfos(packet.data(), packet.available())) {
+			if (!audio && RTMFP::IsH264CodecInfos(packet.current(), packet.available())) {
 				INFO("Video codec infos found, starting to read")
 				_codecInfosRead = true;
 			} else {

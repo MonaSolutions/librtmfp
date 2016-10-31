@@ -113,8 +113,9 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 	}
 
 	// TODO: Create an RTMFPConnection for each _host.addresses()
+	lock_guard<recursive_mutex> lock(_mutexConnections);
+	DEBUG("Trying to resolve the address with DNS...")
 	if (DNS::Resolve(ex, tmpHost, _host) || _targetAddress.setWithDNS(ex, tmpHost, _port)) {
-		lock_guard<recursive_mutex> lock(_mutexConnections);
 		_pSocket.reset(new UDPSocket(_pInvoker->sockets));
 		_pSocket->OnError::subscribe(onError);
 		_pSocket->OnPacket::subscribe(onPacket);
@@ -128,18 +129,15 @@ shared_ptr<P2PConnection> RTMFPConnection::createP2PConnection(const char* peerI
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, address, addressType, responder));
-	string tag;
 	
-	if (responder) {
+	if (responder)
 		pPeerConnection->setTag(streamOrTag);
-		tag = streamOrTag;
-	}
 	else {
 		if (!_group)
 			pPeerConnection->addCommand(NETSTREAM_PLAY, streamOrTag); // command to be send when connection is established
 
 		// Add it to waiting p2p sessions
-		tag = pPeerConnection->tag();
+		string tag = pPeerConnection->tag();
 		_mapPeersByTag.emplace(tag, pPeerConnection);
 	}
 
@@ -824,7 +822,7 @@ void RTMFPConnection::sendConnections() {
 	// TODO: make the attempt and elapsed count parametrable
 	auto itPeer = _mapPeersByTag.begin();
 	while (itPeer != _mapPeersByTag.end()) {
-		if (itPeer->second->lastTry.isElapsed(itPeer->second->attempt * 1000)) {
+		if (itPeer->first != "unknown" && itPeer->second->lastTry.isElapsed(itPeer->second->attempt * 1000)) {
 			if (itPeer->second->attempt >= 11) {
 				WARN("P2P handshake with ", itPeer->second->peerId," has reached 11 attempts without answer, deleting session...")
 				if (_group)
@@ -929,6 +927,10 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 	string tag;
 	reader.read(16, tag);
 	INFO("A peer will contact us with address : ", address.toString())
+
+	// If we are the P2P publisher we wait for the peer to contact us
+	if (!_group && (_mapPeersByAddress.find(address) == _mapPeersByAddress.end()))
+		_mapPeersByTag.emplace(tag, createP2PConnection("unknown", tag.c_str(), _targetAddress, RTMFP::ADDRESS_PUBLIC, true));
 }
 
 void RTMFPConnection::sendGroupConnection(const string& netGroup) {
