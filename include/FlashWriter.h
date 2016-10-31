@@ -31,6 +31,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 Writer of AMF messages, must be inherited
 for each protocol (just RTMFP for now)
 */
+struct RTMFPGroupConfig;
 class FlashWriter : public virtual Mona::Object {
 public:
 	enum MediaType {
@@ -82,7 +83,7 @@ public:
 	virtual void			writeGroupBegin()=0;
 
 	// Request the stream in argument
-	virtual void			writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration, Mona::UInt16 fetchPeriod)=0;
+	virtual void			writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig)=0;
 
 	// Start to play the group stream
 	virtual void			writeGroupPlay(Mona::UInt8 mode)=0;

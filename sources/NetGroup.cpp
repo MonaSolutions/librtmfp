@@ -167,7 +167,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			for (auto it : _mapPeers) {
 				// Send Group media infos if not already sent
 				if (!it.second->publicationInfosSent && it.second->groupReportInitiator) {
-					it.second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration, groupParameters->fetchPeriod);
+					it.second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters);
 					it.second->publicationInfosSent = true;
 				}
 
@@ -252,7 +252,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			if (memcmp(_pStreamCode->data(), farCode.data(), 0x22) != 0) {
 				writer.writeRaw(posStart, packet.size() - (posStart - packet.data())); // Return the request to accept
 				if (!it->second->publicationInfosSent) {
-					it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration, groupParameters->fetchPeriod);
+					it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters);
 					it->second->publicationInfosSent = true;
 				}
 			}
@@ -275,7 +275,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 						break;
 					case NETGROUP_OBJECT_ENCODING:
 						if (value != 300000) {
-							ERROR("Unexpected object encoding value : ", value)
+							ERROR("Unexpected object encoding value : ", value) // TODO: not sure it is object encoding!
 							return;
 						}
 						DEBUG("Object Encoding : ", packet.read7BitLongValue()); break;
@@ -284,7 +284,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 							DEBUG("Updating the Avaibility Update period : ", (groupParameters->availabilityUpdatePeriod = value), "ms"); 
 						break;
 					case NETGROUP_SEND_TO_ALL:
-						ERROR("Unhandled Availability Send To All : ON")
+						if (value != groupParameters->availabilitySendToAll)
+							DEBUG("Updating the Availability Send to All : ", ((groupParameters->availabilitySendToAll = value) != 0)? "ON" : "OFF"); break;
 						return;
 					case NETROUP_FETCH_PERIOD:
 						if (value != groupParameters->fetchPeriod)
@@ -302,7 +303,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 						DEBUG("Saving the key ", Util::FormatHex(BIN farCode.data(), 0x22, LOG_BUFFER))
 							memcpy(_pStreamCode->data(), farCode.data(), 0x22);
 					}
-				it->second->sendGroupMedia(stream, farCode.data(), farCode.size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration, groupParameters->fetchPeriod);
+				it->second->sendGroupMedia(stream, farCode.data(), farCode.size(), groupParameters);
 				it->second->publicationInfosSent = true;
 			}
 		}
@@ -393,7 +394,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		// Send the Group Media info if not already sent
 		if (!it->second->publicationInfosSent && _pStreamCode) {
-			it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters->availabilityUpdatePeriod, groupParameters->windowDuration, groupParameters->fetchPeriod);
+			it->second->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters);
 			it->second->publicationInfosSent = true;
 		}
 

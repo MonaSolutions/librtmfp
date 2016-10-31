@@ -20,10 +20,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "RTMFPWriter.h"
-//#include "Mona/Peer.h"
 #include "Mona/Util.h"
 #include "Mona/Logs.h"
 #include "GroupStream.h"
+#include "librtmfp.h"
 
 using namespace std;
 using namespace Mona;
@@ -582,16 +582,17 @@ void RTMFPWriter::writeGroupBegin() {
 	createMessage().writer().packet.write8(GroupStream::GROUP_BEGIN);
 }
 
-void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size, UInt64 updatePeriod, UInt16 windowDuration, UInt16 fetchPeriod) {
+void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size, RTMFPGroupConfig* groupConfig) {
 
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
 	writer.write(data, size);
-	writer.write("\x01\x02"); //TODO: 6 - Availability Send To All is Fixed value for now	
-	writer.write8(1 + Util::Get7BitValueSize(UInt32(windowDuration))).write8('\x03').write7BitLongValue(windowDuration);
+	if (groupConfig->availabilitySendToAll)
+		writer.write("\x01\x02");
+	writer.write8(1 + Util::Get7BitValueSize(UInt32(groupConfig->windowDuration))).write8('\x03').write7BitLongValue(groupConfig->windowDuration);
 	writer.write("\x04\x04\x92\xA7\x60"); // Object encoding?
-	writer.write8(1 + Util::Get7BitValueSize(updatePeriod)).write8('\x05').write7BitLongValue(updatePeriod);
-	writer.write8(1 + Util::Get7BitValueSize(UInt32(fetchPeriod))).write8('\x07').write7BitLongValue(fetchPeriod);
+	writer.write8(1 + Util::Get7BitValueSize(groupConfig->availabilityUpdatePeriod)).write8('\x05').write7BitLongValue(groupConfig->availabilityUpdatePeriod);
+	writer.write8(1 + Util::Get7BitValueSize(UInt32(groupConfig->fetchPeriod))).write8('\x07').write7BitLongValue(groupConfig->fetchPeriod);
 }
 
 void RTMFPWriter::writeGroupPlay(UInt8 mode) {

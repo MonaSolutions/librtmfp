@@ -502,14 +502,14 @@ void P2PConnection::sendGroupBegin() {
 	}
 }
 
-void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt32 size, UInt64 updatePeriod, UInt16 windowDuration, UInt16 fetchPeriod) {
+void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt32 size, RTMFPGroupConfig* groupConfig) {
 
 	INFO("Sending the stream infos for stream '", stream, "'")
 	string signature("\x00\x47\x52\x11", 4);
 	if (!_pFragmentsFlow && !(_pFragmentsFlow = createFlow(signature)))
 		return;
 	_pFragmentsFlow->setPeerId(peerId);
-	_pFragmentsFlow->sendGroupMediaInfos(stream, data, size, updatePeriod, windowDuration, fetchPeriod);
+	_pFragmentsFlow->sendGroupMediaInfos(stream, data, size, groupConfig);
 }
 
 // TODO: see if necessary (seems just a sendRaw)

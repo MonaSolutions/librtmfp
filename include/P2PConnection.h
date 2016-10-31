@@ -34,6 +34,7 @@ with another peer
 class RTMFPConnection;
 class NetGroup;
 class FlashListener;
+struct RTMFPGroupConfig;
 class P2PConnection : public FlowManager,
 	public FlashEvents::OnGroupMedia,
 	public FlashEvents::OnGroupReport,
@@ -117,7 +118,7 @@ public:
 	void resetGroup() { _group.reset(); }
 
 	// Write the Group publication infos
-	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration, Mona::UInt16 fetchPeriod);
+	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig);
 
 	// Send the group report (message 0A)
 	void sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);

@@ -29,6 +29,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 class RTMFPPacket;
 class RTMFPFragment;
+struct RTMFPGroupConfig;
 /**************************************************************
 RTMFPFlow is the receiving class for one NetStream of a 
 connection, it is associated to an RTMFPWriter for
@@ -72,8 +73,8 @@ public:
 	void	sendGroupConnect(const std::string& netGroup) { if (_pStream) _pStream->sendGroupConnect(*_pWriter, netGroup); }
 	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const char* rawId/*, bool initiator*/) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, rawId/*, initiator*/); }
 	void	sendGroupBegin() { if (_pStream) _pStream->sendGroupBegin(*_pWriter); }
-	void	sendGroupMediaInfos(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration, Mona::UInt16 fetchPeriod) {
-				if (_pStream) _pStream->sendGroupMediaInfos(*_pWriter, stream, data, size, updatePeriod, windowDuration, fetchPeriod);
+	void	sendGroupMediaInfos(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig) {
+				if (_pStream) _pStream->sendGroupMediaInfos(*_pWriter, stream, data, size, groupConfig);
 	}
 	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size, bool flush) { 
 		if (_pStream)

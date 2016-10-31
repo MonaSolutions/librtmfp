@@ -44,6 +44,7 @@ namespace FlashEvents {
 /**************************************************************
 FlashStream is linked to an as3 NetStream
 */
+struct RTMFPGroupConfig;
 class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnStatus,
 	public FlashEvents::OnMedia,
@@ -102,7 +103,7 @@ public:
 	void sendGroupBegin(FlashWriter& writer);
 
 	// Send the group publication infos
-	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 updatePeriod, Mona::UInt16 windowDuration, Mona::UInt16 fetchPeriod);
+	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfigd);
 
 	// Send the media
 	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size, bool flush);
