@@ -7,13 +7,16 @@ Installing librtmfp
 - Clone MonaServer :
 
 	git clone https://github.com/MonaSolutions/MonaServer.git
+	
 - Cd into the MonaBase directory,
 - Compile MonaBase using the following command :
 	
 	make
+	
 - Compile librtmfp (must be at the same hierarchy level than the directory MonaServer) :
 
 	make
+	
 - And then install it using the same command as the sudoer :
 
 	make install
@@ -28,7 +31,7 @@ A temporary repository of FFmpeg is available with a wrapper to librtmfp : https
 
 **Prerequisites:**
 
-- You must install first librtmp and libspeex developer versions (see next point),
+- You must install first librtmp and libspeex developer versions (see next point) to have RTMP and speex working,
 - You can remove --enable-debug if you doesn't want to debug ffmpeg,
 - Install SDL-devel (or libsdl-dev) if you want to compile ffplay.
 
