@@ -27,59 +27,85 @@ A testing software (TestClient) is delivered with **librtmfp** as a sample of us
 
 - Publishing an flv file to the server :
 
-	./TestClient --log=8 --write --url=rtmfp://<hostname and port + application name>/test --mediaFile=in.flv --logFile=testPubli.log
+```
+./TestClient --log=8 --write --url=rtmfp://<hostname and port + application name>/<stream name> --mediaFile=in.flv
+--logFile=testPubli.log
+```
 	
 - Reading a stream from the server :
 
-	./TestClient --url=rtmfp://<hostname and port + application name>/test --mediaFile=out1.flv --logFile=testPlay1.log
-	
+```
+./TestClient --url=rtmfp://<hostname and port + application name>/<stream name> --mediaFile=out1.flv --logFile=testPlay1.log
+```
+
 - Publishing for P2P direct communication only :
 
-	./TestClient --p2pWrite --url=rtmfp://<hostname and port + application name>/test --mediaFile=in.flv --logFile=testPubli.log
-	
+```
+./TestClient --p2pWrite --url=rtmfp://<hostname and port + application name>/<stream name> --mediaFile=in.flv --logFile=testPubli.log
+```
+
 - Reading a stream from a peer (direct P2P) :
 
-	./TestClient --peerId=<peer ID> --url=rtmfp://<hostname and port + application name>/test --mediaFile=out1.flv --logFile=testPlay1.log
+```
+./TestClient --peerId=<peer ID> --url=rtmfp://<hostname and port + application name>/<stream name> --mediaFile=out1.flv --logFile=testPlay1.log
+```
 	
 - Publishing a stream into a NetGroup (P2P Multicast) :
 
-	./TestClient --p2pWrite --url=rtmfp://<hostname and port + application name>/test --netgroup=<netgroup identifier> --logFile=testPubli.log --mediaFile=in.flv
+```
+./TestClient --p2pWrite --url=rtmfp://<hostname and port + application name>/<stream name> --netgroup=<netgroup identifier> --logFile=testPubli.log --mediaFile=in.flv
+```
 
 - Reading a stream from a NetGroup (P2P Multicast) :
-	
-	./TestClient --url=rtmfp://<hostname and port + application name>/test --netgroup=<netgroup identifier> --logFile=testPlay1.log --mediaFile=out1.flv
+
+```
+./TestClient --url=rtmfp://<hostname and port + application name>/<stream name> --netgroup=<netgroup identifier> --logFile=testPlay1.log --mediaFile=out1.flv
+```
  
 **Notes:** 
 
 - The netgroup identifier is the key obtained in AS3 code with GroupSpecifier.toString(), it can be *G:027f0201010103010c050e74657374011b00* for example,
-- The <hostname and port + application name> field can be 127.0.0.1/live for exampe,
+- The *hostname and port + application name* field can be 127.0.0.1:1935/live for example,
+- The *stream name* field is the name of the stream to read/publish (full example of url : rtmfp://127.0.0.1:1935/live/test),
 - If you are using AMS you must specify an application name ("live" is the default one), with MonaServer you can ignore it.
  
 ### Sample FFmpeg commands
  
 - Publishing an flv file to the server :
 	
-	./ffmpeg -re -i in.flv -c copy -f flv rtmfp://<hostname and port + application name>/test -report < /dev/null
+```
+./ffmpeg -re -i in.flv -c copy -f flv rtmfp://<hostname and port + application name>/<stream name> -report < /dev/null
+```
 
 - Reading a stream from the server :
-	
-	./ffmpeg -i rtmfp://<hostname and port + application name>/test -c copy -f flv out1.flv -y -report < /dev/null
+
+```
+./ffmpeg -i rtmfp://<hostname and port + application name>/<stream name> -c copy -f flv out1.flv -y -report < /dev/null
+```
 
 - Publishing for P2P direct communication only :
 
-	./ffmpeg -re -i in.flv -rtmfp_p2pPublishing true -c copy -f flv rtmfp://<hostname and port + application name>/test -report < /dev/null
-	
+```
+./ffmpeg -re -i in.flv -rtmfp_p2pPublishing true -c copy -f flv rtmfp://<hostname and port + application name>/<stream name> -report < /dev/null
+```
+
 - Reading a stream from a peer (direct P2P) :
 	
-	./ffmpeg -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/test -c copy -f flv out1.flv -y -report < /dev/null
+```
+./ffmpeg -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/<stream name> -c copy -f flv out1.flv -y -report < /dev/null
+```
 
 - Publishing a stream into a NetGroup (P2P Multicast) :
 	
-	./ffmpeg -re -i in.flv -c copy -netgroup <netgroup identifier> -f flv rtmfp://<hostname and port + application name>/test -report < /dev/null
+```
+./ffmpeg -re -i in.flv -c copy -netgroup <netgroup identifier> -f flv rtmfp://<hostname and port + application name>/<stream name> -report < /dev/null
+```
 
 - Reading a stream from a NetGroup (P2P Multicast) :
 
-	./ffmpeg -netgroup <netgroup identifier> -i rtmfp://<hostname and port + application name>/test -c copy -f flv out1.flv -y -report < /dev/null
+```
+./ffmpeg -netgroup <netgroup identifier> -i rtmfp://<hostname and port + application name>/<stream name> -c copy -f flv out1.flv -y -report < /dev/null
+```
 
 ### Sample ffplay commands
 
@@ -87,15 +113,21 @@ If you just want to play directly a stream you can use the ffplay command.
 
 - Playing a stream from the server :
 
-	./ffplay -i rtmfp://<hostname and port + application name>/test
+```
+./ffplay -i rtmfp://<hostname and port + application name>/<stream name>
+```
 
 - Playing a stream from a peer (direct P2P) :
 	
-	./ffplay -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/test
+```
+./ffplay -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/<stream name>
+```
 
 - Playing a stream from a NetGroup (P2P Multicast) :
 	
-	./ffplay -netgroup <netgroup identifier> -i rtmfp://<hostname and port + application name>/test
+```
+./ffplay -netgroup <netgroup identifier> -i rtmfp://<hostname and port + application name>/<stream name>
+```
 
 ### Additional arguments
 
