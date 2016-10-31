@@ -1,98 +1,102 @@
-# librtmfp README
+librtmfp README
+===============
 
+**librtmfp** is a multi-platform and LGPL library implementing the client part of the RTMFP protocol. 
 
-librtmfp is a multi-platform and LGPL library implementing the client part of the RTMFP protocol. 
+It is made to allow softwares to connect to RTMFP servers and publish or receive media streams with or without P2P.
 
-It is made to allow softwares to connect to RTMFP servers and publish and receive media streams.
+Both MonaServer and AMS server are supported.
 
-librtmfp can be integrated with FFmpeg to get the best experience.
+**librtmfp** can be integrated with FFmpeg to get a best experience.
 
-## Simple Installation
+## Installation
 
-- First you must download and compile the MonaBase library,
-- Clone MonaServer :
-  git clone https://github.com/MonaSolutions/MonaServer.git
-- Cd into the MonaBase directory,
-- Compile MonaBase using the following command :
-  make debug
-- Compile librtmfp (must be at the same hierarchy level than the directory MonaServer) :
-  make debug
-- And then install it using the same command as the sudoer :
-  make install
+You will find the Installation instructions for **librtmfp** and FFmpeg in the INSTALL.md file (in this directory).
 
-Note: you need g++ to compile librtmfp
+## Documentation
 
-## Integration in FFmpeg
+Coming soon...
 
-A temporary repository of FFmpeg is available with a wrapper to librtmfp : https://github.com/thomasjammet/FFmpeg.git
+## Usage
 
-### Installation on Linux
+As **librtmfp** is a C++ LGPL library it can be included in many softwares.
 
-To use it just do a git clone and run the following command in FFmpeg directory :
+A testing software (TestClient) is delivered with **librtmfp** as a sample of usage but for a better experience you should use FFmpeg.
 
-./configure --disable-yasm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-debug && make
+### Sample TestClient commands
 
-**Notes:**
+- Publishing an flv file to the server :
 
-- You must install first librtmp and libspeex developer versions (-dev or -devel)
-- You can remove --enable-debug if you doesn't want to debug ffmpeg
-- Install SDL-devel (or libsdl-dev) if you want to compile ffplay
+	./TestClient --log=8 --write --url=rtmfp://<hostname and port + application name>/test --mediaFile=in.flv --logFile=testPubli.log
+	
+- Reading a stream from the server :
 
-#### How to install librtmp and libspeex developer versions?
+	./TestClient --url=rtmfp://<hostname and port + application name>/test --mediaFile=out1.flv --logFile=testPlay1.log
+	
+- Publishing for P2P direct communication only :
 
-On Fedora you can use the RPM Fusion repository, to install it run the following command as root :
+	./TestClient --p2pWrite --url=rtmfp://<hostname and port + application name>/test --mediaFile=in.flv --logFile=testPubli.log
+	
+- Reading a stream from a peer (direct P2P) :
 
-    dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+	./TestClient --peerId=<peer ID> --url=rtmfp://<hostname and port + application name>/test --mediaFile=out1.flv --logFile=testPlay1.log
+	
+- Publishing a stream into a NetGroup (P2P Multicast) :
 
-Then just install it with dnf :
+	./TestClient --p2pWrite --url=rtmfp://<hostname and port + application name>/test --netgroup=<netgroup identifier> --logFile=testPubli.log --mediaFile=in.flv
 
-    dnf install librtmp-devel && dnf install speex-devel
+- Reading a stream from a NetGroup (P2P Multicast) :
+	
+	./TestClient --url=rtmfp://<hostname and port + application name>/test --netgroup=<netgroup identifier> --logFile=testPlay1.log --mediaFile=out1.flv
  
-#### Sample commands
+**Notes:** 
+
+- The netgroup identifier is the key obtained in AS3 code with GroupSpecifier.toString(), it can be *G:027f0201010103010c050e74657374011b00* for example,
+- The <hostname and port + application name> field can be 127.0.0.1/live for exampe,
+- If you are using AMS you must specify an application name ("live" is the default one), with MonaServer you can ignore it.
  
-Then you can run ffmpeg:
-
-    ./ffmpeg -i rtmfp://127.0.0.1/test123 -c:a copy -f flv test123.flv
-
-**Note:** ffmpeg_g is the debug version of ffmpeg with debugging symbolic links.
-
-### Installation on Windows
-
-Please read the following page to have all informations about compilation with MSVC : https://trac.ffmpeg.org/wiki/CompilationGuide/MSVC
-
-The integration of FFmpeg on Windows require the use of mingw and yasm, so first install the prerequisites into a folder (for example *c:\99*) :
-
-- ​[C99-to-C89 Converter](https://github.com/libav/c99-to-c89/) & Wrapper if using MSVC 2012 or earlier.
-- [msinttypes](http://code.google.com/p/msinttypes/) if using MSVC 2012 or earlier.
-- ​[MSYS](http://www.mingw.org/)
-- ​[YASM](http://yasm.tortall.net/) (install the normal version, not the VS2010 version)
-
-**Note:** For MSYS after installing mingw-get you must :
-
-- Install msys with the following command :
+### Sample FFmpeg commands
  
+- Publishing an flv file to the server :
+	
+	./ffmpeg -re -i in.flv -c copy -f flv rtmfp://<hostname and port + application name>/test -report < /dev/null
 
-```
-#!shell
+- Reading a stream from the server :
+	
+	./ffmpeg -i rtmfp://<hostname and port + application name>/test -c copy -f flv out1.flv -y -report < /dev/null
 
-mingw-get install msys
-```
+- Publishing for P2P direct communication only :
 
+	./ffmpeg -re -i in.flv -rtmfp_p2pPublishing true -c copy -f flv rtmfp://<hostname and port + application name>/test -report < /dev/null
+	
+- Reading a stream from a peer (direct P2P) :
+	
+	./ffmpeg -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/test -c copy -f flv out1.flv -y -report < /dev/null
 
-- Copy the **pr.exe** file from [msys-coreutils](http://sourceforge.net/projects/mingw/files/MSYS/Base/msys-core/_obsolete/coreutils-5.97-MSYS-1.0.11-2/coreutils-5.97-MSYS-1.0.11-snapshot.tar.bz2/download) image to the msys/bin folder.
- 
-Then, you need to add the folder c:\c99 into your PATH environment variable.
+- Publishing a stream into a NetGroup (P2P Multicast) :
+	
+	./ffmpeg -re -i in.flv -c copy -netgroup <netgroup identifier> -f flv rtmfp://<hostname and port + application name>/test -report < /dev/null
 
-Rename the yasm executable you will use to yasm.exe.
+- Reading a stream from a NetGroup (P2P Multicast) :
 
-Create an INCLUDE environment variable, and point it to c:\c99; this is the location where the compiler will find inttypes.h.
-Create a LIB environment variable, and point it to c:\c99; this is the location where the compiler will find the external libraries and includes.
+	./ffmpeg -netgroup <netgroup identifier> -i rtmfp://<hostname and port + application name>/test -c copy -f flv out1.flv -y -report < /dev/null
 
-Clone the [FFmpeg](https://github.com/thomasjammet/FFmpeg.git) repository, taking care that git option *core.autocrlf* is set to false.
+### Sample ffplay commands
 
-TODO: Here we must be able to compile MonaBase with MinGW!
+If you just want to play directly a stream you can use the ffplay command.
 
-Finally open *msys.bat* in a MSVC command line tool and run the following commands :
+- Playing a stream from the server :
 
-    ./configure --toolchain=msvc --enable-librtmp --enable-librtmfp --enable-libspeex --enable-debug
-	make
+	./ffplay -i rtmfp://<hostname and port + application name>/test
+
+- Playing a stream from a peer (direct P2P) :
+	
+	./ffplay -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/test
+
+- Playing a stream from a NetGroup (P2P Multicast) :
+	
+	./ffplay -netgroup <netgroup identifier> -i rtmfp://<hostname and port + application name>/test
+
+### Additional arguments
+
+Coming soon...
