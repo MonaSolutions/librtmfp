@@ -30,16 +30,21 @@ public:
 	BandWriter(): connected(false) {}
 
 	virtual const Mona::PoolBuffers&		poolBuffers() = 0;
+	// Save the new writer to the map of writers
 	virtual void							initWriter(const std::shared_ptr<RTMFPWriter>& pWriter)=0;
+	// Exchange a writer with a new one (generally if an error occurs)
 	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer) = 0;
+	// Return true if a writer with the same signature already exists
+	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature) = 0;
 
-	virtual bool						failed() const = 0;
-	virtual bool						canWriteFollowing(RTMFPWriter& writer)=0;
-	virtual Mona::UInt32				availableToWrite()=0;
-	virtual Mona::BinaryWriter&			writeMessage(Mona::UInt8 type,Mona::UInt16 length,RTMFPWriter* pWriter=NULL)=0;
-	virtual void						flush()=0;
-	//virtual Mona::UInt16				ping() const = 0;
+	virtual bool							failed() const = 0;
+	virtual bool							canWriteFollowing(RTMFPWriter& writer)=0;
+	virtual Mona::UInt32					availableToWrite()=0;
+	virtual Mona::BinaryWriter&				writeMessage(Mona::UInt8 type,Mona::UInt16 length,RTMFPWriter* pWriter=NULL)=0;
+	virtual void							flush()=0;
+	//virtual Mona::UInt16					ping() const = 0;
+	virtual const std::string&				name() = 0;
 
-	bool								connected;
+	bool									connected;
 	
 };

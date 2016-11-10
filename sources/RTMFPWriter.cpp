@@ -31,14 +31,14 @@ using namespace Mona;
 RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis) : /*_resetStream(true),*/ FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0),  flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 	pThis.reset(this);
 	_band.initWriter(pThis);
-	//if (signature.empty())
+	if (signature.empty())
 		open();
 }
 
 RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band) : /*_resetStream(true),*/ FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0), flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 	shared_ptr<RTMFPWriter> pThis(this);
 	_band.initWriter(pThis);
-	//if (signature.empty())
+	if (signature.empty())
 		open();
 }
 
@@ -97,15 +97,15 @@ void RTMFPWriter::close(Int32 code) {
 	FlashWriter::close(code);
 }
 
-void RTMFPWriter::acknowledgment(PacketReader& packet) {
+bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 
 	UInt64 bufferSize = packet.read7BitLongValue(); // TODO use this value in reliability mechanism?
 	
 	if(bufferSize==0) {
 		// In fact here, we should send a 0x18 message (with id flow),
 		// but it can create a loop... We prefer the following behavior
-		fail("Negative acknowledgment");
-		return;
+		fail(ex, "Negative acknowledgment");
+		return !ex;
 	}
 
 	UInt64 stageAckPrec = _stageAck;
@@ -291,6 +291,7 @@ void RTMFPWriter::acknowledgment(PacketReader& packet) {
 		_trigger.stop();
 	else if(_stageAck>stageAckPrec || repeated)
 		_trigger.reset();
+	return true;
 }
 
 void RTMFPWriter::manage(Exception& ex) {
@@ -303,7 +304,7 @@ void RTMFPWriter::manage(Exception& ex) {
 		}
 		// When the peer/server doesn't send acknowledgment since a while we close the writer
 		else if (ex) {
-			fail("RTMFPWriter can't deliver its data, ",ex.error());
+			fail(ex, "RTMFPWriter can't deliver its data, ", ex.error());
 			return;
 		}
 	}
@@ -555,25 +556,17 @@ AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* dat
 	return amf;
 }
 
-void RTMFPWriter::writeGroup(const string& netGroup) {
+void RTMFPWriter::writeGroupConnect(const string& netGroup) {
 	string tmp(netGroup.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 	createMessage().writer().packet.write8(GroupStream::GROUP_INIT).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
 }
 
-void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const char* rawId/*, bool initiator*/) {
+void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const char* rawId) {
 
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
 	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);
 	writer.write16(0x2303).write(rawId, PEER_ID_SIZE+2); // binary format
-
-	// Send this only if we are the responder
-	/*if (!initiator) {
-		flush(false);
-		createMessage().writer().packet.write8(AMF::ABORT);
-		flush(false); // TODO: see if needed
-		createMessage().writer().packet.write8(GroupStream::GROUP_NKNOWN2);
-	}*/
 }
 
 void RTMFPWriter::writeGroupBegin() {
@@ -587,8 +580,9 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* da
 	PacketWriter& writer = createMessage().writer().packet;
 	writer.write8(GroupStream::GROUP_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
 	writer.write(data, size);
+	writer.write("\x01\x02");
 	if (groupConfig->availabilitySendToAll)
-		writer.write("\x01\x02");
+		writer.write("\x01\x06");
 	writer.write8(1 + Util::Get7BitValueSize(UInt32(groupConfig->windowDuration))).write8('\x03').write7BitLongValue(groupConfig->windowDuration);
 	writer.write("\x04\x04\x92\xA7\x60"); // Object encoding?
 	writer.write8(1 + Util::Get7BitValueSize(groupConfig->availabilityUpdatePeriod)).write8('\x05').write7BitLongValue(groupConfig->availabilityUpdatePeriod);

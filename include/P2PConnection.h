@@ -99,6 +99,8 @@ public:
 	// Close the connection properly
 	virtual void				close(bool full);
 
+	virtual const std::string&	name() { return (peerId.empty()) ? _targetAddress.toString() : peerId; }
+
 	// Update the host address of the peer
 	void updateHostAddress(const Mona::SocketAddress& address);
 
@@ -142,9 +144,6 @@ public:
 	// Send a pull request (2B)
 	void sendPull(Mona::UInt64 index);
 
-	// Close the Group connection to peer
-	void closeGroup();
-
 	// Send the Group Peer Connect request
 	void sendGroupPeerConnect();
 
@@ -161,7 +160,9 @@ public:
 	static Mona::UInt32				P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 
 	// NetGroup members
-	bool							publicationInfosSent; // True if it is the publisher and if the publications infos have been sent
+	bool							mediaSubscriptionSent; // True if the media subscription has been sent
+	bool							mediaSubscriptionReceived; // True if the media subscription message has been received
+	bool							groupFirstReportSent; // True if the first group report has been sent
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
 	bool							badPusher; // True if this peer is not pushing when asked
@@ -169,40 +170,40 @@ public:
 
 protected:
 	// Handle play request (only for P2PConnection)
-	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer);
+	virtual bool					handlePlay(const std::string& streamName, FlashWriter& writer);
 
 	// Handle a 0C Message
-	virtual void handleProtocolFailed();
+	virtual void					handleProtocolFailed();
 
 	// Handle a Writer close message (type 5E)
-	virtual void				handleWriterFailed(RTMFPWriter* pWriter);
+	virtual void					handleWriterFailed(RTMFPWriter* pWriter);
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
-	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
-
-	// Called before deleting an RTMFPFlow
-	virtual void				handleFlowClosed(Mona::UInt64 idFlow);
+	virtual void					handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader);
 
 private:
+	// Close the Group connection to peer
+	void							closeGroup(bool full);
+
 	// Return true if the new fragment is pushable (according to the Group push mode)
-	bool						isPushable(Mona::UInt8 rest);
+	bool							isPushable(Mona::UInt8 rest);
 
 	// Handle a NetGroup connection message from a peer connected (only for P2PConnection)
-	void						handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
+	void							handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
 
-	RTMFPConnection*			_parent; // RTMFPConnection related to
-	FlashListener*				_pListener; // Listener of the main publication (only one by intance)
-	Mona::UInt32				_sessionId; // id of the P2P session;
-	std::string					_farKey; // Public Key of the server/peer (for shared key determination)
-	std::string					_farNonce; // Nonce of the distant peer
+	RTMFPConnection*				_parent; // RTMFPConnection related to
+	FlashListener*					_pListener; // Listener of the main publication (only one by intance)
+	Mona::UInt32					_sessionId; // id of the P2P session;
+	std::string						_farKey; // Public Key of the server/peer (for shared key determination)
+	std::string						_farNonce; // Nonce of the distant peer
 
-	Mona::SocketAddress			_hostAddress; // Address of the server related to this peer
+	Mona::SocketAddress				_hostAddress; // Address of the server related to this peer
 
 	// Play/Publish command
-	std::string					_streamName; // playing stream name
-	bool						_responder; // is responder?
+	std::string						_streamName; // playing stream name
+	bool							_responder; // is responder?
 
-	bool						_rawResponse; // next message is a raw response? TODO: make it nicer
+	bool							_rawResponse; // next message is a raw response? TODO: make it nicer
 
 	// Group members
 	std::shared_ptr<Mona::Buffer>	_groupConnectKey; // Encrypted key used to connect to the peer
@@ -212,9 +213,11 @@ private:
 
 	Mona::UInt8						_pushOutMode; // Group Publish Push mode
 
-	RTMFPFlow*						_pMediaFlow; // Flow for media packets
-	RTMFPFlow*						_pFragmentsFlow; // Flow for fragments Map messages and media related messages
-	RTMFPFlow*						_pReportFlow; // Flow for report messages
+	Mona::UInt64					_idMediaReportFlow; // Id of the Media Report flow to assign it to the Media Writer
+	std::shared_ptr<RTMFPWriter>	_pMediaWriter; // Writer for media packets
+	std::shared_ptr<RTMFPWriter>	_pMediaReportWriter; // Writer for fragments Map messages and media related messages
+	std::shared_ptr<RTMFPWriter>	_pReportWriter; // Writer for report messages
+	std::shared_ptr<RTMFPWriter>	_pNetStreamWriter; // Writer for NetStream P2P direct messages
 
 	Mona::Buffer					_fragmentsMap; // Last Fragments Map received
 	Mona::UInt64					_idFragmentMap; // Last ID received from the Fragments Map

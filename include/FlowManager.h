@@ -82,6 +82,8 @@ public:
 
 	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer);
 
+	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature);
+
 	// Return the size available in the current sender (or max size if there is no current sender)
 	virtual Mona::UInt32					availableToWrite() { return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); }
 
@@ -109,9 +111,6 @@ protected:
 	// Handle message (after hanshake0)
 	virtual void				handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
 
-	// Called before deleting an RTMFPFlow
-	virtual void				handleFlowClosed(Mona::UInt64 idFlow) {}
-
 	// Close the conection properly
 	virtual void				close();
 
@@ -122,7 +121,6 @@ protected:
 	virtual void				onPublished(FlashWriter& writer) {}
 
 	RTMFPWriter*				writer(Mona::UInt64 id);
-	RTMFPFlow*					createFlow(const std::string& signature) { return createFlow(_flows.size() + 2, signature); }
 	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);
 
 	// Create a flow for special signatures (NetGroup)
@@ -143,6 +141,8 @@ protected:
 
 	// Manage handshake messages (marker 0x0B)
 	virtual void				manageHandshake(Mona::Exception& ex, Mona::BinaryReader& reader) = 0;
+
+	virtual const std::string&	name() { return _targetAddress.toString(); }
 
 	enum HandshakeType {
 		BASE_HANDSHAKE = 0x0A,
@@ -193,7 +193,6 @@ protected:
 	std::shared_ptr<FlashConnection>						_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
 	std::map<Mona::UInt64, RTMFPFlow*>						_flows;
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter> >	_flowWriters;
-	std::map<Mona::UInt16, RTMFPFlow*>						_waitingFlows; // Map of id streams to new RTMFP flows (before knowing the flow id)
 	RTMFPWriter*											_pLastWriter; // Write pointer used to check if it is possible to write
 	Invoker*												_pInvoker;
 	std::unique_ptr<RTMFPFlow>								_pFlowNull; // Null flow for some messages

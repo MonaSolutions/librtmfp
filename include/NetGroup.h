@@ -32,6 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
 #define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
 #define NETGROUP_PULL_DELAY				100		// delay between each pull request (in msec)
+#define NETGROUP_PEER_TIMEOUT			300000	// number of seconds since the last report known before we delete a peer from the heard list
 
 class MediaPacket;
 class GroupNode;
@@ -60,16 +61,16 @@ public:
 	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
 
 	// Remove a peer from the NetGroup map
-	void removePeer(const std::string& peerId, bool full);
+	void removePeer(const std::string& peerId);
 
-	// Called by peer when far peer close the Group Report writer
-	void peerIsClosingNetgroup(const std::string& peerId);
-
-	// Return True if the peer doesn't already exists and if the group ID match our group ID
-	bool checkPeer(const std::string& groupId, const std::string& peerId);
+	// Return True if the peer doesn't already exists
+	bool checkPeer(const std::string& peerId);
 
 	// Send report requests (messages 0A, 22)
 	void manage();
+
+	// If the peer is connected send the group Media message to start read/write of the stream
+	void sendGroupMedia(std::shared_ptr<P2PConnection> pPeer);
 
 	// Call a function on the peer side
 	// return 0 if it fails, 1 otherwise
@@ -121,10 +122,13 @@ private:
 	// Connect and disconnect peers to fit the best list
 	void	manageBestConnections(std::set<std::string>& bestList);
 
-	// Read a pair of addresses and add peer to lists if neaded
-	void	readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId, bool noPeerID);
+	// Read addresses and add peer to heard list if needed
+	// return : True if a new peer has been discovered (to redo the best list calculation)
+	bool	readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId);
 
 	// Go to the next peer for pull or push
+	// idFragment : if > 0 it will test the availability of the fragment
+	// ascending : order of the research
 	bool	getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment);
 
 	// Send the fragment pull request to the next available peer
@@ -132,8 +136,9 @@ private:
 
 	std::map<Mona::UInt64, MediaPacket>						_fragments;
 	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
-	Mona::UInt64											_fragmentCounter;
-	std::recursive_mutex									_fragmentMutex;
+	Mona::UInt64											_fragmentCounter; // Current fragment counter of writed fragments (fragments sent to application)
+	bool													_firstPullReceived; // True if we have received the first pull fragment => we can start writing
+	std::recursive_mutex									_fragmentMutex; // Global mutex for NetGroup
 
 	FlashEvents::OnGroupMedia::Type							onGroupMedia;
 	FlashEvents::OnGroupReport::Type						onGroupReport;
@@ -145,10 +150,11 @@ private:
 	GroupEvents::OnMedia::Type								onMedia;
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
-	std::unique_ptr<Mona::Buffer>							_pStreamCode; // 2101 + Random key on 32 bytes identifying the publication (for group media info message)
+	std::unique_ptr<Mona::Buffer>							_pStreamCode; // 2101 + Random key on 32 bytes identifying the publication (for group media Subscription message)
 
 	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
-	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID
+	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID (same as heard list)
+	std::set<std::string>									_bestList; // Last best list calculated
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
 	MAP_PEERS_ITERATOR_TYPE									_itPullPeer; // Current peer for pull request
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)

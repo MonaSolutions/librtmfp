@@ -72,27 +72,6 @@ public:
 
 	void					writePing() { writeRaw().write16(0x0006).write32((Mona::UInt32)Mona::Time::Now()); }
 	void					writePong(Mona::UInt32 pingTime) { writeRaw().write16(0x0007).write32(pingTime); }
-	
-	// Note: netGroup must be in binary format (32 bytes)
-	virtual void			writeGroup(const std::string& netGroup)=0;
-
-	// Note: netGroup must be in hexa format (64 bytes)
-	virtual void			writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const char* rawId/*, bool initiator*/)=0;
-
-	// Send the Group begin message (02 + 0E)
-	virtual void			writeGroupBegin()=0;
-
-	// Request the stream in argument
-	virtual void			writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig)=0;
-
-	// Start to play the group stream
-	virtual void			writeGroupPlay(Mona::UInt8 mode)=0;
-
-	// Send a pull request to a peer (message 2B)
-	virtual void			writeGroupPull(Mona::UInt64 index)=0;
-
-	// Send the UnpublishNotify and closeStream messages
-	//virtual void			sendGroupCloseStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime)=0;
 
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)

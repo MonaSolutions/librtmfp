@@ -51,14 +51,17 @@ public:
 
 	void flush() {for(auto& it : _streams) it.second->flush(); }
 
-	void setPort(Mona::UInt16 port) { _port = port; }
-
 	// Send the connect request to the RTMFP server
-	virtual void connect(FlashWriter& writer, const std::string& url);
+	void connect(FlashWriter& writer, const std::string& url);
 
-	virtual void createStream(FlashWriter& writer);
+	// Send the stream creation request (before play or publish)
+	void createStream(FlashWriter& writer);
 
-	virtual void sendPeerInfo(FlashWriter& writer,Mona::UInt16 port);
+	// Send the setPeerInfo command to server
+	void sendPeerInfo(FlashWriter& writer,Mona::UInt16 port);
+
+	// Call a function on the server/peer
+	void callFunction(FlashWriter& writer, const char* function, int nbArgs, const char** args);
 	
 private:
 	void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
@@ -66,8 +69,7 @@ private:
 
 	std::map<Mona::UInt16,std::shared_ptr<FlashStream>>	_streams;
 	std::string											_buffer;
-	
-	Mona::UInt16	_port;
+
 	bool			_creatingStream; // If we are waiting for a stream to be created
 	std::string		_streamToPlay;
 };

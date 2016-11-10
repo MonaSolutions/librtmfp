@@ -156,11 +156,6 @@ FlowManager::~FlowManager() {
 	for (auto& it : _flowWriters)
 		it.second->clear();
 
-	// delete waiting flows
-	for (auto& it : _waitingFlows)
-		delete it.second;
-	_waitingFlows.clear();
-
 	// delete flows
 	for (auto& it : _flows)
 		delete it.second;
@@ -302,17 +297,17 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			handleP2PAddressExchange(ex, message);
 			break;
 		case 0xcc:
-			INFO("CC message received (unknown for now)")
+			INFO("CC message received (unknown for now) from connection ", name())
 #if defined(_DEBUG)
 			Logs::Dump(reader.current(), size);
 #endif
 			break;
 		case 0x0c:
-			WARN("Message 0C received (possibly wrong packet sent), we must close the session");
+			WARN("Message 0C received (possibly wrong packet sent), we must close the connection ", name());
 			handleProtocolFailed();
 			break;
 		case 0x4c : // P2P closing session (only for p2p I think)
-			INFO("P2P Session at ", _outAddress.toString(), " is closing")
+			INFO("P2P Connection ", name(), " is closing")
 			close();
 			return;
 		case 0x01: // KeepAlive
@@ -332,7 +327,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			if (pRTMFPWriter)
 				handleWriterFailed(pRTMFPWriter);
 			else
-				WARN("RTMFPWriter ", id, " unfound for failed signal on connection");
+				WARN("RTMFPWriter ", id, " unfound for failed signal on connection ", name());
 			break;
 		}
 			/*case 0x18 :
@@ -349,10 +344,12 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			/// Acknowledgment
 			UInt64 id = message.read7BitLongValue();
 			RTMFPWriter* pRTMFPWriter = writer(id);
-			if (pRTMFPWriter)
-				pRTMFPWriter->acknowledgment(message);
-			else
-				WARN("RTMFPWriter ", id, " unfound for acknowledgment on connection ");
+			if (pRTMFPWriter) {
+				Exception ex;
+				if (!pRTMFPWriter->acknowledgment(ex, message))
+					WARN(ex.error(), " on connection ", name())
+			} else
+				WARN("RTMFPWriter ", id, " unfound for acknowledgment on connection ", name())
 			break;
 		}
 		/// Request
@@ -401,7 +398,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			}
 
 			if (!pFlow) {
-				WARN("RTMFPFlow ", idFlow, " unfound");
+				WARN("RTMFPFlow ", idFlow, " unfound for connection ", name());
 				if (_pFlowNull)
 					((UInt64&)_pFlowNull->id) = idFlow;
 				pFlow = _pFlowNull.get();
@@ -423,7 +420,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 			break;
 		}
 		default:
-			ex.set(Exception::PROTOCOL, "RTMFPMessage type '", Format<UInt8>("%02x", type), "' unknown");
+			ex.set(Exception::PROTOCOL, "RTMFPMessage type '", Format<UInt8>("%02x", type), "' unknown on connection ", name());
 			return;
 		}
 
@@ -432,7 +429,7 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 		type = reader.available()>0 ? reader.read8() : 0xFF;
 
 		// Commit RTMFPFlow (pFlow means 0x11 or 0x10 message)
-		if (pFlow && type != 0x11) {
+		if (pFlow && !_died && type != 0x11) {
 			pFlow->commit();
 			if (pFlow->consumed()) {
 				if (pFlow->critical()) {
@@ -444,7 +441,6 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 					// TODO: commented because it replace other events (NetConnection.Connect.Rejected)
 					// fail(); // If connection fails, log is already displayed, and so fail the whole session!
 				}
-				handleFlowClosed(pFlow->id); // If we need to make something before deleting a Flow
 				_flows.erase(pFlow->id);
 				delete pFlow;
 			}
@@ -474,43 +470,21 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 		return it->second;
 	}
 
-	RTMFPFlow* pFlow;
+	// Get flash stream process engine related by signature
 	Exception ex;
-
-	// get flash stream process engine related by signature
-	if (signature.size() > 4 && signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0) { // NetConnection
-		INFO("Creating new Flow (", id, ") for NetConnection")
-		pFlow = new RTMFPFlow(id, signature, poolBuffers(), *this, _pMainStream);
-	}
-	else if (signature.size()>6 && signature.compare(0, 6, "\x00\x54\x43\x04\xFA\x89", 6) == 0) { // Direct P2P Connection
-		shared_ptr<FlashStream> pStream;
-		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
-		INFO("Creating new Flow (2) for P2P NetStream ", idSession)
-		_pMainStream->addStream(idSession, pStream);
-		pFlow = new RTMFPFlow(2, signature, pStream, poolBuffers(), *this);
-	}
-	else if (signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream
+	RTMFPFlow* pFlow = createSpecialFlow(ex, id, signature);
+	if (!pFlow && signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream (P2P or normal)
 		shared_ptr<FlashStream> pStream;
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7BitValue());
-		INFO("Creating new Flow (", id, ") for NetStream ", idSession)
+		DEBUG("Creating new Flow (", id, ") for NetStream ", idSession)
 
-		// First : search in waiting flows
-		auto it = _waitingFlows.find(idSession);
-		if (it != _waitingFlows.end()) {
-			pFlow = it->second;
-			pFlow->setId(id);
-			_waitingFlows.erase(it);
-		}
-		// 2nd : search in mainstream
-		else if (_pMainStream->getStream(idSession, pStream))
+		// Search in mainstream
+		if (_pMainStream->getStream(idSession, pStream))
 			pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
-		else {
-			ERROR("RTMFPFlow ", id, " indicates a non-existent ", idSession, " NetStream on connection ");
-			return NULL;
-		}
-
+		else
+			ex.set(Exception::PROTOCOL, "RTMFPFlow ", id, " indicates a non-existent ", idSession, " NetStream on connection ", name());
 	}
-	else if (!(pFlow = createSpecialFlow(ex, id, signature))) {
+	if (!pFlow) {
 		ERROR(ex.error())
 		return NULL;
 	}
@@ -522,10 +496,9 @@ void FlowManager::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
 	while (++_nextRTMFPWriterId == 0 || !_flowWriters.emplace(_nextRTMFPWriterId, pWriter).second);
 	(UInt64&)pWriter->id = _nextRTMFPWriterId;
 	pWriter->amf0 = false;
-	if (!_flows.empty())
-		(UInt64&)pWriter->flowId = _flows.begin()->second->id; // newWriter will be associated to the NetConnection flow (first in _flow lists)
+	
 	if (!pWriter->signature.empty())
-		DEBUG("New writer ", pWriter->id, " on connection ");
+		DEBUG("New writer ", pWriter->id, " on connection ", name());
 }
 
 const Mona::PoolBuffers& FlowManager::poolBuffers() { 
@@ -693,5 +666,16 @@ shared_ptr<RTMFPWriter> FlowManager::changeWriter(RTMFPWriter& writer) {
 	}
 	shared_ptr<RTMFPWriter> pWriter(it->second);
 	it->second.reset(&writer);
+	// TODO: do we have to relink the RTMFPFlow with the new writer?
 	return pWriter;
+}
+
+bool FlowManager::getWriter(shared_ptr<RTMFPWriter>& pWriter, const string& signature) {
+	for (auto it : _flowWriters) {
+		if (it.second->signature == signature) {
+			pWriter = it.second;
+			return true;
+		}
+	}
+	return false;
 }

@@ -69,7 +69,7 @@ FlashStream* FlashConnection::addStream(shared_ptr<FlashStream>& pStream, bool g
 }
 
 FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStream, bool group) {
-	// TODO: check existence of an older stream with the id
+
 	pStream.reset(group? new GroupStream(id) : new FlashStream(id));
 	_streams[id] = pStream;
 	pStream->OnStatus::subscribe((OnStatus&)*this);
@@ -114,6 +114,8 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 					return;
 				}
 				_creatingStream = false;
+				shared_ptr<FlashStream> pStream;
+				addStream((UInt16)idStream, pStream);
 				OnStreamCreated::raise((UInt16)idStream);
 			}
 		}
@@ -200,4 +202,13 @@ void FlashConnection::createStream(FlashWriter& writer) {
 	AMFWriter& amfWriter = writer.writeInvocation("createStream");
 	writer.flush();
 	_creatingStream = true;
+}
+
+void FlashConnection::callFunction(FlashWriter& writer, const char* function, int nbArgs, const char** args) {
+	AMFWriter& amfWriter = writer.writeInvocation(function, true);
+	for (int i = 0; i < nbArgs; i++) {
+		if (args[i])
+			amfWriter.writeString(args[i], strlen(args[i]));
+	}
+	writer.flush();
 }

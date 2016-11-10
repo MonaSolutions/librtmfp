@@ -30,7 +30,7 @@ namespace FlashEvents {
 	struct OnStatus : Mona::Event<void(const std::string& code, const std::string& description, FlashWriter& writer)> {};
 	struct OnMedia : Mona::Event<void(const std::string& peerId, const std::string& stream, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate, bool audio)> {};
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, FlashWriter& writer)> {};
-	struct OnNewPeer : Mona::Event<void(const std::string& groupId, const std::string& peerId)> {};
+	struct OnNewPeer : Mona::Event<void(const std::string& peerId)> {};
 	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {};
 	struct OnGroupMedia : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
 	struct OnGroupReport : Mona::Event<void(const std::string& peerId, Mona::PacketReader& packet, FlashWriter& writer)> {};
@@ -75,47 +75,8 @@ public:
 
 	virtual void	flush() { }
 
-	// Send the connect request to the RTMFP server
-	virtual void connect(FlashWriter& writer,const std::string& url);
-
-	// Send the createStream request to the RTMFP server
-	virtual void createStream(FlashWriter& writer);
-
-	// Send the play request to the RTMFP server
-	virtual void play(FlashWriter& writer, const std::string& name);
-
-	// Send the publish request to the RTMFP server
-	virtual void publish(FlashWriter& writer, const std::string& name);
-
-	// Send the setPeerInfo request to the RTMFP server
-	virtual void sendPeerInfo(FlashWriter& writer, Mona::UInt16 port);
-
-	// Call a function on the far side
-	void call(FlashWriter& writer, const char* function, int nbArgs, const char** args);
-
-	// Send the group connection request to the server
-	void sendGroupConnect(FlashWriter& writer, const std::string& groupId);
-
-	// Send the group connection request to the peer
-	void sendGroupPeerConnect(FlashWriter& writer, const std::string& netGroup, const Mona::UInt8* key, const char* rawId /*, bool initiator*/);
-
-	// Send the group begin message (02 + 0E)
-	void sendGroupBegin(FlashWriter& writer);
-
-	// Send the group publication infos
-	void sendGroupMediaInfos(FlashWriter& writer, const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfigd);
-
-	// Send the media
-	void sendRaw(FlashWriter& writer, const Mona::UInt8* data, Mona::UInt32 size, bool flush);
-
-	// Send the group play message (type 23)
-	void sendGroupPlay(FlashWriter& writer, Mona::UInt8 mode);
-
-	// Send a group pull request (type 2B)
-	void sendGroupPull(FlashWriter& writer, Mona::UInt64 index) { writer.writeGroupPull(index); }
-
 	// Record target peer ID for identifying media source (play mode)
-	virtual void setPeerId(const std::string& peerId) { _peerId = peerId; }
+	void			setPeerId(const std::string& peerId) { _peerId = peerId; }
 
 protected:
 	virtual void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);

@@ -41,6 +41,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 /*******************************************************
 RTMFPWriter is the class for sending RTMFP messages to
 the server on a NetStream.
+It does not need an RTMFPFlow to exist but can be
+related to one.
 It manages acknowlegment and lost of packet sent
 */
 class RTMFPWriter : public FlashWriter, public virtual Mona::Object {
@@ -66,14 +68,15 @@ public:
 
 	bool				flush() { return flush(true); }
 
-	void				acknowledgment(Mona::PacketReader& packet);
+	bool				acknowledgment(Mona::Exception& ex, Mona::PacketReader& packet);
 	void				manage(Mona::Exception& ex);
 
 	template <typename ...Args>
-	void fail(Args&&... args) {
+	void fail(Mona::Exception& ex, Args&&... args) {
 		if (state() == CLOSED)
 			return;
-		WARN("RTMFPWriter ", id, " has failed, ", args ...);
+		ex.set(Mona::Exception::PROTOCOL, "RTMFPWriter ", id, " has failed, ", args...);
+		//WARN("RTMFPWriter ", id, " has failed, ", args ...);
 		abort();
 		_stage = _stageAck = _lostCount = 0;
 		 _ackCount = 0;
@@ -95,9 +98,9 @@ public:
 	//bool				writeMember(const Client& client);
 
 	// Ask the server to connect to group, netGroup must be in binary format (32 bytes)
-	virtual void		writeGroup(const std::string& netGroup);
+	virtual void		writeGroupConnect(const std::string& netGroup);
 	// Init the group session with a peer, netGroup must be in hexa format (64 bytes)
-	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const char* rawId/*, bool initiator*/);
+	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const char* rawId);
 	// Send the Group begin message (02 + 0E)
 	virtual void		writeGroupBegin();
 	// Play the stream in argument

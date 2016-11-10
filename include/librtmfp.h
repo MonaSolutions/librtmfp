@@ -36,13 +36,14 @@ extern "C" {
 
 LIBRTMFP_API typedef struct RTMFPGroupConfig {
 	const char*		netGroup; // [Required] netGroup identifier (groupspec)
-	short			isPublisher; // False by default, if True the stream will be published
-	short			isBlocking; // False by default, if True the function will return only when the first peer is connected
+	char			isPublisher; // False by default, if True the stream will be published
+	char			isBlocking; // False by default, if True the function will return only when the first peer is connected
 	unsigned int	availabilityUpdatePeriod; // 100 by default, it is the time (in msec) between each fragments map messages (multicastAvailabilityUpdatePeriod)
-	short			availabilitySendToAll; // False by default, if True send the fragments map to all peer (multicastAvailabilitySendToAll)
+	char			availabilitySendToAll; // False by default, if True send the fragments map to all peer (multicastAvailabilitySendToAll)
 	unsigned int	windowDuration; // 8000 by default, it is the time (in msec) to bufferize and keep fragments available
 	unsigned int	relayMargin; // 2000 by default, it is additional time (in msec) to keep the fragments available
-	unsigned int	fetchPeriod; // 2500 by defautl, it is the time (in msec) before trying to fetch the missing fragments
+	unsigned int	fetchPeriod; // 2500 by default, it is the time (in msec) before trying to fetch the missing fragments
+	short			pushLimit; // 5 by default
 } RTMFPGroupConfig;
 
 LIBRTMFP_API typedef struct RTMFPConfig {

@@ -20,7 +20,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "RTMFPFlow.h"
-//#include "Mona/Invoker.h"
 #include "Mona/Logs.h"
 #include "Mona/Util.h"
 #include "Mona/PoolBuffer.h"
@@ -72,32 +71,36 @@ public:
 };
 
 
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,/*Peer& peer,*/const PoolBuffers& poolBuffers, BandWriter& band, const shared_ptr<FlashConnection>& pMainStream) : /*_pGroup(NULL), _peer(peer), */_pStream(pMainStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
-	INFO("New main flow ", id, " on connection")
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const PoolBuffers& poolBuffers, BandWriter& band, const shared_ptr<FlashConnection>& pMainStream) : _pStream(pMainStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
+	DEBUG("New main flow ", id, " on connection ", band.name())
 	// MAIN Stream flow OR Null flow
 
-	RTMFPWriter* pWriter = new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING,signature, band, _pWriter);
+	if (!band.getWriter(_pWriter, signature)) {
+		new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING, signature, band, _pWriter);
 
-	if (!_pStream) {
-		pWriter->open(); // FlowNull, must be opened
-		return;
-	}
+		if (!_pStream) {
+			_pWriter->open(); // FlowNull, must be opened
+			return;
+		}
+	} else
+		DEBUG("Writer ", _pWriter->id, " associated to flow ", id)
 
-	(bool&)pWriter->critical = _pStream.use_count()<=2;
-	((UInt64&)pWriter->flowId) = id;
+	(bool&)_pWriter->critical = _pStream.use_count()<=2;
+	((UInt64&)_pWriter->flowId) = id;
 }
 
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,/*Peer& peer,*/const PoolBuffers& poolBuffers, BandWriter& band) : /*_pGroup(NULL), _peer(peer), */_pStream(pStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
-	INFO("New flow ", id, " on connection")
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,const PoolBuffers& poolBuffers, BandWriter& band) : _pStream(pStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
+	DEBUG("New flow ", id, " on connection ", band.name())
 
-	new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING,signature, band, _pWriter);
-
+	if (!band.getWriter(_pWriter, signature))
+		new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING, signature, band, _pWriter);
+	else
+		DEBUG("Writer ", _pWriter->id, " associated to flow ", id)
+	// Here the flowId of _pWriter is set to the main flow (or the P2P media report flow if it is the P2P media flow)
 }
 
 
 RTMFPFlow::~RTMFPFlow() {
-	/*if(_pGroup)
-		_peer.unjoinGroup(*_pGroup);*/
 
 	complete();
 	if (_pStream)
@@ -137,12 +140,10 @@ void RTMFPFlow::fail(const string& error) {
 void RTMFPFlow::close() {
 	if (_completed)
 		return;
-	if (_pWriter)
-		_pWriter->close();
 	BinaryWriter& writer = _band.writeMessage(0x5e, Util::Get7BitValueSize(id) + 1);
 	writer.write7BitLongValue(id);
 	writer.write8(0); // finishing marker
-	_pWriter->flush();
+	_pWriter->close();
 }
 
 void RTMFPFlow::commit() {
@@ -193,8 +194,6 @@ void RTMFPFlow::receive(UInt64 stage,UInt64 deltaNAck,PacketReader& fragment,UIn
 		(UInt64&)_stage = stage;
 		return;
 	}
-
-//	TRACE("RTMFPFlow ",id," _stage ",_stage);
 
 	UInt64 nextStage = _stage+1;
 

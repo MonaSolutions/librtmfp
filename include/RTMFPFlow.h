@@ -64,27 +64,6 @@ public:
 	// Record the far peer Id to identify the media source
 	void	setPeerId(const std::string& peerId) { if (_pStream) _pStream->setPeerId(peerId); }
 
-	// RTMFP Commands
-	void	sendConnect(const std::string& url) { if (_pStream) _pStream->connect(*_pWriter, url); }
-	void	sendPlay(const std::string& name) { if (_pStream) _pStream->play(*_pWriter, name); }
-	void	sendPublish(const std::string& name) { if (_pStream) _pStream->publish(*_pWriter, name); }
-	void	createStream() { if (_pStream) _pStream->createStream(*_pWriter); }
-	void	sendPeerInfo(Mona::UInt16 port) { if (_pStream) _pStream->sendPeerInfo(*_pWriter, port); }
-	void	sendGroupConnect(const std::string& netGroup) { if (_pStream) _pStream->sendGroupConnect(*_pWriter, netGroup); }
-	void	sendGroupPeerConnect(const std::string& netGroup, const Mona::UInt8* key, const char* rawId/*, bool initiator*/) { if (_pStream) _pStream->sendGroupPeerConnect(*_pWriter, netGroup, key, rawId/*, initiator*/); }
-	void	sendGroupBegin() { if (_pStream) _pStream->sendGroupBegin(*_pWriter); }
-	void	sendGroupMediaInfos(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig) {
-				if (_pStream) _pStream->sendGroupMediaInfos(*_pWriter, stream, data, size, groupConfig);
-	}
-	void	sendRaw(const Mona::UInt8* data, Mona::UInt32 size, bool flush) { 
-		if (_pStream)
-			_pStream->sendRaw(*_pWriter, data, size, flush); 
-	}
-	void	call(const char* function, int nbArgs, const char** args) { if (_pStream) _pStream->call(*_pWriter, function, nbArgs, args); }
-	void	sendGroupPlay(Mona::UInt8 mode) { if (_pStream) _pStream->sendGroupPlay(*_pWriter, mode); }
-	//void	closeGroupStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 lastTime) { if (_pStream) _pStream->sendGroupCloseStream(type, fragmentCounter, lastTime); }
-	void	sendGroupPull(Mona::UInt64 index) { if (_pStream) _pStream->sendGroupPull(*_pWriter, index); }
-
 private:
 	// Handle on fragment received
 	void	onFragment(Mona::UInt64 stage,Mona::PacketReader& fragment,Mona::UInt8 flags);

@@ -112,6 +112,10 @@ public:
 	// Return the public key for Diffie Hellman encryption/decryption
 	const Mona::Buffer& publicKey() { return _pubKey; }
 
+	/******* Internal functions for writers *******/
+	virtual void initWriter(const std::shared_ptr<RTMFPWriter>& pWriter);
+
+
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal							connectSignal; // signal to wait connection
 	Mona::Signal							p2pPublishSignal; // signal to wait p2p publish
@@ -132,7 +136,7 @@ protected:
 	virtual bool handlePlay(const std::string& streamName, FlashWriter& writer);
 
 	// Handle new peer in a Netgroup : connect to the peer
-	void handleNewGroupPeer(const std::string& groupId, const std::string& peerId);
+	void handleNewGroupPeer(const std::string& peerId);
 
 	// Handle a 0C Message
 	virtual void handleProtocolFailed();
@@ -159,7 +163,7 @@ protected:
 	virtual void onPublished(FlashWriter& writer);
 
 	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature);
+	virtual RTMFPFlow*	createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature);
 
 private:
 
@@ -213,6 +217,8 @@ private:
 	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
 	FlashListener*													_pListener; // Listener of the main publication (only one by intance)
 
+	std::shared_ptr<RTMFPWriter>									_pMainWriter; // Main writer for the connection
+	std::shared_ptr<RTMFPWriter>									_pGroupWriter; // Writer for the group requests
 	std::shared_ptr<NetGroup>										_group;
 
 

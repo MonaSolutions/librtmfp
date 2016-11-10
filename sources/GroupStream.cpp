@@ -46,12 +46,12 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 		case GroupStream::GROUP_MEMBER: {
 			string member, id;
 			packet.read(PEER_ID_SIZE, member);
-			INFO("NetGroup Peer ID added : ", Util::FormatHex(BIN member.data(), member.size(), id))
-			OnNewPeer::raise(_groupId, id);
+			DEBUG("NetGroup Peer ID added : ", Util::FormatHex(BIN member.data(), member.size(), id))
+			OnNewPeer::raise(id);
 			break;
 		}
 		case GroupStream::GROUP_INIT: {
-			INFO("GroupStream ", id, " - NetGroup Peer Connection (type 01)")
+			DEBUG("GroupStream ", id, " - NetGroup Peer Connection (type 01)")
 			if (packet.read16() != 0x4100) {
 				ERROR("Unexpected format for NetGroup ID header")
 				break;
@@ -81,18 +81,18 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			break;
 		}
 		case GroupStream::GROUP_NKNOWN:
-			WARN("GroupStream ", id, " - Unknown NetGroup 0C message type")
+			DEBUG("GroupStream ", id, " - Unknown NetGroup 0C message type") // TODO: manage this (do we have to disconnect?)
 			break;
 		case GroupStream::GROUP_BEGIN_NEAREST:
-			INFO("GroupStream ", id, " - NetGroup 0F (Begin nearest) message type")
+			DEBUG("GroupStream ", id, " - NetGroup 0F (Begin nearest) message type")
 			OnGroupBegin::raise(_peerId, writer);
 			break;
 		case GroupStream::GROUP_BEGIN:
-			INFO("GroupStream ", id, " - NetGroup Begin received from ", _peerId)
+			DEBUG("GroupStream ", id, " - NetGroup Begin received from ", _peerId)
 			OnGroupBegin::raise(_peerId, writer);
 			break;
 		case GroupStream::GROUP_REPORT: {
-			INFO("GroupStream ", id, " - NetGroup Report received from ", _peerId)
+			DEBUG("GroupStream ", id, " - NetGroup Report received from ", _peerId)
 			OnGroupReport::raise(_peerId, packet, writer);
 			break;
 		}
@@ -103,7 +103,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 			OnGroupPlayPull::raise(_peerId, packet, writer);
 			break;
 		case GroupStream::GROUP_INFOS: { // contain the stream name of an eventual publication
-			DEBUG("GroupStream ", id, " - Group Media Infos received from ", _peerId)
+			INFO("GroupStream ", id, " - Group Media Subscription received from ", _peerId)
 			OnGroupMedia::raise(_peerId, packet, writer);
 			break;
 		}

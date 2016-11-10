@@ -39,8 +39,8 @@ RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError,
 	onStreamCreated = [this](UInt16 idStream) {
 		handleStreamCreated(idStream);
 	};
-	onNewPeer = [this](const string& groupId, const string& peerId) {
-		handleNewGroupPeer(groupId, peerId);
+	onNewPeer = [this](const string& peerId) {
+		handleNewGroupPeer(peerId);
 	};
 
 	_tag.resize(16);
@@ -59,6 +59,7 @@ RTMFPConnection::~RTMFPConnection() {
 	// Close peers
 	for(auto it : _mapPeersByAddress)
 		it.second->close(true);
+	_mapPeersByAddress.clear();
 
 	// Close listener & publisher
 	if (_pListener && _pPublisher) {
@@ -85,15 +86,33 @@ RTMFPConnection::~RTMFPConnection() {
 }
 
 RTMFPFlow* RTMFPConnection::createSpecialFlow(Exception& ex, UInt64 id, const string& signature) {
-	if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
+
+	if (signature.size() > 4 && signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0) { // NetConnection
+		DEBUG("Creating new Flow (", id, ") for NetConnection ", name())
+		return new RTMFPFlow(id, signature, poolBuffers(), *this, _pMainStream);
+	}
+	else if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
 		shared_ptr<FlashStream> pStream;
 		_pMainStream->addStream(pStream, true);
-		RTMFPFlow* pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
-		return pFlow;
+		return new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
 	}
-	string tmp;
-	ex.set(Exception::PROTOCOL, "Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow");
+	else {
+		string tmp;
+		ex.set(Exception::PROTOCOL, "Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow");
+	}
 	return NULL;
+}
+
+void RTMFPConnection::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
+	FlowManager::initWriter(pWriter);
+
+	if (!_flows.empty())
+		(UInt64&)pWriter->flowId = _flows.begin()->second->id; // newWriter will be associated to the NetConnection flow (first in _flow lists) 
+
+	if (pWriter->signature.size() > 2 && pWriter->signature.compare(0, 3, "\x00\x47\x43", 3) == 0 && !_pGroupWriter)
+		_pGroupWriter = pWriter; // save the group writer (TODO: see if it can happen, I think we are always the initiator of the group communication)
+	if (pWriter->signature.size() > 4 && pWriter->signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0 && !_pMainWriter)
+		_pMainWriter = pWriter;
 }
 
 bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) {
@@ -114,8 +133,8 @@ bool RTMFPConnection::connect(Exception& ex, const char* url, const char* host) 
 
 	// TODO: Create an RTMFPConnection for each _host.addresses()
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	DEBUG("Trying to resolve the address with DNS...")
-	if (DNS::Resolve(ex, tmpHost, _host) || _targetAddress.setWithDNS(ex, tmpHost, _port)) {
+	DEBUG("Trying to resolve the address...")
+	if (_targetAddress.set(ex, tmpHost, _port) || DNS::Resolve(ex, tmpHost, _host) || _targetAddress.setWithDNS(ex, tmpHost, _port)) {
 		_pSocket.reset(new UDPSocket(_pInvoker->sockets));
 		_pSocket->OnError::subscribe(onError);
 		_pSocket->OnPacket::subscribe(onPacket);
@@ -166,9 +185,9 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 	if (_group) {
 		for (auto itAddress = _mapPeersByAddress.begin(); itAddress != _mapPeersByAddress.end(); itAddress++) {
 			if (itAddress->second->peerId == peerId && itAddress->second->connected) {
-				DEBUG("Peer ", itAddress->second->peerId, " already connected, sending NetGroup connection request...")
+				DEBUG("Peer ", itAddress->second->peerId, " already connected, sending NetGroup Media Subscription...")
 				if (addPeer2Group(itAddress->first, itAddress->second->peerId))
-					itAddress->second->sendGroupPeerConnect();
+					_group->sendGroupMedia(itAddress->second);
 				return;
 			}
 		}
@@ -269,20 +288,12 @@ bool RTMFPConnection::write(const UInt8* buf, UInt32 size, int& pos) {
 
 unsigned int RTMFPConnection::callFunction(const char* function, int nbArgs, const char** args, const char* peerId) {
 	// Server call
-	if (!peerId) {
-		map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
-		RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
-		if (pFlow) {
-			pFlow->call(function, nbArgs, args);
-			return 1;
-		}
-		ERROR("Unable to find the flow 2 for sending the function call")
-	}
+	if (!peerId && _pMainStream && _pMainWriter)
+		_pMainStream->callFunction(*_pMainWriter, function, nbArgs, args);
 	// NetGroup call
 	else if (strcmp(peerId, "all") == 0) {
 		if (_group)
 			return _group->callFunction(function, nbArgs, args);
-
 	}
 	// Peer call
 	else {
@@ -316,27 +327,28 @@ void RTMFPConnection::handleStreamCreated(UInt16 idStream) {
 		}
 	}
 
-	// Create the stream
-	shared_ptr<FlashStream> pStream;
-	_pMainStream->addStream(idStream, pStream);
-
-	// Stream created, now we create the flow before sending another request
+	// Stream created, now we create the writer before sending another request
 	string signature;
 	signature.append("\x00\x54\x43\x04", 4);
 	RTMFP::Write7BitValue(signature, idStream);
-	UInt64 id = _flows.size();
-	RTMFPFlow * pFlow = new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
-	_waitingFlows[idStream] = pFlow;
+	RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *this); // (a shared pointer is automatically created)
 
 	// Send createStream command and remove command type from waiting commands
 	switch (command.type) {
-	case NETSTREAM_PLAY:
-		pFlow->sendPlay(command.value);
+	case NETSTREAM_PLAY: {
+		AMFWriter& amfWriter = pWriter->writeInvocation("play", true);
+		amfWriter.amf0 = true; // Important for p2p unicast play
+		amfWriter.writeString(command.value.c_str(), command.value.size());
+		pWriter->flush();
 		break;
-	case NETSTREAM_PUBLISH:
-		pFlow->sendPublish(command.value);
+	}
+	case NETSTREAM_PUBLISH: {
+		AMFWriter& amfWriter = pWriter->writeInvocation("publish", true);
+		amfWriter.writeString(command.value.c_str(), command.value.size());
+		pWriter->flush();
 		_pPublisher.reset(new Publisher(command.value, *_pInvoker, command.audioReliable, command.videoReliable));
 		break;
+	}
 	default:
 		ERROR("Unexpected command found on stream creation : ", command.type)
 		return;
@@ -402,6 +414,10 @@ void RTMFPConnection::handleRedirection(Exception& ex, BinaryReader& reader) {
 		UInt8 addressType = reader.read8();
 		RTMFP::ReadAddress(reader, address, addressType);
 		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
+		if (address.family() == IPAddress::IPv6) {
+			DEBUG("Ignored address ", address.toString(), ", IPV6 not supported yet") // TODO: support IPV6
+			continue;
+		}
 
 		// Send handshake 30 request to the current address
 		_outAddress = address;
@@ -507,7 +523,7 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 		return true;
 	}
 
-	INFO("Peer ", it->second->peerId," has answered, the handshake continues")
+	DEBUG("Peer ", it->second->peerId," has answered, the handshake continues")
 
 	// Add the connection to map by addresses and send the handshake 38
 	auto itAddress = _mapPeersByAddress.emplace(_outAddress, it->second).first;
@@ -544,7 +560,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 	if (it->second->attempt >= 11) {
 		WARN("P2P handshake with ", it->second->peerId, " has reached 11 attempts without answer, deleting session...")
 		if (_group)
-			_group->removePeer(it->second->peerId, true);
+			_group->removePeer(it->second->peerId);
 		_mapPeersByTag.erase(it);
 		return false;
 	}
@@ -554,6 +570,10 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 		UInt8 addressType = reader.read8();
 		RTMFP::ReadAddress(reader, address, addressType);
 		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
+		if (address.family() == IPAddress::IPv6) {
+			DEBUG("Ignored address ", address.toString(), ", IPV6 not supported yet") // TODO: support IPV6
+			continue;
+		}
 
 		// Send handshake 30 request to the current address
 		// TODO: Record the address to ignore if it has already been received
@@ -605,14 +625,12 @@ bool RTMFPConnection::sendConnect(Exception& ex, BinaryReader& reader) {
 	string farPubKey = nonce.substr(11, nonceSize - 11);
 	if (!computeKeys(ex, farPubKey, nonce, _nonce.data(), _nonce.size(), _sharedSecret, _pDecoder, _pEncoder))
 		return false;
-	
+
 	string signature("\x00\x54\x43\x04\x00", 5);
-	RTMFPFlow* pFlow = createFlow(2, signature);
-	if (!pFlow)
-		return false;
+	new RTMFPWriter(FlashWriter::OPENED, signature, *this);  // it will be automatically associated to _pMainWriter
 
 	connected = true;
-	pFlow->sendConnect(_url);
+	_pMainStream->connect(*_pMainWriter, _url);
 	_handshakeStep = 3;
 	return true;
 }
@@ -698,7 +716,7 @@ void RTMFPConnection::manage() {
 		if (pPeer->failed()) { // delete if dead
 			NOTE("Deletion of p2p connection to ", pPeer->peerAddress().toString())
 			if (_group)
-				_group->removePeer(pPeer->peerId, true);
+				_group->removePeer(pPeer->peerId);
 			_mapPeersByAddress.erase(it++);
 			continue;
 		}
@@ -749,14 +767,11 @@ void RTMFPConnection::createWaitingStreams() {
 
 	// Create waiting streams
 	if (_nbCreateStreams) {
-		INFO("Creating a new stream...")
-		map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
-		RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
-		if(!pFlow) {
-			ERROR("Unable to found the flow 2")
+		if (!_pMainWriter) {
+			ERROR("Unable to find the main writer related to the main stream")
 			return;
 		}
-		pFlow->createStream();
+		_pMainStream->createStream(*_pMainWriter);
 		_nbCreateStreams--;
 	}
 }
@@ -826,7 +841,7 @@ void RTMFPConnection::sendConnections() {
 			if (itPeer->second->attempt >= 11) {
 				WARN("P2P handshake with ", itPeer->second->peerId," has reached 11 attempts without answer, deleting session...")
 				if (_group)
-					_group->removePeer(itPeer->second->peerId, true);
+					_group->removePeer(itPeer->second->peerId);
 				_mapPeersByTag.erase(itPeer++);
 				continue;
 			}
@@ -848,10 +863,8 @@ void RTMFPConnection::sendConnections() {
 bool RTMFPConnection::onConnect(Mona::Exception& ex) {
 
 	// Record port for setPeerInfo request
-	map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(2);
-	RTMFPFlow* pFlow = it == _flows.end() ? NULL : it->second;
-	if (pFlow)
-		pFlow->sendPeerInfo(_pSocket->address().port());
+	if (_pMainStream && _pMainWriter)
+		_pMainStream->sendPeerInfo(*_pMainWriter, _pSocket->address().port());
 
 	// We are connected : unlock the possible blocking RTMFP_Connect function
 	connectReady = true;
@@ -891,10 +904,10 @@ bool RTMFPConnection::handlePlay(const string& streamName,FlashWriter& writer) {
 	return false;
 }
 
-void RTMFPConnection::handleNewGroupPeer(const string& groupId, const string& peerId) {
+void RTMFPConnection::handleNewGroupPeer(const string& peerId) {
 	
 	//string& streamName = _mapGroup2stream[groupId];
-	if (!_group || !_group->checkPeer(groupId, peerId)) {
+	if (!_group || !_group->checkPeer(peerId)) {
 		WARN("Unable to add the peer ", peerId, ", it can be a wrong group ID or the peer already exists")
 		return;
 	}
@@ -907,7 +920,9 @@ void RTMFPConnection::handleProtocolFailed() {
 }
 
 void RTMFPConnection::handleWriterFailed(RTMFPWriter* pWriter) {
-	pWriter->fail("Writer terminated on connection");
+	Exception ex;
+	pWriter->fail(ex, "Writer terminated on connection ", _targetAddress.toString());
+	WARN(ex.error())
 }
 
 void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& reader) {
@@ -926,7 +941,7 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 
 	string tag;
 	reader.read(16, tag);
-	INFO("A peer will contact us with address : ", address.toString())
+	DEBUG("A peer will contact us with address : ", address.toString())
 
 	// If we are the P2P publisher we wait for the peer to contact us
 	if (!_group && (_mapPeersByAddress.find(address) == _mapPeersByAddress.end()))
@@ -936,11 +951,10 @@ void RTMFPConnection::handleP2PAddressExchange(Exception& ex, PacketReader& read
 void RTMFPConnection::sendGroupConnection(const string& netGroup) {
 
 	string signature("\x00\x47\x43", 3);
-	RTMFPFlow* pFlow = createFlow(signature);
-	if (!pFlow)
-		return;
+	new RTMFPWriter(FlashWriter::OPENED, signature, *this); // it will be automatically associated to _pGroupWriter
 
-	pFlow->sendGroupConnect(netGroup);
+	_pGroupWriter->writeGroupConnect(netGroup);
+	_pGroupWriter->flush();
 }
 
 void RTMFPConnection::addPeer2HeardList(const SocketAddress& peerAddress, const SocketAddress& hostAddress, const string& peerId, const char* rawId) {
