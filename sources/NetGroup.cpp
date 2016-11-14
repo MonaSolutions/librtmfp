@@ -271,6 +271,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			// Update the NetGroup stream properties
 			UInt8 size = 0, id = 0;
 			unsigned int value = 0;
+			char availabilitySendToAll = 0;
 			while (packet.available()) {
 				if ((size = packet.read8()) == 0)
 					continue;
@@ -294,14 +295,15 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 							DEBUG("Updating the Avaibility Update period : ", (groupParameters->availabilityUpdatePeriod = value), "ms"); 
 						break;
 					case NETGROUP_SEND_TO_ALL:
-						if (value != groupParameters->availabilitySendToAll)
-							DEBUG("Updating the Availability Send to All : ", ((groupParameters->availabilitySendToAll = value) != 0)? "ON" : "OFF"); break;
+						availabilitySendToAll = 1;
 						return;
 					case NETROUP_FETCH_PERIOD:
 						if (value != groupParameters->fetchPeriod)
 							DEBUG("Updating the Fetch period : ", (groupParameters->fetchPeriod = value), "ms"); break;
 						break;
 				}
+				if (groupParameters->availabilitySendToAll != availabilitySendToAll)
+					DEBUG("Updating the Availability Send to All : ", ((groupParameters->availabilitySendToAll = availabilitySendToAll) != 0) ? "ON" : "OFF");
 			}
 
 			if (!it->second->mediaSubscriptionSent) {

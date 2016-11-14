@@ -52,6 +52,12 @@ RTMFPConnection::RTMFPConnection(Invoker* invoker, OnSocketError pOnSocketError,
 
 RTMFPConnection::~RTMFPConnection() {
 
+	// Unsubscribing to socket : we don't want to receive packets anymore
+	if (_pSocket) {
+		_pSocket->OnPacket::unsubscribe(onPacket);
+		_pSocket->OnError::unsubscribe(onError);
+	}
+
 	// Close the NetGroup
 	if (_group)
 		_group->close();
@@ -73,11 +79,8 @@ RTMFPConnection::~RTMFPConnection() {
 	close();
 
 	// Close socket
-	if (_pSocket) {
-		_pSocket->OnPacket::unsubscribe(onPacket);
-		_pSocket->OnError::unsubscribe(onError);
+	if (_pSocket)
 		_pSocket->close();
-	}
 
 	if (_pMainStream) {
 		_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
