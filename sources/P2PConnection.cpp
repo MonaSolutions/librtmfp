@@ -36,7 +36,7 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 		RTMFP::AddressType addressType, bool responder) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _pListener(NULL), _groupBeginSent(false), mediaSubscriptionSent(false),
 	_lastIdSent(0), _pushOutMode(0), pushInMode(0), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), groupReportInitiator(false), _groupConnectSent(false), _idMediaReportFlow(0),
-	groupFirstReportSent(false), mediaSubscriptionReceived(false), badPusher(false), peerType(addressType), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _hostAddress(hostAddress) {
+	groupFirstReportSent(false), mediaSubscriptionReceived(false), peerType(addressType), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _hostAddress(hostAddress) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
 	};
@@ -572,6 +572,11 @@ void P2PConnection::sendPushMode(UInt8 mode) {
 }
 
 void P2PConnection::updateFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
+	if (id <= _idFragmentMap) {
+		DEBUG("Wrong Group Fragments map received from peer ", peerId, " : ", id, " <= ", _idFragmentMap)
+		return;
+	}
+
 	_idFragmentMap = id;
 	if (!size)
 		return; // 0 size protection
@@ -617,7 +622,7 @@ bool P2PConnection::hasFragment(UInt64 index) {
 	UInt32 offset = (UInt32)((_idFragmentMap - index - 1) / 8);
 	UInt32 rest = ((_idFragmentMap - index - 1) % 8);
 	if (offset > _fragmentsMap.size()) {
-		TRACE("Searching ", index, " impossible into ", peerId, ", out of buffer")
+		TRACE("Searching ", index, " impossible into ", peerId, ", out of buffer (", offset, "/", _fragmentsMap.size(), ")")
 		return false; // Fragment deleted from buffer
 	}
 
@@ -636,6 +641,8 @@ void P2PConnection::sendPull(UInt64 index) {
 
 void P2PConnection::closeGroup(bool full) {
 
+	OnPeerClose::raise(peerId, pushInMode, full);
+
 	if (full && _pReportWriter) {
 		_groupConnectSent = false;
 		_groupBeginSent = false;
@@ -643,6 +650,7 @@ void P2PConnection::closeGroup(bool full) {
 		_pReportWriter->close();
 	}
 	mediaSubscriptionSent = mediaSubscriptionReceived = false;
+	pushInMode = 0;
 	if (_pMediaReportWriter)
 		_pMediaReportWriter->close();
 	if (_pMediaWriter)
@@ -672,5 +680,6 @@ void P2PConnection::sendGroupPeerConnect() {
 }
 
 void P2PConnection::addPullBlacklist(UInt64 idFragment) {
+	// TODO: delete old blacklisted fragments
 	_setPullBlacklist.emplace(idFragment);
 }

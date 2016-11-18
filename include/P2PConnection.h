@@ -27,6 +27,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #define COOKIE_SIZE	0x40
 
+namespace P2PEvents {
+	struct OnPeerClose : Mona::Event<void(const std::string& peerId, Mona::UInt8 mask, bool full)> {};
+}
+
 /**************************************************
 P2PConnection represents a direct P2P connection 
 with another peer
@@ -42,7 +46,8 @@ class P2PConnection : public FlowManager,
 	public FlashEvents::OnGroupPlayPull,
 	public FlashEvents::OnFragmentsMap,
 	public FlashEvents::OnGroupBegin,
-	public FlashEvents::OnFragment {
+	public FlashEvents::OnFragment,
+	public P2PEvents::OnPeerClose {
 	friend class RTMFPConnection;
 public:
 	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, 
@@ -165,7 +170,6 @@ public:
 	bool							groupFirstReportSent; // True if the first group report has been sent
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
-	bool							badPusher; // True if this peer is not pushing when asked
 	RTMFP::AddressType				peerType; // Address Type (Local or Public) of the peer
 
 protected:

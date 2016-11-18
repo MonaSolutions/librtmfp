@@ -184,11 +184,18 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, c
 		}
 	}
 
-	// NetGroup : Check if we are not already connected to peer
+	// Peer is connecting, ignore the request
+	auto itAddress = _mapPeersByAddress.find(address);
+	if (itAddress != _mapPeersByAddress.end() && !itAddress->second->connected) {
+		TRACE("Peer ", peerId, " already connecting, connection to ", address.toString(), " ignored")
+		return;
+	}
+
+	// NetGroup : Check if we are not already connected to peer (group reconnection)
 	if (_group) {
-		for (auto itAddress = _mapPeersByAddress.begin(); itAddress != _mapPeersByAddress.end(); itAddress++) {
+		for (itAddress = _mapPeersByAddress.begin(); itAddress != _mapPeersByAddress.end(); itAddress++) {
 			if (itAddress->second->peerId == peerId && itAddress->second->connected) {
-				DEBUG("Peer ", itAddress->second->peerId, " already connected, sending NetGroup Media Subscription...")
+				DEBUG("Peer ", peerId, " already connected, sending NetGroup Media Subscription...")
 				if (addPeer2Group(itAddress->first, itAddress->second->peerId))
 					_group->sendGroupMedia(itAddress->second);
 				return;

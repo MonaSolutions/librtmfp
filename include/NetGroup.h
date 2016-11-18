@@ -120,7 +120,7 @@ private:
 	void	buildBestList(const std::string& groupAddress, std::set<std::string>& bestList);
 
 	// Connect and disconnect peers to fit the best list
-	void	manageBestConnections(std::set<std::string>& bestList);
+	void	manageBestConnections();
 
 	// Read addresses and add peer to heard list if needed
 	// return : True if a new peer has been discovered (to redo the best list calculation)
@@ -129,7 +129,7 @@ private:
 	// Go to the next peer for pull or push
 	// idFragment : if > 0 it will test the availability of the fragment
 	// ascending : order of the research
-	bool	getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment);
+	bool	getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment, Mona::UInt8 mask);
 
 	// Send the fragment pull request to the next available peer
 	bool	sendPullToNextPeer(Mona::UInt64 idFragment);
@@ -148,6 +148,7 @@ private:
 	FlashEvents::OnGroupBegin::Type							onGroupBegin;
 	FlashEvents::OnFragment::Type							onFragment;
 	GroupEvents::OnMedia::Type								onMedia;
+	P2PEvents::OnPeerClose::Type							onPeerClose; // callback when a peer close its group connection
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 	std::unique_ptr<Mona::Buffer>							_pStreamCode; // 2101 + Random key on 32 bytes identifying the publication (for group media Subscription message)
@@ -156,7 +157,6 @@ private:
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID (same as heard list)
 	std::set<std::string>									_bestList; // Last best list calculated
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
-	MAP_PEERS_ITERATOR_TYPE									_itPullPeer; // Current peer for pull request
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPConnection&										_conn; // RTMFPConnection related to
 	Mona::Time												_lastPushUpdate; // last Play Push calculation
@@ -167,10 +167,10 @@ private:
 	Mona::Buffer											_reportBuffer; // Buffer for reporting messages
 
 	// Pushers calculation
-	bool													_firstPushMode; // True if no play push mode have been send for now
-	Mona::UInt8												_currentPushMask; // current mask analyzed
-	std::string												_currentPushPeer; // current pusher analyzed
-	bool													_currentPushIsBad; // True if the pusher analyzed asn't send any fragment for now
+	bool														_firstPushMode; // True if no play push mode have been send for now
+	Mona::UInt8													_currentPushMask; // current mask analyzed
+	MAP_PEERS_ITERATOR_TYPE										_itPushPeer; // Current peer for push request
+	std::map<Mona::UInt8, std::pair<std::string, Mona::UInt64>>	_mapPushMasks; // Map of push mask to a pair of peerId/fragmentId
 
 	// Pull calculation
 	struct PullRequest : public Object {
@@ -184,4 +184,5 @@ private:
 
 	Mona::UInt64											_lastFragmentMapId; // Last Fragments map Id received (used for pull requests)
 	Mona::UInt64											_currentPullFragment; // Current pull fragment index
+	MAP_PEERS_ITERATOR_TYPE									_itPullPeer; // Current peer for pull request
 };

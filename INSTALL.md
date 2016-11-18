@@ -33,11 +33,12 @@ A temporary repository of FFmpeg is available with a wrapper to librtmfp : https
 
 - You must install first librtmp and libspeex developer versions (see next point) to have RTMP and speex working,
 - You can remove --enable-debug if you doesn't want to debug ffmpeg,
+- You can also remove --enable-libx264 and --enable-gpl if you don't need h264 encoder,
 - Install SDL-devel (or libsdl-dev) if you want to compile ffplay.
 
 To use it just do a git clone and run the following command in FFmpeg directory :
 
-	./configure --disable-yasm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-debug && make
+	./configure --disable-yasm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-libx264 --enable-debug --enable-gpl && make
 
 **Note:** ffmpeg_g is the debug version of ffmpeg with debugging symbolic links.
 	
