@@ -28,7 +28,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define COOKIE_SIZE	0x40
 
 namespace P2PEvents {
-	struct OnPeerClose : Mona::Event<void(const std::string& peerId, Mona::UInt8 mask, bool full)> {};
+	struct OnPeerClose : Mona::Event<void(const std::string& peerId, Mona::UInt8 mask, bool full)> {}; // notify parent that the peer is closing (update the NetGroup push flags)
 }
 
 /**************************************************
@@ -51,7 +51,7 @@ class P2PConnection : public FlowManager,
 	friend class RTMFPConnection;
 public:
 	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, 
-		RTMFP::AddressType addressType, bool responder);
+		RTMFP::AddressType addressType, bool responder, bool group);
 
 	virtual ~P2PConnection();
 
@@ -120,18 +120,15 @@ public:
 	// Return True if the fragment is available
 	bool hasFragment(Mona::UInt64 index);
 
-	// Set the group
-	void setGroup(std::shared_ptr<NetGroup> group) { _group = group; }
-	void resetGroup() { _group.reset(); }
-
 	// Write the Group publication infos
 	void sendGroupMedia(const std::string& stream, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig);
 
 	// Send the group report (message 0A)
 	void sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);
 
-	// If packet is pushable : create the flow if necessary and send media
-	void sendMedia(const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 fragment, bool pull=false);
+	// Create the flow if necessary and send media
+	// The fragment is sent if pull is true or if this is a pushable fragment
+	bool sendMedia(const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 fragment, bool pull=false);
 
 	// Send the Fragments map message
 	// param lastFragment : latest fragment in the message
@@ -171,6 +168,7 @@ public:
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
 	RTMFP::AddressType				peerType; // Address Type (Local or Public) of the peer
+	bool							isGroupDisconnected; // True if the group connection has been disconnected (group writer consumed)
 
 protected:
 	// Handle play request (only for P2PConnection)
@@ -213,7 +211,7 @@ private:
 	std::shared_ptr<Mona::Buffer>	_groupConnectKey; // Encrypted key used to connect to the peer
 	bool							_groupConnectSent; // True if group connection request has been sent to peer
 	bool							_groupBeginSent; // True if the group messages 02 + 0E have been sent
-	std::shared_ptr<NetGroup>		_group; // Group pointer if netgroup connection
+	bool							_isGroup; // True if this peer connection it part of a NetGroup
 
 	Mona::UInt8						_pushOutMode; // Group Publish Push mode
 

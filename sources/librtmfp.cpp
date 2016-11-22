@@ -67,6 +67,7 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
 	groupConfig->relayMargin = 2000;
 	groupConfig->fetchPeriod = 2500;
 	groupConfig->windowDuration = 8000;
+	groupConfig->pushLimit = 4;
 }
 
 int RTMFP_LibVersion() {

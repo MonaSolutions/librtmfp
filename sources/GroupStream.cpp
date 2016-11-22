@@ -43,7 +43,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 	// if exception, it closes the connection, and print an ERROR message
 	switch(type) {
 
-		case GroupStream::GROUP_MEMBER: {
+		case GroupStream::GROUP_MEMBER: { // RTMFPConnection event (TODO: see if it must be moved in FlashStream)
 			string member, id;
 			packet.read(PEER_ID_SIZE, member);
 			DEBUG("NetGroup Peer ID added : ", Util::FormatHex(BIN member.data(), member.size(), id))

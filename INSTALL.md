@@ -31,8 +31,9 @@ A temporary repository of FFmpeg is available with a wrapper to librtmfp : https
 
 **Prerequisites:**
 
-- You must install first librtmp and libspeex developer versions (see next point) to have RTMP and speex working,
+- You must install first libx264, librtmp and libspeex developer versions (see next point) to have h264, RTMP and speex working,
 - You can remove --enable-debug if you doesn't want to debug ffmpeg,
+- You can remove --enable-librtmp and libspeex if you don't need them,
 - You can also remove --enable-libx264 and --enable-gpl if you don't need h264 encoder,
 - Install SDL-devel (or libsdl-dev) if you want to compile ffplay.
 
@@ -46,7 +47,7 @@ Then you can install it with the following command as root :
 
 	make install
 
-#### How to install librtmp and libspeex developer versions?
+#### How to install libx264, librtmp and libspeex developer versions?
 
 **On Fedora** you can use the RPM Fusion repository, to install it run the following command as root :
 
@@ -54,7 +55,7 @@ Then you can install it with the following command as root :
 
 Then just install it with dnf :
 
-    dnf install librtmp-devel && dnf install speex-devel
+    dnf install librtmp-devel && dnf install speex-devel && dnf install x264-devel
 
 ### Installating FFmpeg with librtmfp on Windows
 

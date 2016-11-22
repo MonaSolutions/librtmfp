@@ -55,7 +55,8 @@ public:
 	void close();
 
 	// Add a peer to the Heard List
-	void addPeer2HeardList(const std::string& peerId, const char* rawId, const Mona::SocketAddress& address, RTMFP::AddressType addressType, const Mona::SocketAddress& hostAddress);
+	// param update : if set to True we will recalculate the best list after
+	void addPeer2HeardList(const std::string& peerId, const char* rawId, const Mona::SocketAddress& address, RTMFP::AddressType addressType, const Mona::SocketAddress& hostAddress, bool update);
 
 	// Add a peer to the NetGroup map
 	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
@@ -115,6 +116,9 @@ private:
 
 	// Send the Pull requests if needed
 	void	sendPullRequests();
+
+	// Update our NetGroup Best List
+	void	updateBestList();
 
 	// Calculate the Best list from a group address
 	void	buildBestList(const std::string& groupAddress, std::set<std::string>& bestList);

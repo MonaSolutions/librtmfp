@@ -95,7 +95,7 @@ public:
 	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
 	// Called by P2PConnection when the responder receive the caller peerId to update the group if needed
-	void addPeer2HeardList(const Mona::SocketAddress& peerAddress, const Mona::SocketAddress& hostAddress, const std::string& peerId, const char* rawId);
+	void onPeerConnect(const Mona::SocketAddress& peerAddress, const Mona::SocketAddress& hostAddress, const std::string& peerId, const char* rawId, const std::string& tag);
 
 	// Called by P2PConnection when we are connected to the peer
 	bool addPeer2Group(const Mona::SocketAddress& peerAddress, const std::string& peerId);
@@ -111,6 +111,12 @@ public:
 
 	// Return the public key for Diffie Hellman encryption/decryption
 	const Mona::Buffer& publicKey() { return _pubKey; }
+
+	// Return the group Id in hexadecimal format
+	const std::string& groupIdHex();
+
+	// Return the group Id in text format
+	const std::string& groupIdTxt();
 
 	/******* Internal functions for writers *******/
 	virtual void initWriter(const std::shared_ptr<RTMFPWriter>& pWriter);
@@ -201,7 +207,7 @@ private:
 	Mona::HostEntry													_host; // host entry (containing all host addresses)
 	Mona::UInt8														_connectAttempt; // Counter of connection attempts to the server
 	Mona::Time														_lastAttempt; // Last attempt to connect to the server
-	std::vector<std::string>										_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
+	std::set<std::string>											_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
 	std::deque<std::string>											_waitingGroup; // queue of waiting connections to groups
 	std::recursive_mutex											_mutexConnections; // mutex for waiting connections (normal or p2p)
 
@@ -223,7 +229,7 @@ private:
 
 
 	FlashConnection::OnStreamCreated::Type							onStreamCreated; // Received when stream has been created and is waiting for a command
-	FlashConnection::OnNewPeer::Type								onNewPeer; // Received when a we receive the ID of a new peer in a NetGroup
+	FlashConnection::OnNewPeer::Type								onNewPeer; // Received when a we receive the ID of a new peer from the server in a NetGroup
 
 	// Publish/Play commands
 	struct StreamCommand : public Object {

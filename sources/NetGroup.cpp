@@ -164,13 +164,16 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				_mapTime2Fragment[time] = _fragmentCounter;
 
 			// Send fragment to peers (push mode)
+			UInt8 nbPush = groupParameters->pushLimit + 1;
 			for (auto it : _mapPeers) {
 				// Send Group media Subscription if not already sent
 				if (it.second->groupFirstReportSent && !it.second->mediaSubscriptionSent)
 					sendGroupMedia(it.second);
 
-				if (it.second->connected)
-					it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), _fragmentCounter);
+				if (it.second->mediaSubscriptionReceived && it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), _fragmentCounter) && (--nbPush == 0)) {
+					TRACE("Push limit (", groupParameters->pushLimit + 1, ") reached for fragment ", _fragmentCounter, " (mask=", Format<UInt8>("%.2x", 1 << (_fragmentCounter % 8)), ")")
+					break;
+				}
 			}
 
 			pos += splitCounter > 1 ? NETGROUP_MAX_PACKET_SIZE : (end - pos);
@@ -237,9 +240,12 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			id, marker, splitedNumber));
 
 		// Send fragment to peers (push mode)
+		UInt8 nbPush = groupParameters->pushLimit + 1;
 		for (auto it : _mapPeers) {
-			if (it != *itPeer && it.second->connected)
-				it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), id);
+			if (it != *itPeer && it.second->mediaSubscriptionReceived && it.second->sendMedia(itFragment->second.pBuffer.data(), itFragment->second.pBuffer.size(), id) && (--nbPush == 0)) {
+				TRACE("Push limit (", groupParameters->pushLimit + 1, ") reached for fragment ", id, " (mask=", Format<UInt8>("%.2x", 1 << (id % 8)), ")")
+				break;
+			}
 		}
 
 		if (marker == GroupStream::GROUP_MEDIA_DATA || marker == GroupStream::GROUP_MEDIA_START)
@@ -430,13 +436,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			sendGroupMedia(itPeer->second);
 
 		// If there are new peers : manage the best list
-		if (manageBestList) {
-			buildBestList(_myGroupAddress, _bestList);
-			if (_mapPeers.size() != _bestList.size())
-				INFO("Best Peer management - Peers connected : ", _mapPeers.size(), " ; new count : ", _bestList.size(), " ; Peers known : ", _mapGroupAddress.size())
-			manageBestConnections();
-			_lastBestCalculation.update();
-		}
+		if (manageBestList)
+			updateBestList();
 	};
 	onGroupPlayPush = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
@@ -557,7 +558,7 @@ void NetGroup::close() {
 		removePeer(itPeer);
 }
 
-void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const SocketAddress& address, RTMFP::AddressType addressType, const SocketAddress& hostAddress) {
+void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const SocketAddress& address, RTMFP::AddressType addressType, const SocketAddress& hostAddress, bool update) {
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	auto it = _mapHeardList.lower_bound(peerId);
@@ -570,6 +571,8 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 	_mapGroupAddress.emplace(GetGroupAddressFromPeerId(rawId, groupAddress), peerId);
 	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(rawId, groupAddress, address, addressType, hostAddress));
 	DEBUG("Peer ", it->first, " added to heard list")
+	if (update)
+		updateBestList();
 }
 
 bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PConnection> pPeer) {
@@ -585,7 +588,7 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PConnection> pPeer) {
 		ERROR("Unable to add the peer ", peerId, ", it already exists")
 		return false;
 	}
-	DEBUG("Adding the peer ", peerId, " to Best List")
+	DEBUG("Adding the peer ", peerId, " to the Best List")
 	_mapPeers.emplace_hint(it, peerId, pPeer);
 
 	pPeer->OnGroupMedia::subscribe(onGroupMedia);
@@ -620,7 +623,7 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE& itPeer) {
 	itPeer->second->OnGroupBegin::unsubscribe(onGroupBegin);
 	itPeer->second->OnFragment::unsubscribe(onFragment);
 	itPeer->second->OnPeerClose::unsubscribe(onPeerClose);
-	itPeer->second->resetGroup();
+	itPeer->second->isGroupDisconnected = true;
 
 	// If it is the current pull peer => increment
 	if (itPeer == _itPullPeer && getNextPeer(_itPullPeer, true, 0, 0) && itPeer == _itPullPeer)
@@ -647,14 +650,8 @@ void NetGroup::manage() {
 		return;
 
 	// Manage the Best list
-	if (_lastBestCalculation.isElapsed(1000)) {
-
-		buildBestList(_myGroupAddress, _bestList);
-		if (_mapPeers.size() != _bestList.size())
-			INFO("Best Peer management - Peers connected : ", _mapPeers.size(), " ; new count : ", _bestList.size(), " ; Peers known : ", _mapGroupAddress.size())
-		manageBestConnections();
-		_lastBestCalculation.update();
-	}
+	if (_lastBestCalculation.isElapsed(1000))
+		updateBestList();
 
 	// Send the Fragments Map message
 	UInt64 lastFragment(0);
@@ -712,6 +709,15 @@ void NetGroup::manage() {
 		sendPullRequests();
 		_lastPullUpdate.update();
 	}
+}
+
+void NetGroup::updateBestList() {
+
+	buildBestList(_myGroupAddress, _bestList);
+	if (_mapPeers.size() != _bestList.size())
+		INFO("Best Peer management - Peers connected : ", _mapPeers.size(), " ; new count : ", _bestList.size(), " ; Peers known : ", _mapGroupAddress.size())
+		manageBestConnections();
+	_lastBestCalculation.update();
 }
 
 void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) {
@@ -1098,7 +1104,7 @@ bool NetGroup::readAddress(PacketReader& packet, UInt16 size, UInt32 targetCount
 
 	// New Peer ID & address not null => we add it to heard list and connect to him if possible
 	if (peerAddress) {
-		addPeer2HeardList(newPeerId.c_str(), rawId.data(), peerAddress, peerType, hostAddress);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
+		addPeer2HeardList(newPeerId.c_str(), rawId.data(), peerAddress, peerType, hostAddress, false);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 		return true;
 	}
 	return false;

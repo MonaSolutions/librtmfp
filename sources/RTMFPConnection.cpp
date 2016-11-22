@@ -96,7 +96,7 @@ RTMFPFlow* RTMFPConnection::createSpecialFlow(Exception& ex, UInt64 id, const st
 	}
 	else if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
 		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(pStream, true);
+		_pMainStream->addStream(pStream, true); // TODO: see if it is really a GroupStream
 		return new RTMFPFlow(id, signature, pStream, poolBuffers(), *this);
 	}
 	else {
@@ -150,7 +150,7 @@ shared_ptr<P2PConnection> RTMFPConnection::createP2PConnection(const char* peerI
 	INFO("Connecting to peer ", peerId, "...")
 
 	lock_guard<recursive_mutex> lock(_mutexConnections);
-	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, address, addressType, responder));
+	shared_ptr<P2PConnection> pPeerConnection(new P2PConnection(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, address, addressType, responder, (bool)_group));
 	
 	if (responder)
 		pPeerConnection->setTag(streamOrTag);
@@ -172,7 +172,7 @@ void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName) {
 	// Add the connection request to the queue
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 	if (pPeer)
-		_waitingPeers.push_back(pPeer->tag());
+		_waitingPeers.emplace(pPeer->tag());
 }
 
 void RTMFPConnection::connect2Peer(const char* peerId, const char* streamName, const string& rawId, const SocketAddress& address, RTMFP::AddressType addressType, const SocketAddress& hostAddress) {
@@ -540,6 +540,8 @@ bool RTMFPConnection::handleP2PHandshake(Exception& ex, BinaryReader& reader) {
 	// Delete the temporary pointer
 	_mapPeersByTag.erase(it);
 	itAddress->second->initiatorHandshake70(ex, reader, _outAddress);
+	if (_group)
+		_group->addPeer2HeardList(itAddress->second->peerId, itAddress->second->rawId.data(), itAddress->first, RTMFP::ADDRESS_PUBLIC, itAddress->second->hostAddress(), true);
 	return !ex;
 }
 
@@ -576,6 +578,7 @@ bool RTMFPConnection::sendP2pRequests(Exception& ex, BinaryReader& reader) {
 	}
 
 	SocketAddress address;
+	// TODO: save each address into the P2PConnection 
 	while (reader.available() && *reader.current() != 0xFF) {
 		UInt8 addressType = reader.read8();
 		RTMFP::ReadAddress(reader, address, addressType);
@@ -967,26 +970,6 @@ void RTMFPConnection::sendGroupConnection(const string& netGroup) {
 	_pGroupWriter->flush();
 }
 
-void RTMFPConnection::addPeer2HeardList(const SocketAddress& peerAddress, const SocketAddress& hostAddress, const string& peerId, const char* rawId) {
-	if (_group)
-		_group->addPeer2HeardList(peerId, rawId, peerAddress, RTMFP::ADDRESS_PUBLIC, hostAddress); // Inform the NetGroup about the new peer
-
-	// If there is a waiting connexion to that peer, destroy it
-	lock_guard<recursive_mutex> lock(_mutexConnections);
-	for (auto it = _mapPeersByTag.begin(); it != _mapPeersByTag.end(); it++) {
-		if (it->second->peerId == peerId) {
-			for (auto itWait = _waitingPeers.begin(); itWait != _waitingPeers.end(); itWait++) {
-				if (*itWait == it->first) {
-					_waitingPeers.erase(itWait);
-					break;
-				}
-			}
-			_mapPeersByTag.erase(it);
-			break;
-		}
-	}
-}
-
 bool RTMFPConnection::addPeer2Group(const SocketAddress& peerAddress, const string& peerId) {
 	if (_group) {
 		auto it = _mapPeersByAddress.find(peerAddress);
@@ -997,9 +980,33 @@ bool RTMFPConnection::addPeer2Group(const SocketAddress& peerAddress, const stri
 			// Inform the NetGroup about the new peer
 			if (!_group->addPeer(peerId, it->second))
 				return false;
-			it->second->setGroup(_group);
 			return true;
 		}
 	}
 	return false;
+}
+
+void RTMFPConnection::onPeerConnect(const SocketAddress& peerAddress, const SocketAddress& hostAddress, const string& peerId, const char* rawId, const string& tag) {
+	if (_group)
+		_group->addPeer2HeardList(peerId, rawId, peerAddress, RTMFP::ADDRESS_PUBLIC, hostAddress, true); // Inform the NetGroup about the new peer
+
+	// If there is a waiting connexion to that peer, destroy it (TODO: check this code)
+	lock_guard<recursive_mutex> lock(_mutexConnections);
+	auto itTag = _mapPeersByTag.find(tag);
+	if (itTag != _mapPeersByTag.end()) {
+		_mapPeersByTag.erase(itTag);
+		auto it = _waitingPeers.find(tag);
+		if (it != _waitingPeers.end())
+			_waitingPeers.erase(it);
+	}
+}
+
+const string& RTMFPConnection::groupIdHex(){ 
+	FATAL_ASSERT(_group)
+	return _group->idHex;
+}
+
+const string& RTMFPConnection::groupIdTxt() { 
+	FATAL_ASSERT(_group)
+	return _group->idTxt;
 }

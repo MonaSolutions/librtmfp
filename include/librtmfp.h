@@ -43,7 +43,7 @@ LIBRTMFP_API typedef struct RTMFPGroupConfig {
 	unsigned int	windowDuration; // 8000 by default, it is the time (in msec) to bufferize and keep fragments available
 	unsigned int	relayMargin; // 2000 by default, it is additional time (in msec) to keep the fragments available
 	unsigned int	fetchPeriod; // 2500 by default, it is the time (in msec) before trying to fetch the missing fragments
-	short			pushLimit; // 5 by default
+	unsigned short	pushLimit; // 4 by default, it is the number of neighbors (-1) to which we want to push fragments
 } RTMFPGroupConfig;
 
 LIBRTMFP_API typedef struct RTMFPConfig {
