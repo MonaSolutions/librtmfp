@@ -26,6 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include <set>
 
 #define COOKIE_SIZE	0x40
+#define PEER_LIST_ADDRESS_TYPE	std::map<Mona::SocketAddress, RTMFP::AddressType>
 
 namespace P2PEvents {
 	struct OnPeerClose : Mona::Event<void(const std::string& peerId, Mona::UInt8 mask, bool full)> {}; // notify parent that the peer is closing (update the NetGroup push flags)
@@ -50,8 +51,8 @@ class P2PConnection : public FlowManager,
 	public P2PEvents::OnPeerClose {
 	friend class RTMFPConnection;
 public:
-	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const Mona::SocketAddress& hostAddress, 
-		RTMFP::AddressType addressType, bool responder, bool group);
+	P2PConnection(RTMFPConnection* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const PEER_LIST_ADDRESS_TYPE& addresses,
+		const Mona::SocketAddress& host, bool responder, bool group);
 
 	virtual ~P2PConnection();
 
@@ -109,6 +110,9 @@ public:
 	// Update the host address of the peer
 	void updateHostAddress(const Mona::SocketAddress& address);
 
+	// Set the output address for next sending
+	void setOutAddress(const Mona::SocketAddress& address);
+
 	/*** NetGroup functions ***/
 
 	// Update the Group Fragments map
@@ -152,6 +156,10 @@ public:
 	// Add a fragment to the blacklist of pull to avoid a new pull request for this peer
 	void addPullBlacklist(Mona::UInt64 idFragment);
 
+	// Read addresses and add peer to heard list if needed
+	// return : True if at least an address has been read
+	static bool	ReadAddresses(Mona::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Mona::SocketAddress& hostAddress);
+
 	/*** Public members ***/
 
 	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
@@ -167,7 +175,6 @@ public:
 	bool							groupFirstReportSent; // True if the first group report has been sent
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
-	RTMFP::AddressType				peerType; // Address Type (Local or Public) of the peer
 	bool							isGroupDisconnected; // True if the group connection has been disconnected (group writer consumed)
 
 protected:
@@ -226,6 +233,8 @@ private:
 	Mona::UInt64					_lastIdSent; // Last ID sent in the Fragments map
 
 	std::set<Mona::UInt64>			_setPullBlacklist; // set of fragments blacklisted for pull requests to this peer
+
+	PEER_LIST_ADDRESS_TYPE			_knownAddresses; // list of known addresses of the peer
 
 	FlashConnection::OnGroupHandshake::Type				onGroupHandshake; // Received when a connected peer send us the Group hansdhake (only for P2PConnection)
 };

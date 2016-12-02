@@ -30,13 +30,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_MAX_PACKET_SIZE		959
 #define MAX_FRAGMENT_MAP_SIZE			1024
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
+#define NETGROUP_BEST_LIST_DELAY		1000	// delay between each best list calculation (in msec)
+#define NETGROUP_REPORT_DELAY			10000	// delay between each NetGroup Report (in msec)
 #define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
 #define NETGROUP_PULL_DELAY				100		// delay between each pull request (in msec)
 #define NETGROUP_PEER_TIMEOUT			300000	// number of seconds since the last report known before we delete a peer from the heard list
 
 class MediaPacket;
 class GroupNode;
-class P2PConnection;
 struct RTMFPGroupConfig;
 class NetGroup : public virtual Mona::Object {
 public:
@@ -56,7 +57,7 @@ public:
 
 	// Add a peer to the Heard List
 	// param update : if set to True we will recalculate the best list after
-	void addPeer2HeardList(const std::string& peerId, const char* rawId, const Mona::SocketAddress& address, RTMFP::AddressType addressType, const Mona::SocketAddress& hostAddress, bool update);
+	void addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& hostAddress, bool update, Mona::UInt64 timeElapsed=0);
 
 	// Add a peer to the NetGroup map
 	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
@@ -126,10 +127,6 @@ private:
 	// Connect and disconnect peers to fit the best list
 	void	manageBestConnections();
 
-	// Read addresses and add peer to heard list if needed
-	// return : True if a new peer has been discovered (to redo the best list calculation)
-	bool	readAddress(Mona::PacketReader& packet, Mona::UInt16 size, Mona::UInt32 targetCount, const std::string& newPeerId, const std::string& rawId);
-
 	// Go to the next peer for pull or push
 	// idFragment : if > 0 it will test the availability of the fragment
 	// ascending : order of the research
@@ -169,6 +166,7 @@ private:
 	Mona::Time												_lastReport; // last Report Message calculation
 	Mona::Time												_lastFragmentsMap; // last Fragments Map Message calculation
 	Mona::Buffer											_reportBuffer; // Buffer for reporting messages
+	MAP_PEERS_ITERATOR_TYPE									_itFragmentsPeer; // Current peer for fragments map requests
 
 	// Pushers calculation
 	bool														_firstPushMode; // True if no play push mode have been send for now

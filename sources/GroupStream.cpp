@@ -113,10 +113,10 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 		case GroupStream::GROUP_MEDIA_DATA: {
 
 			UInt64 counter = packet.read7BitLongValue();
-			DEBUG("GroupStream ", id, " - Group media message 20 : counter=", counter)
 			
 			UInt8 mediaType = packet.read8();
 			time = packet.read32();
+			DEBUG("GroupStream ", id, " - Group media normal : counter=", counter, ", time=", time, ", type=", (mediaType == AMF::AUDIO ? "Audio" : (mediaType == AMF::VIDEO ? "Video" : "Unknown")))
 			OnFragment::raise(_peerId, type, counter, 0, mediaType, time, packet, lostRate);
 			if (mediaType != AMF::AUDIO && mediaType != AMF::VIDEO)
 				return FlashStream::process(packet, writer, lostRate); // recursive call, can be invocation or other
@@ -130,7 +130,7 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 				mediaType = packet.read8();
 			time = packet.read32();
 
-			DEBUG("GroupStream ", id, " - Group ", (mediaType == AMF::AUDIO ? "Audio" : (mediaType == AMF::VIDEO ? "Video" : "Unknown")), " Start Splitted media : counter=", counter, ", time=", time, ", splitNumber=", splitNumber)
+			DEBUG("GroupStream ", id, " - Group media start : counter=", counter, ", time=", time, ", splitNumber=", splitNumber, ", type=", (mediaType == AMF::AUDIO ? "Audio" : (mediaType == AMF::VIDEO ? "Video" : "Unknown")))
 			if (mediaType == AMF::AUDIO || mediaType == AMF::VIDEO)
 				OnFragment::raise(_peerId, type, counter, splitNumber, mediaType, time, packet, lostRate);
 			else // TODO: Support other types (functions) with splitted fragments
@@ -141,15 +141,15 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 
 			UInt64 counter = packet.read7BitLongValue();
 			UInt8 splitNumber = packet.read8(); // counter of the splitted sequence
-			DEBUG("GroupStream ", id, " - Group next Splitted media : counter=", counter, ", splitNumber=", splitNumber)
+			DEBUG("GroupStream ", id, " - Group media next : counter=", counter, ", splitNumber=", splitNumber)
 			OnFragment::raise(_peerId, type, counter, splitNumber, 0, 0, packet, lostRate);
 			break;
 		}
 		case GroupStream::GROUP_MEDIA_END: { // End of a splitted media sequence
 
 			UInt64 counter = packet.read7BitLongValue();
-			DEBUG("GroupStream ", id, " - Group End splitted media : counter=", counter)
-			OnFragment::raise(_peerId, type, counter, 1, 0, 0, packet, lostRate);
+			DEBUG("GroupStream ", id, " - Group media end : counter=", counter)
+			OnFragment::raise(_peerId, type, counter, 0, 0, 0, packet, lostRate);
 			break;
 		}
 

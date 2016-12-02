@@ -32,16 +32,14 @@ using namespace std;
 
 UInt32 P2PConnection::P2PSessionCounter = 2000000;
 
-P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const SocketAddress& hostAddress, 
-		RTMFP::AddressType addressType, bool responder, bool group) :
+P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, const PEER_LIST_ADDRESS_TYPE& addresses,
+	const SocketAddress& host, bool responder, bool group) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), _parent(parent), _sessionId(++P2PSessionCounter), attempt(0), _rawResponse(false), _pListener(NULL), _groupBeginSent(false), mediaSubscriptionSent(false),
 	_lastIdSent(0), _pushOutMode(0), pushInMode(0), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), groupReportInitiator(false), _groupConnectSent(false), _idMediaReportFlow(0), _isGroup(group),
-	isGroupDisconnected(false), groupFirstReportSent(false), mediaSubscriptionReceived(false), peerType(addressType), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _hostAddress(hostAddress) {
+	isGroupDisconnected(false), groupFirstReportSent(false), mediaSubscriptionReceived(false), _hostAddress(host), _knownAddresses(addresses), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
 	};
-
-	_outAddress = _targetAddress = hostAddress; // update addresses
 
 	_tag.resize(16);
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
@@ -60,7 +58,7 @@ P2PConnection::P2PConnection(RTMFPConnection* parent, string id, Invoker* invoke
 }
 
 P2PConnection::~P2PConnection() {
-	DEBUG("Deletion of P2PConnection ", peerId)
+	DEBUG("Deletion of P2PConnection ", peerId, "(", _outAddress.toString(),")")
 
 	_pMainStream->OnGroupMedia::unsubscribe((OnGroupMedia&)*this);
 	_pMainStream->OnGroupReport::unsubscribe((OnGroupReport&)*this);
@@ -75,6 +73,8 @@ P2PConnection::~P2PConnection() {
 }
 
 void P2PConnection::close(bool full) {
+	if (_died)
+		return;
 
 	closeGroup(full);
 
@@ -93,9 +93,16 @@ UDPSocket&	P2PConnection::socket() {
 	return _parent->socket(); 
 }
 
-void P2PConnection::updateHostAddress(const Mona::SocketAddress& address) { 
-	DEBUG("Updating host address of peer ", peerId, " to ", address.toString())
-	_hostAddress = address;
+void P2PConnection::updateHostAddress(const Mona::SocketAddress& address) {
+	if (_hostAddress != address) {
+		DEBUG("Updating host address of peer ", peerId, " to ", address.toString())
+		_hostAddress = address;
+	}
+}
+
+void P2PConnection::setOutAddress(const Mona::SocketAddress& address) {
+	if (_outAddress != address)
+		_outAddress = address;
 }
 
 RTMFPFlow* P2PConnection::createSpecialFlow(Exception& ex, UInt64 id, const string& signature) {
@@ -164,7 +171,9 @@ void P2PConnection::manageHandshake(Exception& ex, BinaryReader& reader) {
 	case 0x78:
 		initiatorHandshake2(ex, reader); break;
 	case 0x70:
-		DEBUG("Unexpected p2p handshake type 70 (possible repeated request)")
+		// special case, we have sent handshake 70 and we receive handshake 70, notify the parent
+		TRACE("Unexpected p2p handshake type 70 (possible double sessions)")
+		_parent->onP2PHandshake70(ex, reader, _outAddress);
 		break;
 	default:
 		ex.set(Exception::PROTOCOL, "Unexpected p2p handshake type : ", Format<UInt8>("%.2x", (UInt8)type));
@@ -202,7 +211,7 @@ void P2PConnection::responderHandshake0(Exception& ex, string tag, const SocketA
 
 void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 
-	if (_handshakeStep > 1) {
+	if (_responder && _handshakeStep > 1) {
 		DEBUG("Handshake message ignored, we have already received handshake 38 (step : ", _handshakeStep, ")")
 		return;
 	}
@@ -235,7 +244,7 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 	if (peerId == "unknown")
 		rawId.append(STR id, PEER_ID_SIZE);
 	DEBUG("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
-	_parent->onPeerConnect(_outAddress, _hostAddress, peerId, rawId.data(), _tag);
+	_parent->onPeerConnect(_knownAddresses, _hostAddress, peerId, rawId.data(), _outAddress);
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -277,9 +286,30 @@ void P2PConnection::responderHandshake1(Exception& ex, BinaryReader& reader) {
 
 	_handshakeStep = 2;
 	_parent->addPeer2Group(_outAddress, peerId); // TODO: see if we must check the result
+
+	// We are intiator but have received handshake 38, try to send the next RTMFP message
+	if (!_responder) {
+		DEBUG("We have received handshake 38 but we are initiator, sending next message...")
+		connected = true;
+		if (_isGroup)
+			sendGroupPeerConnect();
+		else {
+			// Start playing
+			INFO("Sending play request to peer for stream '", _streamName, "'")
+			string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
+			new RTMFPWriter(FlashWriter::OPENED, signature, *this); // writer is automatically associated to _pNetStreamWriter
+			AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation("play", true);
+			amfWriter.amf0 = true; // Important for p2p unicast play
+			amfWriter.writeString(_streamName.c_str(), _streamName.size());
+			_pNetStreamWriter->flush();
+		}
+	}
 }
 
 void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, const SocketAddress& address) {
+
+	if (_knownAddresses.find(address) == _knownAddresses.end())
+		_knownAddresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
 
 	if (_handshakeStep > 1) {
 		WARN("Handshake 70 already received, ignored")
@@ -341,42 +371,44 @@ void P2PConnection::initiatorHandshake70(Exception& ex, BinaryReader& reader, co
 }
 
 bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
-
+	
 	if (_handshakeStep > 2) {
 		WARN("Handshake 78 already received, ignored")
 		return true;
-	}
+	} else if(!_responder) {
 
-	_farId = reader.read32(); // session Id
-	UInt8 nonceSize = reader.read8();
-	if (nonceSize != 0x49) {
-		ex.set(Exception::PROTOCOL, "Unexpected nonce size : ", nonceSize, " (expected 73)");
-		return false;
-	}
-	reader.read(nonceSize, _farNonce);
-	_farNonce.resize(nonceSize);
-	if (String::ICompare(_farNonce, "\x03\x1A\x00\x00\x02\x1E\x00\x41\0E", 9) != 0) {
-		ex.set(Exception::PROTOCOL, "Incorrect responder nonce : ", _farNonce);
-		return false;
-	}
+		_farId = reader.read32(); // session Id
+		UInt8 nonceSize = reader.read8();
+		if (nonceSize != 0x49) {
+			ex.set(Exception::PROTOCOL, "Unexpected nonce size : ", nonceSize, " (expected 73)");
+			return false;
+		}
+		reader.read(nonceSize, _farNonce);
+		_farNonce.resize(nonceSize);
+		if (String::ICompare(_farNonce, "\x03\x1A\x00\x00\x02\x1E\x00\x41\0E", 9) != 0) {
+			ex.set(Exception::PROTOCOL, "Incorrect responder nonce : ", _farNonce);
+			return false;
+		}
 
-	UInt8 endByte = reader.read8();
-	if (endByte != 0x58) {
-		ex.set(Exception::PROTOCOL, "Unexpected end of handshake 2 : ", endByte);
-		return false;
-	}
+		UInt8 endByte = reader.read8();
+		if (endByte != 0x58) {
+			ex.set(Exception::PROTOCOL, "Unexpected end of handshake 2 : ", endByte);
+			return false;
+		}
 
-	// Compute P2P keys for decryption/encryption (TODO: refactorize key computing)
-	string initiatorNonce((const char*)_nonce.data(), _nonce.size());
-	if (!_parent->computeKeys(ex, _farKey, initiatorNonce, BIN _farNonce.data(), nonceSize, _sharedSecret, _pDecoder, _pEncoder, false))
-		return false;
+		// Compute P2P keys for decryption/encryption (TODO: refactorize key computing)
+		string initiatorNonce((const char*)_nonce.data(), _nonce.size());
+		if (!_parent->computeKeys(ex, _farKey, initiatorNonce, BIN _farNonce.data(), nonceSize, _sharedSecret, _pDecoder, _pEncoder, false))
+			return false;
 
-	DUMP("RTMFP", _nonce.data(), _nonce.size(), "Initiator Nonce  :")
-	DUMP("RTMFP", BIN _farNonce.data(), _farNonce.size(), "Responder Nonce :")
+		DUMP("RTMFP", _nonce.data(), _nonce.size(), "Initiator Nonce  :")
+		DUMP("RTMFP", BIN _farNonce.data(), _farNonce.size(), "Responder Nonce :")
 
+		_parent->addPeer2Group(_outAddress, peerId);
+	} else
+		DEBUG("We have received handshake 78 but we are responder, sending next message...")
 	_handshakeStep = 3;
 	connected = true;
-	_parent->addPeer2Group(_outAddress, peerId);
 	NOTE("P2P Connection ", _sessionId, " is now connected to ", peerId)
 
 	if (_isGroup)
@@ -390,7 +422,7 @@ bool P2PConnection::initiatorHandshake2(Exception& ex, BinaryReader& reader) {
 		amfWriter.amf0 = true; // Important for p2p unicast play
 		amfWriter.writeString(_streamName.c_str(), _streamName.size());
 		_pNetStreamWriter->flush();
-	}	
+	}
 	return true;
 }
 
@@ -512,7 +544,6 @@ void P2PConnection::sendGroupMedia(const string& stream, const UInt8* data, UInt
 	mediaSubscriptionSent = true;
 }
 
-// TODO: see if necessary (seems just a sendRaw)
 void P2PConnection::sendGroupReport(const UInt8* data, UInt32 size) {
 
 	if (!_pReportWriter) {
@@ -635,7 +666,7 @@ bool P2PConnection::hasFragment(UInt64 index) {
 
 void P2PConnection::sendPull(UInt64 index) {
 	if (_pMediaReportWriter) {
-		DEBUG("Sending pull request for fragment ", index, " to peer ", peerId);
+		TRACE("Sending pull request for fragment ", index, " to peer ", peerId);
 		_pMediaReportWriter->writeGroupPull(index);
 	}
 }
@@ -683,4 +714,28 @@ void P2PConnection::sendGroupPeerConnect() {
 void P2PConnection::addPullBlacklist(UInt64 idFragment) {
 	// TODO: delete old blacklisted fragments
 	_setPullBlacklist.emplace(idFragment);
+}
+
+bool P2PConnection::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, SocketAddress& hostAddress) {
+
+	// Read all addresses
+	SocketAddress address;
+	while (reader.available()) {
+
+		UInt8 addressType = reader.read8();
+		RTMFP::ReadAddress(reader, address, addressType);
+		if (address.family() == IPAddress::IPv4) { // TODO: Handle ivp6
+
+			switch (addressType & 0x0F) {
+			case RTMFP::ADDRESS_LOCAL:
+			case RTMFP::ADDRESS_PUBLIC:
+				addresses.emplace(address, (RTMFP::AddressType)addressType);
+				break;
+			case RTMFP::ADDRESS_REDIRECTION:
+				hostAddress = address; break;
+			}
+			TRACE("IP Address : ", address.toString(), " - type : ", addressType)
+		}
+	}
+	return !addresses.empty();
 }

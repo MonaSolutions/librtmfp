@@ -44,7 +44,7 @@ public:
 	void connect2Peer(const char* peerId, const char* streamName);
 
 	// Connect to a peer directly and start playing streamName (Called by NetGroup)
-	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const Mona::SocketAddress& address, RTMFP::AddressType addressType, const Mona::SocketAddress& hostAddress);
+	void connect2Peer(const char* peerId, const char* streamName, const std::string& rawId, const PEER_LIST_ADDRESS_TYPE& addresses, const Mona::SocketAddress& hostAddress);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	void connect2Group(const char* streamName, RTMFPGroupConfig* parameters);
@@ -95,7 +95,10 @@ public:
 	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
 
 	// Called by P2PConnection when the responder receive the caller peerId to update the group if needed
-	void onPeerConnect(const Mona::SocketAddress& peerAddress, const Mona::SocketAddress& hostAddress, const std::string& peerId, const char* rawId, const std::string& tag);
+	void onPeerConnect(const PEER_LIST_ADDRESS_TYPE& peerAddresses, const Mona::SocketAddress& hostAddress, const std::string& peerId, const char* rawId, const Mona::SocketAddress& address);
+
+	// Continue the initiated p2p connection, can be called by P2PConnection
+	bool onP2PHandshake70(Mona::Exception& ex, Mona::BinaryReader& reader, const Mona::SocketAddress& address);
 
 	// Called by P2PConnection when we are connected to the peer
 	bool addPeer2Group(const Mona::SocketAddress& peerAddress, const std::string& peerId);
@@ -173,9 +176,6 @@ protected:
 
 private:
 
-	// Finish the initiated p2p connection (when handshake 70 is received)
-	bool handleP2PHandshake(Mona::Exception& ex, Mona::BinaryReader& reader);
-
 	// Send the p2p requests to each available address
 	// TODO: see if we need to implement it
 	bool sendP2pRequests(Mona::Exception& ex, Mona::BinaryReader& reader);
@@ -199,7 +199,7 @@ private:
 	void sendGroupConnection(const std::string& netGroup);
 
 	// Create a P2PConnection
-	std::shared_ptr<P2PConnection> createP2PConnection(const char* peerId, const char* streamOrTag, const Mona::SocketAddress& address, RTMFP::AddressType addressType, bool responder);
+	std::shared_ptr<P2PConnection> createP2PConnection(const char* peerId, const char* streamOrTag, const PEER_LIST_ADDRESS_TYPE& addresses, const Mona::SocketAddress& host, bool responder);
 
 	Mona::Buffer													_pubKey; // Diffie Hellman public key for server and P2P handshakes
 
@@ -212,7 +212,8 @@ private:
 	std::recursive_mutex											_mutexConnections; // mutex for waiting connections (normal or p2p)
 
 	std::map<Mona::SocketAddress, std::shared_ptr<P2PConnection>>	_mapPeersByAddress; // P2P connections by Address
-	std::map<std::string, std::shared_ptr<P2PConnection>>			_mapPeersByTag; // Initiator connections waiting an answer (70 or 71)
+	std::map<std::string, std::shared_ptr<P2PConnection>>			_mapPeersById; // P2P connections by Id
+	std::map<std::string, std::shared_ptr<P2PConnection>>			_mapPeersByTag; // Temporary Initiator P2P connections waiting for an answer (70 or 71)
 
 	std::string														_url; // RTMFP url of the application (base handshake)
 	std::string														_rawUrl; // Header (420A) + Url to be sent in handshake 30

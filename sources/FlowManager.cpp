@@ -281,9 +281,11 @@ void FlowManager::receive(Exception& ex, BinaryReader& reader) {
 	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF;
 	bool answer = false;
 
-	// TODO: find a better place to determine that the connection is ON in P2P responder mode
-	if(!connected)
+	// Connection is ON in P2P responder mode
+	if (!connected) {
+		NOTE("P2PConnection ", name(), " is now connected")
 		connected = true;
+	}
 
 	// Can have nested queries
 	while (type != 0xFF) {
@@ -625,7 +627,7 @@ void FlowManager::sendHandshake0(const string& epd, const string& tag) {
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x30).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	flush(0x0B, writer.size());
-	_handshakeStep = 1; // TODO : see if we need to differentiate handshake steps for each type (basic and p2p)
+	_handshakeStep = 1;
 }
 
 void FlowManager::flushWriters() {
