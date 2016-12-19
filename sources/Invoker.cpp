@@ -64,14 +64,14 @@ bool Invoker::start() {
 	return result;
 }
 
-unsigned int Invoker::addConnection(std::shared_ptr<RTMFPConnection>& pConn) {
+unsigned int Invoker::addConnection(std::shared_ptr<RTMFPSession>& pConn) {
 	lock_guard<recursive_mutex>	lock(_mutexConnections);
 	_init = true;
 	_mapConnections.emplace(++_lastIndex, pConn);
 	return _lastIndex; // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
 }
 
-bool	Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPConnection>& pConn) {
+bool	Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& pConn) {
 	lock_guard<recursive_mutex>	lock(_mutexConnections);
 	auto it = _mapConnections.find(index);
 	if(it == _mapConnections.end()) {
@@ -111,7 +111,7 @@ void Invoker::manage() {
 	while(it != _mapConnections.end()) {
 		it->second->manage();
 
-		if (it->second->failed()) {
+		if (it->second->status == RTMFP::FAILED) {
 			int id = it->first;
 			it++;
 			removeConnection(id);

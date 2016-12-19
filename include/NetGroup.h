@@ -23,7 +23,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Mona.h"
 #include "FlashStream.h"
-#include "RTMFPConnection.h"
+#include "RTMFPSession.h"
 #include "GroupListener.h"
 #include <set>
 
@@ -50,33 +50,34 @@ public:
 		NETROUP_FETCH_PERIOD = 7
 	};
 
-	NetGroup(const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPConnection& conn, RTMFPGroupConfig* parameters);
+	NetGroup(const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters);
+
 	virtual ~NetGroup();
 
-	void close();
+	void			close();
 
 	// Add a peer to the Heard List
 	// param update : if set to True we will recalculate the best list after
-	void addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& hostAddress, bool update, Mona::UInt64 timeElapsed=0);
+	void			addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& hostAddress, bool update, Mona::UInt64 timeElapsed=0);
 
 	// Add a peer to the NetGroup map
-	bool addPeer(const std::string& peerId, std::shared_ptr<P2PConnection> pPeer);
+	bool			addPeer(const std::string& peerId, std::shared_ptr<P2PSession> pPeer);
 
 	// Remove a peer from the NetGroup map
-	void removePeer(const std::string& peerId);
+	void			removePeer(const std::string& peerId);
 
 	// Return True if the peer doesn't already exists
-	bool checkPeer(const std::string& peerId);
+	bool			checkPeer(const std::string& peerId);
 
 	// Send report requests (messages 0A, 22)
-	void manage();
+	void			manage();
 
 	// If the peer is connected send the group Media message to start read/write of the stream
-	void sendGroupMedia(std::shared_ptr<P2PConnection> pPeer);
+	void			sendGroupMedia(std::shared_ptr<P2PSession> pPeer);
 
 	// Call a function on the peer side
 	// return 0 if it fails, 1 otherwise
-	unsigned int callFunction(const char* function, int nbArgs, const char** args);
+	unsigned int	callFunction(const char* function, int nbArgs, const char** args);
 	
 	const std::string					idHex;	// Group ID in hex format
 	const std::string					idTxt;	// Group ID in plain text (without final zeroes)
@@ -84,56 +85,56 @@ public:
 	RTMFPGroupConfig*					groupParameters; // NetGroup parameters
 
 private:
-	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PConnection>>
-	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PConnection>>::iterator
-
-	// Calculate the estimation of the number of peers (this is the same as Flash NetGroup.estimatedMemberCount)
-	double estimatedPeersCount();
-
-	// Calculate the number of neighbors we must connect to (2*log2(N)+13)
-	Mona::UInt32 targetNeighborsCount();
+	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PSession>>
+	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PSession>>::iterator
 
 	// Return the Group Address calculated from a Peer ID
-	static const std::string& GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
+	static const std::string&	GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
 
-	void removePeer(MAP_PEERS_ITERATOR_TYPE& itPeer);
+	// Calculate the estimation of the number of peers (this is the same as Flash NetGroup.estimatedMemberCount)
+	double						estimatedPeersCount();
+
+	// Calculate the number of neighbors we must connect to (2*log2(N)+13)
+	Mona::UInt32				targetNeighborsCount();
+
+	void						removePeer(MAP_PEERS_ITERATOR_TYPE& itPeer);
 
 	// Erase old fragments (called before generating the fragments map)
-	void	eraseOldFragments();
+	void						eraseOldFragments();
 
 	// Update the fragment map
 	// Return 0 if there is no fragments, otherwise the last fragment number
-	Mona::UInt64	updateFragmentMap();
+	Mona::UInt64				updateFragmentMap();
 
 	// Build the Group Report for the peer in parameter
 	// Return false if the peer is not found
-	void	sendGroupReport(const MAP_PEERS_ITERATOR_TYPE& itPeer);
+	void						sendGroupReport(const MAP_PEERS_ITERATOR_TYPE& itPeer);
 
 	// Push an arriving fragment to the peers and write it into the output file (recursive function)
-	bool	pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator& itFragment);
+	bool						pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator& itFragment);
 
 	// Calculate the push play mode balance and send the requests if needed
-	void	sendPushRequests();
+	void						sendPushRequests();
 
 	// Send the Pull requests if needed
-	void	sendPullRequests();
+	void						sendPullRequests();
 
 	// Update our NetGroup Best List
-	void	updateBestList();
+	void						updateBestList();
 
 	// Calculate the Best list from a group address
-	void	buildBestList(const std::string& groupAddress, std::set<std::string>& bestList);
+	void						buildBestList(const std::string& groupAddress, std::set<std::string>& bestList);
 
 	// Connect and disconnect peers to fit the best list
-	void	manageBestConnections();
+	void						manageBestConnections();
 
 	// Go to the next peer for pull or push
 	// idFragment : if > 0 it will test the availability of the fragment
 	// ascending : order of the research
-	bool	getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment, Mona::UInt8 mask);
+	bool						getNextPeer(MAP_PEERS_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment, Mona::UInt8 mask);
 
 	// Send the fragment pull request to the next available peer
-	bool	sendPullToNextPeer(Mona::UInt64 idFragment);
+	bool						sendPullToNextPeer(Mona::UInt64 idFragment);
 
 	std::map<Mona::UInt64, MediaPacket>						_fragments;
 	std::map<Mona::UInt32, Mona::UInt64>					_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
@@ -159,7 +160,7 @@ private:
 	std::set<std::string>									_bestList; // Last best list calculated
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
-	RTMFPConnection&										_conn; // RTMFPConnection related to
+	RTMFPSession&											_conn; // RTMFPSession related to
 	Mona::Time												_lastPushUpdate; // last Play Push calculation
 	Mona::Time												_lastPullUpdate; // last Play Pull calculation
 	Mona::Time												_lastBestCalculation; // last Best list calculation

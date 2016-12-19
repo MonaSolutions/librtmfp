@@ -58,7 +58,7 @@ public:
 	void createStream(FlashWriter& writer);
 
 	// Send the setPeerInfo command to server
-	void sendPeerInfo(FlashWriter& writer,Mona::UInt16 port);
+	void sendPeerInfo(FlashWriter& writer, Mona::UInt16 port);
 
 	// Call a function on the server/peer
 	void callFunction(FlashWriter& writer, const char* function, int nbArgs, const char** args);

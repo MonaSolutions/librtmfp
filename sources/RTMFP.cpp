@@ -102,3 +102,27 @@ void RTMFP::Write7BitValue(string& buff,UInt64 value) {
 	}
 	String::Append(buff, (char)(max ? value&0xFF : value&0x7F));
 }
+
+bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, SocketAddress& hostAddress) {
+
+	// Read all addresses
+	SocketAddress address;
+	while (reader.available()) {
+
+		UInt8 addressType = reader.read8();
+		RTMFP::ReadAddress(reader, address, addressType);
+		if (address.family() == IPAddress::IPv4) { // TODO: Handle ivp6
+
+			switch (addressType & 0x0F) {
+			case RTMFP::ADDRESS_LOCAL:
+			case RTMFP::ADDRESS_PUBLIC:
+				addresses.emplace(address, (RTMFP::AddressType)addressType);
+				break;
+			case RTMFP::ADDRESS_REDIRECTION:
+				hostAddress = address; break;
+			}
+			TRACE("IP Address : ", address.toString(), " - type : ", addressType)
+		}
+	}
+	return !addresses.empty();
+}

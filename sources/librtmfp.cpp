@@ -21,7 +21,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "librtmfp.h"
 #include "Mona/Exceptions.h"
-#include "RTMFPConnection.h"
+#include "RTMFPSession.h"
 #include "Mona/Logs.h"
 #include "Mona/String.h"
 #include "Invoker.h"
@@ -90,7 +90,7 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	Util::UnpackUrl(url, host, publication, query);
 
 	Exception ex;
-	shared_ptr<RTMFPConnection> pConn(new RTMFPConnection(GlobalInvoker.get(), parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
+	shared_ptr<RTMFPSession> pConn(new RTMFPSession(GlobalInvoker.get(), parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
 	if (!pConn->connect(ex, url, host.c_str())) {
 		ERROR("Error in connect : ", ex.error())
@@ -113,7 +113,7 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 
 int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName) {
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (pConn)
 		pConn->connect2Peer(peerId, streamName);
@@ -123,13 +123,13 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 
 int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters) {
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (pConn)
 		pConn->connect2Group(streamName, parameters);
 
 	if (parameters->isPublisher > 0)
-		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
+		pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
 
 	if (parameters->isBlocking && parameters->isPublisher) {
 		while (!pConn->publishReady) {
@@ -144,10 +144,10 @@ int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFP
 
 int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if (pConn) {
-		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PLAY, streamName);
+		pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PLAY, streamName);
 		return 1;
 	}
 
@@ -156,12 +156,12 @@ int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 
 int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if (!pConn)
 		return 0;
 	
-	pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH, streamName, audioReliable>0, videoReliable>0);
+	pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PUBLISH, streamName, audioReliable>0, videoReliable>0);
 
 	if (blocking) {
 		while (!pConn->publishReady) {
@@ -176,12 +176,12 @@ int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned sh
 
 int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (!pConn)
 		return 0;
 
-	pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_PUBLISH_P2P, streamName, audioReliable > 0, videoReliable > 0);
+	pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PUBLISH_P2P, streamName, audioReliable > 0, videoReliable > 0);
 
 	if (blocking) {
 		while (!pConn->p2pPublishReady) {
@@ -196,10 +196,10 @@ int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned
 
 int RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if(pConn) {
-		pConn->addCommand(RTMFPConnection::CommandType::NETSTREAM_CLOSE, streamName);
+		pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_CLOSE, streamName);
 		return 1;
 	}
 
@@ -223,7 +223,7 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 		return -1;
 	}
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if (pConn) {
 		UInt32 total = 0;
@@ -250,7 +250,7 @@ int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 		return -1;
 	}
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if (pConn) {
 		int pos = 0;
@@ -268,7 +268,7 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 			return -1;
 	}
 
-	shared_ptr<RTMFPConnection> pConn;
+	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (!pConn)
 		return 0;

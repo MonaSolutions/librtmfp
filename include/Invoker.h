@@ -19,9 +19,11 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#pragma once
+
 #include "Mona/SocketManager.h"
 #include "Mona/TerminateSignal.h"
-#include "RTMFPConnection.h"
+#include "RTMFPSession.h"
 
 #define DELAY_CONNECTIONS_MANAGER	50 // Delay between each onManage (in msec)
 
@@ -47,9 +49,9 @@ public:
 	// Start the socket manager if not started
 	bool			start();
 
-	unsigned int	addConnection(std::shared_ptr<RTMFPConnection>& pConn);
+	unsigned int	addConnection(std::shared_ptr<RTMFPSession>& pConn);
 
-	bool			getConnection(unsigned int index, std::shared_ptr<RTMFPConnection>& pConn);
+	bool			getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& pConn);
 
 	void			removeConnection(unsigned int index);
 
@@ -70,5 +72,5 @@ private:
 	int												_lastIndex; // last index of connection
 
 	std::recursive_mutex							_mutexConnections;
-	std::map<int, std::shared_ptr<RTMFPConnection>>	_mapConnections;
+	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;
 };

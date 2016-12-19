@@ -29,8 +29,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-Publisher::Publisher(const string& name, Invoker& invoker, bool audioReliable, bool videoReliable) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),
-	_audioReliable(audioReliable), _videoReliable(videoReliable), _audioCodecBuffer(invoker.poolBuffers), _videoCodecBuffer(invoker.poolBuffers),
+Publisher::Publisher(const string& name, Invoker& invoker, bool audioReliable, bool videoReliable, bool p2p) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),
+	_audioReliable(audioReliable), _videoReliable(videoReliable), _audioCodecBuffer(invoker.poolBuffers), _videoCodecBuffer(invoker.poolBuffers), isP2P(p2p),
 	_pos(0), _invoker(invoker), Task((TaskHandler&)invoker) {
 
 	INFO("Initialization of the publisher ", _name, " (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")")

@@ -22,13 +22,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "Publisher.h"
-#include "BandWriter.h"
-#include "RTMFP.h"
 #include "FlashConnection.h"
-#include "Mona/Signal.h"
-#include "Mona/DiffieHellman.h"
-#include "Mona/UDPSocket.h"
-#include "RTMFPSender.h"
+#include "RTMFPConnection.h"
 
 // Callback typedef definitions
 typedef void(*OnStatusEvent)(const char*, const char*);
@@ -37,12 +32,14 @@ typedef void(*OnSocketError)(const char*);
 
 class Invoker;
 class RTMFPFlow;
+class RTMFPWriter;
+class FlashListener;
 /**************************************************
 FlowManager is an abstract class used to manage 
 lists of RTMFPFlow and RTMFPWriter
-It is the base class of RTMFPConnection and P2PConnection
+It is the base class of RTMFPSession and P2PSession
 */
-class FlowManager : public BandWriter {
+class FlowManager : public virtual Mona::Object {
 public:
 	FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
@@ -57,160 +54,108 @@ public:
 	};
 
 	// Add a command to the main stream (play/publish)
-	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
+	virtual void					addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
 
-	// Compute keys and init encoder and decoder
-	bool computeKeys(Mona::Exception& ex, const std::string& farPubKey, const std::string& initiatorNonce, const Mona::UInt8* responderNonce, Mona::UInt32 responderNonceSize, Mona::Buffer& sharedSecret, std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<RTMFPEngine>& pEncoder, bool isResponder=true);
+	// Return the name of the session
+	virtual const std::string&		name() = 0;
 
-	// Latency = ping / 2
-	Mona::UInt16							latency() { return (_ping >> 1); }
+	// Return the tag for this session (for RTMFPConnection)
+	const std::string&				tag() { return _tag; }
 
-	virtual Mona::UDPSocket&				socket() = 0;
+	// Return the url or peerId of the session (for RTMFPConnection)
+	virtual const std::string&		epd() = 0;
 
-	/******* Internal functions for writers *******/
-	virtual Mona::BinaryWriter&				writeMessage(Mona::UInt8 type, Mona::UInt16 length, RTMFPWriter* pWriter = NULL);
+	// Return the id of the session (p2p or normal)
+	const Mona::UInt32				sessionId() { return _sessionId; }
 
-	virtual void							initWriter(const std::shared_ptr<RTMFPWriter>& pWriter);
+	RTMFP::SessionStatus			status; // Session status (stopped, connecting, connected or failed)
 
-	virtual const Mona::PoolBuffers&		poolBuffers();
-
-	virtual bool							failed() const { return _died; }
-
-	virtual bool							canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
-
-	virtual void							flush() { flush(connected, connected? 0x89 : 0x0B); }
-
-	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer);
-
-	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature);
-
-	// Return the size available in the current sender (or max size if there is no current sender)
-	virtual Mona::UInt32					availableToWrite() { return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); }
-
-protected:
+	// Subscribe to all events of the connection and add it to the list of known addresses
+	virtual void					subscribe(std::shared_ptr<RTMFPConnection>& pConnection);
 
 	// Read data asynchronously
 	// peerId : id of the peer if it is a p2p connection, otherwise parameter is ignored
-	bool						readAsync(const std::string& peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+	bool							readAsync(const std::string& peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+
+	// Latency (ping / 2)
+	Mona::UInt16					latency();
+
+protected:
 
 	// Analyze packets received from the server (must be connected)
-	void						receive(Mona::Exception& ex, Mona::BinaryReader& reader);
+	void						receive(Mona::BinaryReader& reader);
 
-	// Handle play request (only for P2PConnection)
+	// Handle play request (only for P2PSession)
 	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
 	
 	// Handle a 0C Message
-	virtual void handleProtocolFailed() = 0;
+	virtual void				handleProtocolFailed() = 0;
+
+	// Handle a new writer creation
+	virtual void				handleNewWriter(std::shared_ptr<RTMFPWriter>& pWriter) = 0;
 
 	// Handle a Writer close message (type 5E)
-	virtual void				handleWriterFailed(RTMFPWriter* pWriter) = 0;
+	virtual void				handleWriterFailed(std::shared_ptr<RTMFPWriter>& pWriter) = 0;
 
-	// Handle a P2P address exchange message (Only for RTMFPConnection)
-	virtual void				handleP2PAddressExchange(Mona::Exception& ex, Mona::PacketReader& reader) = 0;
-
-	// Handle message (after hanshake0)
-	virtual void				handleMessage(Mona::Exception& ex, const Mona::PoolBuffer& pBuffer, const Mona::SocketAddress& address);
+	// Handle a P2P address exchange message (Only for RTMFPSession)
+	virtual void				handleP2PAddressExchange(Mona::PacketReader& reader) = 0;
 
 	// Close the conection properly
 	virtual void				close();
 
 	// On NetConnection success callback
-	virtual bool				onConnect(Mona::Exception& ex) { return true; }
+	virtual void				onConnect() {}
 
 	// On NetStream.Publish.Start (only for NetConnection)
 	virtual void				onPublished(FlashWriter& writer) {}
 
-	RTMFPWriter*				writer(Mona::UInt64 id);
+	//RTMFPWriter*				writer(Mona::UInt64 id);
 	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);
 
 	// Create a flow for special signatures (NetGroup)
 	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature) = 0;
-
-	// Initialize the packet in the RTMFPSender
-	Mona::UInt8*				packet();
-
-	// Clear the packet and flush the connection
-	void						flush(Mona::UInt8 marker, Mona::UInt32 size);
-
-	// Flush the connection
-	// marker values can be :
-	// - 0B for handshake
-	// - 09 for raw request
-	// - 89 for AMF request
-	virtual void				flush(bool echoTime, Mona::UInt8 marker);
-
-	// Manage handshake messages (marker 0x0B)
-	virtual void				manageHandshake(Mona::Exception& ex, Mona::BinaryReader& reader) = 0;
-
-	virtual const std::string&	name() { return _targetAddress.toString(); }
 
 	enum HandshakeType {
 		BASE_HANDSHAKE = 0x0A,
 		P2P_HANDSHAKE = 0x0F
 	};
 
-	// Send the first handshake message (with rtmfp url/peerId + tag)
-	void sendHandshake0(const std::string& epd, const std::string& tag);
-
-	virtual RTMFPEngine*	getDecoder(Mona::UInt32 idStream, const Mona::SocketAddress& address) { return (idStream == 0) ? _pDefaultDecoder.get() : _pDecoder.get(); }
-
-	void flushWriters();
-
-	Mona::UInt8							_handshakeStep; // Handshake step (3 possible states)
-	Mona::UInt32						_farId; // Session id
-
-	Mona::SocketAddress					_outAddress; // current address used for sending
-	Mona::SocketAddress					_targetAddress; // host address for RTMFPConnection and peer address for P2PConnection
-	Mona::Time							_lastPing;
-	Mona::UInt64						_nextRTMFPWriterId;
-	Mona::Time							_lastKeepAlive; // last time a keepalive request has been received
-
-	bool								_died; // True if is the connection is died
-
-	// Encryption/Decryption
-	std::shared_ptr<RTMFPEngine>		_pEncoder;
-	std::shared_ptr<RTMFPEngine>		_pDecoder;
-	std::shared_ptr<RTMFPEngine>		_pDefaultDecoder; // used for id stream 0
-
-	Mona::DiffieHellman					_diffieHellman;
-	Mona::Buffer						_sharedSecret; 
-	std::string							_tag;
-	Mona::Buffer						_nonce;
+	Mona::Time											_lastKeepAlive; // last time a keepalive request has been received+
+	std::shared_ptr<RTMFPConnection>					_pConnection; // Current connection object used for communication with the server/peer
+	std::string											_tag;
 
 	// External Callbacks to link with parent
-	OnStatusEvent						_pOnStatusEvent;
-	OnMediaEvent						_pOnMedia;
-	OnSocketError						_pOnSocketError;
+	OnStatusEvent										_pOnStatusEvent;
+	OnMediaEvent										_pOnMedia;
+	OnSocketError										_pOnSocketError;
 
 	// Events
 	FlashConnection::OnStatus::Type						onStatus; // NetConnection or NetStream status event
 	FlashConnection::OnMedia::Type						onMedia; // Received when we receive media (audio/video)
 	FlashConnection::OnPlay::Type						onPlay; // Received when we receive media (audio/video)
-	Mona::UDPSocket::OnError::Type						onError; // TODO: delete this if not needed
-	Mona::UDPSocket::OnPacket::Type						onPacket; // Main input event, received on each raw packet
+	RTMFPConnection::OnMessage::Type					onMessage; // Received when a connection follow us a message
+	RTMFPConnection::OnNewWriter::Type					onNewWriter; // Received when the connection create a new writer
+	RTMFPConnection::OnWriterFailed::Type				onWriterFailed; // Received when the writer fail
+	RTMFPConnection::OnWriterClose::Type				onWriterClose; // Received when the writer is closed
 
 	// Job Members
-	std::shared_ptr<FlashConnection>						_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
-	std::map<Mona::UInt64, RTMFPFlow*>						_flows;
-	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter> >	_flowWriters;
-	RTMFPWriter*											_pLastWriter; // Write pointer used to check if it is possible to write
-	Invoker*												_pInvoker;
-	std::unique_ptr<RTMFPFlow>								_pFlowNull; // Null flow for some messages
-	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object
-	Mona::PoolThread*										_pThread; // Thread used to send last message
+	std::shared_ptr<FlashConnection>					_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
+	std::map<Mona::UInt64, RTMFPFlow*>					_flows;
+	Invoker*											_pInvoker; // Main invoker pointer to get poolBuffers
+	std::unique_ptr<RTMFPFlow>							_pFlowNull; // Null flow for some messages
+	Mona::UInt32										_sessionId; // id of the session;
+
+	FlashListener*										_pListener; // Listener of the main publication (only one by intance)
 
 private:
 
-	// Update the ping value
-	void setPing(Mona::UInt16 time, Mona::UInt16 timeEcho);
+	// Unsubscribe from all events of the connection
+	virtual void										unsubscribe(std::shared_ptr<RTMFPConnection>& pConnection);
 
-	Mona::UInt16											_ping;
-
-	Mona::UInt16											_timeReceived; // last time received
-	Mona::Time												_lastReceptionTime; // time of last "time" received
+	std::map<Mona::SocketAddress, std::shared_ptr<RTMFPConnection>>				_mapConnections; // map of connections to all addresses of the session
 
 	// Asynchronous read
-	struct RTMFPMediaPacket {
+	struct RTMFPMediaPacket : public Mona::Object {
 
 		RTMFPMediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 time, bool audio);
 

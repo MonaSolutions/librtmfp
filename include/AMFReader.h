@@ -19,7 +19,6 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Mona/Mona.h"
 #include "AMF.h"
 #include "ReferableReader.h"
 #include <vector>

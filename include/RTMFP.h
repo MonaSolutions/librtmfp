@@ -32,7 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x0101003	// (1.1.3)
+#define RTMFP_LIB_VERSION	0x0102000	// (1.2.0)
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -43,6 +43,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define RTMFP_TIMESTAMP_SCALE	4
 
 #define PEER_ID_SIZE			0x20
+#define COOKIE_SIZE				0x40
+
+#define PEER_LIST_ADDRESS_TYPE	std::map<Mona::SocketAddress, RTMFP::AddressType>
 
 class RTMFPEngine : public virtual Mona::Object {
 public:
@@ -88,6 +91,16 @@ public:
 		ADDRESS_REDIRECTION=3
 	};
 
+	enum SessionStatus {
+		STOPPED,
+		HANDSHAKE30,
+		HANDSHAKE70,
+		HANDSHAKE38,
+		HANDSHAKE78,
+		CONNECTED,
+		FAILED
+	};
+
 	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, Mona::UInt8 addressType);
 	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
@@ -111,7 +124,11 @@ public:
 
 	static bool						IsH264CodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && *data == 0x17 && data[1] == 0; }
 
-	// Return a random iterator from a container which respect the isAllowed condition
+	// Read addresses from the buffer reader
+	// return : True if at least an address has been read
+	static bool	ReadAddresses(Mona::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Mona::SocketAddress& hostAddress);
+
+	// Return a random iterator which respect the isAllowed condition
 	template<class ContainerType, typename Iterator>
 	static bool getRandomIt(ContainerType& container, Iterator& itResult, std::function<bool(const Iterator&)> isAllowed) {
 		if (container.empty())

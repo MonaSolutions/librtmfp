@@ -33,7 +33,7 @@ class Listener;
 class Publisher : public Mona::Task, public virtual Mona::Object {
 public:
 
-	Publisher(const std::string& name, Invoker& invoker, bool audioReliable, bool videoReliable);
+	Publisher(const std::string& name, Invoker& invoker, bool audioReliable, bool videoReliable, bool p2p);
 	virtual ~Publisher();
 
 	// Add packets to the waiting queue
@@ -63,6 +63,8 @@ public:
 
 	const Mona::PoolBuffer&		audioCodecBuffer() const { return _audioCodecBuffer; }
 	const Mona::PoolBuffer&		videoCodecBuffer() const { return _videoCodecBuffer; }
+
+	bool	isP2P; // If true it is a p2p publisher
 private:
 
 	void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);

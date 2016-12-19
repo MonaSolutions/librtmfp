@@ -20,7 +20,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "NetGroup.h"
-#include "P2PConnection.h"
+#include "P2PSession.h"
 #include "GroupStream.h"
 #include "librtmfp.h"
 
@@ -148,7 +148,7 @@ UInt32 NetGroup::targetNeighborsCount() {
 	return targetNeighbor;
 }
 
-NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, RTMFPConnection& conn, RTMFPGroupConfig* parameters) : groupParameters(parameters),
+NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters) : groupParameters(parameters),
 	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _fragmentCounter(0), _firstPushMode(true), _pListener(NULL), _currentPushMask(0), _currentPullFragment(0),
 	_itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false) {
 	onMedia = [this](bool reliable, AMF::ContentType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
@@ -271,12 +271,11 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			ERROR("Unable to find the peer ", peerId)
 			return;
 		}
-		it->second->mediaSubscriptionReceived = true;
 
 		// We do not accept peer if they are not in the best list
 		if (!_bestList.empty() && _bestList.find(peerId) == _bestList.end()) {
 			DEBUG("Group Media Subscription rejected, the peer is not in our Best List")
-			it->second->close(false);
+			it->second->close(/*false*/);
 			return;
 		}
 
@@ -292,6 +291,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			INFO("New stream available in the group but not registered : ", streamName)
 			return;
 		}
+		it->second->mediaSubscriptionReceived = true;
 
 		Buffer farCode;
 		packet.read(0x22, farCode);
@@ -414,7 +414,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				BinaryReader addressReader(packet.current()+1, size-1); // +1 to ignore 0A
 				PEER_LIST_ADDRESS_TYPE listAddresses;
 				SocketAddress hostAddress(_conn.serverAddress());
-				if (P2PConnection::ReadAddresses(addressReader, listAddresses, hostAddress)) {
+				if (RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress)) {
 					manageBestList = true;
 					addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, false, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 				}
@@ -567,7 +567,7 @@ void NetGroup::close() {
 		}*/
 	}
 
-	map<string, shared_ptr<P2PConnection>>::iterator itPeer = _mapPeers.begin();
+	map<string, shared_ptr<P2PSession>>::iterator itPeer = _mapPeers.begin();
 	while (itPeer != _mapPeers.end())
 		removePeer(itPeer);
 }
@@ -589,7 +589,7 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 		buildBestList(_myGroupAddress, _bestList); // rebuild the best list to know if the peer is in it
 }
 
-bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PConnection> pPeer) {
+bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	if (_mapHeardList.find(peerId) == _mapHeardList.end()) {
@@ -649,8 +649,8 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE& itPeer) {
 	_mapPeers.erase(itPeer++);
 }
 
-void NetGroup::sendGroupMedia(std::shared_ptr<P2PConnection> pPeer) {
-	if (pPeer && pPeer->connected && pPeer->groupFirstReportSent && _pStreamCode)
+void NetGroup::sendGroupMedia(std::shared_ptr<P2PSession> pPeer) {
+	if (pPeer && pPeer->status == RTMFP::CONNECTED && pPeer->groupFirstReportSent && _pStreamCode)
 		pPeer->sendGroupMedia(stream, _pStreamCode->data(), _pStreamCode->size(), groupParameters);
 }
 
@@ -697,7 +697,7 @@ void NetGroup::manage() {
 	if (_lastReport.isElapsed(NETGROUP_REPORT_DELAY)) {
 
 		auto itRandom = _mapPeers.begin();
-		if (RTMFP::getRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { return it->second->connected; })) {
+		if (RTMFP::getRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { return it->second->status == RTMFP::CONNECTED; })) {
 			itRandom->second->groupReportInitiator = true;
 			sendGroupReport(itRandom);
 		}
@@ -769,8 +769,8 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 
 	// Find the 6 lowest latency
 	if (_mapGroupAddress.size() > 6) {
-		deque<shared_ptr<P2PConnection>> queueLatency;
-		// TODO: get latency from RTMFPConnection
+		deque<shared_ptr<P2PSession>> queueLatency;
+		// TODO: get latency from RTMFPSession
 		if (!_mapPeers.empty()) {
 			for (auto it : _mapPeers) { // First, order the peers by latency
 				UInt16 latency = it.second->latency();
@@ -1076,7 +1076,7 @@ void NetGroup::manageBestConnections() {
 	while (it2Close != _mapPeers.end()) {
 		if (_bestList.find(it2Close->first) == _bestList.end()) {
 			INFO("Best Peer management - Closing the connection to peer ", it2Close->first)
-			it2Close->second->close(false);
+			it2Close->second->close(/*false*/);
 			removePeer(it2Close);
 		} else
 			it2Close++;
@@ -1089,7 +1089,7 @@ void NetGroup::manageBestConnections() {
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", it) // implementation error, should not happen
 			else
-				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.rawId, itNode->second.addresses, itNode->second.hostAddress);
+				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress);
 		}
 	}
 }
