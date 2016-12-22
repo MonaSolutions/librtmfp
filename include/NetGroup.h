@@ -58,7 +58,7 @@ public:
 
 	// Add a peer to the Heard List
 	// param update : if set to True we will recalculate the best list after
-	void			addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& hostAddress, bool update, Mona::UInt64 timeElapsed=0);
+	void			addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& hostAddress, Mona::UInt64 timeElapsed=0);
 
 	// Add a peer to the NetGroup map
 	bool			addPeer(const std::string& peerId, std::shared_ptr<P2PSession> pPeer);

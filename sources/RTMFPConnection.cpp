@@ -406,10 +406,7 @@ void RTMFPConnection::sendHandshake78(BinaryReader& reader) {
 	DEBUG("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
 
 	// Create the P2PSession
-	if (!_pParent->onNewPeerId(rawId, peerId, _address)) {
-		TRACE("Handshake 38 ignored, session not created")
-		return;
-	}
+	_pParent->onNewPeerId(rawId, peerId, _address);
 
 	if (_pSession->status > RTMFP::HANDSHAKE70) {
 		DEBUG("Handshake 38 ignored, session is already in ", _pSession->status, " state")

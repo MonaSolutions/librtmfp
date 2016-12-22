@@ -36,7 +36,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 		const Mona::SocketAddress& host, bool responder, bool group) :
 	_responder(responder), peerId(id), rawId("\x21\x0f"), hostAddress(host), _parent(parent), attempt(0), _rawResponse(false), _groupBeginSent(false), mediaSubscriptionSent(false),
 	_lastIdSent(0), _pushOutMode(0), pushInMode(0), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), _idFragmentMap(0), groupReportInitiator(false), _groupConnectSent(false), _idMediaReportFlow(0), _isGroup(group),
-	isGroupDisconnected(false), groupFirstReportSent(false), mediaSubscriptionReceived(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_isGroupDisconnected(false), groupFirstReportSent(false), mediaSubscriptionReceived(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
 	};
@@ -68,28 +68,30 @@ P2PSession::~P2PSession() {
 	close();
 }
 
-void P2PSession::close() {
+void P2PSession::close(bool full) {
 	if (status == RTMFP::FAILED)
 		return;
 
-	closeGroup(true);
+	closeGroup(full);
 
 	if (_pListener) {
 		_parent->stopListening(peerId);
 		_pListener = NULL;
 	}
 
-	_pMainStream->OnGroupMedia::unsubscribe((OnGroupMedia&)*this);
-	_pMainStream->OnGroupReport::unsubscribe((OnGroupReport&)*this);
-	_pMainStream->OnGroupPlayPush::unsubscribe((OnGroupPlayPush&)*this);
-	_pMainStream->OnGroupPlayPull::unsubscribe((OnGroupPlayPull&)*this);
-	_pMainStream->OnFragmentsMap::unsubscribe((OnFragmentsMap&)*this);
-	_pMainStream->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
-	_pMainStream->OnFragment::unsubscribe((OnFragment&)*this);
-	_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
+	if (full) {
+		_pMainStream->OnGroupMedia::unsubscribe((OnGroupMedia&)*this);
+		_pMainStream->OnGroupReport::unsubscribe((OnGroupReport&)*this);
+		_pMainStream->OnGroupPlayPush::unsubscribe((OnGroupPlayPush&)*this);
+		_pMainStream->OnGroupPlayPull::unsubscribe((OnGroupPlayPull&)*this);
+		_pMainStream->OnFragmentsMap::unsubscribe((OnFragmentsMap&)*this);
+		_pMainStream->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
+		_pMainStream->OnFragment::unsubscribe((OnFragment&)*this);
+		_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
 
-	FlowManager::close();
-	_parent = NULL;
+		FlowManager::close();
+		_parent = NULL;
+	}
 }
 
 void P2PSession::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
@@ -196,7 +198,7 @@ void P2PSession::handleGroupHandshake(const std::string& groupId, const std::str
 		return;
 
 	// Is it a reconnection? => add the peer to group
-	if (isGroupDisconnected && !_parent->addPeer2Group(peerId))
+	if (_isGroupDisconnected && !_parent->addPeer2Group(peerId))
 		return;
 
 	if (String::ICompare(groupId, _parent->groupIdHex()) != 0) {
@@ -229,8 +231,10 @@ void P2PSession::handleWriterFailed(shared_ptr<RTMFPWriter>& pWriter) {
 		_pMediaWriter.reset();
 		return;
 	}
-	else if (pWriter == _pReportWriter)
+	else if (pWriter == _pReportWriter) {
+		DEBUG(peerId, " has closed the report writer")
 		_pReportWriter.reset();
+	}
 	else if (pWriter == _pNetStreamWriter)
 		_pNetStreamWriter.reset();
 
@@ -394,20 +398,23 @@ void P2PSession::sendPull(UInt64 index) {
 
 void P2PSession::closeGroup(bool full) {
 
-	OnPeerClose::raise(peerId, pushInMode, full);
-
+	// Full close : we also close the NetGroup Report writer
 	if (full && _pReportWriter) {
 		_groupConnectSent = false;
 		_groupBeginSent = false;
 		groupFirstReportSent = false;
 		_pReportWriter->close();
 	}
+
+	_isGroupDisconnected = true;
 	mediaSubscriptionSent = mediaSubscriptionReceived = false;
 	pushInMode = 0;
 	if (_pMediaReportWriter)
 		_pMediaReportWriter->close();
 	if (_pMediaWriter)
 		_pMediaWriter->close();
+
+	OnPeerClose::raise(peerId, pushInMode, full); // notify NetGroup to reset push masks
 }
 
 void P2PSession::sendGroupPeerConnect() {

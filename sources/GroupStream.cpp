@@ -46,7 +46,8 @@ bool GroupStream::process(PacketReader& packet,FlashWriter& writer, double lostR
 		case GroupStream::GROUP_MEMBER: { // RTMFPConnection event (TODO: see if it must be moved in FlashStream)
 			string member, id;
 			packet.read(PEER_ID_SIZE, member);
-			DEBUG("NetGroup Peer ID added : ", Util::FormatHex(BIN member.data(), member.size(), id))
+			Util::FormatHex(BIN member.data(), member.size(), id);
+			DEBUG("NetGroup Peer ID added : ", id)
 			OnNewPeer::raise(id);
 			break;
 		}

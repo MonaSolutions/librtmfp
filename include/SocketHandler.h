@@ -31,7 +31,7 @@ namespace SHandlerEvents {
 	// Can be called by a separated thread!
 	struct OnPeerHandshake30 : Mona::Event<void(const std::string&, const Mona::SocketAddress&)> {};
 	struct OnPeerHandshake70 : Mona::Event<void(const std::string&, const Mona::SocketAddress&, const std::string&, const std::string&)> {};
-	struct OnNewPeerId : Mona::Event<bool(std::shared_ptr<RTMFPConnection>&, const std::string&, const std::string&)> {};
+	struct OnNewPeerId : Mona::Event<bool(std::shared_ptr<RTMFPConnection>&, const std::string&, const std::string&)> {}; // called when an unknown peer ID is discovered (handshake 38), must return true if a session is created
 	struct OnConnection : Mona::Event<void(std::shared_ptr<RTMFPConnection>&, const std::string&)> {}; // called when a connection succeed
 	struct OnP2PAddresses : Mona::Event<bool(const std::string&, const PEER_LIST_ADDRESS_TYPE&)> {}; // called when we receive addresses of a P2P session, must return true if peer is found and in stopped mode
 };

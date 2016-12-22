@@ -274,8 +274,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		// We do not accept peer if they are not in the best list
 		if (!_bestList.empty() && _bestList.find(peerId) == _bestList.end()) {
-			DEBUG("Group Media Subscription rejected, the peer is not in our Best List")
-			it->second->close(/*false*/);
+			DEBUG("Best Peer management - peer ", peerId," connection rejected, not in the Best List")
 			return;
 		}
 
@@ -416,7 +415,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 				SocketAddress hostAddress(_conn.serverAddress());
 				if (RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress)) {
 					manageBestList = true;
-					addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, false, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
+					addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 				}
 			}
 			packet.next(size);
@@ -572,7 +571,7 @@ void NetGroup::close() {
 		removePeer(itPeer);
 }
 
-void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const SocketAddress& hostAddress, bool update, UInt64 timeElapsed) {
+void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const SocketAddress& hostAddress, UInt64 timeElapsed) {
 	lock_guard<recursive_mutex> lock(_fragmentMutex);
 
 	auto it = _mapHeardList.lower_bound(peerId);
@@ -585,8 +584,6 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 	_mapGroupAddress.emplace(GetGroupAddressFromPeerId(rawId, groupAddress), peerId);
 	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(rawId, groupAddress, listAddresses, hostAddress, timeElapsed));
 	DEBUG("Peer ", it->first, " added to heard list")
-	if (update)
-		buildBestList(_myGroupAddress, _bestList); // rebuild the best list to know if the peer is in it
 }
 
 bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
@@ -613,6 +610,8 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 	pPeer->OnGroupBegin::subscribe(onGroupBegin);
 	pPeer->OnFragment::subscribe(onFragment);
 	pPeer->OnPeerClose::subscribe(onPeerClose);
+
+	buildBestList(_myGroupAddress, _bestList); // rebuild the best list to know if the peer is in it
 	return true;
 }
 
@@ -637,7 +636,6 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE& itPeer) {
 	itPeer->second->OnGroupBegin::unsubscribe(onGroupBegin);
 	itPeer->second->OnFragment::unsubscribe(onFragment);
 	itPeer->second->OnPeerClose::unsubscribe(onPeerClose);
-	itPeer->second->isGroupDisconnected = true;
 
 	// If it is a current peer => increment
 	if (itPeer == _itPullPeer && getNextPeer(_itPullPeer, true, 0, 0) && itPeer == _itPullPeer)
@@ -735,8 +733,6 @@ void NetGroup::manage() {
 void NetGroup::updateBestList() {
 
 	buildBestList(_myGroupAddress, _bestList);
-	if (_mapPeers.size() != _bestList.size())
-		INFO("Best Peer management - Peers connected : ", _mapPeers.size(), " ; new count : ", _bestList.size(), " ; Peers known : ", _mapGroupAddress.size())
 	manageBestConnections();
 	_lastBestCalculation.update();
 }
@@ -770,7 +766,6 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 	// Find the 6 lowest latency
 	if (_mapGroupAddress.size() > 6) {
 		deque<shared_ptr<P2PSession>> queueLatency;
-		// TODO: get latency from RTMFPSession
 		if (!_mapPeers.empty()) {
 			for (auto it : _mapPeers) { // First, order the peers by latency
 				UInt16 latency = it.second->latency();
@@ -818,7 +813,8 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 		}
 	}
 
-	TRACE("End of best list calculation, neighbor count : ", bestList.size())
+	if (bestList == _bestList)
+		TRACE("Best Peer management - Peers connected : ", _mapPeers.size(), " ; new count : ", _bestList.size(), " ; Peers known : ", _mapGroupAddress.size())
 }
 
 void NetGroup::eraseOldFragments() {
@@ -860,9 +856,9 @@ void NetGroup::eraseOldFragments() {
 	if (!_mapWaitingFragments.empty() && _mapWaitingFragments.begin()->first < itFragment->first) {
 		WARN("Deletion of waiting fragments ", _mapWaitingFragments.begin()->first, " to ", (itWait == _mapWaitingFragments.end())? _mapWaitingFragments.rbegin()->first : itWait->first)
 		_mapWaitingFragments.erase(_mapWaitingFragments.begin(), itWait);
-		if (_currentPullFragment < itFragment->first)
-			_currentPullFragment = itFragment->first;
 	}
+	if (_currentPullFragment < itFragment->first)
+		_currentPullFragment = itFragment->first; // move the current pull fragment to the 1st fragment
 
 	// Try to push again the last fragments
 	auto itLast = _fragments.find(_fragmentCounter + 1);
@@ -1075,8 +1071,8 @@ void NetGroup::manageBestConnections() {
 	auto it2Close = _mapPeers.begin();
 	while (it2Close != _mapPeers.end()) {
 		if (_bestList.find(it2Close->first) == _bestList.end()) {
-			INFO("Best Peer management - Closing the connection to peer ", it2Close->first)
-			it2Close->second->close(/*false*/);
+			DEBUG("Best Peer management - Closing the connection to peer ", it2Close->first)
+			it2Close->second->close(false);
 			removePeer(it2Close);
 		} else
 			it2Close++;
@@ -1088,8 +1084,10 @@ void NetGroup::manageBestConnections() {
 			auto itNode = _mapHeardList.find(it);
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", it) // implementation error, should not happen
-			else
+			else {
+				DEBUG("Best Peer management - Connecting to peer ", it, "...")
 				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress);
+			}
 		}
 	}
 }

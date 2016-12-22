@@ -635,7 +635,7 @@ bool RTMFPSession::addPeer2Group(const string& peerId) {
 	if (_group) {
 		auto it = _mapPeersById.find(peerId);
 		if (it == _mapPeersById.end())
-			ERROR("Unable to find the peer ", peerId)
+			ERROR("Unable to find the peer ", peerId) // should not happen
 		// Inform the NetGroup about the new peer
 		else if (_group->addPeer(peerId, it->second))
 			return true;

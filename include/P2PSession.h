@@ -65,11 +65,11 @@ public:
 	// Create a flow for special signatures (NetGroup)
 	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature);
 
-	// Close the connection properly
-	//virtual void				close(bool full);
+	// Close the group writers but keep the connection open if full is false
+	virtual void				close(bool full);
 
-	// Close the conection properly
-	virtual void				close();
+	// Close the full connection 
+	virtual void				close() { close(true); }
 
 	// Return the name of the session
 	virtual const std::string&	name() { return peerId; }
@@ -150,7 +150,6 @@ public:
 	bool							groupFirstReportSent; // True if the first group report has been sent
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
-	bool							isGroupDisconnected; // True if the group connection has been disconnected (group writer consumed)
 
 protected:
 	// Handle play request (only for P2PSession)
@@ -194,6 +193,7 @@ private:
 	bool										_groupConnectSent; // True if group connection request has been sent to peer
 	bool										_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	bool										_isGroup; // True if this peer connection it part of a NetGroup
+	bool										_isGroupDisconnected; // True if the group connection has been disconnected (group writer consumed)
 
 	Mona::UInt8									_pushOutMode; // Group Publish Push mode
 
