@@ -116,6 +116,8 @@ shared_ptr<RTMFPConnection>  SocketHandler::addConnection(const SocketAddress& a
 		itConnection = _mapAddress2Connection.emplace_hint(itConnection, piecewise_construct, forward_as_tuple(address), forward_as_tuple(new RTMFPConnection(address, this, session, responder, p2p)));
 		itConnection->second->OnIdBuilt::subscribe((OnIdBuilt&)*this);
 		itConnection->second->OnConnected::subscribe(onConnection);
+		if (session)
+			session->subscribe(itConnection->second);
 	} else
 		DEBUG("Connection already exist at address ", address.toString(), ", nothing done")
 	return itConnection->second;
@@ -135,7 +137,7 @@ void SocketHandler::manage() {
 		lock_guard<recursive_mutex> lock(_mutexConnections);
 
 		for (auto& itPeer : _mapTag2Peer) {
-			if (!itPeer.second.received) {
+			if (!itPeer.second.received && itPeer.second.hostAddress) {
 				INFO("Sending new P2P handshake 30 to server (peerId : ", itPeer.second.peerId, ")")
 				_pDefaultConnection->setAddress(itPeer.second.hostAddress);
 				_pDefaultConnection->sendHandshake30(itPeer.second.rawId, itPeer.first);
@@ -167,11 +169,19 @@ void SocketHandler::onP2PAddresses(const string& tagReceived, const PEER_LIST_AD
 		return;
 	}
 
-	// Update addresses and send handshake 30 if no handshake 70 received
+	// Update addresses and send handshake 30 to far server if no handshake 70 received
 	if (OnP2PAddresses::raise<false>(it->second.peerId, addresses) && hostAddress) {
+		++it->second.attempt;
+		if (it->second.attempt == 11) {
+			WARN("Connection to ", it->second.peerId, " has reached 11 attempt without answer, removing the peer...")
+			_mapTag2Peer.erase(it);
+			return;
+		}
+
 		// Send handshake 30 to far server
 		_pDefaultConnection->setAddress(hostAddress);
 		_pDefaultConnection->sendHandshake30(it->second.rawId, it->first);
+		it->second.lastAttempt.update();
 	}
 }
 
@@ -185,18 +195,22 @@ void SocketHandler::onPeerHandshake30(const string& id, const string& tag, const
 	auto itPeer = _mapTag2Peer.find(tag);
 	if (itPeer == _mapTag2Peer.end())
 		OnPeerHandshake30::raise(tag, address);
-	// TODO: else
+	else
+		DEBUG("Handshake 30 received but the connection exists")
 }
 
-void SocketHandler::onPeerHandshake70(const string& tagReceived, const string& farkey, const string& cookie, const SocketAddress& address, bool createConnection) {
+bool SocketHandler::onPeerHandshake70(const string& tagReceived, const string& farkey, const string& cookie, const SocketAddress& address, bool createConnection, bool isP2P) {
+
+	if (!isP2P)
+		return OnPeerHandshake70::raise<false>("", address, farkey, cookie, false);
 
 	auto itPeer = _mapTag2Peer.find(tagReceived);
 	if (itPeer != _mapTag2Peer.end()) {
-
-		// If it is an unknown address, we create the connection
-		if (createConnection)
-			OnPeerHandshake70::raise(itPeer->second.peerId, address, farkey, cookie);
-		_mapTag2Peer.erase(tagReceived);
-	} else
-		TRACE("Unknown tag received with handshake 70 from address ", address.toString(), " possible direct connection")
+		bool res = OnPeerHandshake70::raise<false>(itPeer->second.peerId, address, farkey, cookie, createConnection); // (If it is an unknown address, we create the connection)
+		_mapTag2Peer.erase(itPeer);
+		return res;
+	}
+	
+	ERROR("Unknown tag received with handshake 70 from address ", address.toString(), " possible direct connection") // should not happen
+	return false;
 }

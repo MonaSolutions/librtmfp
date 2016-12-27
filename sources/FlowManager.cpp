@@ -96,8 +96,11 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 		if (_pOnMedia) // Synchronous read
 			_pOnMedia(peerId.c_str(), stream.c_str(), time-_timeStart, (const char*)packet.current(), packet.available(), audio);
 		else { // Asynchronous read
-			lock_guard<recursive_mutex> lock(_readMutex);
-			_mediaPackets[peerId].emplace_back(new RTMFPMediaPacket(_pInvoker->poolBuffers, packet.current(), packet.available(), time-_timeStart, audio));
+			{
+				lock_guard<recursive_mutex> lock(_readMutex);
+				_mediaPackets[peerId].emplace_back(new RTMFPMediaPacket(_pInvoker->poolBuffers, packet.current(), packet.available(), time - _timeStart, audio));
+			}
+			handleDataAvailable(true);
 		}
 	};
 	/*onError = [this](const Exception& ex) {
@@ -135,8 +138,8 @@ FlowManager::~FlowManager() {
 
 	_pFlowNull.reset();
 
-	// delete definitely the connections
-	_mapConnections.clear();
+	// delete definitely the main connection (must be done at the end to keep the writers)
+	_pConnection.reset();
 
 	if (_pMainStream) {
 		_pMainStream->OnStatus::unsubscribe(onStatus);
@@ -151,9 +154,23 @@ void FlowManager::close() {
 		itConnection.second->close();
 		unsubscribe(itConnection.second);
 	}
-	_pConnection.reset();
+	_mapConnections.clear();
 
 	status = RTMFP::FAILED;
+}
+
+void FlowManager::closeOthers(const SocketAddress& address) {
+	auto itConnection = _mapConnections.begin();
+	while(itConnection != _mapConnections.end()) {
+		if (itConnection->first != address) {
+			TRACE("Closing the connection to ", itConnection->first.toString(), ", we keep the first address : ", address.toString())
+			itConnection->second->close();
+			unsubscribe(itConnection->second);
+			_mapConnections.erase(itConnection++);
+		}
+		else
+			++itConnection;
+	}
 }
 
 UInt16 FlowManager::latency() {
@@ -169,8 +186,17 @@ void FlowManager::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
 	_mapConnections.emplace(pConnection->address(), pConnection);
 }
 
+void FlowManager::unsubscribe(const Mona::SocketAddress& address) {
+	auto it = _mapConnections.find(address);
+	if (it != _mapConnections.end()) {
+		unsubscribe(it->second);
+		_mapConnections.erase(it);
+	} else
+		WARN("Unable to find the connection ", address.toString(), " for unbscribing")
+}
+
 void FlowManager::unsubscribe(shared_ptr<RTMFPConnection>& pConnection) {
-	TRACE("Unsubscribing events of the connection ", name())
+	TRACE("Unsubscribing events of the connection ", pConnection->address().toString())
 
 	pConnection->OnMessage::unsubscribe(onMessage);
 	pConnection->OnNewWriter::unsubscribe(onNewWriter);
@@ -181,32 +207,38 @@ void FlowManager::unsubscribe(shared_ptr<RTMFPConnection>& pConnection) {
 bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& nbRead) {
 	
 	nbRead = 0;
-	if (status != RTMFP::CONNECTED)
-		return true; // do not stop the parent loop
+	if (status == RTMFP::CONNECTED) {
 
-	lock_guard<recursive_mutex> lock(_readMutex);
-	if (!_mediaPackets[peerId].empty()) {
-		// First read => send header
-		if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
-			memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
-			_firstRead = false;
-			size -= sizeof(_FlvHeader);
-			nbRead += sizeof(_FlvHeader);
+		bool available = false;
+		{
+			lock_guard<recursive_mutex> lock(_readMutex);
+			if (!_mediaPackets[peerId].empty()) {
+				// First read => send header
+				if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
+					memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
+					_firstRead = false;
+					size -= sizeof(_FlvHeader);
+					nbRead += sizeof(_FlvHeader);
+				}
+
+				UInt32 bufferSize = 0;
+				auto& queue = _mediaPackets[peerId];
+				while (!queue.empty() && (nbRead < size)) {
+
+					std::shared_ptr<RTMFPMediaPacket> packet = queue.front();
+					bufferSize = packet->pBuffer.size();
+					if (bufferSize > (size - nbRead))
+						return false;
+
+					memcpy(buf + nbRead, packet->pBuffer.data(), bufferSize);
+					queue.pop_front();
+					nbRead += bufferSize;
+				}
+				available = !queue.empty();
+			}
 		}
-
-		UInt32 bufferSize = 0;
-		auto& queue = _mediaPackets[peerId];
-		while (!queue.empty() && (nbRead < size)) {
-
-			std::shared_ptr<RTMFPMediaPacket> packet = queue.front();
-			bufferSize = packet->pBuffer.size();
-			if (bufferSize >(size - nbRead))
-				return false;
-
-			memcpy(buf + nbRead, packet->pBuffer.data(), bufferSize);
-			queue.pop_front();
-			nbRead += bufferSize;
-		}
+		if (!available)
+			handleDataAvailable(false); // change the available status
 	}
 
 	return true;

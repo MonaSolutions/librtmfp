@@ -95,8 +95,8 @@ void P2PSession::close(bool full) {
 }
 
 void P2PSession::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
-	pConnection->setSession(this);
 	_knownAddresses.emplace(pConnection->address(), RTMFP::ADDRESS_PUBLIC); // TODO: Calculate the address type?
+	pConnection->setSession(this);
 
 	FlowManager::subscribe(pConnection);
 }

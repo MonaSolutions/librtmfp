@@ -39,6 +39,7 @@ private:
 	Invoker& _invoker;
 };
 
+class RTMFPLogger;
 class Invoker : public Mona::TaskHandler, private Mona::Startable {
 friend class ConnectionsManager;
 public:
@@ -59,6 +60,11 @@ public:
 
 	void			terminate();
 
+	/*** Log functions ***/
+	void			setLogCallback(void(*onLog)(unsigned int, int, const char*, long, const char*));
+
+	void			setDumpCallback(void(*onDump)(const char*, const void*, unsigned int));
+
 	const Mona::SocketManager				sockets;
 	Mona::PoolThreads						poolThreads;
 	const Mona::PoolBuffers					poolBuffers;
@@ -73,4 +79,5 @@ private:
 
 	std::recursive_mutex							_mutexConnections;
 	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;
+	std::unique_ptr<RTMFPLogger>					_globalLogger;
 };

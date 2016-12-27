@@ -20,6 +20,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "Invoker.h"
+#include "RTMFPLogger.h"
 
 using namespace Mona;
 using namespace std;
@@ -40,6 +41,8 @@ void ConnectionsManager::handle(Exception& ex) { _invoker.manage(); }
 /** Invoker **/
 
 Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), sockets(*this, poolBuffers, poolThreads), _manager(*this), _lastIndex(0), _init(false) {
+	_globalLogger.reset(new RTMFPLogger());
+	Logs::SetLogger(*_globalLogger);
 }
 
 Invoker::~Invoker() {
@@ -146,4 +149,12 @@ void Invoker::run(Exception& exc) {
 
 	// release memory
 	((Mona::PoolBuffers&)poolBuffers).clear();
+}
+
+void Invoker::setLogCallback(void(*onLog)(unsigned int, int, const char*, long, const char*)){
+	_globalLogger->setLogCallback(onLog);
+}
+
+void Invoker::setDumpCallback(void(*onDump)(const char*, const void*, unsigned int)) { 
+	_globalLogger->setDumpCallback(onDump);
 }

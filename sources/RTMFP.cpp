@@ -124,5 +124,5 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 			TRACE("IP Address : ", address.toString(), " - type : ", addressType)
 		}
 	}
-	return !addresses.empty();
+	return !addresses.empty() || hostAddress;
 }

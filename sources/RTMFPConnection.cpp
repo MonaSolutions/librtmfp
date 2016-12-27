@@ -165,7 +165,7 @@ void RTMFPConnection::manage() {
 		if (!(sessionStatus > RTMFP::HANDSHAKE30) && (!_connectAttempt || _connectAttempt <= 11) && _lastAttempt.isElapsed(1000)) {
 			++_connectAttempt;
 			if (_connectAttempt == 11) {
-				ERROR("Connection to ", name(), " has reached 11 attempt without answer, closing...")
+				WARN("Connection to ", name(), " has reached 11 attempt without answer, closing...")
 				_status = RTMFP::FAILED;
 				return;
 			}
@@ -176,7 +176,7 @@ void RTMFPConnection::manage() {
 		break;
 	}
 
-	Connection::manage(); // flushWriters(); // TODO: when we create the parent class Connection call Connection::manage();
+	Connection::manage();
 }
 
 void RTMFPConnection::handleHandshake30(BinaryReader& reader) {
@@ -194,12 +194,13 @@ void RTMFPConnection::handleHandshake30(BinaryReader& reader) {
 
 	// Here we decide which peer is responder or initator
 	if (_pParent->peerId() < _pSession->name()) {
-		DEBUG("Concurrent handshake 30 from ", _pSession->name(), " ignored, we have the biggest peer ID")
+		DEBUG("Concurrent handshake 30 from ", _pSession->name(), " ignored, we have the biggest peer ID") // TODO: see how Flash deal with concurrent connections
 		return;
 	}
 	else {
-		DEBUG("Concurrent hadshake 30 accepted, peer ID ", _pSession->name(), " is grater than ours")
+		DEBUG("Concurrent handshake 30 accepted, peer ID ", _pSession->name(), " is grater than ours")
 		_responder = true;
+		_pSession->unsubscribe(_address);
 	}
 
 	UInt64 peerIdSize = reader.read7BitLongValue();
@@ -264,11 +265,6 @@ void RTMFPConnection::handleHandshake70(BinaryReader& reader) {
 		return;
 	}
 
-	if (_pSession->status > RTMFP::HANDSHAKE30) {
-		TRACE("Handshake 70 ignored, session is already in ", _pSession->status, " state")
-		return;
-	}
-
 	// Read & check handshake0's response
 	UInt8 tagSize = reader.read8();
 	if (tagSize != 16) {
@@ -307,10 +303,11 @@ void RTMFPConnection::handleHandshake70(BinaryReader& reader) {
 		reader.read(keySize, farKey);
 	}
 
-	// Delete the waiting iterator if necessary
-	if (_isP2P)
-		_pParent->onPeerHandshake70(tagReceived, farKey, cookie, _address, false);
-	sendHandshake38(farKey, cookie);
+	// Handshake 70 accepted? => We send the handshake 38
+	if (_pParent->onPeerHandshake70(tagReceived, farKey, cookie, _address, false, _isP2P))
+		sendHandshake38(farKey, cookie);
+	else
+		close(); // destroy the connection
 }
 
 void RTMFPConnection::sendHandshake38(const string& farKey, const string& cookie) {
@@ -401,15 +398,14 @@ void RTMFPConnection::sendHandshake78(BinaryReader& reader) {
 	// Read peerId and update the parent
 	string rawId("\x21\x0f"), peerId;
 	UInt8 id[PEER_ID_SIZE];
-	EVP_Digest(reader.data() + idPos, 0x84, id, NULL, EVP_sha256(), NULL);
+	EVP_Digest(reader.data() + idPos, publicKeySize + 2, id, NULL, EVP_sha256(), NULL);
 	rawId.append(STR id, PEER_ID_SIZE);
 	DEBUG("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
 
-	// Create the P2PSession
-	_pParent->onNewPeerId(rawId, peerId, _address);
-
-	if (_pSession->status > RTMFP::HANDSHAKE70) {
-		DEBUG("Handshake 38 ignored, session is already in ", _pSession->status, " state")
+	// Create the session, if already exists and connected we ignore the request
+	if (!_pParent->onNewPeerId(rawId, peerId, _address) && _pSession->status > RTMFP::HANDSHAKE38) {
+		DEBUG("Handshake 38 ignored, session is already in state ", _pSession->status)
+		close();
 		return;
 	}
 
@@ -495,11 +491,11 @@ void RTMFPConnection::sendConnect(BinaryReader& reader) {
 
 void RTMFPConnection::handleRedirection(BinaryReader& reader) {
 	if (_status > RTMFP::HANDSHAKE30) {
-		DEBUG("Redirection message ignored, we have already received handshake 70")
+		DEBUG("Redirection message ignored, we have already received handshake 71")
 		return;
 	}
 
-	DEBUG("Redirection messsage, sending back the handshake 30")
+	DEBUG("Server redirection messsage, sending back the handshake 30")
 	UInt8 tagSize = reader.read8();
 	if (tagSize != 16) {
 		ERROR("Unexpected tag size : ", tagSize)

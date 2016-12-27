@@ -30,14 +30,8 @@ DefaultConnection::DefaultConnection(SocketHandler* pHandler) : Connection(pHand
 }
 
 DefaultConnection::~DefaultConnection() {
-	//close();
+
 }
-
-/*
-void DefaultConnection::close() {
-
-	Connection::close();
-}*/
 
 void DefaultConnection::handleMessage(const PoolBuffer& pBuffer) {
 
@@ -89,53 +83,11 @@ void DefaultConnection::handleHandshake30(BinaryReader& reader) {
 		reader.read(16, tag);
 		Util::FormatHex(BIN buff.data(), buff.size(), peerId);
 		_pParent->onPeerHandshake30(peerId, tag, _address);
-
-		/*if (peerId != _pParent->peerId()) {
-			WARN("Incorrect Peer ID in handshake 30 : ", peerId)
-			return;
-		}
-		INFO("P2P Connection request from ", _outAddress.toString())
-
-			auto it = _mapPeersByAddress.find(_outAddress);
-		if (it == _mapPeersByAddress.end()) {
-
-			auto itTag = _mapPeersByTag.find(tag);
-			shared_ptr<P2PConnection> pPeerConnection;
-			if (itTag != _mapPeersByTag.end()) {
-				pPeerConnection = itTag->second;
-				_mapPeersByTag.erase(itTag);
-			}
-			else if (_group) { // NetGroup : we accept direct connections
-
-				DEBUG("It is a direct P2P connection request from the NetGroup")
-					PEER_LIST_ADDRESS_TYPE addresses;
-				addresses.emplace(_outAddress, RTMFP::ADDRESS_PUBLIC);
-				pPeerConnection = createP2PConnection("unknown", tag.c_str(), addresses, _targetAddress, true);
-			}
-			else {
-				WARN("No p2p waiting connection found (possibly already connected)")
-					return;
-			}
-
-			it = _mapPeersByAddress.emplace_hint(it, _outAddress, pPeerConnection);
-		}
-		else {
-			WARN("The peer is already connected to us (same address)")
-				return;
-		}
-
-		// Send response (handshake 70)
-		it->second->responderHandshake0(ex, tag, _outAddress);*/
 	}
 }
 
 void DefaultConnection::handleHandshake70(BinaryReader& reader) {
 	string tagReceived, cookie, farKey;
-
-	/*if (_status > RTMFP::HANDSHAKE30) {
-		DEBUG("Handshake 70 ignored, we are already in ", _pSession->status, " state")
-		return;
-	}*/
 
 	// Read & check handshake0's response
 	UInt8 tagSize = reader.read8();
@@ -145,10 +97,6 @@ void DefaultConnection::handleHandshake70(BinaryReader& reader) {
 	}
 
 	reader.read(16, tagReceived);
-	/*if (memcmp(tagReceived.c_str(), _pSession->tag().data(), 16) != 0) {
-		ERROR("Unexpected tag received")
-		return;
-	}*/
 
 	// Normal NetConnection
 	UInt8 cookieSize = reader.read8();
@@ -169,5 +117,5 @@ void DefaultConnection::handleHandshake70(BinaryReader& reader) {
 	}
 	reader.read(keySize, farKey);
 
-	_pParent->onPeerHandshake70(tagReceived, farKey, cookie, _address, true);
+	_pParent->onPeerHandshake70(tagReceived, farKey, cookie, _address, true, true);
 }

@@ -304,11 +304,6 @@ void Connection::sendHandshake30(const string& epd, const string& tag) {
 void Connection::handleP2pAddresses(BinaryReader& reader) {
 	DEBUG("Server has sent to us the peer addresses of responders") // (here we are the initiator)
 
-	if (_status != RTMFP::CONNECTED) {
-		ERROR("Handshake type 71 received but the connection is not established")
-		return;
-	}
-
 	// Read & check handshake0's response
 	UInt8 tagSize = reader.read8();
 	if (tagSize != 16) {

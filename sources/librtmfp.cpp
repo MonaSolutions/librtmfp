@@ -25,7 +25,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Logs.h"
 #include "Mona/String.h"
 #include "Invoker.h"
-#include "RTMFPLogger.h"
 
 using namespace Mona;
 using namespace std;
@@ -33,7 +32,6 @@ using namespace std;
 extern "C" {
 
 static std::shared_ptr<Invoker>		GlobalInvoker; // manage threads, sockets and connection
-static std::shared_ptr<RTMFPLogger> GlobalLogger; // handle log messages
 
 static int		(*GlobalInterruptCb)(void*) = NULL;
 static void*	GlobalInterruptArg = NULL;
@@ -44,11 +42,7 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
 		return;
 	}
 
-	// Init global variables (logger & invoker)
-	if (!GlobalLogger) {
-		GlobalLogger.reset(new RTMFPLogger());
-		Logs::SetLogger(*GlobalLogger);
-	}
+	// Init global invoker (+logger)
 	if (!GlobalInvoker) {
 		GlobalInvoker.reset(new Invoker(0));
 		if (!GlobalInvoker->start()) {
@@ -79,7 +73,7 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
 		return 0;
 	}
-	else if (!GlobalLogger || !GlobalInvoker) {
+	else if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it before trying to connect")
 		return 0;
 	}
@@ -229,13 +223,21 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 		UInt32 total = 0;
 		int nbRead = 0;
 		bool running = true;
-		while (running && nbRead==0 /*size > 0*/) {
+		while (running && nbRead==0 && GlobalInterruptCb(GlobalInterruptArg) != 1) {
 			running = pConn->read(peerId, (UInt8*)buf, size, nbRead);
 			if (nbRead < 0)
 				return nbRead;
-			if (nbRead > 0) {
+			else if (nbRead > 0) {
 				size -= nbRead;
 				total += nbRead;
+			}
+			else { // Nothing read, wait for data
+				while (!pConn->dataAvailable) {
+					DEBUG("Nothing available, sleeping...")
+					pConn->readSignal.wait(100);
+					if (GlobalInterruptCb(GlobalInterruptArg) == 1)
+						return 0;
+				}
 			}
 		}
 		return total;
@@ -277,10 +279,10 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 }
 
 void RTMFP_LogSetCallback(void(* onLog)(unsigned int, int, const char*, long, const char*)) {
-	if (!GlobalLogger || !GlobalInvoker)
+	if (!GlobalInvoker)
 		ERROR("RTMFP_Init() has not been called, please call it first")
 
-	GlobalLogger->setLogCallback(onLog);
+	GlobalInvoker->setLogCallback(onLog);
 }
 
 void RTMFP_LogSetLevel(int level) {
@@ -288,9 +290,9 @@ void RTMFP_LogSetLevel(int level) {
 }
 
 void RTMFP_DumpSetCallback(void(*onDump)(const char*, const void*, unsigned int)) {
-	if (!GlobalLogger || !GlobalInvoker)
+	if (!GlobalInvoker)
 		ERROR("RTMFP_Init() has not been called, please call it first")
-	GlobalLogger->setDumpCallback(onDump);
+	GlobalInvoker->setDumpCallback(onDump);
 }
 
 void RTMFP_InterruptSetCallback(int(*interruptCb)(void*), void* argument) {
@@ -318,7 +320,7 @@ void RTMFP_GetPublicationAndUrlFromUri(char* uri, char** publication) {
 }
 
 void RTMFP_ActiveDump() {
-	if (!GlobalLogger || !GlobalInvoker)
+	if (!GlobalInvoker)
 		ERROR("RTMFP_Init() has not been called, please call it first")
 	Logs::SetDump("RTMFP");
 }

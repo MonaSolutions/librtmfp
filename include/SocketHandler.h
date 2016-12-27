@@ -30,7 +30,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 namespace SHandlerEvents {
 	// Can be called by a separated thread!
 	struct OnPeerHandshake30 : Mona::Event<void(const std::string&, const Mona::SocketAddress&)> {};
-	struct OnPeerHandshake70 : Mona::Event<void(const std::string&, const Mona::SocketAddress&, const std::string&, const std::string&)> {};
+	struct OnPeerHandshake70 : Mona::Event<bool(const std::string&, const Mona::SocketAddress&, const std::string&, const std::string&, bool)> {}; // called when we receive handshake 70 from a peer and we have to create the connection
 	struct OnNewPeerId : Mona::Event<bool(std::shared_ptr<RTMFPConnection>&, const std::string&, const std::string&)> {}; // called when an unknown peer ID is discovered (handshake 38), must return true if a session is created
 	struct OnConnection : Mona::Event<void(std::shared_ptr<RTMFPConnection>&, const std::string&)> {}; // called when a connection succeed
 	struct OnP2PAddresses : Mona::Event<bool(const std::string&, const PEER_LIST_ADDRESS_TYPE&)> {}; // called when we receive addresses of a P2P session, must return true if peer is found and in stopped mode
@@ -97,7 +97,8 @@ public:
 	void								onPeerHandshake30(const std::string& id, const std::string& tag, const Mona::SocketAddress& address);
 
 	// Called when receiving handshake 70
-	void								onPeerHandshake70(const std::string& tagReceived, const std::string& farkey, const std::string& cookie, const Mona::SocketAddress& address, bool createConnection);
+	// Return true if we must continue the handshake
+	bool								onPeerHandshake70(const std::string& tagReceived, const std::string& farkey, const std::string& cookie, const Mona::SocketAddress& address, bool createConnection, bool isP2P);
 
 private:
 	// Delete the connection with the address given
@@ -112,9 +113,9 @@ private:
 		std::string			rawId;
 		std::string			peerId;
 		bool				received;
-		/*Mona::UInt8			attempt; // Counter of connection attempts to the server
-		Mona::Time			lastAttempt; // Last attempt to connect to the server*/
-		Mona::SocketAddress	hostAddress; // Address of the server
+		Mona::UInt8			attempt; // Counter of connection attempts to the server
+		Mona::Time			lastAttempt; // Last attempt to connect to the server
+		Mona::SocketAddress	hostAddress; // Address of the server (if cleared : it is a direct connection)
 	};
 	std::map<std::string, WaitingPeer>		_mapTag2Peer; // map of Tag to P2P waiting request
 

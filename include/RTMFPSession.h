@@ -129,14 +129,19 @@ public:
 	Mona::Signal					connectSignal; // signal to wait connection
 	Mona::Signal					p2pPublishSignal; // signal to wait p2p publish
 	Mona::Signal					publishSignal; // signal to wait publication
+	Mona::Signal					readSignal; // signal to wait for asynchronous data
 	bool							p2pPublishReady; // true if the p2p publisher is ready
 	bool							publishReady; // true if the publisher is ready
 	bool							connectReady; // Ready if we have received the NetStream.Connect.Success event
+	bool							dataAvailable; // true if there is asynchronous data available
 
 protected:
 	
 	// Handle stream creation
 	void handleStreamCreated(Mona::UInt16 idStream);
+
+	// Handle data available or not event
+	virtual void handleDataAvailable(bool isAvailable);
 	
 	// Handle play request (only for P2PSession)
 	virtual bool handlePlay(const std::string& streamName, FlashWriter& writer);

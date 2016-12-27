@@ -143,7 +143,7 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 		RTMFPMessage& message(**it);
 
 		if(message.fragments.empty()) {
-			CRITIC("RTMFPMessage ",(stage+1)," is bad formatted on fowWriter ",id);
+			CRITIC("RTMFPMessage ",(stage+1)," is bad formatted on flowWriter ",id);
 			++it;
 			continue;
 		}

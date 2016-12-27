@@ -73,6 +73,10 @@ public:
 	// Subscribe to all events of the connection and add it to the list of known addresses
 	virtual void					subscribe(std::shared_ptr<RTMFPConnection>& pConnection);
 
+	// Unsubscribe to events of the connection pointed by address, 
+	// Note: This function is only called by RTMFPConnection to avoid double subscription
+	virtual void					unsubscribe(const Mona::SocketAddress& address);
+
 	// Read data asynchronously
 	// peerId : id of the peer if it is a p2p connection, otherwise parameter is ignored
 	bool							readAsync(const std::string& peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
@@ -80,13 +84,19 @@ public:
 	// Latency (ping / 2)
 	Mona::UInt16					latency();
 
+	// Close the connections to addresses which are not the one in parameter
+	void							closeOthers(const Mona::SocketAddress& address);
+
 protected:
 
 	// Analyze packets received from the server (must be connected)
 	void						receive(Mona::BinaryReader& reader);
 
+	// Handle data available or not event
+	virtual void				handleDataAvailable(bool isAvailable) {} // TODO: implement it in P2PSession
+
 	// Handle play request (only for P2PSession)
-	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer)=0;
+	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer) = 0;
 	
 	// Handle a 0C Message
 	virtual void				handleProtocolFailed() = 0;
