@@ -155,24 +155,25 @@ void RTMFPConnection::manage() {
 	if (!_pSession)
 		return;
 
-	RTMFP::SessionStatus sessionStatus = _pSession->status;
-
 	// Send waiting handshake 30 to server/peer
 	switch (_status) {
 	case RTMFP::HANDSHAKE30:
-	case RTMFP::STOPPED:
+	case RTMFP::STOPPED: 
 		// Send First handshake request (30)
-		if (!(sessionStatus > RTMFP::HANDSHAKE30) && (!_connectAttempt || _connectAttempt <= 11) && _lastAttempt.isElapsed(1000)) {
-			++_connectAttempt;
-			if (_connectAttempt == 11) {
-				WARN("Connection to ", name(), " has reached 11 attempt without answer, closing...")
+		if (!(_pSession->status > RTMFP::HANDSHAKE30) && (!_connectAttempt || _lastAttempt.isElapsed(1000))) {
+			if (_connectAttempt++ == 11) {
+				INFO("Connection to ", name(), " has reached 11 attempt without answer, closing...")
 				_status = RTMFP::FAILED;
 				return;
 			}
+			TRACE("Sending new handshake 30 to ", _pSession->name(), " at address ", _address.toString())
 			sendHandshake30(_pSession->epd(), _pSession->tag());
-			_pSession->status = RTMFP::HANDSHAKE30;
+			if (_pSession->status == RTMFP::STOPPED)
+				_pSession->status = RTMFP::HANDSHAKE30;
 			_lastAttempt.update();
 		}
+		break;
+	default:
 		break;
 	}
 
@@ -400,7 +401,8 @@ void RTMFPConnection::sendHandshake78(BinaryReader& reader) {
 	UInt8 id[PEER_ID_SIZE];
 	EVP_Digest(reader.data() + idPos, publicKeySize + 2, id, NULL, EVP_sha256(), NULL);
 	rawId.append(STR id, PEER_ID_SIZE);
-	DEBUG("peer ID calculated from public key : ", Util::FormatHex(id, PEER_ID_SIZE, peerId))
+	Util::FormatHex(id, PEER_ID_SIZE, peerId);
+	DEBUG("peer ID calculated from public key : ", peerId)
 
 	// Create the session, if already exists and connected we ignore the request
 	if (!_pParent->onNewPeerId(rawId, peerId, _address) && _pSession->status > RTMFP::HANDSHAKE38) {

@@ -62,7 +62,6 @@ void Connection::process(PoolBuffer& pBuffer) {
 		return;
 
 	// Decode the RTMFP data
-	string buffer;
 	if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
 		ERROR("Invalid RTMFP packet on connection to ", _address.toString())
 		return;
@@ -75,11 +74,15 @@ void Connection::process(PoolBuffer& pBuffer) {
 	// Handshake or session decoder?
 	RTMFPEngine* pDecoder = (idStream == 0) ? _pDefaultDecoder.get() : _pDecoder.get();
 
+#if defined(_DEBUG)
 	Buffer copy(pBuffer.size());
 	memcpy(copy.data(), pBuffer.data(), pBuffer.size());
+#endif
 	if (!pDecoder->process(BIN pBuffer.data(), pBuffer.size())) {
-		ERROR("Bad RTMFP CRC sum computing (idstream: ", idStream, ", address : ", _address.toString(), ")")
+		WARN("Bad RTMFP CRC sum computing (idstream: ", idStream, ", address : ", _address.toString(), ")")
+#if defined(_DEBUG)
 		DUMP("RTMFP", copy.data(), copy.size(), "Raw request : ")
+#endif
 		return;
 	}
 	else
@@ -317,9 +320,6 @@ void Connection::handleP2pAddresses(BinaryReader& reader) {
 	// Send handshake 30 to peer addresses found
 	SocketAddress hostAddress;
 	PEER_LIST_ADDRESS_TYPE addresses;
-	if (RTMFP::ReadAddresses(reader, addresses, hostAddress)) {
-		if (hostAddress == _address)
-			hostAddress.clear(); // same server => set address null
+	if (RTMFP::ReadAddresses(reader, addresses, hostAddress))
 		_pParent->onP2PAddresses(tagReceived, addresses, hostAddress);
-	}
 }

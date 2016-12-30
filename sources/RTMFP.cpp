@@ -121,7 +121,6 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 			case RTMFP::ADDRESS_REDIRECTION:
 				hostAddress = address; break;
 			}
-			TRACE("IP Address : ", address.toString(), " - type : ", addressType)
 		}
 	}
 	return !addresses.empty() || hostAddress;

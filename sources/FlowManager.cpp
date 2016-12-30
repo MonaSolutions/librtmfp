@@ -150,7 +150,7 @@ FlowManager::~FlowManager() {
 
 void FlowManager::close() {
 
-	for (auto itConnection : _mapConnections) {
+	for (auto& itConnection : _mapConnections) {
 		itConnection.second->close();
 		unsubscribe(itConnection.second);
 	}
@@ -359,9 +359,6 @@ void FlowManager::receive(BinaryReader& reader) {
 			if (!pFlow) {
 				WARN("RTMFPFlow ", idFlow, " unfound for connection ", name());
 				break;
-				if (_pFlowNull)
-					((UInt64&)_pFlowNull->id) = idFlow;
-				pFlow = _pFlowNull.get();
 			}
 
 		}

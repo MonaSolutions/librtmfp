@@ -32,7 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x01020001	// (1.2.1)
+#define RTMFP_LIB_VERSION	0x01020002	// (1.2.2)
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -70,7 +70,6 @@ public:
 		if (_direction == DECRYPT) { // check CRC
 			Mona::BinaryReader reader(data, size);
 			Mona::UInt16 crc(reader.read16());
-			// TODO: return the binary reader object
 			return (Mona::Crypto::ComputeCRC(reader) == crc);
 		}
 		return true;

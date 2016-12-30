@@ -132,20 +132,30 @@ void SocketHandler::deleteConnection(const MAP_ADDRESS2CONNECTION::iterator& itC
 void SocketHandler::manage() {
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 
-	// Send the waiting p2p connection requests (ask server for addresses)
 	if (!_mapTag2Peer.empty()) {
 		lock_guard<recursive_mutex> lock(_mutexConnections);
 
-		for (auto& itPeer : _mapTag2Peer) {
-			if (!itPeer.second.received && itPeer.second.hostAddress) {
-				INFO("Sending new P2P handshake 30 to server (peerId : ", itPeer.second.peerId, ")")
-				_pDefaultConnection->setAddress(itPeer.second.hostAddress);
-				_pDefaultConnection->sendHandshake30(itPeer.second.rawId, itPeer.first);
-				itPeer.second.received = true;
+		// Ask server to send p2p addresses
+		auto itPeer = _mapTag2Peer.begin();
+		while (itPeer != _mapTag2Peer.end()) {
+			WaitingPeer& peer = itPeer->second;
+			if (!peer.attempt || peer.lastAttempt.isElapsed(peer.attempt * 1500)) {
+				if (peer.attempt++ == 11) {
+					INFO("Connection to ", peer.peerId, " has reached 11 attempt without answer, removing the peer...")
+					_mapTag2Peer.erase(itPeer++);
+					continue;
+				}
+
+				DEBUG("Sending new P2P handshake 30 to server (peerId : ", peer.peerId, ")")
+				_pDefaultConnection->setAddress(peer.hostAddress);
+				_pDefaultConnection->sendHandshake30(peer.rawId, itPeer->first);
+				peer.lastAttempt.update();
 			}
+			++itPeer;
 		}
 	}
 
+	// Manage all connections
 	for (auto itConnection : _mapAddress2Connection)
 		itConnection.second->manage();
 
@@ -170,20 +180,18 @@ void SocketHandler::onP2PAddresses(const string& tagReceived, const PEER_LIST_AD
 	}
 
 	// Update addresses and send handshake 30 to far server if no handshake 70 received
-	if (OnP2PAddresses::raise<false>(it->second.peerId, addresses) && hostAddress) {
-		++it->second.attempt;
-		if (it->second.attempt == 11) {
-			WARN("Connection to ", it->second.peerId, " has reached 11 attempt without answer, removing the peer...")
-			_mapTag2Peer.erase(it);
-			return;
-		}
+	if (OnP2PAddresses::raise<false>(it->second.peerId, addresses) && hostAddress && it->second.hostAddress != hostAddress) {
 
 		// Send handshake 30 to far server
+		DEBUG("Sending P2P handshake 30 to far server at ", hostAddress.toString()," (peerId : ", it->second.peerId, ")")
+		it->second.hostAddress = hostAddress; // update host address with far server address
 		_pDefaultConnection->setAddress(hostAddress);
 		_pDefaultConnection->sendHandshake30(it->second.rawId, it->first);
+		++it->second.attempt;
 		it->second.lastAttempt.update();
 	}
 }
+
 
 void SocketHandler::onPeerHandshake30(const string& id, const string& tag, const SocketAddress& address) {
 

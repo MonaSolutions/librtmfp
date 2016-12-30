@@ -294,6 +294,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		Buffer farCode;
 		packet.read(0x22, farCode);
+		TRACE("Far code received for stream : ", Util::FormatHex(farCode.data(), farCode.size(), LOG_BUFFER))
 		if (groupParameters->isPublisher) {
 			// Another stream code => we must accept and send our stream code
 			if (memcmp(_pStreamCode->data(), farCode.data(), 0x22) != 0) {
@@ -316,8 +317,10 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 					case NETGROUP_UNKNWON_PARAMETER:
 						break;
 					case NETGROUP_WINDOW_DURATION:
-						if (value != groupParameters->windowDuration)
-							DEBUG("Updating the Window Duration : ", (groupParameters->windowDuration = value), "ms");
+						if (value != groupParameters->windowDuration) {
+							groupParameters->windowDuration = value;
+							DEBUG("Updating the Window Duration : ", groupParameters->windowDuration, "ms");
+						}
 						break;
 					case NETGROUP_OBJECT_ENCODING:
 						if (value != 300000) {
@@ -326,19 +329,25 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 						}
 						break;
 					case NETGROUP_UPDATE_PERIOD:
-						if (value != groupParameters->availabilityUpdatePeriod)
-							DEBUG("Updating the Avaibility Update period : ", (groupParameters->availabilityUpdatePeriod = value), "ms"); 
+						if (value != groupParameters->availabilityUpdatePeriod) {
+							groupParameters->availabilityUpdatePeriod = value;
+							DEBUG("Updating the Avaibility Update period : ", groupParameters->availabilityUpdatePeriod, "ms");
+						}
 						break;
 					case NETGROUP_SEND_TO_ALL:
 						availabilitySendToAll = 1;
 						return;
 					case NETROUP_FETCH_PERIOD:
-						if (value != groupParameters->fetchPeriod)
-							DEBUG("Updating the Fetch period : ", (groupParameters->fetchPeriod = value), "ms"); break;
+						if (value != groupParameters->fetchPeriod) {
+							groupParameters->fetchPeriod = value;
+							DEBUG("Updating the Fetch period : ", groupParameters->fetchPeriod, "ms"); break;
+						}
 						break;
 				}
-				if (groupParameters->availabilitySendToAll != availabilitySendToAll)
-					DEBUG("Updating the Availability Send to All : ", ((groupParameters->availabilitySendToAll = availabilitySendToAll) != 0) ? "ON" : "OFF");
+				if (groupParameters->availabilitySendToAll != availabilitySendToAll) {
+					groupParameters->availabilitySendToAll = availabilitySendToAll;
+					DEBUG("Updating the Availability Send to All : ", (groupParameters->availabilitySendToAll != 0) ? "ON" : "OFF");
+				}
 			}
 
 			if (!it->second->mediaSubscriptionSent) {
@@ -350,15 +359,20 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 					DEBUG("Saving the key ", Util::FormatHex(BIN farCode.data(), 0x22, LOG_BUFFER))
 					memcpy(_pStreamCode->data(), farCode.data(), 0x22);
 				}
+				
 				sendGroupMedia(it->second);
 			}
+			else if (memcmp(_pStreamCode->data(), farCode.data(), 0x22) != 0)
+				WARN("Different stream keys with name ", stream, " are available, the stream could not work properly") // TODO: manage this
 		}
 	};
 	onGroupReport = [this](const string& peerId, PacketReader& packet, FlashWriter& writer) {
 		lock_guard<recursive_mutex> lock(_fragmentMutex);
 		auto itPeer = _mapPeers.find(peerId);
-		if (itPeer == _mapPeers.end())
+		if (itPeer == _mapPeers.end()) {
+			WARN("Group report received from an unknown peer : ", peerId)
 			return;
+		}
 
 		string key1, key2, tmp, newPeerId, rawId;
 
@@ -813,8 +827,8 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 		}
 	}
 
-	if (bestList == _bestList)
-		TRACE("Best Peer management - Peers connected : ", _mapPeers.size(), " ; new count : ", _bestList.size(), " ; Peers known : ", _mapGroupAddress.size())
+	if (bestList == _bestList && _mapPeers.size() != _bestList.size())
+		INFO("Best Peer management - Peers connected : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size())
 }
 
 void NetGroup::eraseOldFragments() {
@@ -1170,7 +1184,7 @@ void NetGroup::sendPullRequests() {
 bool NetGroup::sendPullToNextPeer(UInt64 idFragment) {
 
 	if (!getNextPeer(_itPullPeer, true, idFragment, 0)) {
-		WARN("sendPullRequests - No peer found for fragment ", idFragment)
+		DEBUG("sendPullRequests - No peer found for fragment ", idFragment)
 		return false;
 	}
 	

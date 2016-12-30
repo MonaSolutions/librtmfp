@@ -108,11 +108,11 @@ private:
 	struct WaitingPeer : public Mona::Object {
 
 		WaitingPeer(const std::string& rawPeerId, const std::string& id, const Mona::SocketAddress& address) : 
-			rawId(rawPeerId.c_str(), PEER_ID_SIZE+2), /*attempt(0),*/ peerId(id.c_str()), hostAddress(address), received(false) {}
+			rawId(rawPeerId.c_str(), PEER_ID_SIZE+2), attempt(0), peerId(id.c_str()), hostAddress(address) {}
 
+		// These member are only used if the hostAddress is set
 		std::string			rawId;
 		std::string			peerId;
-		bool				received;
 		Mona::UInt8			attempt; // Counter of connection attempts to the server
 		Mona::Time			lastAttempt; // Last attempt to connect to the server
 		Mona::SocketAddress	hostAddress; // Address of the server (if cleared : it is a direct connection)

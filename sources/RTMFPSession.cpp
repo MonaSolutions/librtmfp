@@ -139,17 +139,24 @@ RTMFPSession::RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnSta
 	onP2PAddresses = [this](const string& peerId, const PEER_LIST_ADDRESS_TYPE& addresses) {
 		auto itSession = _mapPeersById.find(peerId);
 		if (itSession != _mapPeersById.end()) {
+			if (itSession->second->status > RTMFP::HANDSHAKE30) {
+				DEBUG("Addresses ignored for peer ", peerId, " we are already in state ", itSession->second->status)
+				return false;
+			}
 
-			if (_group && !addresses.empty())
+			// Once we know the addresses we can add the peer to NetGroup heard list
+			const PEER_LIST_ADDRESS_TYPE& knownAddresses = itSession->second->addresses();
+			if (_group && knownAddresses.empty() && !addresses.empty())
 				_group->addPeer2HeardList(itSession->second->peerId, itSession->second->rawId.data(), addresses, itSession->second->hostAddress);
 
-			if (itSession->second->status != RTMFP::STOPPED)
-				DEBUG("Addresses ignored for peer ", peerId, " we are already in state ", itSession->second->status)
-			else {
-				for (auto itAddress : addresses)
+			for (auto itAddress : addresses) {
+				// If new address : connect to it
+				if (knownAddresses.find(itAddress.first) == knownAddresses.end()) {
 					shared_ptr<RTMFPConnection> pConnection = _pSocketHandler->addConnection(itAddress.first, itSession->second.get(), false, true);
-				return true;
+					pConnection->manage();
+				}
 			}
+			return true;
 		}
 		else
 			ERROR("Unknown peer ", peerId, " in onP2PAddresses") // should not happen
@@ -173,6 +180,7 @@ RTMFPSession::RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnSta
 
 RTMFPSession::~RTMFPSession() {
 
+	lock_guard<recursive_mutex> lock(_mutexConnections);
 	// Close the NetGroup
 	if (_group)
 		_group->close();
@@ -196,8 +204,8 @@ RTMFPSession::~RTMFPSession() {
 		_pMainStream->OnNewPeer::unsubscribe(onNewPeer);
 	}
 
-	// Close the flows & the main stream
-	close();
+	// Close the connections
+	FlowManager::close();
 
 	// And finally close the writers and socket
 	if (_pSocketHandler) {
@@ -310,7 +318,7 @@ void RTMFPSession::connect2Peer(const string& peerId, const char* streamName, co
 
 	INFO("Connecting to peer ", peerId, "...")
 	itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId), 
-		forward_as_tuple(new P2PSession(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, /*addresses,*/ hostAddress, false, (bool)_group)));
+		forward_as_tuple(new P2PSession(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, hostAddress, false, (bool)_group)));
 
 	shared_ptr<P2PSession> pPeer = itPeer->second;
 	// P2P unicast : add command play to send when connected
@@ -322,9 +330,9 @@ void RTMFPSession::connect2Peer(const string& peerId, const char* streamName, co
 		shared_ptr<RTMFPConnection> pConnection = _pSocketHandler->addConnection(itAddress.first, pPeer.get(), false, true);
 
 	// Ask server for addresses if needed
-	SocketAddress host(hostAddress);
-	if (!addresses.empty() && hostAddress == _pConnection->address())
-		host.clear();
+	/*SocketAddress host(hostAddress);
+	if (_group && !addresses.empty() && hostAddress == _pConnection->address())
+		host.clear();*/
 	_pSocketHandler->addP2PConnection(pPeer->rawId, peerId, pPeer->tag(), hostAddress);
 }
 
@@ -640,7 +648,11 @@ void RTMFPSession::handleP2PAddressExchange(PacketReader& reader) {
 	reader.read(16, tag);
 	DEBUG("A peer will contact us with address : ", address.toString())
 
-	// TODO: see if we should send the handshake 70 directly
+	//if (_group) {
+		// Send the handshake 70 to the peer
+		shared_ptr<RTMFPConnection> pConnection = _pSocketHandler->addConnection(address, NULL, true, true);
+		pConnection->sendHandshake70(tag);
+	//}
 }
 
 void RTMFPSession::sendGroupConnection(const string& netGroup) {

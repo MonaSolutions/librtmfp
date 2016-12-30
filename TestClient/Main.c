@@ -339,6 +339,8 @@ int main(int argc,char* argv[]) {
 
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
 		printf("Cannot catch SIGINT\n");
+	if (signal(SIGTERM, ConsoleCtrlHandler) == SIG_ERR)
+		printf("Cannot catch SIGTERM\n");
 
 	version = RTMFP_LibVersion();
 	printf("Librtmfp version %u.%u.%u\n", (version >> 24) & 0xFF, (version >> 16) & 0xFF, version & 0xFFFF);

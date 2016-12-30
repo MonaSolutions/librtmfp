@@ -67,8 +67,6 @@ public:
 	// Called by Invoker every second to manage connection (flush and ping)
 	void manage();
 
-	//virtual Mona::UDPSocket& socket() { return *_pSocket; }
-
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
 		
