@@ -52,7 +52,7 @@ public:
 	void connect2Group(const char* streamName, RTMFPGroupConfig* parameters);
 
 	// Asynchronous read (buffered)
-	// return false if end of buf has been reached
+	// return : False if the connection is not established, true otherwise
 	bool read(const char* peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Write media (netstream must be published)

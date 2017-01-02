@@ -395,10 +395,9 @@ bool RTMFPSession::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead
 	if (!(res = readAsync(peerId, buf, size, nbRead)) || nbRead>0)
 		return res; // quit if treated
 
-	for (auto &it : _mapPeersById) {
-		if (!(res = it.second->readAsync(peerId, buf, size, nbRead)) || nbRead>0)
-			return res; // quit if treated
-	}
+	auto itPeer = _mapPeersById.find(peerId);
+	if (itPeer != _mapPeersById.end() && (!(res = itPeer->second->readAsync(peerId, buf, size, nbRead)) || nbRead > 0))
+		return res; // quit if treated
 
 	return true;
 }

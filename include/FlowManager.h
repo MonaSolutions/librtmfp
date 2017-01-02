@@ -79,6 +79,7 @@ public:
 
 	// Read data asynchronously
 	// peerId : id of the peer if it is a p2p connection, otherwise parameter is ignored
+	// return : false if the connection is not established
 	bool							readAsync(const std::string& peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Latency (ping / 2)
@@ -170,6 +171,7 @@ private:
 		RTMFPMediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 time, bool audio);
 
 		Mona::PoolBuffer	pBuffer;
+		Mona::UInt32		pos;
 	};
 	std::map<std::string, std::deque<std::shared_ptr<RTMFPMediaPacket>>>		_mediaPackets;
 	std::recursive_mutex														_readMutex;

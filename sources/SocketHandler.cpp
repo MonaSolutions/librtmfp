@@ -133,7 +133,6 @@ void SocketHandler::manage() {
 	lock_guard<recursive_mutex> lock(_mutexConnections);
 
 	if (!_mapTag2Peer.empty()) {
-		lock_guard<recursive_mutex> lock(_mutexConnections);
 
 		// Ask server to send p2p addresses
 		auto itPeer = _mapTag2Peer.begin();

@@ -34,7 +34,7 @@ public:
 	virtual void							initWriter(const std::shared_ptr<RTMFPWriter>& pWriter)=0;
 	// Exchange a writer with a new one (generally if an error occurs)
 	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer) = 0;
-	// Return true if a writer with the same signature already exists
+	// Return true if a writer with the same signature is available and remove it from the available map
 	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature) = 0;
 
 	virtual bool							failed() const = 0;

@@ -32,7 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-FlowManager::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffers, const UInt8* data, UInt32 size, UInt32 time, bool audio) : pBuffer(poolBuffers, size + 15) {
+FlowManager::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffers, const UInt8* data, UInt32 size, UInt32 time, bool audio) : pBuffer(poolBuffers, size + 15), pos(0) {
 	BinaryWriter writer(pBuffer->data(), size + 15);
 
 	writer.write8(audio ? '\x08' : '\x09');
@@ -205,43 +205,47 @@ void FlowManager::unsubscribe(shared_ptr<RTMFPConnection>& pConnection) {
 }
 
 bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& nbRead) {
+	FATAL_ASSERT(nbRead == 0)
 	
-	nbRead = 0;
 	if (status == RTMFP::CONNECTED) {
 
 		bool available = false;
-		{
-			lock_guard<recursive_mutex> lock(_readMutex);
-			if (!_mediaPackets[peerId].empty()) {
-				// First read => send header
-				if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
-					memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
-					_firstRead = false;
-					size -= sizeof(_FlvHeader);
-					nbRead += sizeof(_FlvHeader);
-				}
-
-				UInt32 bufferSize = 0;
-				auto& queue = _mediaPackets[peerId];
-				while (!queue.empty() && (nbRead < size)) {
-
-					std::shared_ptr<RTMFPMediaPacket> packet = queue.front();
-					bufferSize = packet->pBuffer.size();
-					if (bufferSize > (size - nbRead))
-						return false;
-
-					memcpy(buf + nbRead, packet->pBuffer.data(), bufferSize);
-					queue.pop_front();
-					nbRead += bufferSize;
-				}
-				available = !queue.empty();
+		lock_guard<recursive_mutex> lock(_readMutex);
+		if (!_mediaPackets[peerId].empty()) {
+			// First read => send header
+			if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
+				memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
+				_firstRead = false;
+				size -= sizeof(_FlvHeader);
+				nbRead += sizeof(_FlvHeader);
 			}
-		}
+
+			UInt32 bufferSize = 0, toRead = 0;
+			auto& queue = _mediaPackets[peerId];
+			while (!queue.empty() && (nbRead < size)) {
+
+				// Read next packet
+				std::shared_ptr<RTMFPMediaPacket>& packet = queue.front();
+				bufferSize = packet->pBuffer.size() - packet->pos;
+				toRead = (bufferSize > (size - nbRead)) ? size - nbRead : bufferSize;
+				memcpy(buf + nbRead, packet->pBuffer.data() + packet->pos, toRead);
+				nbRead += toRead;
+
+				// If packet too big : save position and exit
+				if (bufferSize > toRead) {
+					packet->pos += toRead;
+					break;
+				}
+				queue.pop_front();
+			}
+			available = !queue.empty();
+			}
 		if (!available)
 			handleDataAvailable(false); // change the available status
-	}
+		return true;
+	} 
 
-	return true;
+	return false;
 }
 
 void FlowManager::receive(BinaryReader& reader) {

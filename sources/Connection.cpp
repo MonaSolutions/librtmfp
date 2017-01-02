@@ -48,6 +48,8 @@ void Connection::close() {
 		flush(false, 0x89);
 	}
 
+	_availableWriters.clear(); // remove available writers
+
 	// Here no new sending must happen except "failSignal"
 	for (auto& it : _flowWriters) {
 		OnWriterClose::raise(it.second);
@@ -220,8 +222,10 @@ void Connection::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
 	(UInt64&)pWriter->id = _nextRTMFPWriterId;
 	pWriter->amf0 = false;
 
-	if (!pWriter->signature.empty())
+	if (!pWriter->signature.empty()) {
 		DEBUG("New writer ", pWriter->id, " on connection ", name());
+		_availableWriters.emplace(pWriter->signature, pWriter);
+	}
 	OnNewWriter::raise(_flowWriters.find(pWriter->id)->second);
 }
 
@@ -249,6 +253,9 @@ void Connection::flushWriters() {
 		if (pWriter->consumed()) {
 			OnWriterClose::raise(pWriter);
 			_flowWriters.erase(it++);
+			auto itAvailable = _availableWriters.find(pWriter->signature);
+			if (itAvailable != _availableWriters.end() && pWriter == itAvailable->second)
+				_availableWriters.erase(itAvailable);
 			continue;
 		}
 		++it;
@@ -259,7 +266,7 @@ shared_ptr<RTMFPWriter> Connection::changeWriter(RTMFPWriter& writer) {
 	auto it = _flowWriters.find(writer.id);
 	if (it == _flowWriters.end()) {
 		ERROR("RTMFPWriter ", writer.id, " change impossible on connection")
-			return shared_ptr<RTMFPWriter>(&writer);
+		return shared_ptr<RTMFPWriter>(&writer);
 	}
 	shared_ptr<RTMFPWriter> pWriter(it->second);
 	it->second.reset(&writer);
@@ -268,11 +275,11 @@ shared_ptr<RTMFPWriter> Connection::changeWriter(RTMFPWriter& writer) {
 }
 
 bool Connection::getWriter(shared_ptr<RTMFPWriter>& pWriter, const string& signature) {
-	for (auto it : _flowWriters) {
-		if (it.second->signature == signature) {
-			pWriter = it.second;
-			return true;
-		}
+	auto itWriter = _availableWriters.find(signature);
+	if (itWriter != _availableWriters.end()) {
+		pWriter = itWriter->second;
+		_availableWriters.erase(itWriter);
+		return true;
 	}
 	return false;
 }

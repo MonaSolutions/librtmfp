@@ -160,7 +160,7 @@ void RTMFPConnection::manage() {
 	case RTMFP::HANDSHAKE30:
 	case RTMFP::STOPPED: 
 		// Send First handshake request (30)
-		if (!(_pSession->status > RTMFP::HANDSHAKE30) && (!_connectAttempt || _lastAttempt.isElapsed(1000))) {
+		if (!(_pSession->status > RTMFP::HANDSHAKE30) && (!_connectAttempt || _lastAttempt.isElapsed(1500))) {
 			if (_connectAttempt++ == 11) {
 				INFO("Connection to ", name(), " has reached 11 attempt without answer, closing...")
 				_status = RTMFP::FAILED;

@@ -79,8 +79,6 @@ public:
 
 	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer);
 
-	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature);
-
 	virtual bool							failed() const { return _status == RTMFP::FAILED; }
 
 	virtual bool							canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
@@ -93,6 +91,9 @@ public:
 	virtual void							flush() { flush(connected, connected ? 0x89 : 0x0B); }
 
 	virtual const std::string&				name() { return _address.toString(); }
+
+	// Return true if a writer with the same signature is available and remove it from the available map
+	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature);
 
 protected:
 
@@ -137,6 +138,7 @@ private:
 	std::shared_ptr<RTMFPWriter>&	writer(Mona::UInt64 id, std::shared_ptr<RTMFPWriter>& pWriter);
 
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter>>	_flowWriters; // Map of writers identified by id
+	std::map<std::string, std::shared_ptr<RTMFPWriter>>		_availableWriters; // Map of signature to available writers (for flow association)
 	RTMFPWriter*											_pLastWriter; // Write pointer used to check if it is possible to write
 	Mona::UInt64											_nextRTMFPWriterId;
 	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object*/

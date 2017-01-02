@@ -222,9 +222,11 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 	if (pConn) {
 		UInt32 total = 0;
 		int nbRead = 0;
-		bool running = true;
-		while (running && nbRead==0 && GlobalInterruptCb(GlobalInterruptArg) != 1) {
-			running = pConn->read(peerId, (UInt8*)buf, size, nbRead);
+		while (nbRead==0 && GlobalInterruptCb(GlobalInterruptArg) != 1) {
+			if (!pConn->read(peerId, (UInt8*)buf, size, nbRead)) {
+				WARN("Connection is not established, cannot read data")
+				return -1;
+			}
 			if (nbRead < 0)
 				return nbRead;
 			else if (nbRead > 0) {

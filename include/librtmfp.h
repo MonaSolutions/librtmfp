@@ -93,8 +93,8 @@ LIBRTMFP_API int RTMFP_ClosePublication(unsigned int RTMFPcontext, const char* s
 LIBRTMFP_API void RTMFP_Close(unsigned int RTMFPcontext);
 
 // Read size bytes of flv data from the current connexion (Asynchronous read, to be called by ffmpeg)
-// return the number of bytes read (always less or equal than size)
 // peerId : the id of the peer or an empty string
+// return : the number of bytes read (always less or equal than size) or -1 if an error occurs
 LIBRTMFP_API int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext, char *buf, unsigned int size);
 
 // Write size bytes of data into the current connexion
