@@ -86,13 +86,13 @@ A testing software (TestClient) is delivered with **librtmfp** as a sample of us
 - Publishing for P2P direct communication only :
 
 ```
-./ffmpeg -re -i in.flv -rtmfp_p2pPublishing true -c copy -f flv rtmfp://<hostname and port + application name>/<stream name> -report < /dev/null
+./ffmpeg -re -i in.flv -p2pPublishing true -c copy -f flv rtmfp://<hostname and port + application name>/<stream name> -report < /dev/null
 ```
 
 - Reading a stream from a peer (direct P2P) :
 	
 ```
-./ffmpeg -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/<stream name> -c copy -f flv out1.flv -y -report < /dev/null
+./ffmpeg -peerId <peer ID> -i rtmfp://<hostname and port + application name>/<stream name> -c copy -f flv out1.flv -y -report < /dev/null
 ```
 
 - Publishing a stream into a NetGroup (P2P Multicast) :
@@ -120,7 +120,7 @@ If you just want to play directly a stream you can use the ffplay command.
 - Playing a stream from a peer (direct P2P) :
 	
 ```
-./ffplay -rtmfp_peerId <peer ID> -i rtmfp://<hostname and port + application name>/<stream name>
+./ffplay -peerId <peer ID> -i rtmfp://<hostname and port + application name>/<stream name>
 ```
 
 - Playing a stream from a NetGroup (P2P Multicast) :

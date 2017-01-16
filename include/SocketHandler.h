@@ -65,7 +65,8 @@ public:
 	const Mona::PoolBuffers&			poolBuffers();
 
 	// Add a connection to the map
-	std::shared_ptr<RTMFPConnection>	addConnection(const Mona::SocketAddress& address, FlowManager* session, bool responder, bool p2p);
+	// return True if the connection is created
+	bool								addConnection(std::shared_ptr<RTMFPConnection>& pConn, const Mona::SocketAddress& address, FlowManager* session, bool responder, bool p2p);
 
 	// Accept all connexions (P2P writer or NetGroup)
 	void								setAcceptAll() { _acceptAll = true; }
@@ -86,6 +87,9 @@ public:
 
 	// Called by RTMFPConnection when we discover a new peer ID, return true if the p2p session has been created
 	bool								onNewPeerId(const std::string& rawId, const std::string& peerId, const Mona::SocketAddress& address);
+
+	// Called by RTMFPConnection when connection is done
+	void								onConnection(const Mona::SocketAddress& address, const std::string& name);
 
 	// Add a p2p connection request to send to the server
 	void								addP2PConnection(const std::string& rawId, const std::string& peerId, const std::string& tag, const Mona::SocketAddress& hostAddress);
@@ -122,7 +126,7 @@ private:
 	MAP_ADDRESS2CONNECTION					_mapAddress2Connection; // map of address to RTMFP connection
 	std::unique_ptr<DefaultConnection>		_pDefaultConnection; // Default connection to send handshake messages
 
-	std::recursive_mutex					_mutexConnections; // main mutex for connections (normal or p2p)
+	std::mutex								_mutexConnections; // main mutex for connections (normal or p2p)
 	std::unique_ptr<Mona::UDPSocket>		_pSocket; // Sending socket established with server
 	Invoker*								_pInvoker; // Pointer to the main invoker class (to get poolbuffers)
 	RTMFPSession*							_pMainSession; // Pointer to the main RTMFP session for assocation with new connections
@@ -133,5 +137,4 @@ private:
 	// Events subscriptions
 	Mona::UDPSocket::OnPacket::Type			onPacket; // Main input event, received on each raw packet
 	Mona::UDPSocket::OnError::Type			onError; // Main input event, received on socket error
-	ConnectionEvents::OnConnected::Type		onConnection; // received when we are connected to a peer or server
 };

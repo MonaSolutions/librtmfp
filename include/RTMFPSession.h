@@ -21,7 +21,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "FlowManager.h" // TODO: change with P2PSession
 #include "P2PSession.h"
 #include "Mona/HostEntry.h"
 #include "SocketHandler.h"
@@ -32,12 +31,14 @@ RTMFPSession represents a connection to the
 RTMFP Server
 */
 class NetGroup;
-struct RTMFPGroupConfig;
 class RTMFPSession : public FlowManager {
 public:
 	RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	~RTMFPSession();
+
+	// Close the conection properly or abruptly if parameter is true
+	virtual void close(bool abrupt);
 
 	// Connect to the specified url, return true if the command succeed
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
@@ -65,7 +66,7 @@ public:
 	unsigned int callFunction(const char* function, int nbArgs, const char** args, const char* peerId = 0);
 
 	// Called by Invoker every second to manage connection (flush and ping)
-	void manage();
+	virtual void manage();
 
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
@@ -85,7 +86,7 @@ public:
 	// Push the media packet to write into a file
 	void pushMedia(const std::string& stream, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size, double lostRate, bool audio) { 
 		Mona::PacketReader reader(data, size);
-		onMedia("", stream, time, reader, lostRate, audio); 
+		onMedia(stream, time, reader, lostRate, audio); 
 	}
 
 	// Remove the listener with peerId
@@ -93,6 +94,9 @@ public:
 
 	// Set the p2p publisher as ready (used for blocking mode)
 	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
+
+	// Set the p2p player as ready (used for blocking mode)
+	void setP2PPlayReady() { p2pPlaySignal.set(); p2pPlayReady = true; }
 
 	// Called by P2PSession when we are connected to the peer
 	bool addPeer2Group(const std::string& peerId);
@@ -123,12 +127,16 @@ public:
 
 	bool							isPublisher() { return (bool)_pPublisher; }
 
+	void							setDataAvailable(bool isAvailable) { handleDataAvailable(isAvailable); }
+
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal					connectSignal; // signal to wait connection
 	Mona::Signal					p2pPublishSignal; // signal to wait p2p publish
+	Mona::Signal					p2pPlaySignal; // signal to wait p2p publish
 	Mona::Signal					publishSignal; // signal to wait publication
 	Mona::Signal					readSignal; // signal to wait for asynchronous data
 	bool							p2pPublishReady; // true if the p2p publisher is ready
+	bool							p2pPlayReady; // true if the p2p player is ready
 	bool							publishReady; // true if the publisher is ready
 	bool							connectReady; // Ready if we have received the NetStream.Connect.Success event
 	bool							dataAvailable; // true if there is asynchronous data available
@@ -136,21 +144,15 @@ public:
 protected:
 	
 	// Handle stream creation
-	void handleStreamCreated(Mona::UInt16 idStream);
+	bool handleStreamCreated(Mona::UInt16 idStream);
 
 	// Handle data available or not event
 	virtual void handleDataAvailable(bool isAvailable);
-	
-	// Handle play request (only for P2PSession)
-	virtual bool handlePlay(const std::string& streamName, FlashWriter& writer);
-
-	// Handle a 0C Message
-	virtual void handleProtocolFailed();
 
 	// Handle a Writer close message (type 5E)
 	virtual void handleWriterFailed(std::shared_ptr<RTMFPWriter>& pWriter);
 
-	// Handle a P2P address exchange message
+	// Handle a P2P address exchange message 0x0f from server (a peer is about to contact us)
 	void handleP2PAddressExchange(Mona::PacketReader& reader);
 
 	// Handle a new writer creation
@@ -160,10 +162,10 @@ protected:
 	virtual void onConnect();
 
 	// On NetStream.Publish.Start (only for NetConnection)
-	virtual void onPublished(FlashWriter& writer);
+	virtual void onPublished(Mona::UInt16 streamId);
 
 	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*	createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature);
+	virtual RTMFPFlow*	createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature, Mona::UInt64 idWriterRef);
 
 	// Called when the server send us the ID of a peer in the NetGroup : connect to it
 	void handleNewGroupPeer(const std::string& peerId);
@@ -190,7 +192,7 @@ private:
 	std::string														_host; // server host name
 	std::set<std::string>											_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
 	std::deque<std::string>											_waitingGroup; // queue of waiting connections to groups
-	std::recursive_mutex											_mutexConnections; // mutex for waiting connections (normal or p2p)
+	std::mutex														_mutexConnections; // mutex for waiting connections (normal or p2p)
 	std::map<std::string, std::shared_ptr<P2PSession>>				_mapPeersById; // P2P connections by Id
 
 	std::string														_url; // RTMFP url of the application (base handshake)
@@ -224,6 +226,6 @@ private:
 		bool			videoReliable;
 	};
 	std::list<StreamCommand>										_waitingCommands;
-	std::recursive_mutex											_mutexCommands;
+	//std::recursive_mutex											_mutexCommands;
 	Mona::UInt16													_nbCreateStreams; // Number of streams to create
 };

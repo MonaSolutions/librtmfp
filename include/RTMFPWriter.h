@@ -38,6 +38,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define MESSAGE_ABANDONMENT		0x02
 #define MESSAGE_END				0x01
 
+struct RTMFPGroupConfig;
 /*******************************************************
 RTMFPWriter is the class for sending RTMFP messages to
 the server on a NetStream.
@@ -47,24 +48,14 @@ It manages acknowlegment and lost of packet sent
 */
 class RTMFPWriter : public FlashWriter, public virtual Mona::Object {
 public:
-	RTMFPWriter(State state,const std::string& signature, BandWriter& band);
-	RTMFPWriter(State state,const std::string& signature, BandWriter& band,std::shared_ptr<RTMFPWriter>& pThis);
+	RTMFPWriter(State state,const std::string& signature, BandWriter& band, Mona::UInt64 idFlow=0);
+	RTMFPWriter(State state,const std::string& signature, BandWriter& band,std::shared_ptr<RTMFPWriter>& pThis, Mona::UInt64 idFlow=0);
 	virtual ~RTMFPWriter();
 
-	const Mona::UInt64	id;
-	const bool			critical;
-	const Mona::UInt64	flowId;
-	const std::string	signature;
 
-	virtual FlashWriter&		newWriter() { 
-		if (signature.size()>6) {
-			std::string tmpSignature("\x00\x54\x43\x04", 4);
-			Mona::UInt32 idStream(Mona::BinaryReader((const Mona::UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
-			RTMFP::Write7BitValue(tmpSignature, idStream);
-			return *(new RTMFPWriter(state(), tmpSignature, _band)); 
-		} else
-			return *(new RTMFPWriter(state(), signature, _band)); 
-	}
+	const Mona::UInt64	id;
+	const Mona::UInt64	flowId; // ID of the flow associated to
+	const std::string	signature;
 
 	bool				flush() { return flush(true); }
 
@@ -76,7 +67,7 @@ public:
 		if (state() == CLOSED)
 			return;
 		ex.set(Mona::Exception::PROTOCOL, "RTMFPWriter ", id, " has failed, ", args...);
-		//WARN("RTMFPWriter ", id, " has failed, ", args ...);
+		WARN("RTMFPWriter ", id, " has failed, ", args ...);
 		abort();
 		_stage = _stageAck = _lostCount = 0;
 		 _ackCount = 0;
@@ -89,7 +80,7 @@ public:
 	void				clear();
 	void				abort();
 	void				close(Mona::Int32 code=0);
-	bool				consumed() { return _messages.empty() && state() == CLOSED; }
+	bool				consumed() { return _messages.empty() && state() == CLOSED && _closeTime.isElapsed(130000); } // Wait 130s before closing the writer definetly
 
 	Mona::UInt64		stage() { return _stage; }
 
@@ -135,6 +126,6 @@ private:
 	double						_ackCount; // number of acknowleged messages
 	Mona::UInt32				_repeatable; // number of repeatable messages waiting for acknowledgment
 	BandWriter&					_band; // RTMFP connection for sending message
-	//bool						_resetStream;
+	Mona::Time					_closeTime; // time since writer has been closed
 
 };

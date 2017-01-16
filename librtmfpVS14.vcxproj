@@ -103,6 +103,7 @@
     <ClInclude Include="include\FlashWriter.h" />
     <ClInclude Include="include\FlowManager.h" />
     <ClInclude Include="include\GroupListener.h" />
+    <ClInclude Include="include\GroupMedia.h" />
     <ClInclude Include="include\GroupStream.h" />
     <ClInclude Include="include\Invoker.h" />
     <ClInclude Include="include\librtmfp.h" />
@@ -110,6 +111,7 @@
     <ClInclude Include="include\NetGroup.h" />
     <ClInclude Include="include\P2PSession.h" />
     <ClInclude Include="include\ParameterWriter.h" />
+    <ClInclude Include="include\PeerMedia.h" />
     <ClInclude Include="include\Publisher.h" />
     <ClInclude Include="include\ReferableReader.h" />
     <ClInclude Include="include\RTMFP.h" />
@@ -135,12 +137,14 @@
     <ClCompile Include="sources\FlashWriter.cpp" />
     <ClCompile Include="sources\FlowManager.cpp" />
     <ClCompile Include="sources\GroupListener.cpp" />
+    <ClCompile Include="sources\GroupMedia.cpp" />
     <ClCompile Include="sources\GroupStream.cpp" />
     <ClCompile Include="sources\Invoker.cpp" />
     <ClCompile Include="sources\librtmfp.cpp" />
     <ClCompile Include="sources\Listener.cpp" />
     <ClCompile Include="sources\NetGroup.cpp" />
     <ClCompile Include="sources\P2PSession.cpp" />
+    <ClCompile Include="sources\PeerMedia.cpp" />
     <ClCompile Include="sources\Publisher.cpp" />
     <ClCompile Include="sources\ReferableReader.cpp" />
     <ClCompile Include="sources\RTMFP.cpp" />

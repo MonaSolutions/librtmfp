@@ -56,22 +56,25 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 };
 
 FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-	_firstRead(true), _pInvoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError), /*_nonce(0x8B),*/
-	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL) {
-	onStatus = [this](const string& code, const string& description, FlashWriter& writer) {
+	_firstRead(true), _pInvoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError),
+	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0) {
+	onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
 		if (code == "NetConnection.Connect.Success")
 			onConnect();
 		else if (code == "NetStream.Publish.Start")
-			onPublished(writer);
-		else if (code == "NetConnection.Connect.Closed" || code == "NetConnection.Connect.Rejected" || code == "NetStream.Publish.BadName")
-			close();
+			onPublished(streamId);
+		else if (code == "NetConnection.Connect.Closed" || code == "NetConnection.Connect.Rejected" || code == "NetStream.Publish.BadName") {
+			close(false);
+			return false; // close the flow
+		}
+		return true;
 	};
-	onPlay = [this](const string& streamName, FlashWriter& writer) {
-		return handlePlay(streamName, writer);
+	onPlay = [this](const string& streamName, UInt16 streamId, UInt64 flowId, double cbHandler) {
+		return handlePlay(streamName, streamId, flowId, cbHandler);
 	};
-	onMedia = [this](const string& peerId, const string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
+	onMedia = [this](const string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
 
 		if (!_codecInfosRead) {
 			if (!audio && RTMFP::IsH264CodecInfos(packet.current(), packet.available())) {
@@ -94,16 +97,16 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 		}
 
 		if (_pOnMedia) // Synchronous read
-			_pOnMedia(peerId.c_str(), stream.c_str(), time-_timeStart, (const char*)packet.current(), packet.available(), audio);
+			_pOnMedia(name().c_str(), stream.c_str(), time-_timeStart, (const char*)packet.current(), packet.available(), audio);
 		else { // Asynchronous read
 			{
-				lock_guard<recursive_mutex> lock(_readMutex);
-				_mediaPackets[peerId].emplace_back(new RTMFPMediaPacket(_pInvoker->poolBuffers, packet.current(), packet.available(), time - _timeStart, audio));
+				lock_guard<recursive_mutex> lock(_readMutex); // TODO: use the 'stream' parameter
+				_mediaPackets[name()].emplace_back(new RTMFPMediaPacket(_pInvoker->poolBuffers, packet.current(), packet.available(), time - _timeStart, audio));
 			}
 			handleDataAvailable(true);
 		}
 	};
-	/*onError = [this](const Exception& ex) {
+	/*TODO: onError = [this](const Exception& ex) {
 		string buffer;
 		_pOnSocketError(String::Format(buffer, ex.error(), " on connection ", name()).c_str());
 	};*/
@@ -127,19 +130,16 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 
 FlowManager::~FlowManager() {
 
-	// delete flows
+	// remove the flows
 	for (auto& it : _flows)
 		delete it.second;
 	_flows.clear();
 
+	close(true);
+
 	// delete media packets
 	lock_guard<recursive_mutex> lock(_readMutex);
 	_mediaPackets.clear();
-
-	_pFlowNull.reset();
-
-	// delete definitely the main connection (must be done at the end to keep the writers)
-	_pConnection.reset();
 
 	if (_pMainStream) {
 		_pMainStream->OnStatus::unsubscribe(onStatus);
@@ -148,28 +148,26 @@ FlowManager::~FlowManager() {
 	}
 }
 
-void FlowManager::close() {
+void FlowManager::close(bool abrupt) {
+	if (status == RTMFP::FAILED)
+		return;
 
 	for (auto& itConnection : _mapConnections) {
-		itConnection.second->close();
-		unsubscribe(itConnection.second);
+		itConnection.second->close(abrupt);
+		if (abrupt)
+			unsubscribeConnection(itConnection.second);
 	}
-	_mapConnections.clear();
 
-	status = RTMFP::FAILED;
-}
+	if (abrupt) {
+		_pConnection.reset();
+		_mapConnections.clear();
+	}
 
-void FlowManager::closeOthers(const SocketAddress& address) {
-	auto itConnection = _mapConnections.begin();
-	while(itConnection != _mapConnections.end()) {
-		if (itConnection->first != address) {
-			TRACE("Closing the connection to ", itConnection->first.toString(), ", we keep the first address : ", address.toString())
-			itConnection->second->close();
-			unsubscribe(itConnection->second);
-			_mapConnections.erase(itConnection++);
-		}
-		else
-			++itConnection;
+	if (abrupt)
+		status = RTMFP::FAILED;
+	else {
+		status = RTMFP::NEAR_CLOSED;
+		_closeTime.update(); // To wait 90s before deleting session
 	}
 }
 
@@ -186,16 +184,21 @@ void FlowManager::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
 	_mapConnections.emplace(pConnection->address(), pConnection);
 }
 
-void FlowManager::unsubscribe(const Mona::SocketAddress& address) {
+void FlowManager::unsubscribeConnection(const Mona::SocketAddress& address) {
 	auto it = _mapConnections.find(address);
 	if (it != _mapConnections.end()) {
-		unsubscribe(it->second);
+		unsubscribeConnection(it->second);
 		_mapConnections.erase(it);
 	} else
 		WARN("Unable to find the connection ", address.toString(), " for unbscribing")
+
+	if (_mapConnections.empty()) {
+		DEBUG("No more connection available, session ", name(), " is closing...")
+		close(false);
+	}
 }
 
-void FlowManager::unsubscribe(shared_ptr<RTMFPConnection>& pConnection) {
+void FlowManager::unsubscribeConnection(shared_ptr<RTMFPConnection>& pConnection) {
 	TRACE("Unsubscribing events of the connection ", pConnection->address().toString())
 
 	pConnection->OnMessage::unsubscribe(onMessage);
@@ -204,14 +207,14 @@ void FlowManager::unsubscribe(shared_ptr<RTMFPConnection>& pConnection) {
 	pConnection->OnWriterClose::unsubscribe(onWriterClose);
 }
 
-bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& nbRead) {
-	FATAL_ASSERT(nbRead == 0)
-	
-	if (status == RTMFP::CONNECTED) {
+bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
+	if (nbRead != 0)
+		ERROR("Parameter nbRead must equal zero in readAsync()")
+	else if (status == RTMFP::CONNECTED) {
 
 		bool available = false;
 		lock_guard<recursive_mutex> lock(_readMutex);
-		if (!_mediaPackets[peerId].empty()) {
+		if (!_mediaPackets[name()].empty()) {
 			// First read => send header
 			if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
 				memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
@@ -221,7 +224,7 @@ bool FlowManager::readAsync(const string& peerId, UInt8* buf, UInt32 size, int& 
 			}
 
 			UInt32 bufferSize = 0, toRead = 0;
-			auto& queue = _mediaPackets[peerId];
+			auto& queue = _mediaPackets[name()];
 			while (!queue.empty() && (nbRead < size)) {
 
 				// Read next packet
@@ -277,12 +280,12 @@ void FlowManager::receive(BinaryReader& reader) {
 #endif
 			break;
 		case 0x0c:
-			WARN("Message 0C received (possibly wrong packet sent), we must close the connection ", name());
-			handleProtocolFailed();
+			INFO("Session ", name(), " is closing");
+			close(true);
 			break;
 		case 0x4c : // P2P closing session (only for p2p I think)
-			INFO("P2P Connection ", name(), " is closing")
-			close();
+			INFO("P2P Session ", name(), " is closing abruptly")
+			close(true);
 			return;
 		case 0x01: // KeepAlive
 			/*if(!peer.connected)
@@ -335,16 +338,14 @@ void FlowManager::receive(BinaryReader& reader) {
 				string signature;
 				message.read(message.read8(), signature);
 
-				if (!pFlow)
-					pFlow = createFlow(idFlow, signature);
-
+				UInt64 idWriterRef = 0;
 				if (message.read8()>0) {
 
 					// Fullduplex header part
 					if (message.read8() != 0x0A)
 						WARN("Unknown fullduplex header part for the flow ", idFlow)
 					else
-						message.read7BitLongValue(); // Fullduplex useless here! Because we are creating a new RTMFPFlow!
+						idWriterRef = message.read7BitLongValue(); // RTMFPWriter ID related to this flow
 
 					// Useless header part 
 					UInt8 length = message.read8();
@@ -358,6 +359,9 @@ void FlowManager::receive(BinaryReader& reader) {
 						return;
 					}
 				}
+
+				if (!pFlow)
+					pFlow = createFlow(idFlow, signature, idWriterRef);
 			}
 
 			if (!pFlow) {
@@ -392,24 +396,14 @@ void FlowManager::receive(BinaryReader& reader) {
 		// Commit RTMFPFlow (pFlow means 0x11 or 0x10 message)
 		if (pFlow && (status != RTMFP::FAILED) && type != 0x11) {
 			pFlow->commit();
-			if (pFlow->consumed()) {
-				if (pFlow->critical()) {
-					if (status != RTMFP::CONNECTED) {
-						// without connection, nothing must be sent!
-						_pConnection->clearWriters();
-					}
-					// TODO: commented because it replace other events (NetConnection.Connect.Rejected)
-					// fail(); // If connection fails, log is already displayed, and so fail the whole session!
-				}
-				_flows.erase(pFlow->id);
-				delete pFlow;
-			}
+			if (pFlow->consumed())
+				removeFlow(pFlow);
 			pFlow = NULL;
 		}
 	}
 }
 
-RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
+RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 idWriterRef) {
 	if (status == RTMFP::FAILED) {
 		ERROR("Connection is died, no more RTMFPFlow creation possible");
 		return NULL;
@@ -425,7 +419,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 
 	// Get flash stream process engine related by signature
 	Exception ex;
-	RTMFPFlow* pFlow = createSpecialFlow(ex, id, signature);
+	RTMFPFlow* pFlow = createSpecialFlow(ex, id, signature, idWriterRef);
 	if (!pFlow && signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream (P2P or normal)
 		shared_ptr<FlashStream> pStream;
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7BitValue());
@@ -433,7 +427,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 
 		// Search in mainstream
 		if (_pMainStream->getStream(idSession, pStream))
-			pFlow = new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *_pConnection);
+			pFlow = new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *_pConnection, idWriterRef);
 		else
 			ex.set(Exception::PROTOCOL, "RTMFPFlow ", id, " indicates a non-existent ", idSession, " NetStream on connection ", name());
 	}
@@ -443,4 +437,31 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature) {
 	}
 
 	return _flows.emplace_hint(it, piecewise_construct, forward_as_tuple(id), forward_as_tuple(pFlow))->second;
+}
+
+void FlowManager::manage() {
+
+	auto itFlow = _flows.begin();
+	while (itFlow != _flows.end()) {
+		if (itFlow->second->consumed())
+			removeFlow((itFlow++)->second);
+		else
+			++itFlow;
+	}
+}
+
+void FlowManager::removeFlow(RTMFPFlow* pFlow) {
+
+	if (pFlow->id == _mainFlowId) {
+		DEBUG("Main flow is closing, session ", name(), " will close")
+		if (status != RTMFP::CONNECTED) {
+			// without connection, nothing must be sent!
+			_pConnection->clearWriters();
+		}
+		_mainFlowId = 0;
+		close(false);
+	}
+	DEBUG("Session ", name(), " - RTMFPFlow ", pFlow->id, " consumed");
+	_flows.erase(pFlow->id);
+	delete pFlow;
 }

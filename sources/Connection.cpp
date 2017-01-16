@@ -27,7 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-Connection::Connection(SocketHandler* pHandler) : _pParent(pHandler), _status(RTMFP::STOPPED), _farId(0), _pThread(NULL), _nextRTMFPWriterId(0), _ping(0), _timeReceived(0),
+Connection::Connection(SocketHandler* pHandler) : _pParent(pHandler), _status(RTMFP::STOPPED), _farId(0), _pThread(NULL), _nextRTMFPWriterId(1), _ping(0), _timeReceived(0),
  _pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
  _pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)),
  _pDefaultDecoder(new RTMFPEngine((const UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)) {
@@ -41,26 +41,27 @@ Connection::~Connection() {
 	_pParent = NULL;
 }
 
-void Connection::close() {
+void Connection::close(bool abrupt) {
 
 	if (_status == RTMFP::CONNECTED) {
-		writeMessage(0x4C, 0); // Close message
+		writeMessage(abrupt? 0x4C : 0x0C, 0); // Close message
 		flush(false, 0x89);
 	}
-
-	_availableWriters.clear(); // remove available writers
 
 	// Here no new sending must happen except "failSignal"
 	for (auto& it : _flowWriters) {
 		OnWriterClose::raise(it.second);
 		it.second->clear();
+		if (!abrupt)
+			it.second->close();
 	}
 
-	_status = RTMFP::FAILED;
+	_status = abrupt? RTMFP::FAILED : RTMFP::NEAR_CLOSED;
+	_closeTime.update();
 }
 
 void Connection::process(PoolBuffer& pBuffer) {
-	if (_status == RTMFP::FAILED)
+	if (_status >= RTMFP::NEAR_CLOSED)
 		return;
 
 	// Decode the RTMFP data
@@ -138,14 +139,8 @@ UInt8* Connection::packet() {
 void Connection::handleWriterFailed(UInt64 id) {
 
 	shared_ptr<RTMFPWriter> pWriter;
-	if (writer(id, pWriter)) {
+	if (writer(id, pWriter))
 		OnWriterFailed::raise(pWriter);
-
-		Exception ex;
-		pWriter->fail(ex, "Writer terminated on connection ", name());
-		if (ex)
-			WARN(ex.error())
-	} 
 	else
 		WARN("RTMFPWriter ", id, " unfound for failed signal on connection ", name());
 	
@@ -174,7 +169,7 @@ void Connection::flush(bool echoTime, UInt8 marker) {
 	_pLastWriter = NULL;
 	if (!_pSender)
 		return;
-	if (_status != RTMFP::FAILED && _pSender->available()) {
+	if (_status < RTMFP::NEAR_CLOSED && _pSender->available()) {
 		BinaryWriter& packet(_pSender->packet);
 
 		// After 30 sec, send packet without echo time
@@ -222,16 +217,14 @@ void Connection::initWriter(const shared_ptr<RTMFPWriter>& pWriter) {
 	(UInt64&)pWriter->id = _nextRTMFPWriterId;
 	pWriter->amf0 = false;
 
-	if (!pWriter->signature.empty()) {
+	if (!pWriter->signature.empty())
 		DEBUG("New writer ", pWriter->id, " on connection ", name());
-		_availableWriters.emplace(pWriter->signature, pWriter);
-	}
 	OnNewWriter::raise(_flowWriters.find(pWriter->id)->second);
 }
 
 void Connection::flushWriters() {
 	// Every 25s : ping
-	if (_lastPing.isElapsed(25000) && connected) {
+	if (_lastPing.isElapsed(25000) && connected()) {
 		writeMessage(0x01, 0);
 		flush(false, 0x89);
 		_lastPing.update();
@@ -244,18 +237,16 @@ void Connection::flushWriters() {
 		Exception ex;
 		pWriter->manage(ex);
 		if (ex) {
-			if (pWriter->critical) {
-				// TODO: fail(ex.error());
+			/* TODO: if (pWriter->critical) {
+				fail(ex.error());
 				break;
-			}
+			}*/
 			continue;
 		}
 		if (pWriter->consumed()) {
 			OnWriterClose::raise(pWriter);
+			DEBUG("Connection ", name(), " - RTMFPWriter ", pWriter->id, " consumed");
 			_flowWriters.erase(it++);
-			auto itAvailable = _availableWriters.find(pWriter->signature);
-			if (itAvailable != _availableWriters.end() && pWriter == itAvailable->second)
-				_availableWriters.erase(itAvailable);
 			continue;
 		}
 		++it;
@@ -270,18 +261,7 @@ shared_ptr<RTMFPWriter> Connection::changeWriter(RTMFPWriter& writer) {
 	}
 	shared_ptr<RTMFPWriter> pWriter(it->second);
 	it->second.reset(&writer);
-	// TODO: do we have to relink the RTMFPFlow with the new writer?
 	return pWriter;
-}
-
-bool Connection::getWriter(shared_ptr<RTMFPWriter>& pWriter, const string& signature) {
-	auto itWriter = _availableWriters.find(signature);
-	if (itWriter != _availableWriters.end()) {
-		pWriter = itWriter->second;
-		_availableWriters.erase(itWriter);
-		return true;
-	}
-	return false;
 }
 
 void Connection::clearWriters() {

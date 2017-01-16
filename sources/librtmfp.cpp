@@ -105,12 +105,20 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	return index;
 }
 
-int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName) {
+int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking) {
 
 	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (pConn)
 		pConn->connect2Peer(peerId, streamName);
+
+	if (blocking) {
+		while (!pConn->p2pPlayReady) {
+			pConn->p2pPlaySignal.wait(200);
+			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
+				return 0;
+		}
+	}
 
 	return 1;
 }

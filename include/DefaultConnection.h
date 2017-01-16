@@ -34,9 +34,6 @@ public:
 
 	~DefaultConnection();
 
-	// Close the connection properly
-	//virtual void close();
-
 	// Called by SocketHandler before receiving/sending a message
 	void							setAddress(const Mona::SocketAddress& address) { _address = address; }
 

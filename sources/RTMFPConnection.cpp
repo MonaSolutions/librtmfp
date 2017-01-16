@@ -37,9 +37,9 @@ RTMFPConnection::~RTMFPConnection() {
 	close();
 }
 
-void RTMFPConnection::close() {
+void RTMFPConnection::close(bool abrupt) {
 
-	Connection::close();
+	Connection::close(abrupt);
 
 	if (_pSession)
 		_pSession = NULL;
@@ -86,9 +86,8 @@ void RTMFPConnection::handleMessage(const PoolBuffer& pBuffer) {
 	case 0xF9:
 	case 0xFA:
 		if (_status < RTMFP::CONNECTED) {
-			connected = true;
 			_status = RTMFP::CONNECTED;
-			OnConnected::raise(_address, _pSession->name()); // TODO: see if usefull
+			_pParent->onConnection(_address, _pSession->name());
 		}
 		OnMessage::raise(reader);
 		break;
@@ -157,13 +156,16 @@ void RTMFPConnection::manage() {
 
 	// Send waiting handshake 30 to server/peer
 	switch (_status) {
+	case RTMFP::CONNECTED:
+		break; // go directly to manage
 	case RTMFP::HANDSHAKE30:
 	case RTMFP::STOPPED: 
 		// Send First handshake request (30)
-		if (!(_pSession->status > RTMFP::HANDSHAKE30) && (!_connectAttempt || _lastAttempt.isElapsed(1500))) {
+		if (!(_pSession->status > RTMFP::HANDSHAKE30) && (!_connectAttempt || _lastAttempt.isElapsed(_connectAttempt*1500))) {
 			if (_connectAttempt++ == 11) {
-				INFO("Connection to ", name(), " has reached 11 attempt without answer, closing...")
+				DEBUG("Connection to ", name(), " has reached 11 attempt without answer, closing...")
 				_status = RTMFP::FAILED;
+				_pSession->unsubscribeConnection(_address);
 				return;
 			}
 			TRACE("Sending new handshake 30 to ", _pSession->name(), " at address ", _address.toString())
@@ -171,10 +173,10 @@ void RTMFPConnection::manage() {
 			if (_pSession->status == RTMFP::STOPPED)
 				_pSession->status = RTMFP::HANDSHAKE30;
 			_lastAttempt.update();
+			break;
 		}
-		break;
 	default:
-		break;
+		return; // don't manage other connections
 	}
 
 	Connection::manage();
@@ -186,7 +188,7 @@ void RTMFPConnection::handleHandshake30(BinaryReader& reader) {
 		return;
 	}
 
-	FATAL_ASSERT(_pSession)
+	FATAL_ASSERT(_pSession) // implementation error
 
 	if (_pSession->status > RTMFP::HANDSHAKE30) {
 		DEBUG("Concurrent handshake 30 ignored, session is already in ", _pSession->status, " state")
@@ -199,9 +201,9 @@ void RTMFPConnection::handleHandshake30(BinaryReader& reader) {
 		return;
 	}
 	else {
-		DEBUG("Concurrent handshake 30 accepted, peer ID ", _pSession->name(), " is grater than ours")
+		DEBUG("Concurrent handshake 30 accepted, peer ID ", _pSession->name(), " is greater than ours")
 		_responder = true;
-		_pSession->unsubscribe(_address);
+		_pSession->unsubscribeConnection(_address); // reset the subscription
 	}
 
 	UInt64 peerIdSize = reader.read7BitLongValue();
@@ -405,9 +407,8 @@ void RTMFPConnection::sendHandshake78(BinaryReader& reader) {
 	DEBUG("peer ID calculated from public key : ", peerId)
 
 	// Create the session, if already exists and connected we ignore the request
-	if (!_pParent->onNewPeerId(rawId, peerId, _address) && _pSession->status > RTMFP::HANDSHAKE38) {
-		DEBUG("Handshake 38 ignored, session is already in state ", _pSession->status)
-		close();
+	if (!_pParent->onNewPeerId(rawId, peerId, _address)) {
+		//close();
 		return;
 	}
 
@@ -485,9 +486,8 @@ void RTMFPConnection::sendConnect(BinaryReader& reader) {
 	if (!computeKeys(_farKey, _nonce, BIN _farNonce.data(), _farNonce.size(), _sharedSecret))
 		return;
 
-	connected = true;
 	_status = RTMFP::CONNECTED;
-	OnConnected::raise(_address, _pSession->name());
+	_pParent->onConnection(_address, _pSession->name());
 }
 
 
@@ -515,11 +515,12 @@ void RTMFPConnection::handleRedirection(BinaryReader& reader) {
 		RTMFP::ReadAddress(reader, address, addressType);
 		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
 		if (address.family() == IPAddress::IPv6) {
-			DEBUG("Ignored address ", address.toString(), ", IPV6 not supported yet") // TODO: support IPV6
+			DEBUG("Address ", address.toString(), " ignored, IPV6 not supported yet") // TODO: support IPV6
 			continue;
 		}
 
 		// Ask parent to create a new connection and send handshake 30 back
-		_pParent->addConnection(address, _pSession, false, false);
+		shared_ptr<RTMFPConnection> pConnection;
+		_pParent->addConnection(pConnection, address, _pSession, false, false);
 	}
 }

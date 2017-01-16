@@ -25,7 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "FlashStream.h"
 
 namespace FlashEvents {
-	struct OnStreamCreated: Mona::Event<void(Mona::UInt16 idStream)> {};
+	struct OnStreamCreated: Mona::Event<bool(Mona::UInt16 idStream)> {};
 };
 
 /**************************************************************
@@ -36,10 +36,8 @@ connection
 class FlashConnection : public FlashStream, public virtual Mona::Object,
 	public FlashEvents::OnStreamCreated {
 public:
-	FlashConnection(/*Invoker& invoker,Peer& peer*/);
+	FlashConnection();
 	virtual ~FlashConnection();
-
-	void	disengage(FlashWriter* pWriter = NULL);
 
 	// Add a new stream to the Main stream with an incremental id
 	FlashStream* addStream(std::shared_ptr<FlashStream>& pStream, bool group=false);
@@ -51,21 +49,12 @@ public:
 
 	void flush() {for(auto& it : _streams) it.second->flush(); }
 
-	// Send the connect request to the RTMFP server
-	void connect(FlashWriter& writer, const std::string& url);
-
 	// Send the stream creation request (before play or publish)
-	void createStream(FlashWriter& writer);
-
-	// Send the setPeerInfo command to server
-	void sendPeerInfo(FlashWriter& writer, Mona::UInt16 port);
-
-	// Call a function on the server/peer
-	void callFunction(FlashWriter& writer, const char* function, int nbArgs, const char** args);
+	void createStream(); // TODO: refactorize the stream creation
 	
 private:
-	void	messageHandler(const std::string& name, AMFReader& message, FlashWriter& writer);
-	void	rawHandler(Mona::UInt16 type, Mona::PacketReader& packet, FlashWriter& writer);
+	virtual bool	messageHandler(const std::string& name, AMFReader& message, Mona::UInt64 flowId, Mona::UInt64 writerId, double callbackHandler);
+	virtual bool	rawHandler(Mona::UInt16 type, Mona::PacketReader& packet);
 
 	std::map<Mona::UInt16,std::shared_ptr<FlashStream>>	_streams;
 	std::string											_buffer;

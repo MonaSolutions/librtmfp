@@ -27,15 +27,13 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 class RTMFPWriter;
 class BandWriter : public virtual Mona::Object {
 public:
-	BandWriter(): connected(false) {}
+	BandWriter() {}
 
 	virtual const Mona::PoolBuffers&		poolBuffers() = 0;
 	// Save the new writer to the map of writers
 	virtual void							initWriter(const std::shared_ptr<RTMFPWriter>& pWriter)=0;
 	// Exchange a writer with a new one (generally if an error occurs)
 	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer) = 0;
-	// Return true if a writer with the same signature is available and remove it from the available map
-	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature) = 0;
 
 	virtual bool							failed() const = 0;
 	virtual bool							canWriteFollowing(RTMFPWriter& writer)=0;
@@ -44,7 +42,5 @@ public:
 	virtual void							flush()=0;
 	//virtual Mona::UInt16					ping() const = 0;
 	virtual const std::string&				name() = 0;
-
-	bool									connected;
-	
+	virtual bool							connected() = 0;	
 };

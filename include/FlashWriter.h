@@ -31,7 +31,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 Writer of AMF messages, must be inherited
 for each protocol (just RTMFP for now)
 */
-struct RTMFPGroupConfig;
 class FlashWriter : public virtual Mona::Object {
 public:
 	enum MediaType {
@@ -61,7 +60,6 @@ public:
 	Mona::BinaryWriter&		writeRaw() { return write(AMF::RAW).packet; }
 	AMFWriter&				writeMessage();
 	AMFWriter&				writeInvocation(const char* name, bool amf3=false) { return writeInvocation(name,0,amf3); }
-	virtual FlashWriter&	newWriter() { return *this; }
 
 	AMFWriter&				writeAMFSuccess(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("_result", code, description, withoutClosing); }
 	AMFWriter&				writeAMFStatus(const char* code, const std::string& description, bool withoutClosing = false) { return writeAMFState("onStatus", code, description, withoutClosing); }

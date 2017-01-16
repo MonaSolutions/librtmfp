@@ -51,7 +51,7 @@ public:
 	virtual void manage();
 
 	// Close the connection properly
-	virtual void close();
+	virtual void close(bool abrupt=false);
 
 	// Called by the session to handle a writer fail message
 	void handleWriterFailed(Mona::UInt64 id);
@@ -79,7 +79,7 @@ public:
 
 	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer);
 
-	virtual bool							failed() const { return _status == RTMFP::FAILED; }
+	virtual bool							failed() const { return _status == RTMFP::FAILED || (_status == RTMFP::NEAR_CLOSED && _closeTime.isElapsed(140000)); } // (Wait 140s before closing to let writer the time to close)
 
 	virtual bool							canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
 
@@ -88,12 +88,11 @@ public:
 
 	virtual Mona::BinaryWriter&				writeMessage(Mona::UInt8 type, Mona::UInt16 length, RTMFPWriter* pWriter = NULL);
 
-	virtual void							flush() { flush(connected, connected ? 0x89 : 0x0B); }
+	virtual void							flush() { flush(connected(), connected() ? 0x89 : 0x0B); }
 
 	virtual const std::string&				name() { return _address.toString(); }
 
-	// Return true if a writer with the same signature is available and remove it from the available map
-	virtual bool							getWriter(std::shared_ptr<RTMFPWriter>& pWriter, const std::string& signature);
+	virtual bool							connected() { return _status == RTMFP::CONNECTED; }
 
 protected:
 
@@ -120,6 +119,7 @@ protected:
 	void							flushWriters(); // TODO: make it private in the class parent Connection
 
 	RTMFP::SessionStatus									_status; // Connection status (stopped, connecting, connected or failed)
+	Mona::Time												_closeTime; // Time since close has been called (to wait before deleting connection)
 	SocketHandler*											_pParent; // Pointer to the socket manager
 	Mona::UInt32											_farId; // Session id
 
@@ -138,7 +138,6 @@ private:
 	std::shared_ptr<RTMFPWriter>&	writer(Mona::UInt64 id, std::shared_ptr<RTMFPWriter>& pWriter);
 
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter>>	_flowWriters; // Map of writers identified by id
-	std::map<std::string, std::shared_ptr<RTMFPWriter>>		_availableWriters; // Map of signature to available writers (for flow association)
 	RTMFPWriter*											_pLastWriter; // Write pointer used to check if it is possible to write
 	Mona::UInt64											_nextRTMFPWriterId;
 	std::shared_ptr<RTMFPSender>							_pSender; // Current sender object*/

@@ -38,23 +38,12 @@ public:
 
 	virtual void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 	virtual void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
-	//virtual void pushData(DataReader& packet);
-	//virtual void pushProperties(DataReader& packet);
 
 	virtual void flush();
 
-	/*bool receiveAudio;
-	bool receiveVideo;*/
-
 private:
 
-	/*bool writeReliableMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, Mona::PacketReader& packet) { return writeMedia(writer, true, type, time, packet.data(), packet.size()); }
-	bool writeMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) { return writeMedia(writer, _reliable, type, time, data, size); }
-	bool writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);*/
-
-	//bool	initWriters();
-	bool	firstTime() { return /*!_pVideoWriter && !_pAudioWriter &&*/ !_dataInitialized; }
-	//void	closeWriters();
+	bool	firstTime() { return !_dataInitialized; }
 
 	bool	pushVideoInfos(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
 	bool	pushAudioInfos(Mona::UInt32 time);
@@ -66,9 +55,6 @@ private:
 	bool					_codecInfosSent;
 	Mona::Time				_lastCodecsTime; // last time codecs have been sent
 
-	/*FlashWriter&			_writer;
-	FlashWriter*			_pAudioWriter;
-	FlashWriter*			_pVideoWriter;*/
 	bool					_dataInitialized;
 	bool					_reliable;
 };

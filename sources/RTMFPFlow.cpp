@@ -20,9 +20,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "RTMFPFlow.h"
-#include "Mona/Logs.h"
 #include "Mona/Util.h"
 #include "Mona/PoolBuffer.h"
+#include "RTMFPWriter.h"
 
 using namespace std;
 using namespace Mona;
@@ -71,54 +71,29 @@ public:
 };
 
 
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const PoolBuffers& poolBuffers, BandWriter& band, const shared_ptr<FlashConnection>& pMainStream) : _pStream(pMainStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const PoolBuffers& poolBuffers, BandWriter& band, const shared_ptr<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
+	_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_writerRef(idWriterRef),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
+
 	DEBUG("New main flow ", id, " on connection ", band.name())
-	// MAIN Stream flow OR Null flow
-
-	if (!band.getWriter(_pWriter, signature)) {
-		new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING, signature, band, _pWriter);
-
-		if (!_pStream) {
-			_pWriter->open(); // FlowNull, must be opened
-			return;
-		}
-	} else
-		DEBUG("Writer ", _pWriter->id, " associated to flow ", id)
-
-	(bool&)_pWriter->critical = _pStream.use_count()<=2;
-	((UInt64&)_pWriter->flowId) = id;
 }
 
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,const PoolBuffers& poolBuffers, BandWriter& band) : _pStream(pStream),_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
-	DEBUG("New flow ", id, " on connection ", band.name())
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,const PoolBuffers& poolBuffers, BandWriter& band, UInt64 idWriterRef) : _pStream(pStream),_poolBuffers(poolBuffers),
+	_numberLostFragments(0),id(id),_writerRef(idWriterRef),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
 
-	if (!band.getWriter(_pWriter, signature))
-		new RTMFPWriter(band.connected ? FlashWriter::OPENED : FlashWriter::OPENING, signature, band, _pWriter);
-	else
-		DEBUG("Writer ", _pWriter->id, " associated to flow ", id)
-	// Here the flowId of _pWriter is set to the main flow (or the P2P media report flow if it is the P2P media flow)
+	DEBUG("New flow ", id, " on connection ", band.name())
 }
 
 
 RTMFPFlow::~RTMFPFlow() {
 
 	complete();
-	if (_pStream)
-		_pStream->disengage(_pWriter.get());
-	_pWriter->close();
-}
-
-void RTMFPFlow::setId(UInt64 idFlow) {
-	((UInt64&)id) = idFlow;
-	((UInt64&)_pWriter->flowId) = id;
 }
 
 void RTMFPFlow::complete() {
 	if(_completed)
 		return;
 
-	if(_pStream) // FlowNull instance, not display the message in FullNull case
-		DEBUG("RTMFPFlow ",id," consumed");
+	DEBUG("RTMFPFlow ",id," completed");
 
 	// delete fragments
 	_fragments.clear();
@@ -130,6 +105,7 @@ void RTMFPFlow::complete() {
 	}
 
 	_completed=true;
+	_completeTime.update();
 }
 
 void RTMFPFlow::fail(const string& error) {
@@ -143,7 +119,7 @@ void RTMFPFlow::close() {
 	BinaryWriter& writer = _band.writeMessage(0x5e, Util::Get7BitValueSize(id) + 1);
 	writer.write7BitLongValue(id);
 	writer.write8(0); // finishing marker
-	_pWriter->close();
+	//_band.flush();
 }
 
 void RTMFPFlow::commit() {
@@ -168,9 +144,6 @@ void RTMFPFlow::commit() {
 	}
 
 	UInt32 bufferSize = _pPacket ? ((_pPacket->fragments>0x3F00) ? 0 : (0x3F00-_pPacket->fragments)) : 0x7F;
-	if(!_pStream)
-		bufferSize=0; // not proceed a packet sur FlowNull
-
 	BinaryWriter& ack = _band.writeMessage(0x51,Util::Get7BitValueSize(id)+Util::Get7BitValueSize(bufferSize)+Util::Get7BitValueSize(_stage)+size);
 
 	ack.write7BitLongValue(id);
@@ -180,20 +153,12 @@ void RTMFPFlow::commit() {
 	for(UInt64 lost : losts)
 		ack.write7BitLongValue(lost);
 
-	if(_pStream)
-		_pStream->flush();
-	_pWriter->flush();
+	_band.flush();
 }
 
 void RTMFPFlow::receive(UInt64 stage,UInt64 deltaNAck,PacketReader& fragment,UInt8 flags) {
 	if(_completed)
 		return;
-
-	if(!_pStream) { // if this==FlowNull
-		fail("RTMFPMessage received for a RTMFPFlow unknown");
-		(UInt64&)_stage = stage;
-		return;
-	}
 
 	UInt64 nextStage = _stage+1;
 
@@ -315,8 +280,9 @@ void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
 
 	lostRate = _numberLostFragments/(lostRate+_numberLostFragments);
 
-	if (!_pStream || !_pStream->process(*pMessage, *_pWriter, lostRate)) {
-		complete(); // do already the delete _pPacket
+	if (!_pStream || !_pStream->process(*pMessage, id, _writerRef, lostRate)) {
+		close(); // first : send an exception
+		//complete(); // do already the delete _pPacket
 		return;
 	}
 

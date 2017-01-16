@@ -27,77 +27,23 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-GroupListener::GroupListener(Publisher& publication, const string& identifier) : Listener(publication, identifier), /*_writer(writer), receiveAudio(true), receiveVideo(true), */ _firstTime(true),
-_seekTime(0), /*_pAudioWriter(NULL), _pVideoWriter(NULL),*/ _dataInitialized(false), _reliable(true), _startTime(0), _lastTime(0), _codecInfosSent(false) {
+GroupListener::GroupListener(Publisher& publication, const string& identifier) : Listener(publication, identifier), _firstTime(true),
+_seekTime(0), _dataInitialized(false), _reliable(true), _startTime(0), _lastTime(0), _codecInfosSent(false) {
 
 }
 
 GroupListener::~GroupListener() {
-	//closeWriters();
+	
 }
-/*
-void GroupListener::closeWriters() {
-	// -1 indicate that it come of the GroupListener class
-	if (_pAudioWriter)
-		_pAudioWriter->close(-1);
-	if (_pVideoWriter)
-		_pVideoWriter->close(-1);
-	_pVideoWriter = _pAudioWriter = NULL;
-	_dataInitialized = false;
-}
-
-bool GroupListener::initWriters() {
-	bool firstTime(false);
-
-	if (_pVideoWriter || _pAudioWriter || _dataInitialized) {
-		closeWriters();
-		WARN("Reinitialisation of the publication");
-	}
-	else
-		firstTime = true;
-
-	_dataInitialized = true;
-	_pAudioWriter = &_writer.newWriter();
-	_pVideoWriter = &_writer.newWriter();
-
-	if (firstTime && publication.running()) {
-		startPublishing();
-	}
-
-	return true;
-}*/
 
 void GroupListener::startPublishing() {
 
-	/*if (!_pVideoWriter || !_pAudioWriter || !_dataInitialized) {
-		initWriters(); // call already recursivly startPublishing()!
-		return;
-	}
-
-	if (!writeReliableMedia(_writer, FlashWriter::START, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
-		return;
-	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::START, FlashWriter::AUDIO, publicationNamePacket()))
-		return; // Here consider that the listener have to be closed by the caller
-	if (!writeReliableMedia(*_pVideoWriter, FlashWriter::START, FlashWriter::VIDEO, publicationNamePacket()))
-		return; // Here consider that the listener have to be closed by the caller*/
 }
 
 void GroupListener::stopPublishing() {
 
 	if (firstTime())
 		return;
-
-	/*if (!_pVideoWriter || !_pAudioWriter || !_dataInitialized) {
-		if (!initWriters())
-			return;
-	}
-
-	if (!writeReliableMedia(_writer, FlashWriter::STOP, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
-		return;
-	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::STOP, FlashWriter::AUDIO, publicationNamePacket()))
-		return; // Here consider that the listener have to be closed by the caller
-	if (!writeReliableMedia(*_pVideoWriter, FlashWriter::STOP, FlashWriter::VIDEO, publicationNamePacket()))
-		return; // Here consider that the listener have to be closed by the caller*/
 
 	_seekTime = _lastTime;
 	_firstTime = true;
@@ -107,8 +53,6 @@ void GroupListener::stopPublishing() {
 
 
 void GroupListener::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
-	/*if (!receiveVideo && !RTMFP::IsH264CodecInfos(data,size))
-		return;*/
 
 	if (!_codecInfosSent) {
 		if (!pushVideoInfos(time, data, size)) {
@@ -122,9 +66,6 @@ void GroupListener::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
 		_lastCodecsTime.update();
 	}
 
-	/*if (!_pVideoWriter && !initWriters())
-		return;*/
-
 	if (_firstTime) {
 		_startTime = time;
 		_firstTime = false;
@@ -134,11 +75,8 @@ void GroupListener::pushVideo(UInt32 time, const UInt8* data, UInt32 size) {
 			pushAudio(time, NULL, 0); // push a empty audio packet to avoid a video which waits audio tracks!
 	}
 	time -= _startTime;
-
 	//TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, "), size : ", size);
 
-	/*if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _reliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), data, size))
-		initWriters();*/
 	OnMedia::raise(RTMFP::IsKeyFrame(data, size) || _reliable, AMF::VIDEO, _lastTime = (time + _seekTime), data, size);
 }
 
@@ -156,11 +94,6 @@ bool GroupListener::pushVideoInfos(UInt32 time, const UInt8* data, UInt32 size) 
 
 
 void GroupListener::pushAudio(UInt32 time, const UInt8* data, UInt32 size) {
-	/*if (!receiveAudio && !RTMFP::IsAACCodecInfos(data, size))
-		return;*/
-
-	/*if (!_pAudioWriter && !initWriters())
-		return;*/
 
 	if (_firstTime) {
 		_firstTime = false;
@@ -168,11 +101,8 @@ void GroupListener::pushAudio(UInt32 time, const UInt8* data, UInt32 size) {
 		pushAudioInfos(time);
 	}
 	time -= _startTime;
-
 	//TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");
 
-	/*if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _reliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), data, size))
-		initWriters();*/
 	OnMedia::raise(RTMFP::IsAACCodecInfos(data, size) || _reliable, AMF::AUDIO, _lastTime = (time + _seekTime), data, size);
 }
 
@@ -185,19 +115,5 @@ bool GroupListener::pushAudioInfos(UInt32 time) {
 }
 
 void GroupListener::flush() {
-	/*// in first data channel
-	_writer.flush();
-	// now media channel
-	if (_pAudioWriter) // keep in first, because audio track is sometimes the time reference track
-		_pAudioWriter->flush();
-	if (_pVideoWriter)
-		_pVideoWriter->flush();*/
-}
 
-/*bool GroupListener::writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, UInt32 time, const UInt8* data, UInt32 size) {
-	bool wasReliable(writer.reliable);
-	writer.reliable = reliable;
-	bool success(writer.writeMedia(type, time, data, size));
-	writer.reliable = wasReliable;
-	return success;
-}*/
+}

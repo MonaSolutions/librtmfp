@@ -51,7 +51,7 @@ private:
 
 class FlashListener : public Listener {
 public:
-	FlashListener(Publisher& publication, const std::string& identifier, FlashWriter& writer);
+	FlashListener(Publisher& publication, const std::string& identifier, FlashWriter* pDataWriter, FlashWriter* pAudioWriter, FlashWriter* pVideoWriter);
 	virtual ~FlashListener();
 
 	virtual void startPublishing();
@@ -85,7 +85,7 @@ private:
 	Mona::UInt32			_seekTime;
 	bool					_codecInfosSent;
 
-	FlashWriter&			_writer;
+	FlashWriter*			_pDataWriter;
 	FlashWriter*			_pAudioWriter;
 	FlashWriter*			_pVideoWriter;
 	bool					_dataInitialized;

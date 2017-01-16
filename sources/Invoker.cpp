@@ -47,6 +47,8 @@ Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), s
 
 Invoker::~Invoker() {
 	Startable::stop();
+
+	terminate();
 }
 
 // Start the socket manager if not started
@@ -100,6 +102,8 @@ void Invoker::removeConnection(unsigned int index) {
 
 void Invoker::terminate() {
 	lock_guard<recursive_mutex>	lock(_mutexConnections);
+
+	Logs::SetDump("");
 	_mapConnections.clear();
 }
 
@@ -114,7 +118,7 @@ void Invoker::manage() {
 	while(it != _mapConnections.end()) {
 		it->second->manage();
 
-		if (it->second->status == RTMFP::FAILED) {
+		if (it->second->closed()) {
 			int id = it->first;
 			it++;
 			removeConnection(id);

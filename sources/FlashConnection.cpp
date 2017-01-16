@@ -49,12 +49,6 @@ FlashConnection::~FlashConnection() {
 	}
 }
 
-void FlashConnection::disengage(FlashWriter* pWriter) {
-	for (auto& it : _streams)
-		it.second->disengage(pWriter);
-}
-
-
 FlashStream* FlashConnection::getStream(UInt16 id,shared_ptr<FlashStream>& pStream) {
 	const auto& it = _streams.find(id);
 	if (it == _streams.end()) {
@@ -68,6 +62,7 @@ FlashStream* FlashConnection::addStream(shared_ptr<FlashStream>& pStream, bool g
 	return addStream((UInt16)_streams.size(), pStream, group);
 }
 
+//TODO: make a template function instead of boolean
 FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStream, bool group) {
 
 	pStream.reset(group? new GroupStream(id) : new FlashStream(id));
@@ -88,7 +83,7 @@ FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStr
 	return pStream.get();
 }
 
-void FlashConnection::messageHandler(const string& name,AMFReader& message,FlashWriter& writer) {
+bool FlashConnection::messageHandler(const string& name, AMFReader& message, UInt64 flowId, Mona::UInt64 writerId, double callbackHandler) {
 	UInt8 type = message.nextType();
 	while (type != AMFReader::END) {
 		if (name == "_result") {
@@ -104,19 +99,19 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 					params.getString("code", code);
 					params.getString("description", description);
 
-					OnStatus::raise(code, description, writer);
+					return OnStatus::raise<true>(code, description, id, flowId, callbackHandler);
 				} // TODO: else
 			}
 			else if (type == AMFReader::NUMBER && _creatingStream) {
 				double idStream(0);
 				if (!message.readNumber(idStream)) {
 					ERROR("Unable to read id stream")
-					return;
+					return false;
 				}
 				_creatingStream = false;
 				shared_ptr<FlashStream> pStream;
 				addStream((UInt16)idStream, pStream);
-				OnStreamCreated::raise((UInt16)idStream);
+				return OnStreamCreated::raise<true>((UInt16)idStream);
 			}
 		}
 		else if (name == "_error") {
@@ -131,34 +126,22 @@ void FlashConnection::messageHandler(const string& name,AMFReader& message,Flash
 					string code, description;
 					params.getString("code", code);
 					params.getString("description", description);
-					OnStatus::raise(code, description, writer);
+					return OnStatus::raise<true>(code, description, id, flowId, callbackHandler);
 				}
 			}
 		}
 		else {
 			message.next();
 			ERROR("Unhandled message ", name, " (type : ", type, ")")
+			return false;
 		}
 
 		type = message.nextType();
 	}
+	return true;
 }
 
-void FlashConnection::sendPeerInfo(FlashWriter& writer, UInt16 port) {
-	INFO("Sending peer info (port : ", port,")")
-	AMFWriter& amfWriter = writer.writeInvocation("setPeerInfo");
-
-	vector<IPAddress> addresses = IPAddress::Locals();
-	string buf;
-	for(auto it : addresses) {
-		if(it.family() == IPAddress::IPv4) {
-			String::Format(buf, it.toString(), ":", port);
-			amfWriter.writeString(buf.c_str(), buf.size());
-		}
-	}
-}
-
-void FlashConnection::rawHandler(UInt16 type,PacketReader& packet,FlashWriter& writer) {
+bool FlashConnection::rawHandler(UInt16 type,PacketReader& packet) {
 
 	switch (type) {
 		case 0x0022: // TODO Here we receive RTMFP flow sync signal, useless to support it?
@@ -171,44 +154,9 @@ void FlashConnection::rawHandler(UInt16 type,PacketReader& packet,FlashWriter& w
 			ERROR("Raw message ", Format<UInt16>("%.4x", type), " unknown on main stream ", id);
 			break;
 	}
+	return true;
 }
 
-void FlashConnection::connect(FlashWriter& writer, const string& url) {
-
-	AMFWriter& amfWriter = writer.writeInvocation("connect");
-
-	// TODO: add parameters to configuration
-	bool amf = amfWriter.amf0;
-	amfWriter.amf0 = true;
-	amfWriter.beginObject();
-	amfWriter.writeStringProperty("app", "live");
-	amfWriter.writeStringProperty("flashVer", EXPAND("WIN 20,0,0,286"));
-	amfWriter.writeStringProperty("swfUrl", "");
-	amfWriter.writeStringProperty("tcUrl", url);
-	amfWriter.writeBooleanProperty("fpad", false);
-	amfWriter.writeNumberProperty("capabilities",235);
-	amfWriter.writeNumberProperty("audioCodecs",3575);
-	amfWriter.writeNumberProperty("videoCodecs",252);
-	amfWriter.writeNumberProperty("videoFunction",1);
-	amfWriter.writeStringProperty("pageUrl", "");
-	amfWriter.writeNumberProperty("objectEncoding",3);
-	amfWriter.endObject();
-	amfWriter.amf0 = amf;
-
-	writer.flush();
-}
-
-void FlashConnection::createStream(FlashWriter& writer) {
-	AMFWriter& amfWriter = writer.writeInvocation("createStream");
-	writer.flush();
+void FlashConnection::createStream() {
 	_creatingStream = true;
-}
-
-void FlashConnection::callFunction(FlashWriter& writer, const char* function, int nbArgs, const char** args) {
-	AMFWriter& amfWriter = writer.writeInvocation(function, true);
-	for (int i = 0; i < nbArgs; i++) {
-		if (args[i])
-			amfWriter.writeString(args[i], strlen(args[i]));
-	}
-	writer.flush();
 }

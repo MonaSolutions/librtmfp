@@ -28,7 +28,6 @@ class FlowManager;
 namespace ConnectionEvents {
 	struct OnMessage : Mona::Event<void(Mona::BinaryReader&)> {}; // called when we receive an RTMFP message
 	struct OnIdBuilt : Mona::Event<void(const std::string&, const std::string&)> {}; // called when our Peer ID has been built
-	struct OnConnected : Mona::Event<void(const Mona::SocketAddress&, const std::string&)> {}; // called when the connection is ready
 };
 
 /**************************************************
@@ -39,8 +38,7 @@ decoded packets to the listener
 */
 class RTMFPConnection : public Connection,
 	public ConnectionEvents::OnMessage,
-	public ConnectionEvents::OnIdBuilt,
-	public ConnectionEvents::OnConnected {
+	public ConnectionEvents::OnIdBuilt {
 public:
 	RTMFPConnection(const Mona::SocketAddress& address, SocketHandler* pHandler, FlowManager* session, bool responder, bool p2p);
 
@@ -50,7 +48,7 @@ public:
 	virtual void manage();
 
 	// Close the connection properly
-	virtual void close();
+	virtual void close(bool abrupt=false);
 
 	// Change the session (used by RTMFPSession to set the P2PSession after creation)
 	void setSession(FlowManager* pSession) { _pSession = pSession; }

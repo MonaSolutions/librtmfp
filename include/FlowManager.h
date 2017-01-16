@@ -75,32 +75,29 @@ public:
 
 	// Unsubscribe to events of the connection pointed by address, 
 	// Note: This function is only called by RTMFPConnection to avoid double subscription
-	virtual void					unsubscribe(const Mona::SocketAddress& address);
+	virtual void					unsubscribeConnection(const Mona::SocketAddress& address);
 
 	// Read data asynchronously
 	// peerId : id of the peer if it is a p2p connection, otherwise parameter is ignored
 	// return : false if the connection is not established
-	bool							readAsync(const std::string& peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+	bool							readAsync(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Latency (ping / 2)
 	Mona::UInt16					latency();
 
-	// Close the connections to addresses which are not the one in parameter
-	void							closeOthers(const Mona::SocketAddress& address);
+	// A session is considered closed when it has failed or if it is in NEAR_CLOSED status since at least 90s
+	bool							closed() { return status == RTMFP::FAILED || ((status == RTMFP::NEAR_CLOSED) && _closeTime.isElapsed(90000)); }
 
 protected:
 
 	// Analyze packets received from the server (must be connected)
 	void						receive(Mona::BinaryReader& reader);
 
-	// Handle data available or not event
-	virtual void				handleDataAvailable(bool isAvailable) {} // TODO: implement it in P2PSession
+	// Handle data available or not event (asynchronous read only)
+	virtual void				handleDataAvailable(bool isAvailable) = 0;
 
 	// Handle play request (only for P2PSession)
-	virtual bool				handlePlay(const std::string& streamName, FlashWriter& writer) = 0;
-	
-	// Handle a 0C Message
-	virtual void				handleProtocolFailed() = 0;
+	virtual bool				handlePlay(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler) { return false; }
 
 	// Handle a new writer creation
 	virtual void				handleNewWriter(std::shared_ptr<RTMFPWriter>& pWriter) = 0;
@@ -111,20 +108,23 @@ protected:
 	// Handle a P2P address exchange message (Only for RTMFPSession)
 	virtual void				handleP2PAddressExchange(Mona::PacketReader& reader) = 0;
 
-	// Close the conection properly
-	virtual void				close();
+	// Close the conection properly or abruptly if parameter is true
+	virtual void				close(bool abrupt);
 
 	// On NetConnection success callback
 	virtual void				onConnect() {}
 
 	// On NetStream.Publish.Start (only for NetConnection)
-	virtual void				onPublished(FlashWriter& writer) {}
+	virtual void				onPublished(Mona::UInt16 streamId) {}
 
 	//RTMFPWriter*				writer(Mona::UInt64 id);
-	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature);
+	RTMFPFlow*					createFlow(Mona::UInt64 id, const std::string& signature, Mona::UInt64 idWriterRef);
 
 	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature) = 0;
+	virtual RTMFPFlow*			createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature, Mona::UInt64 idWriterRef) = 0;
+
+	// Manage the flows
+	virtual void				manage();
 
 	enum HandshakeType {
 		BASE_HANDSHAKE = 0x0A,
@@ -152,8 +152,8 @@ protected:
 	// Job Members
 	std::shared_ptr<FlashConnection>					_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
 	std::map<Mona::UInt64, RTMFPFlow*>					_flows;
+	Mona::UInt64										_mainFlowId; // Main flow ID, if it is closed we must close the session
 	Invoker*											_pInvoker; // Main invoker pointer to get poolBuffers
-	std::unique_ptr<RTMFPFlow>							_pFlowNull; // Null flow for some messages
 	Mona::UInt32										_sessionId; // id of the session;
 
 	FlashListener*										_pListener; // Listener of the main publication (only one by intance)
@@ -161,9 +161,14 @@ protected:
 private:
 
 	// Unsubscribe from all events of the connection
-	virtual void										unsubscribe(std::shared_ptr<RTMFPConnection>& pConnection);
+	virtual void										unsubscribeConnection(std::shared_ptr<RTMFPConnection>& pConnection);
+
+	// Remove a flow from the list of flows
+	void												removeFlow(RTMFPFlow* pFlow);
 
 	std::map<Mona::SocketAddress, std::shared_ptr<RTMFPConnection>>				_mapConnections; // map of connections to all addresses of the session
+
+	Mona::Time																	_closeTime; // Time since closure
 
 	// Asynchronous read
 	struct RTMFPMediaPacket : public Mona::Object {

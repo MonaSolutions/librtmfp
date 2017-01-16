@@ -32,7 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x01020003	// (1.2.3)
+#define RTMFP_LIB_VERSION	0x01020004	// (1.2.4)
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -97,6 +97,7 @@ public:
 		HANDSHAKE38,
 		HANDSHAKE78,
 		CONNECTED,
+		NEAR_CLOSED,
 		FAILED
 	};
 

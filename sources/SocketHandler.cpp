@@ -29,26 +29,22 @@ using namespace std;
 
 SocketHandler::SocketHandler(Invoker* invoker, RTMFPSession* pSession) : _pInvoker(invoker), _acceptAll(false), _pMainSession(pSession) {
 	onPacket = [this](PoolBuffer& pBuffer, const SocketAddress& address) {
-		if (_pMainSession->status == RTMFP::FAILED)
-			return; // ignore
+		if (_pMainSession->status < RTMFP::NEAR_CLOSED) {
 
-		lock_guard<recursive_mutex> lock(_mutexConnections);
-		auto itConnection = _mapAddress2Connection.find(address);
-		if (itConnection != _mapAddress2Connection.end())
-			itConnection->second->process(pBuffer);
-		else {
-			DEBUG("Input packet from a new address : ", address.toString());
-			_pDefaultConnection->setAddress(address);
-			_pDefaultConnection->process(pBuffer);
+			lock_guard<mutex> lock(_mutexConnections);
+			auto itConnection = _mapAddress2Connection.find(address);
+			if (itConnection != _mapAddress2Connection.end())
+				itConnection->second->process(pBuffer);
+			else {
+				DEBUG("Input packet from a new address : ", address.toString());
+				_pDefaultConnection->setAddress(address);
+				_pDefaultConnection->process(pBuffer);
+			}
 		}
 	};
 	onError = [this](const Exception& ex) {
-		ERROR("Socket error : ", ex.error())
-	};
-	onConnection = [this](const SocketAddress& address, const string& name) {
-		lock_guard<recursive_mutex> lock(_mutexConnections);
-		auto itConnection = _mapAddress2Connection.find(address);
-		OnConnection::raise(itConnection->second, name);
+		SocketAddress address;
+		DEBUG("Socket error : ", ex.error(), " from ", _pSocket->peerAddress(address).toString())
 	};
 
 	_pSocket.reset(new UDPSocket(_pInvoker->sockets));
@@ -63,7 +59,7 @@ SocketHandler::~SocketHandler() {
 }
 
 void SocketHandler::close() {
-	lock_guard<recursive_mutex> lock(_mutexConnections);
+	lock_guard<mutex> lock(_mutexConnections);
 	for (auto itConnection = _mapAddress2Connection.begin(); itConnection != _mapAddress2Connection.end(); itConnection++)
 		deleteConnection(itConnection);
 	_mapAddress2Connection.clear();
@@ -98,39 +94,46 @@ bool SocketHandler::diffieHellman(DiffieHellman * &pDh) {
 
 void SocketHandler::addP2PConnection(const string& rawId, const string& peerId, const string& tag, const SocketAddress& hostAddress) {
 
-	lock_guard<recursive_mutex> lock(_mutexConnections);
+	//lock_guard<mutex> lock(_mutexConnections);
 	_mapTag2Peer.emplace(piecewise_construct, forward_as_tuple(tag), forward_as_tuple(rawId, peerId, hostAddress));
 }
 
 bool SocketHandler::onNewPeerId(const string& rawId, const string& peerId, const SocketAddress& address) {
-	lock_guard<recursive_mutex> lock(_mutexConnections);
+	//lock_guard<mutex> lock(_mutexConnections);
 	auto itConnection = _mapAddress2Connection.find(address);
-	FATAL_ASSERT(itConnection != _mapAddress2Connection.end())
 	return OnNewPeerId::raise<false>(itConnection->second, rawId, peerId);
 }
 
-shared_ptr<RTMFPConnection>  SocketHandler::addConnection(const SocketAddress& address, FlowManager* session, bool responder, bool p2p) {
-	lock_guard<recursive_mutex> lock(_mutexConnections);
+
+void SocketHandler::onConnection(const SocketAddress& address, const string& name) {
+	//lock_guard<mutex> lock(_mutexConnections);
+	auto itConnection = _mapAddress2Connection.find(address);
+	OnConnection::raise(itConnection->second, name);
+}
+
+bool  SocketHandler::addConnection(shared_ptr<RTMFPConnection>& pConn, const SocketAddress& address, FlowManager* session, bool responder, bool p2p) {
+	//lock_guard<mutex> lock(_mutexConnections);
 	auto itConnection = _mapAddress2Connection.lower_bound(address);
 	if (itConnection == _mapAddress2Connection.end() || itConnection->first != address) {
-		itConnection = _mapAddress2Connection.emplace_hint(itConnection, piecewise_construct, forward_as_tuple(address), forward_as_tuple(new RTMFPConnection(address, this, session, responder, p2p)));
-		itConnection->second->OnIdBuilt::subscribe((OnIdBuilt&)*this);
-		itConnection->second->OnConnected::subscribe(onConnection);
+		pConn = _mapAddress2Connection.emplace_hint(itConnection, piecewise_construct, forward_as_tuple(address), forward_as_tuple(new RTMFPConnection(address, this, session, responder, p2p)))->second;
+		pConn->OnIdBuilt::subscribe((OnIdBuilt&)*this);
 		if (session)
-			session->subscribe(itConnection->second);
-	} else
-		DEBUG("Connection already exist at address ", address.toString(), ", nothing done")
-	return itConnection->second;
+			session->subscribe(pConn);
+		return true;
+	}
+	DEBUG("Connection already exists at address ", address.toString(), ", nothing done")
+	pConn = itConnection->second;
+	return false;
 }
 
 void SocketHandler::deleteConnection(const MAP_ADDRESS2CONNECTION::iterator& itConnection) {
+	TRACE("Closing connection to ", itConnection->first.toString())
 	itConnection->second->close();
 	itConnection->second->OnIdBuilt::unsubscribe((OnIdBuilt&)*this);
-	itConnection->second->OnConnected::unsubscribe(onConnection);
 }
 
 void SocketHandler::manage() {
-	lock_guard<recursive_mutex> lock(_mutexConnections);
+	lock_guard<mutex> lock(_mutexConnections);
 
 	if (!_mapTag2Peer.empty()) {
 
@@ -140,7 +143,7 @@ void SocketHandler::manage() {
 			WaitingPeer& peer = itPeer->second;
 			if (!peer.attempt || peer.lastAttempt.isElapsed(peer.attempt * 1500)) {
 				if (peer.attempt++ == 11) {
-					INFO("Connection to ", peer.peerId, " has reached 11 attempt without answer, removing the peer...")
+					DEBUG("Connection to ", peer.peerId, " has reached 11 attempt without answer, removing the peer...")
 					_mapTag2Peer.erase(itPeer++);
 					continue;
 				}
@@ -161,9 +164,10 @@ void SocketHandler::manage() {
 	// Delete old connections
 	auto itConnection2 = _mapAddress2Connection.begin();
 	while (itConnection2 != _mapAddress2Connection.end()) {
-		if (itConnection2->second->failed())
+		if (itConnection2->second->failed()) {
+			deleteConnection(itConnection2);
 			_mapAddress2Connection.erase(itConnection2++);
-		else
+		} else
 			++itConnection2;
 	}
 
@@ -171,7 +175,7 @@ void SocketHandler::manage() {
 }
 
 void SocketHandler::onP2PAddresses(const string& tagReceived, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress) {
-	lock_guard<recursive_mutex> lock(_mutexConnections);
+	//lock_guard<mutex> lock(_mutexConnections);
 	auto it = _mapTag2Peer.find(tagReceived);
 	if (it == _mapTag2Peer.end()) {
 		DEBUG("Handshake 71 received but no p2p connection found with tag (possible old request)")
@@ -218,6 +222,6 @@ bool SocketHandler::onPeerHandshake70(const string& tagReceived, const string& f
 		return res;
 	}
 	
-	ERROR("Unknown tag received with handshake 70 from address ", address.toString(), " possible direct connection") // should not happen
+	TRACE("Unknown tag received with handshake 70 from address ", address.toString(), " (possible old connection)")
 	return false;
 }

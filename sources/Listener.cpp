@@ -32,8 +32,8 @@ Listener::Listener(Publisher& publication, const string& identifier) : publicati
 
 }
 
-FlashListener::FlashListener(Publisher& publication, const string& identifier, FlashWriter& writer) : Listener(publication, identifier),
-	_writer(writer), receiveAudio(true), receiveVideo(true), _firstTime(true), _seekTime(0), _pAudioWriter(NULL), _pVideoWriter(NULL),
+FlashListener::FlashListener(Publisher& publication, const string& identifier, FlashWriter* pDataWriter, FlashWriter* pAudioWriter, FlashWriter* pVideoWriter) : Listener(publication, identifier),
+	_pDataWriter(pDataWriter), _pAudioWriter(pAudioWriter), _pVideoWriter(pVideoWriter), receiveAudio(true), receiveVideo(true), _firstTime(true), _seekTime(0),
 	_dataInitialized(false), _reliable(true), _startTime(0), _lastTime(0), _codecInfosSent(false) {
 
 }
@@ -43,7 +43,9 @@ FlashListener::~FlashListener() {
 }
 
 void FlashListener::closeWriters() {
-	// -1 indicate that it come of the FlashListener class
+	// -1 indicate that it come from the FlashListener class
+	if (_pDataWriter)
+		_pDataWriter->close(-1);
 	if (_pAudioWriter)
 		_pAudioWriter->close(-1);
 	if (_pVideoWriter)
@@ -63,8 +65,6 @@ bool FlashListener::initWriters() {
 		firstTime = true;
 
 	_dataInitialized = true;
-	_pAudioWriter = &_writer.newWriter();
-	_pVideoWriter = &_writer.newWriter();
 
 	if (firstTime && publication.running()) {
 		startPublishing();
@@ -80,7 +80,7 @@ void FlashListener::startPublishing() {
 		return;
 	}
 
-	if (!writeReliableMedia(_writer, FlashWriter::START, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
+	if (!writeReliableMedia(*_pDataWriter, FlashWriter::START, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
 		return;
 	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::START, FlashWriter::AUDIO, publicationNamePacket()))
 		return; // Here consider that the FlashListener have to be closed by the caller
@@ -98,7 +98,7 @@ void FlashListener::stopPublishing() {
 			return;
 	}
 
-	if (!writeReliableMedia(_writer, FlashWriter::STOP, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
+	if (!writeReliableMedia(*_pDataWriter, FlashWriter::STOP, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
 		return;
 	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::STOP, FlashWriter::AUDIO, publicationNamePacket()))
 		return; // Here consider that the FlashListener have to be closed by the caller
@@ -180,7 +180,8 @@ bool FlashListener::pushAudioInfos(UInt32 time) {
 
 void FlashListener::flush() {
 	// in first data channel
-	_writer.flush();
+	if (_pDataWriter)
+		_pDataWriter->flush();
 	// now media channel
 	if (_pAudioWriter) // keep in first, because audio track is sometimes the time reference track
 		_pAudioWriter->flush();

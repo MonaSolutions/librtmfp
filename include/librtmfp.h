@@ -41,9 +41,9 @@ LIBRTMFP_API typedef struct RTMFPGroupConfig {
 	unsigned int	availabilityUpdatePeriod; // 100 by default, it is the time (in msec) between each fragments map messages (multicastAvailabilityUpdatePeriod)
 	char			availabilitySendToAll; // False by default, if True send the fragments map to all peer (multicastAvailabilitySendToAll)
 	unsigned int	windowDuration; // 8000 by default, it is the time (in msec) to bufferize and keep fragments available
-	unsigned int	relayMargin; // 2000 by default, it is additional time (in msec) to keep the fragments available
+	unsigned int	relayMargin; // 2000 by default, it is additional time (in msec) to keep the fragments available (cannot be changed)
 	unsigned int	fetchPeriod; // 2500 by default, it is the time (in msec) before trying to fetch the missing fragments
-	unsigned short	pushLimit; // 4 by default, it is the number of neighbors (-1) to which we want to push fragments
+	unsigned short	pushLimit; // 4 by default, it is the number of neighbors (-1) to which we want to push fragments (cannot be changed)
 } RTMFPGroupConfig;
 
 LIBRTMFP_API typedef struct RTMFPConfig {
@@ -68,7 +68,7 @@ LIBRTMFP_API int RTMFP_LibVersion();
 LIBRTMFP_API unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters);
 
 // Connect to a peer via RTMFP P2P Connection (must be connected) and start playing streamName
-LIBRTMFP_API  int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName);
+LIBRTMFP_API  int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking);
 
 // Connect to a NetGroup (in the G:... form)
 LIBRTMFP_API int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters);

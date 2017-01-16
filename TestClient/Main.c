@@ -374,7 +374,7 @@ int main(int argc,char* argv[]) {
 					RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
 				else if (nbPeers > 0) { // P2p Play
 					for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
-						RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer]);
+						RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer], 1);
 				}
 				else if (_option == SYNC_READ || _option == ASYNC_READ)
 					RTMFP_Play(context, publication);

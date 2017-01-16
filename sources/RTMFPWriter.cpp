@@ -28,23 +28,27 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis) : /*_resetStream(true),*/ FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0),  flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis, UInt64 idFlow) : FlashWriter(state,band.poolBuffers()), id(0), _band(band),
+	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+
 	pThis.reset(this);
 	_band.initWriter(pThis);
 	if (signature.empty())
 		open();
 }
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band) : /*_resetStream(true),*/ FlashWriter(state,band.poolBuffers()), id(0), _band(band), critical(false), _stage(0), _stageAck(0), flowId(0), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, UInt64 idFlow) : FlashWriter(state,band.poolBuffers()), id(0), _band(band),
+	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+
 	shared_ptr<RTMFPWriter> pThis(this);
 	_band.initWriter(pThis);
 	if (signature.empty())
 		open();
 }
 
-RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : /*_resetStream(true),*/ FlashWriter(writer), _band(writer._band),
-		critical(false),_repeatable(writer._repeatable), _stage(writer._stage),_stageAck(writer._stageAck),id(writer.id),
-		_ackCount(writer._ackCount),_lostCount(writer._lostCount), flowId(0),signature(writer.signature) {
+RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : FlashWriter(writer), _band(writer._band),
+	_repeatable(writer._repeatable), _stage(writer._stage), _stageAck(writer._stageAck),
+	_ackCount(writer._ackCount), _lostCount(writer._lostCount), flowId(writer.flowId), signature(writer.signature), id(writer.id) {
 	reliable = true;
 	close();
 }
@@ -52,8 +56,6 @@ RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : /*_resetStream(true),*/ FlashWri
 RTMFPWriter::~RTMFPWriter() {
 	FlashWriter::close();
 	abort();
-	if(!signature.empty())
-		DEBUG("RTMFPWriter ",id," consumed");
 }
 
 void RTMFPWriter::abort() {
@@ -94,7 +96,8 @@ void RTMFPWriter::close(Int32 code) {
 		return;
 	if(_stage>0 || _messages.size()>0)
 		createMessage(); // Send a MESSAGE_END just in the case where the receiver has been created (or will be created)
-	FlashWriter::close(code);
+	FlashWriter::close(code); 
+	_closeTime.update();
 }
 
 bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
@@ -104,7 +107,8 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 	if(bufferSize==0) {
 		// In fact here, we should send a 0x18 message (with id flow),
 		// but it can create a loop... We prefer the following behavior
-		fail(ex, "Negative acknowledgment");
+		WARN("Closing writer ", id, ", negative acknowledgment");
+		close();
 		return !ex;
 	}
 
@@ -304,14 +308,15 @@ void RTMFPWriter::manage(Exception& ex) {
 		}
 		// When the peer/server doesn't send acknowledgment since a while we close the writer
 		else if (ex) {
-			fail(ex, "RTMFPWriter can't deliver its data, ", ex.error());
+			WARN("Closing writer ", id, ", can't deliver its data : ", ex.error());
+			close();
 			return;
 		}
 	}
-	if(critical && state()==CLOSED) {
+	/*if(critical && state()==CLOSED) {
 		ex.set(Exception::NETWORK, "Main flow writer closed, session is closing");
 		return;
-	}
+	}*/
 	flush();
 }
 
@@ -346,8 +351,8 @@ void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool
 		// signature
 		if(_stageAck==0) {
 			writer.write8((UInt8)signature.size()).write(signature);
-			// Send flowId for a new flow (not for writer 2 of flowId 2 => AMS support)
-			if(id>2) { // TODO: check this
+			// Send flowId for a new flow (not for writer 2 => AMS support)
+			if(id>2) {
 				writer.write8(1+Util::Get7BitValueSize(flowId)); // following size
 				writer.write8(0x0a); // Unknown!
 				writer.write7BitLongValue(flowId);
@@ -526,7 +531,7 @@ bool RTMFPWriter::flush(bool full) {
 }
 
 RTMFPMessageBuffered& RTMFPWriter::createMessage() {
-	if (state() == CLOSED || signature.empty() || _band.failed()) {// signature.empty() means that we are on the writer of FlowNull
+	if (state() == CLOSED || _band.failed()) {
 		static RTMFPMessageBuffered MessageNull;
 		return MessageNull;
 	}
@@ -538,7 +543,7 @@ RTMFPMessageBuffered& RTMFPWriter::createMessage() {
 AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* data, UInt32 size) {
 	if (type < AMF::AUDIO || type > AMF::VIDEO)
 		time = 0; // Because it can "dropped" the packet otherwise (like if the Writer was not reliable!)
-	if(data && !reliable && state()==OPENED && !_band.failed() && !signature.empty()) {
+	if(data && !reliable && state()==OPENED && !_band.failed()) {
 		_messages.emplace_back(new RTMFPMessageUnbuffered(type,time,data,size));
 		flush(false);
         return AMFWriter::Null;
@@ -571,14 +576,13 @@ void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const
 
 void RTMFPWriter::writeGroupBegin() {
 	createMessage().writer().packet.write8(AMF::ABORT);
-	flush(false); // TODO: see if needed
 	createMessage().writer().packet.write8(GroupStream::GROUP_BEGIN);
 }
 
 void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size, RTMFPGroupConfig* groupConfig) {
 
 	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
+	writer.write8(GroupStream::GROUP_MEDIA_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
 	writer.write(data, size);
 	writer.write("\x01\x02");
 	if (groupConfig->availabilitySendToAll)
@@ -604,7 +608,7 @@ void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 		createMessage().writer().packet.write(data,size);
 		return;
 	}
-	if(state()==CLOSED || signature.empty() || _band.failed()) // signature.empty() means that we are on the writer of FlowNull
+	if(state()==CLOSED || _band.failed())
 		return;
 	_messages.emplace_back(new RTMFPMessageUnbuffered(data, size));
 	flush(false);
