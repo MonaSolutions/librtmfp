@@ -150,7 +150,7 @@ protected:
 	virtual void handleDataAvailable(bool isAvailable);
 
 	// Handle a Writer close message (type 5E)
-	virtual void handleWriterFailed(std::shared_ptr<RTMFPWriter>& pWriter);
+	virtual void handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
 
 	// Handle a P2P address exchange message 0x0f from server (a peer is about to contact us)
 	void handleP2PAddressExchange(Mona::PacketReader& reader);

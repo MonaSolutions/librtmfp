@@ -44,12 +44,12 @@ public:
 	enum State {
 		OPENING,
 		OPENED,
+		NEAR_CLOSED,
 		CLOSED
 	};
 
 	bool					reliable;
 
-	State					state() { return _state; }
 	void					open() { if(_state==OPENING) _state = OPENED;}
 
 	virtual bool			flush() { return false;  } // return true if something has been sent!
@@ -74,27 +74,21 @@ public:
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)
 
-	/**	The main Writer of one session should close the entiere session
-	If code==0, it's a normal close
-	If code>0, it's a user close (from server application script)
-	If code<0, it's a system core close
-	-1 => Publisher close!				*/
-	virtual void			close(Mona::Int32 code = 0);
+	// Close the writer, if not abrupt is set the writer is kept alive for at least 130s
+	virtual void			close(bool abrupt) = 0;
 
 protected:
-	FlashWriter(State state,const Mona::PoolBuffers& poolBuffers);
+	FlashWriter(State state);
 	FlashWriter(FlashWriter& other);
 
 	virtual AMFWriter&		write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL,Mona::UInt32 size=0)=0;
 	AMFWriter&				writeInvocation(const char* name,double callback,bool amf3=false);
 	AMFWriter&				writeAMFState(const char* name,const char* code,const std::string& description,bool withoutClosing=false);
 
-	const Mona::PoolBuffers&		poolBuffers;
+	State							_state;
 private:
 	std::string				_onAudio;
 	std::string				_onVideo;
 	double					_callbackHandleOnAbort;
 	double					_callbackHandle;
-
-	State					_state;
 };

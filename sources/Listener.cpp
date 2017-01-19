@@ -50,7 +50,7 @@ void FlashListener::closeWriters() {
 		_pAudioWriter->close(-1);
 	if (_pVideoWriter)
 		_pVideoWriter->close(-1);
-	_pVideoWriter = _pAudioWriter = NULL;
+	_pDataWriter = _pVideoWriter = _pAudioWriter = NULL;
 	_dataInitialized = false;
 }
 

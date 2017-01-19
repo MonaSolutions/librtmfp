@@ -40,20 +40,22 @@ bool FlashStream::process(PacketReader& packet, UInt64 flowId, UInt64 writerId, 
 	UInt32 time(0);
 	AMF::ContentType type = (AMF::ContentType)packet.read8();
 	switch (type) {
-		case AMF::AUDIO:
-		case AMF::VIDEO:
-			time = packet.read32();
-			break;
-		default:
-			packet.next(4);
-			break;
+	case AMF::AUDIO:
+	case AMF::VIDEO:
+		time = packet.read32();
+		break;
+	default:
+		packet.next(4);
+		break;
 	}
+
+	return process(type, time, packet, flowId, writerId, lostRate);
+}
+
+bool FlashStream::process(AMF::ContentType type, UInt32 time, PacketReader& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
 
 	// if exception, it closes the connection, and print an ERROR message
 	switch(type) {
-		case AMF::ABORT: // TODO: check what it is (in a NetGroup communication)
-			INFO("Unknown 02 packet type : ", Util::FormatHex(packet.current(), packet.available(), LOG_BUFFER))
-			break;
 
 		case AMF::AUDIO:
 			return audioHandler(time, packet, lostRate);

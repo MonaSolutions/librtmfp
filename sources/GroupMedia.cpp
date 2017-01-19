@@ -117,7 +117,7 @@ GroupMedia::GroupMedia(const PoolBuffers& poolBuffers, const string& name, const
 		const UInt8* end = data + size;
 		UInt8 splitCounter = size / NETGROUP_MAX_PACKET_SIZE - ((size % NETGROUP_MAX_PACKET_SIZE) == 0);
 		UInt8 marker = GroupStream::GROUP_MEDIA_DATA ;
-		TRACE("GroupMedia ", id, " - Creating fragments ", _fragmentCounter + 1, " to ", _fragmentCounter + splitCounter, " - time : ", time)
+		TRACE("GroupMedia ", id, " - Creating fragments ", _fragmentCounter + 1, " to ", _fragmentCounter + 1 + splitCounter, " - time : ", time)
 		auto itFragment = _fragments.end();
 		do {
 			if (size > NETGROUP_MAX_PACKET_SIZE)
@@ -592,6 +592,8 @@ void GroupMedia::removePeer(const string& peerId) {
 	auto itPeer = _mapPeers.find(peerId);
 	if (itPeer != _mapPeers.end())
 		removePeer(itPeer);
+	else
+		DEBUG("GroupMedia ", id, " - Unable to find peer ", peerId, " for closing")
 }
 
 void GroupMedia::removePeer(MAP_PEERS_INFO_ITERATOR_TYPE itPeer) {

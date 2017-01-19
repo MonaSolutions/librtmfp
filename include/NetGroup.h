@@ -35,6 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
 #define NETGROUP_PULL_DELAY				100		// delay between each pull request (in msec)
 #define NETGROUP_PEER_TIMEOUT			300000	// number of seconds since the last report known before we delete a peer from the heard list
+#define NETGROUP_DISCONNECT_DELAY		90000	// delay between each try to disconnect from a peer
 
 class GroupNode;
 /**************************************
@@ -123,6 +124,7 @@ private:
 	P2PEvents::OnPeerGroupReport::Type						onGroupReport;
 	P2PEvents::OnNewMedia::Type								onNewMedia;
 	P2PEvents::OnPeerClose::Type							onPeerClose;
+	P2PEvents::OnPeerGroupAskClose::Type					onGroupAskClose;
 	GroupMediaEvents::OnGroupPacket::Type					onGroupPacket;
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)

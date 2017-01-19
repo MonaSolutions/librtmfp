@@ -45,6 +45,28 @@ void RTMFPConnection::close(bool abrupt) {
 		_pSession = NULL;
 }
 
+void RTMFPConnection::handleWriterException(UInt64 id) {
+
+	shared_ptr<RTMFPWriter> pWriter;
+	if (writer(id, pWriter))
+		OnWriterException::raise(pWriter);
+	else
+		WARN("RTMFPWriter ", id, " unfound for failed signal on session ", _pSession? _pSession->name() : name());
+
+}
+
+void RTMFPConnection::handleAcknowledgment(UInt64 id, Mona::PacketReader& message) {
+
+	shared_ptr<RTMFPWriter> pWriter;
+	if (writer(id, pWriter)) {
+		Exception ex;
+		if (!pWriter->acknowledgment(ex, message))
+			WARN(ex.error(), " on connection ", name())
+	}
+	else
+		WARN("RTMFPWriter ", id, " unfound for acknowledgment on session ", _pSession ? _pSession->name() : name())
+}
+
 void RTMFPConnection::flush(bool echoTime, UInt8 marker) {
 	Connection::flush(echoTime, (_responder && marker != 0x0B)? (marker + 1) : marker); // If p2p responder and connected : marker++
 }

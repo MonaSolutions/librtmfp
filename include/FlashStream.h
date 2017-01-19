@@ -27,9 +27,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "AMFReader.h"
 
 namespace FlashEvents {
-	struct OnStatus : Mona::Event<bool(const std::string& code, const std::string& description, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler)> {};
-	struct OnMedia : Mona::Event<void(const std::string& stream, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate, bool audio)> {};
-	struct OnPlay: Mona::Event<bool(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler)> {};
+	struct OnStatus : Mona::Event<bool(const std::string& code, const std::string& description, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler)> {}; // NetConnection or NetStream status event
+	struct OnMedia : Mona::Event<void(const std::string& stream, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate, bool audio)> {};  // Received when we receive media (audio/video) in server or p2p 1-1
+	struct OnPlay: Mona::Event<bool(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler)> {}; // Received when a peer is trying to play a stream
 	struct OnNewPeer : Mona::Event<void(const std::string& peerId)> {};
 	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {}; // Received when a connected peer send us the Group hansdhake (only for P2PSession)
 	struct OnGroupMedia : Mona::Event<bool(Mona::PacketReader& packet, Mona::UInt16 streamId, Mona::UInt64 flowId, Mona::UInt64 writerId)> {}; // Received when a connected peer send us a peer Group Media (Subscription/Infos)
@@ -40,6 +40,7 @@ namespace FlashEvents {
 	struct OnGroupBegin : Mona::Event<void(Mona::UInt16 streamId, Mona::UInt64 flowId, Mona::UInt64 writerId)> {};
 	struct OnFragment : Mona::Event<void(Mona::UInt8 type, Mona::UInt64 id, Mona::UInt8 splitNumber, Mona::UInt8 mediaType, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate, 
 		Mona::UInt16 streamId, Mona::UInt64 flowId, Mona::UInt64 writerId)> {};
+	struct OnGroupAskClose : Mona::Event<bool(Mona::UInt16 streamId, Mona::UInt64 flowId, Mona::UInt64 writerId)> {}; // Receiver when the peer want us to close the connection (if we accept we must close the current flow)
 };
 
 /**************************************************************
@@ -57,7 +58,8 @@ class FlashStream : public virtual Mona::Object,
 	public FlashEvents::OnGroupPlayPull,
 	public FlashEvents::OnFragmentsMap,
 	public FlashEvents::OnGroupBegin,
-	public FlashEvents::OnFragment {
+	public FlashEvents::OnFragment,
+	public FlashEvents::OnGroupAskClose {
 public:
 
 	FlashStream(Mona::UInt16 id);
@@ -77,6 +79,8 @@ protected:
 	virtual bool	messageHandler(const std::string& name, AMFReader& message, Mona::UInt64 flowId, Mona::UInt64 writerId, double callbackHandler);
 	virtual bool	audioHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
 	virtual bool	videoHandler(Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
+
+	bool			process(AMF::ContentType type, Mona::UInt32 time, Mona::PacketReader& packet, Mona::UInt64 flowId, Mona::UInt64 writerId, double lostRate);
 
 private:
 	virtual bool	rawHandler(Mona::UInt16 type, Mona::PacketReader& data);

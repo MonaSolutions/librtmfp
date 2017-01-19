@@ -53,7 +53,7 @@ void Connection::close(bool abrupt) {
 		OnWriterClose::raise(it.second);
 		it.second->clear();
 		if (!abrupt)
-			it.second->close();
+			it.second->close(abrupt);
 	}
 
 	_status = abrupt? RTMFP::FAILED : RTMFP::NEAR_CLOSED;
@@ -136,28 +136,6 @@ UInt8* Connection::packet() {
 	return _pSender->packet.data();
 }
 
-void Connection::handleWriterFailed(UInt64 id) {
-
-	shared_ptr<RTMFPWriter> pWriter;
-	if (writer(id, pWriter))
-		OnWriterFailed::raise(pWriter);
-	else
-		WARN("RTMFPWriter ", id, " unfound for failed signal on connection ", name());
-	
-}
-
-void Connection::handleAcknowledgment(UInt64 id, Mona::PacketReader& message) {
-
-	shared_ptr<RTMFPWriter> pWriter;
-	if (writer(id, pWriter)) {
-		Exception ex;
-		if (!pWriter->acknowledgment(ex, message))
-			WARN(ex.error(), " on connection ", name())
-	}
-	else
-		WARN("RTMFPWriter ", id, " unfound for acknowledgment on connection ", name())
-}
-
 void Connection::flush(UInt8 marker, UInt32 size) {
 	if (!_pSender)
 		return;
@@ -235,13 +213,9 @@ void Connection::flushWriters() {
 	while (it != _flowWriters.end()) {
 		shared_ptr<RTMFPWriter>& pWriter(it->second);
 		Exception ex;
-		pWriter->manage(ex);
-		if (ex) {
-			/* TODO: if (pWriter->critical) {
-				fail(ex.error());
-				break;
-			}*/
-			continue;
+		if (!pWriter->manage(ex)) {
+			OnWriterError::raise(ex);
+			break;
 		}
 		if (pWriter->consumed()) {
 			OnWriterClose::raise(pWriter);

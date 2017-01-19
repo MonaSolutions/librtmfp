@@ -35,6 +35,7 @@ namespace P2PEvents {
 	struct OnNewMedia : Mona::Event<bool(const std::string&, std::shared_ptr<PeerMedia>&, const std::string&, const std::string&, Mona::PacketReader&)> {}; // called when a new PeerMedia is called (new stream available for the peer)
 	struct OnPeerGroupBegin : Mona::Event<void(P2PSession*)> {}; // called when receiving a Group Begin message from the peer
 	struct OnPeerClose : Mona::Event<void(const std::string&)> {}; // called when the peer is closing
+	struct OnPeerGroupAskClose : Mona::Event<bool(const std::string&)> {}; // called when a peer ask to close its session
 }
 
 /**************************************************
@@ -45,7 +46,8 @@ class P2PSession : public FlowManager,
 	public P2PEvents::OnPeerGroupBegin,
 	public P2PEvents::OnPeerGroupReport,
 	public P2PEvents::OnNewMedia,
-	public P2PEvents::OnPeerClose {
+	public P2PEvents::OnPeerClose,
+	public P2PEvents::OnPeerGroupAskClose {
 public:
 	P2PSession(RTMFPSession* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, /*const PEER_LIST_ADDRESS_TYPE& addresses,*/
 		const Mona::SocketAddress& host, bool responder, bool group);
@@ -108,13 +110,13 @@ public:
 	// called by PeerMedia to close the media report and the media flows
 	void closeFlow(Mona::UInt64 id);
 
+	// Ask a peer from the group to disconnect
+	void askPeer2Disconnect();
+
 	// Manage the flows
 	virtual void				manage() { FlowManager::manage(); }
 
 	/*** Public members ***/
-
-	Mona::UInt8						attempt; // Number of try to contact the responder (only for initiator)
-	Mona::Time						lastTry; // Last time handshake 30 has been sent to the server (only for initiator)
 
 	std::string						rawId; // Peer Id in binary format + header (210f)
 	std::string						peerId; // Peer Id of the peer connected
@@ -129,7 +131,7 @@ protected:
 	virtual bool					handlePlay(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler);
 
 	// Handle a Writer close message (type 5E)
-	virtual void					handleWriterFailed(std::shared_ptr<RTMFPWriter>& pWriter);
+	virtual void					handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
 
 	// Handle a P2P address exchange message (Only for RTMFPConnection)
 	virtual void					handleP2PAddressExchange(Mona::PacketReader& reader);
@@ -146,21 +148,17 @@ private:
 	void							handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
 
 	static Mona::UInt32										P2PSessionCounter; // Global counter for generating incremental P2P sessions id
-
 	RTMFPSession*											_parent; // RTMFPConnection related to
 	PEER_LIST_ADDRESS_TYPE									_knownAddresses; // list of known addresses of the peer/server
-
-	// Play/Publish command
 	std::string												_streamName; // playing stream name
 	bool													_responder; // is responder?
-
-	bool													_rawResponse; // next message is a raw response? TODO: make it nicer
 
 	// Group members
 	std::shared_ptr<Mona::Buffer>							_groupConnectKey; // Encrypted key used to connect to the peer
 	bool													_groupConnectSent; // True if group connection request has been sent to peer
 	bool													_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	bool													_isGroup; // True if this peer connection it part of a NetGroup
+	Mona::Time												_lastTryDisconnect; // Last time we ask peer to disconnect
 
 	std::shared_ptr<RTMFPWriter>							_pReportWriter; // Writer for report messages
 	std::shared_ptr<RTMFPWriter>							_pNetStreamWriter; // Writer for NetStream P2P direct messages
@@ -178,4 +176,5 @@ private:
 	FlashConnection::OnFragmentsMap::Type					onFragmentsMap;
 	FlashConnection::OnGroupBegin::Type						onGroupBegin;
 	FlashConnection::OnFragment::Type						onFragment;
+	FlashConnection::OnGroupAskClose::Type					onGroupAskClose;
 };

@@ -80,9 +80,8 @@ bool GroupStream::process(PacketReader& packet, UInt64 flowId, UInt64 writerId, 
 			DEBUG("GroupStream ", id, " - NetGroup data message type : ", value)
 			return true;
 		}
-		case GroupStream::GROUP_NKNOWN:
-			DEBUG("GroupStream ", id, " - Unknown NetGroup 0C message type") // TODO: manage this (do we have to disconnect?)
-			return false;
+		case GroupStream::GROUP_ASK_CLOSE:
+			return OnGroupAskClose::raise<false>(id, flowId, writerId);
 		case GroupStream::GROUP_BEGIN_NEAREST:
 			OnGroupBegin::raise(id, flowId, writerId);
 			return true;
@@ -112,7 +111,7 @@ bool GroupStream::process(PacketReader& packet, UInt64 flowId, UInt64 writerId, 
 			DEBUG("GroupStream ", id, " - Group media normal : counter=", counter, ", time=", time, ", type=", (mediaType == AMF::AUDIO ? "Audio" : (mediaType == AMF::VIDEO ? "Video" : "Unknown")))
 			OnFragment::raise(type, counter, 0, mediaType, time, packet, lostRate, id, flowId, writerId);
 			if (mediaType != AMF::AUDIO && mediaType != AMF::VIDEO)
-				return FlashStream::process(packet, id, writerId, lostRate); // recursive call, can be invocation or other
+				return FlashStream::process((AMF::ContentType)mediaType, time, packet, id, writerId, lostRate); // recursive call, can be invocation, data etc.. (TODO: manage fragmented data)
 			return true;
 		} case GroupStream::GROUP_MEDIA_START: { // Start a splitted media sequence
 

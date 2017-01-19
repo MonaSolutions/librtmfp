@@ -29,10 +29,10 @@ using namespace std;
 using namespace Mona;
 
 
-FlashWriter::FlashWriter(State state,const PoolBuffers& poolBuffers) : poolBuffers(poolBuffers),_callbackHandleOnAbort(0),_callbackHandle(0),amf0(false),reliable(true),_state(state) {
+FlashWriter::FlashWriter(State state) : _callbackHandleOnAbort(0),_callbackHandle(0),amf0(false),reliable(true),_state(state) {
 }
 
-FlashWriter::FlashWriter(FlashWriter& other) : reliable(other.reliable), poolBuffers(other.poolBuffers),_callbackHandle(other._callbackHandle),_callbackHandleOnAbort(0),amf0(other.amf0) {
+FlashWriter::FlashWriter(FlashWriter& other) : reliable(other.reliable), _callbackHandle(other._callbackHandle),_callbackHandleOnAbort(0),amf0(other.amf0) {
 	other._callbackHandle = 0;
 }
 
@@ -122,12 +122,4 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time, const UInt8* data, UInt
 			WARN("writeMedia method not supported by RTMFP for ",Format<UInt8>("%.2x",(UInt8)type)," type")
 	}
 	return true;
-}
-
-void FlashWriter::close(Int32 code) {
-	if(_state==CLOSED)
-		return;
-	_state=CLOSED; // before flush to get MESSAGE_END!
-	flush();
-	//OnClose::raise(code);
 }

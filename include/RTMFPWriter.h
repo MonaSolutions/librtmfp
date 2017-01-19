@@ -60,11 +60,11 @@ public:
 	bool				flush() { return flush(true); }
 
 	bool				acknowledgment(Mona::Exception& ex, Mona::PacketReader& packet);
-	void				manage(Mona::Exception& ex);
+	bool				manage(Mona::Exception& ex);
 
 	template <typename ...Args>
 	void fail(Mona::Exception& ex, Args&&... args) {
-		if (state() == CLOSED)
+		if (_state >= NEAR_CLOSED)
 			return;
 		ex.set(Mona::Exception::PROTOCOL, "RTMFPWriter ", id, " has failed, ", args...);
 		WARN("RTMFPWriter ", id, " has failed, ", args ...);
@@ -77,10 +77,11 @@ public:
 		//_resetStream = true;
 	}
 
+	FlashWriter::State	state() { return _state; }
 	void				clear();
 	void				abort();
-	void				close(Mona::Int32 code=0);
-	bool				consumed() { return _messages.empty() && state() == CLOSED && _closeTime.isElapsed(130000); } // Wait 130s before closing the writer definetly
+	void				close(bool abrupt);
+	bool				consumed() { return _messages.empty() && _state == CLOSED || (_state == NEAR_CLOSED && _closeTime.isElapsed(130000)); } // Wait 130s before closing the writer definetly
 
 	Mona::UInt64		stage() { return _stage; }
 

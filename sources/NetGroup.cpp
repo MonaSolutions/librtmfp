@@ -118,11 +118,11 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
 		ReadGroupConfig(pParameters, packet);  // TODO: check groupParameters
 
-		// We do not accept peer if they are not in the best list
-		if (!_bestList.empty() && _bestList.find(peerId) == _bestList.end()) {
-			DEBUG("Best Peer management - peer ", peerId, " media subscription rejected, not in the Best List")
+		// We do not accept peer if they are not in the best list (TODO: not sure it is true anymore)
+		/*if (!_bestList.empty() && _bestList.find(peerId) == _bestList.end()) {
+			DEBUG("Best Peer - peer ", peerId, " media subscription rejected, not in the Best List")
 			return false;
-		}
+		}*/
 
 		if (streamName != stream) {
 			INFO("New stream available in the group but not registered : ", streamName)
@@ -257,6 +257,12 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	onPeerClose = [this](const string& peerId) {
 		removePeer(peerId);
 	};
+	onGroupAskClose = [this](const string& peerId) {
+		if (_bestList.empty())
+			return true; // do not disconnect peer if we have not calculated the best list (can it happen?)
+
+		return _bestList.find(peerId) != _bestList.end(); // if peer is not in the Best list return False tu close the main flow, otherwise keep connection open
+	};
 
 	GetGroupAddressFromPeerId(STR _conn.rawId(), _myGroupAddress);
 
@@ -335,6 +341,7 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 	pPeer->OnPeerGroupReport::subscribe(onGroupReport);
 	pPeer->OnPeerGroupBegin::subscribe(onGroupBegin);
 	pPeer->OnPeerClose::subscribe(onPeerClose);
+	pPeer->OnPeerGroupAskClose::subscribe(onGroupAskClose);
 
 	buildBestList(_myGroupAddress, _bestList); // rebuild the best list to know if the peer is in it
 	return true;
@@ -356,6 +363,7 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 	itPeer->second->OnPeerGroupReport::unsubscribe(onGroupReport);
 	itPeer->second->OnPeerGroupBegin::unsubscribe(onGroupBegin);
 	itPeer->second->OnPeerClose::unsubscribe(onPeerClose);
+	itPeer->second->OnPeerGroupAskClose::unsubscribe(onGroupAskClose);
 	_mapPeers.erase(itPeer);
 }
 
@@ -487,7 +495,7 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 	}
 
 	if (bestList == _bestList && _mapPeers.size() != _bestList.size())
-		INFO("Best Peer management - Peers connected : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size())
+		INFO("Best Peer - Peers connected : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
 }
 
 void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
@@ -550,12 +558,9 @@ void NetGroup::manageBestConnections() {
 	// Close old peers
 	auto it2Close = _mapPeers.begin();
 	while (it2Close != _mapPeers.end()) {
-		if (_bestList.find(it2Close->first) == _bestList.end()) {
-			DEBUG("Best Peer management - Closing the connection to peer ", it2Close->first)
-			(it2Close++)->second->closeGroup(false); // (it will delete the pointer)
-		}
-		else
-			++it2Close;
+		if (_bestList.find(it2Close->first) == _bestList.end())
+			it2Close->second->askPeer2Disconnect();
+		++it2Close;
 	}
 
 	// Connect to new peers
@@ -565,7 +570,7 @@ void NetGroup::manageBestConnections() {
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", it) // implementation error, should not happen
 			else {
-				DEBUG("Best Peer management - Connecting to peer ", it, "...")
+				DEBUG("Best Peer - Connecting to peer ", it, "...")
 				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress);
 			}
 		}

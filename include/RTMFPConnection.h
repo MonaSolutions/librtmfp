@@ -65,6 +65,12 @@ public:
 	// Return the far nonce (used by P2PSession to calculate the group key)
 	const Mona::Buffer&				farNonce() { return _farNonce; }
 
+	// Called by the session to handle a writer fail message
+	void handleWriterException(Mona::UInt64 id);
+
+	// Called by the session to handle a writer acknowledgment
+	void handleAcknowledgment(Mona::UInt64 id, Mona::PacketReader& message);
+
 protected:
 
 	// Handle message received

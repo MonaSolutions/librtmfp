@@ -116,8 +116,12 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 	onNewWriter = [this](shared_ptr<RTMFPWriter>& pWriter) {
 		handleNewWriter(pWriter);
 	};
-	onWriterFailed = [this](shared_ptr<RTMFPWriter>& pWriter) {
-		handleWriterFailed(pWriter);
+	onWriterException = [this](shared_ptr<RTMFPWriter>& pWriter) {
+		handleWriterException(pWriter);
+	};
+	onWriterError = [this](const Exception& ex) {
+		INFO("Closing session ", name(), " : ", ex.error())
+		close(true);
 	};
 
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
@@ -179,8 +183,9 @@ void FlowManager::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
 
 	pConnection->OnMessage::subscribe(onMessage);
 	pConnection->OnNewWriter::subscribe(onNewWriter);
-	pConnection->OnWriterFailed::subscribe(onWriterFailed);
+	pConnection->OnWriterException::subscribe(onWriterException);
 	pConnection->OnWriterClose::subscribe(onWriterClose);
+	pConnection->OnWriterError::subscribe(onWriterError);
 	_mapConnections.emplace(pConnection->address(), pConnection);
 }
 
@@ -203,8 +208,9 @@ void FlowManager::unsubscribeConnection(shared_ptr<RTMFPConnection>& pConnection
 
 	pConnection->OnMessage::unsubscribe(onMessage);
 	pConnection->OnNewWriter::unsubscribe(onNewWriter);
-	pConnection->OnWriterFailed::unsubscribe(onWriterFailed);
+	pConnection->OnWriterException::unsubscribe(onWriterException);
 	pConnection->OnWriterClose::unsubscribe(onWriterClose);
+	pConnection->OnWriterError::unsubscribe(onWriterError);
 }
 
 bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
@@ -299,7 +305,7 @@ void FlowManager::receive(BinaryReader& reader) {
 
 		case 0x5e : {  // P2P closing flow (RTMFPFlow exception, only for p2p)
 			UInt64 id = message.read7BitLongValue();
-			_pConnection->handleWriterFailed(id);
+			_pConnection->handleWriterException(id);
 			break;
 		}
 			/*case 0x18 :

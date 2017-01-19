@@ -103,7 +103,7 @@ protected:
 	virtual void				handleNewWriter(std::shared_ptr<RTMFPWriter>& pWriter) = 0;
 
 	// Handle a Writer close message (type 5E)
-	virtual void				handleWriterFailed(std::shared_ptr<RTMFPWriter>& pWriter) = 0;
+	virtual void				handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter) = 0;
 
 	// Handle a P2P address exchange message (Only for RTMFPSession)
 	virtual void				handleP2PAddressExchange(Mona::PacketReader& reader) = 0;
@@ -141,13 +141,14 @@ protected:
 	OnSocketError										_pOnSocketError;
 
 	// Events
-	FlashConnection::OnStatus::Type						onStatus; // NetConnection or NetStream status event
-	FlashConnection::OnMedia::Type						onMedia; // Received when we receive media (audio/video)
-	FlashConnection::OnPlay::Type						onPlay; // Received when we receive media (audio/video)
-	RTMFPConnection::OnMessage::Type					onMessage; // Received when a connection follow us a message
-	RTMFPConnection::OnNewWriter::Type					onNewWriter; // Received when the connection create a new writer
-	RTMFPConnection::OnWriterFailed::Type				onWriterFailed; // Received when the writer fail
-	RTMFPConnection::OnWriterClose::Type				onWriterClose; // Received when the writer is closed
+	FlashConnection::OnStatus::Type						onStatus;
+	FlashConnection::OnMedia::Type						onMedia;
+	FlashConnection::OnPlay::Type						onPlay;
+	RTMFPConnection::OnMessage::Type					onMessage;
+	RTMFPConnection::OnNewWriter::Type					onNewWriter;
+	RTMFPConnection::OnWriterException::Type			onWriterException;
+	RTMFPConnection::OnWriterClose::Type				onWriterClose;
+	RTMFPConnection::OnWriterError::Type				onWriterError;
 
 	// Job Members
 	std::shared_ptr<FlashConnection>					_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
@@ -167,7 +168,6 @@ private:
 	void												removeFlow(RTMFPFlow* pFlow);
 
 	std::map<Mona::SocketAddress, std::shared_ptr<RTMFPConnection>>				_mapConnections; // map of connections to all addresses of the session
-
 	Mona::Time																	_closeTime; // Time since closure
 
 	// Asynchronous read

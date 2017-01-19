@@ -40,12 +40,10 @@ PeerMedia::~PeerMedia() {
 void PeerMedia::close(bool abrupt) {
 	closeMediaWriter(abrupt);
 	if (_pMediaReportWriter) {
-		if (!abrupt) {
+		if (!abrupt)
 			_pParent->closeFlow(idFlow);
-			_pMediaReportWriter->close();
-		}
+		_pMediaReportWriter->close(abrupt);
 		idFlow = 0;
-		_pMediaReportWriter.reset();
 	}
 
 	OnPeerClose::raise(_pParent->peerId, pushInMode); // notify GroupMedia to reset push masks and remove pointer
@@ -53,12 +51,10 @@ void PeerMedia::close(bool abrupt) {
 
 void PeerMedia::closeMediaWriter(bool abrupt) {
 	if (_pMediaWriter) {
-		if (!abrupt) {
+		if (!abrupt)
 			_pParent->closeFlow(idFlowMedia);
-			_pMediaWriter->close();
-		}
+		_pMediaWriter->close(abrupt);
 		idFlowMedia = 0;
-		_pMediaWriter.reset();
 	}
 }
 
@@ -94,7 +90,7 @@ bool PeerMedia::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, bool 
 
 bool PeerMedia::sendFragmentsMap(UInt64 lastFragment, const UInt8* data, UInt32 size) {
 	if (_pMediaReportWriter && lastFragment != _idFragmentsMapOut) {
-		DEBUG("Sending Fragments Map message (type 22) to peer ", _pParent->peerId, " (", lastFragment,")")
+		TRACE("Sending Fragments Map message (type 22) to peer ", _pParent->peerId, " (", lastFragment,")")
 		_pMediaReportWriter->writeRaw(data, size);
 		_pMediaReportWriter->flush();
 		_idFragmentsMapOut = lastFragment;
@@ -121,7 +117,7 @@ void PeerMedia::sendPushMode(UInt8 mode) {
 			}
 		}
 
-		DEBUG("Setting Group Push In mode to ", Format<UInt8>("%.2x", mode), " (", masks,") for peer ", _pParent->peerId, " - last fragment : ", _idFragmentsMapIn)
+		TRACE("Setting Group Push In mode to ", Format<UInt8>("%.2x", mode), " (", masks,") for peer ", _pParent->peerId, " - last fragment : ", _idFragmentsMapIn)
 		_pMediaReportWriter->writeGroupPlay(mode);
 		_pMediaReportWriter->flush();
 		pushInMode = mode;
@@ -164,7 +160,7 @@ bool PeerMedia::checkMask(UInt8 bitNumber) {
 	UInt64 lastFragment = _idFragmentsMapIn - (_idFragmentsMapIn % 8);
 	lastFragment += ((_idFragmentsMapIn % 8) > bitNumber) ? bitNumber : bitNumber - 8;
 
-	DEBUG("Searching ", lastFragment, " into ", Format<UInt8>("%.2x", *_fragmentsMap.data()), " ; (current id : ", _idFragmentsMapIn, ") ; result = ",
+	TRACE("Searching ", lastFragment, " into ", Format<UInt8>("%.2x", *_fragmentsMap.data()), " ; (current id : ", _idFragmentsMapIn, ") ; result = ",
 		((*_fragmentsMap.data()) & (1 << (8 - _idFragmentsMapIn + lastFragment))) > 0, " ; bit : ", bitNumber, " ; address : ", _pParent->peerId, " ; latency : ", _pParent->latency())
 
 	return ((*_fragmentsMap.data()) & (1 << (8 - _idFragmentsMapIn + lastFragment))) > 0;

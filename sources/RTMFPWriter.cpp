@@ -28,7 +28,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis, UInt64 idFlow) : FlashWriter(state,band.poolBuffers()), id(0), _band(band),
+RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
 	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 
 	pThis.reset(this);
@@ -37,7 +37,7 @@ RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, 
 		open();
 }
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, UInt64 idFlow) : FlashWriter(state,band.poolBuffers()), id(0), _band(band),
+RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
 	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 
 	shared_ptr<RTMFPWriter> pThis(this);
@@ -50,11 +50,11 @@ RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : FlashWriter(writer), _band(write
 	_repeatable(writer._repeatable), _stage(writer._stage), _stageAck(writer._stageAck),
 	_ackCount(writer._ackCount), _lostCount(writer._lostCount), flowId(writer.flowId), signature(writer.signature), id(writer.id) {
 	reliable = true;
-	close();
+	close(false);
 }
 
 RTMFPWriter::~RTMFPWriter() {
-	FlashWriter::close();
+
 	abort();
 }
 
@@ -91,13 +91,16 @@ void RTMFPWriter::clear() {
 	FlashWriter::clear();
 }
 
-void RTMFPWriter::close(Int32 code) {
-	if(state()==CLOSED)
+void RTMFPWriter::close(bool abrupt) {
+	if(_state==CLOSED)
 		return;
 	if(_stage>0 || _messages.size()>0)
 		createMessage(); // Send a MESSAGE_END just in the case where the receiver has been created (or will be created)
-	FlashWriter::close(code); 
-	_closeTime.update();
+
+	if (_state < NEAR_CLOSED)
+		_closeTime.update();
+	_state = abrupt ? CLOSED : NEAR_CLOSED; // before flush to get MESSAGE_END!
+	flush();
 }
 
 bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
@@ -108,7 +111,7 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 		// In fact here, we should send a 0x18 message (with id flow),
 		// but it can create a loop... We prefer the following behavior
 		WARN("Closing writer ", id, ", negative acknowledgment");
-		close();
+		close(false);
 		return !ex;
 	}
 
@@ -298,8 +301,8 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 	return true;
 }
 
-void RTMFPWriter::manage(Exception& ex) {
-	if(!consumed() && !_band.failed()) {
+bool RTMFPWriter::manage(Exception& ex) {
+	if(_state < NEAR_CLOSED && !_band.failed()) {
 		
 		// if some acknowlegment has not been received we send the messages back (8 times, with progressive occurences)
 		if (_trigger.raise(ex)) {
@@ -308,16 +311,12 @@ void RTMFPWriter::manage(Exception& ex) {
 		}
 		// When the peer/server doesn't send acknowledgment since a while we close the writer
 		else if (ex) {
-			WARN("Closing writer ", id, ", can't deliver its data : ", ex.error());
-			close();
-			return;
+			ex.set(Exception::NETWORK, "Congestion issue, writer ", id, " can't deliver its data");
+			return false;
 		}
 	}
-	/*if(critical && state()==CLOSED) {
-		ex.set(Exception::NETWORK, "Main flow writer closed, session is closing");
-		return;
-	}*/
 	flush();
+	return true;
 }
 
 UInt32 RTMFPWriter::headerSize(UInt64 stage) { // max size header = 50
@@ -336,7 +335,7 @@ void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool
 		flags |= MESSAGE_HEADER;
 	if(size==0)
 		flags |= MESSAGE_ABANDONMENT;
-	if(state()==CLOSED && _messages.size()==1) // On LAST message
+	if(_state >= NEAR_CLOSED && _messages.size()==1) // On LAST message
 		flags |= MESSAGE_END;
 
 	// TRACE("RTMFPWriter ",id," stage ",stage);
@@ -452,7 +451,7 @@ bool RTMFPWriter::flush(bool full) {
 	if(_messagesSent.size()>100)
 		TRACE("Buffering become high : _messagesSent.size()=",_messagesSent.size());
 
-	if(state()==OPENING) {
+	if(_state==OPENING) {
 		ERROR("Violation policy, impossible to flush data on a opening writer");
 		return false;
 	}
@@ -531,7 +530,7 @@ bool RTMFPWriter::flush(bool full) {
 }
 
 RTMFPMessageBuffered& RTMFPWriter::createMessage() {
-	if (state() == CLOSED || _band.failed()) {
+	if (_state == CLOSED || _band.failed()) { // not NEAR_CLOSED because we want to send the last messages
 		static RTMFPMessageBuffered MessageNull;
 		return MessageNull;
 	}
@@ -543,7 +542,7 @@ RTMFPMessageBuffered& RTMFPWriter::createMessage() {
 AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* data, UInt32 size) {
 	if (type < AMF::AUDIO || type > AMF::VIDEO)
 		time = 0; // Because it can "dropped" the packet otherwise (like if the Writer was not reliable!)
-	if(data && !reliable && state()==OPENED && !_band.failed()) {
+	if(data && !reliable && _state==OPENED && !_band.failed()) {
 		_messages.emplace_back(new RTMFPMessageUnbuffered(type,time,data,size));
 		flush(false);
         return AMFWriter::Null;
@@ -604,11 +603,11 @@ void RTMFPWriter::writeGroupPull(UInt64 index) {
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
-	if(reliable || state()==OPENING) {
+	if(reliable || _state==OPENING) {
 		createMessage().writer().packet.write(data,size);
 		return;
 	}
-	if(state()==CLOSED || _band.failed())
+	if(_state >= NEAR_CLOSED || _band.failed())
 		return;
 	_messages.emplace_back(new RTMFPMessageUnbuffered(data, size));
 	flush(false);

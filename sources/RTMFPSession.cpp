@@ -234,6 +234,8 @@ void RTMFPSession::close(bool abrupt) {
 		_pPublisher->removeListener(name());
 		_pListener = NULL;
 	}
+	if (_group)
+		_group->stopListener();
 	if (_pPublisher && _pPublisher->running())
 		_pPublisher->stop();
 	_pPublisher.reset();
@@ -667,7 +669,7 @@ void RTMFPSession::stopListening(const std::string& peerId) {
 void RTMFPSession::handleNewGroupPeer(const string& peerId) {
 	
 	if (!_group || !_group->checkPeer(peerId)) {
-		WARN("Unable to add the peer ", peerId, ", it can be a wrong group ID or the peer already exists")
+		DEBUG("Unable to add the peer ", peerId, ", it can be a wrong group ID or the peer already exists")
 		return;
 	}
 
@@ -675,7 +677,7 @@ void RTMFPSession::handleNewGroupPeer(const string& peerId) {
 	connect2Peer(peerId.c_str(), "", addresses, _pConnection->address());
 }
 
-void RTMFPSession::handleWriterFailed(std::shared_ptr<RTMFPWriter>& pWriter) {
+void RTMFPSession::handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter) {
 	Exception ex;
 	pWriter->fail(ex, "Writer terminated on connection ", name());
 

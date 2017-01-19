@@ -33,10 +33,8 @@ using namespace std;
 UInt32 P2PSession::P2PSessionCounter = 2000000;
 
 P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, 
-		const Mona::SocketAddress& host, bool responder, bool group) :
-	_responder(responder), peerId(id), rawId("\x21\x0f"), hostAddress(host), _parent(parent), attempt(0), _rawResponse(false), _groupBeginSent(false), 
-	groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), 
-	FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+		const Mona::SocketAddress& host, bool responder, bool group) : _responder(responder), peerId(id), rawId("\x21\x0f"), hostAddress(host), _parent(parent), _groupBeginSent(false), 
+		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		handleGroupHandshake(groupId, key, peerId);
 	};
@@ -51,8 +49,11 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 			if (itWriter != _mapWriter2PeerMedia.end()) {
 				FATAL_ASSERT(itWriter->second->pStreamKey) // implementation error
 				auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
-				if (itStream != _mapStream2PeerMedia.end())
+				if (itStream != _mapStream2PeerMedia.end()) {
+					if (itStream->second->idFlow)
+						_mapFlow2PeerMedia.erase(itStream->second->idFlow);
 					_mapStream2PeerMedia.erase(itStream);
+				}
 				_mapWriter2PeerMedia.erase(itWriter);
 			}
 		}
@@ -63,7 +64,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 		if (packet.available() < 0x24) {
 			UInt64 lastFragment = packet.read7BitLongValue();
 			DEBUG("Group Media is closing, ignoring the request (last fragment : ", lastFragment,")")
-			return false;
+			return true;
 		}
 
 		string streamName;
@@ -103,7 +104,9 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 		itStream->second->idFlow = flowId;
 
 		// If we accept the request and are responder => send the Media Subscription message
-		return OnNewMedia::raise<true>(peerId, itStream->second, streamName, streamKey, packet);
+		if (!OnNewMedia::raise<false>(peerId, itStream->second, streamName, streamKey, packet))
+			itStream->second->close(false); // else we close the writer & flow
+		return true;
 	};
 	onGroupReport = [this](PacketReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		DEBUG("NetGroup Report message received from ", peerId)
@@ -147,6 +150,11 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 			itPeerMedia->second->onFragment(marker, id, splitedNumber, mediaType, time, packet, lostRate);
 		}
 	};
+	onGroupAskClose = [this](UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+		bool res = OnPeerGroupAskClose::raise<false>(peerId);
+		DEBUG("NetGroup close message received from peer ", peerId, " : ", res ? "refused" : "accepted")
+		return res;
+	};
 
 	_sessionId = ++P2PSessionCounter;
 	Util::UnformatHex(BIN peerId.data(), peerId.size(), rawId, true);
@@ -159,6 +167,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 	_pMainStream->OnGroupBegin::subscribe(onGroupBegin);
 	_pMainStream->OnFragment::subscribe(onFragment);
 	_pMainStream->OnGroupHandshake::subscribe(onGroupHandshake);
+	_pMainStream->OnGroupAskClose::subscribe(onGroupAskClose);
 }
 
 P2PSession::~P2PSession() {
@@ -173,6 +182,7 @@ P2PSession::~P2PSession() {
 	_pMainStream->OnGroupBegin::unsubscribe(onGroupBegin);
 	_pMainStream->OnFragment::unsubscribe(onFragment);
 	_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
+	_pMainStream->OnGroupAskClose::unsubscribe(onGroupAskClose);
 	_parent = NULL;
 }
 
@@ -343,7 +353,7 @@ void P2PSession::handleGroupHandshake(const std::string& groupId, const std::str
 		sendGroupPeerConnect();
 }
 
-void P2PSession::handleWriterFailed(shared_ptr<RTMFPWriter>& pWriter) {
+void P2PSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 
 	if (pWriter == _pReportWriter) {
 		DEBUG(peerId, " want to close the report writer ", pWriter->id, " we close the session")
@@ -383,7 +393,7 @@ bool P2PSession::sendGroupBegin() {
 		return false;
 	
 	if (!_pReportWriter) {
-		ERROR("Unable to find the Report writer for NetGroup communication")
+		WARN("Unable to find the Report writer of peer ", peerId)
 		return false;
 	}
 
@@ -413,7 +423,7 @@ shared_ptr<PeerMedia>& P2PSession::getPeerMedia(const string& streamKey) {
 void P2PSession::sendGroupReport(const UInt8* data, UInt32 size) {
 
 	if (!_pReportWriter) {
-		ERROR("Unable to find the Report flow (2) for NetGroup communication")
+		WARN("Unable to find the Group Report writer of peer ", peerId)
 		return;
 	}
 	_pReportWriter->writeRaw(data, size);
@@ -493,4 +503,13 @@ void P2PSession::onConnection(shared_ptr<RTMFPConnection>& pConnection) {
 void P2PSession::handleDataAvailable(bool isAvailable) { 
 
 	_parent->setDataAvailable(isAvailable); // only for P2P direct play
+}
+
+void P2PSession::askPeer2Disconnect() {
+	if (_pReportWriter && _lastTryDisconnect.isElapsed(NETGROUP_DISCONNECT_DELAY)) {
+		DEBUG("Best Peer - Asking ", peerId, " to close")
+		_pReportWriter->writeRaw(BIN "\x0C", 1);
+		_pReportWriter->flush(); // not sure
+		_lastTryDisconnect.update();
+	}
 }

@@ -34,7 +34,7 @@ public:
 		GROUP_DATA			= 0x02, // NetGroup data message
 		GROUP_REPORT		= 0x0A, // NetGroup Report
 		GROUP_MEMBER		= 0x0B, // NetGroup member
-		GROUP_NKNOWN		= 0x0C, // UNknown NetGroup type (close message?)
+		GROUP_ASK_CLOSE		= 0x0C, // Group Disconnect request (must close main writer if the peer is not in the best list)
 		GROUP_BEGIN			= 0x0E, // Group Begin message
 		GROUP_BEGIN_NEAREST	= 0x0F, // Group Begin message in mode NetGroupReceiveMode.NEAREST
 		GROUP_MEDIA_NEXT	= 0x10, // Continuation of a NetGroup splitted media data

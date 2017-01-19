@@ -30,8 +30,9 @@ class SocketHandler;
 
 namespace ConnectionEvents {
 	struct OnNewWriter : Mona::Event<void(std::shared_ptr<RTMFPWriter>&)> {}; // called when a new writer is created
-	struct OnWriterFailed : Mona::Event<void(std::shared_ptr<RTMFPWriter>&)> {}; // called when a writer fail
+	struct OnWriterException : Mona::Event<void(std::shared_ptr<RTMFPWriter>&)> {}; // called when far peer send us a writer exception
 	struct OnWriterClose : Mona::Event<void(std::shared_ptr<RTMFPWriter>&)> {}; // called when a writer is closed
+	struct OnWriterError : Mona::Event<void(const Mona::Exception& ex)> {}; // called when we get an error on the writer (typically congestion error, need to close session)
 };
 
 /**************************************************
@@ -40,8 +41,9 @@ used to send handshake messages
 */
 class Connection : public BandWriter, 
 	public ConnectionEvents::OnNewWriter,
-	public ConnectionEvents::OnWriterFailed,
-	public ConnectionEvents::OnWriterClose {
+	public ConnectionEvents::OnWriterException,
+	public ConnectionEvents::OnWriterClose,
+	public ConnectionEvents::OnWriterError {
 public:
 	Connection(SocketHandler* pHandler);
 
@@ -52,12 +54,6 @@ public:
 
 	// Close the connection properly
 	virtual void close(bool abrupt=false);
-
-	// Called by the session to handle a writer fail message
-	void handleWriterFailed(Mona::UInt64 id);
-
-	// Called by the session to handle a writer acknowledgment
-	void handleAcknowledgment(Mona::UInt64 id, Mona::PacketReader& message);
 
 	// Send the first handshake message (with rtmfp url/peerId + tag)
 	void									sendHandshake30(const std::string& epd, const std::string& tag);
@@ -96,6 +92,9 @@ public:
 
 protected:
 
+	// Return the writer with this id
+	std::shared_ptr<RTMFPWriter>&	writer(Mona::UInt64 id, std::shared_ptr<RTMFPWriter>& pWriter);
+
 	// Handle message received (must be implemented)
 	virtual void					handleMessage(const Mona::PoolBuffer& pBuffer) = 0;
 
@@ -133,9 +132,6 @@ protected:
 	std::shared_ptr<RTMFPEngine>							_pEncoder;
 	
 private:
-
-	// Return the writer with this id
-	std::shared_ptr<RTMFPWriter>&	writer(Mona::UInt64 id, std::shared_ptr<RTMFPWriter>& pWriter);
 
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter>>	_flowWriters; // Map of writers identified by id
 	RTMFPWriter*											_pLastWriter; // Write pointer used to check if it is possible to write
