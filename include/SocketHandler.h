@@ -59,7 +59,7 @@ public:
 	~SocketHandler();
 
 	// Return the socket object of the session
-	virtual Mona::UDPSocket&			socket() { return *_pSocket; }
+	virtual Mona::UDPSocket&			socket(Mona::IPAddress::Family family) { return (family == Mona::IPAddress::IPv4)? *_pSocket : *_pSocketIPV6; }
 
 	// Return poolbuffers object to allocate buffers
 	const Mona::PoolBuffers&			poolBuffers();
@@ -95,7 +95,7 @@ public:
 	void								addP2PConnection(const std::string& rawId, const std::string& peerId, const std::string& tag, const Mona::SocketAddress& hostAddress);
 
 	// Called when receiving addresses from a peer
-	void								onP2PAddresses(const std::string& tagReceived, const PEER_LIST_ADDRESS_TYPE& addresses, const Mona::SocketAddress& hostAddress);
+	void								onP2PAddresses(const std::string& tagReceived, Mona::BinaryReader& reader);
 
 	// Called when receiving handshake 30 on an unknown address
 	void								onPeerHandshake30(const std::string& id, const std::string& tag, const Mona::SocketAddress& address);
@@ -128,6 +128,7 @@ private:
 
 	std::mutex								_mutexConnections; // main mutex for connections (normal or p2p)
 	std::unique_ptr<Mona::UDPSocket>		_pSocket; // Sending socket established with server
+	std::unique_ptr<Mona::UDPSocket>		_pSocketIPV6; // Sending socket established with server
 	Invoker*								_pInvoker; // Pointer to the main invoker class (to get poolbuffers)
 	RTMFPSession*							_pMainSession; // Pointer to the main RTMFP session for assocation with new connections
 	bool									_acceptAll; // True if we must accept packets from unknown addresses (P2P publisher or NetGroup)

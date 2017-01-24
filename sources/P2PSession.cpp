@@ -222,7 +222,12 @@ void P2PSession::closeGroup(bool abrupt) {
 }
 
 void P2PSession::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
-	_knownAddresses.emplace(pConnection->address(), RTMFP::ADDRESS_PUBLIC); // TODO: Calculate the address type?
+	auto it = _knownAddresses.lower_bound(pConnection->address());
+	if (it != _knownAddresses.end() && it->first == pConnection->address()) {
+		WARN("P2P session ", peerId, " is already subscribed to ", pConnection->address().toString())
+		return;
+	}
+	_knownAddresses.emplace_hint(it, pConnection->address(), RTMFP::ADDRESS_PUBLIC); // TODO: Calculate the address type?
 	pConnection->setSession(this);
 
 	FlowManager::subscribe(pConnection);

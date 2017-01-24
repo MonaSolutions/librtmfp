@@ -50,6 +50,13 @@ SocketHandler::SocketHandler(Invoker* invoker, RTMFPSession* pSession) : _pInvok
 	_pSocket.reset(new UDPSocket(_pInvoker->sockets));
 	_pSocket->OnError::subscribe(onError);
 	_pSocket->OnPacket::subscribe(onPacket);
+	_pSocketIPV6.reset(new UDPSocket(_pInvoker->sockets));
+	_pSocketIPV6->OnError::subscribe(onError);
+	_pSocketIPV6->OnPacket::subscribe(onPacket);
+	Exception ex;
+	SocketAddress address(SocketAddress::Wildcard(IPAddress::IPv6));
+	if (!_pSocketIPV6->bind(ex, address))
+		WARN("Unable to bind [::], ipv6 will not work : ", ex.error())
 
 	_pDefaultConnection.reset(new DefaultConnection(this));
 }
@@ -69,6 +76,11 @@ void SocketHandler::close() {
 		_pSocket->OnPacket::unsubscribe(onPacket);
 		_pSocket->OnError::unsubscribe(onError);
 		_pSocket->close();
+	}
+	if (_pSocketIPV6) {
+		_pSocketIPV6->OnPacket::unsubscribe(onPacket);
+		_pSocketIPV6->OnError::unsubscribe(onError);
+		_pSocketIPV6->close();
 	}
 }
 
@@ -148,7 +160,7 @@ void SocketHandler::manage() {
 					continue;
 				}
 
-				DEBUG("Sending new P2P handshake 30 to server (peerId : ", peer.peerId, ")")
+				DEBUG("Sending new P2P handshake 30 to server (peerId : ", peer.peerId, "; ", peer.attempt, "/11)")
 				_pDefaultConnection->setAddress(peer.hostAddress);
 				_pDefaultConnection->sendHandshake30(peer.rawId, itPeer->first);
 				peer.lastAttempt.update();
@@ -174,13 +186,18 @@ void SocketHandler::manage() {
 	_pDefaultConnection->manage();
 }
 
-void SocketHandler::onP2PAddresses(const string& tagReceived, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress) {
+void SocketHandler::onP2PAddresses(const string& tagReceived, BinaryReader& reader) {
 	//lock_guard<mutex> lock(_mutexConnections);
 	auto it = _mapTag2Peer.find(tagReceived);
 	if (it == _mapTag2Peer.end()) {
 		DEBUG("Handshake 71 received but no p2p connection found with tag (possible old request)")
 		return;
 	}
+
+	// Read addresses
+	SocketAddress hostAddress;
+	PEER_LIST_ADDRESS_TYPE addresses;
+	RTMFP::ReadAddresses(reader, addresses, hostAddress);
 
 	// Update addresses and send handshake 30 to far server if no handshake 70 received
 	if (OnP2PAddresses::raise<false>(it->second.peerId, addresses) && hostAddress && it->second.hostAddress != hostAddress) {

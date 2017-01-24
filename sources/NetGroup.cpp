@@ -142,70 +142,14 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		return true;
 	};
 	onGroupReport = [this](P2PSession* pPeer, PacketReader& packet, bool sendMediaSubscription) {
-		string key1, key2, tmp, newPeerId, rawId;
-
-		UInt8 size1st = packet.read8();
-		while (size1st == 1) { // TODO: check what this means
-			packet.next();
-			size1st = packet.read8();
-		}
-		if (size1st != 8) {
-			ERROR("Unexpected 1st parameter size in Group Report : ", size1st) // I think it happens when a peers send wrong informations in the Group Report
-			return;
-		}
-
-		packet.read(8, key1);
-		UInt16 size = packet.read8();
-		packet.read(size, key2);
-		
-		TRACE("Group Report - Our address : ", Util::FormatHex(BIN key1.data(), key1.size(), LOG_BUFFER))
-		TRACE("Group Report - Far peer addresses : ", Util::FormatHex(BIN key2.data(), key2.size(), LOG_BUFFER))
-
-		// Loop on each peer of the NetGroup
-		bool manageBestList = false;
-		while (packet.available() > 4) {
-			UInt8 zeroMarker = packet.read8();
-			if (zeroMarker != 00) {
-				ERROR("Unexpected marker : ", Format<UInt8>("%.2x", zeroMarker), " - Expected 00")
-				break;
-			}
-			size = packet.read8();
-			if (size == 0x22) {
-				packet.read(size, rawId);
-				Util::FormatHex(BIN rawId.data() + 2, PEER_ID_SIZE, newPeerId);
-				if (String::ICompare(rawId, "\x21\x0F", 2) != 0) {
-					ERROR("Unexpected parameter : ", newPeerId, " - Expected Peer Id")
-						break;
-				}
-				TRACE("Group Report - Peer ID : ", newPeerId)
-			}
-			else if (size > 7)
-				packet.next(size); // ignore the addresses if peerId not set
-			else
-				TRACE("Empty parameter...")
-
-			UInt64 time = packet.read7BitLongValue();
-			TRACE("Group Report - Time elapsed : ", time)
-
-			size = packet.read8(); // Address size
-
-			// New peer, read its addresses
-			if (size >= 0x08 && newPeerId != _conn.peerId() && _mapHeardList.find(newPeerId) == _mapHeardList.end() && *packet.current() == 0x0A) {
-
-				BinaryReader addressReader(packet.current()+1, size-1); // +1 to ignore 0A
-				PEER_LIST_ADDRESS_TYPE listAddresses;
-				SocketAddress hostAddress(_conn.serverAddress());
-				if (RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress)) {
-					manageBestList = true;
-					addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-				}
-			}
-			packet.next(size);
-		}
 		
 		auto itNode = _mapHeardList.find(pPeer->peerId);
 		if (itNode != _mapHeardList.end())
 			itNode->second.lastGroupReport = Time::Now(); // Record the time of last Group Report received to build our Group Report
+
+		// If there are new peers : manage the best list
+		if (readGroupReport(packet))
+			updateBestList();
 
 		// First Viewer = > create listener
 		if (_groupMediaPublisher != _mapGroupMedias.end() && !_pListener) {
@@ -216,13 +160,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			}
 			INFO("First viewer play request, starting to play Stream ", stream)
 			_pListener->OnMedia::subscribe(_groupMediaPublisher->second.onMedia);
-			// A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
-			_conn.publishReady = true;
+			_conn.publishReady = true; // A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 		}
-
-		// If there are new peers : manage the best list
-		if (manageBestList)
-			updateBestList();
 
 		if (!pPeer->groupReportInitiator) {
 			sendGroupReport(pPeer, false);
@@ -623,4 +562,79 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, PacketR
 			break;
 		}
 	}
+}
+
+bool NetGroup::readGroupReport(PacketReader& packet) {
+	string tmp, newPeerId, rawId;
+	SocketAddress myAddress, serverAddress;
+	UInt8 addressType;
+	PEER_LIST_ADDRESS_TYPE listAddresses;
+	SocketAddress hostAddress(_conn.serverAddress());
+
+	UInt8 size = packet.read8();
+	while (size == 1) { // TODO: check what this means
+		packet.next();
+		size = packet.read8();
+	}
+
+	// Read my address & the far peer addresses
+	UInt8 tmpMarker = packet.read8();
+	if (tmpMarker != 0x0D) {
+		ERROR("Unexpected marker : ", Format<UInt8>("%.2x", tmpMarker), " - Expected 0D")
+		return false;
+	}
+	RTMFP::ReadAddress(packet, myAddress, addressType);
+	TRACE("Group Report - My address : ", myAddress.toString())
+	
+	size = packet.read8();
+	tmpMarker = packet.read8();
+	if (tmpMarker != 0x0A) {
+		ERROR("Unexpected marker : ", Format<UInt8>("%.2x", tmpMarker), " - Expected 0A")
+		return false;
+	}
+	BinaryReader peerAddressReader(packet.current(), size - 1);
+	RTMFP::ReadAddresses(peerAddressReader, listAddresses, hostAddress);
+	packet.next(size - 1);
+
+	// Loop on each peer of the NetGroup
+	bool newPeers = false;
+	while (packet.available() > 4) {
+		if ((tmpMarker = packet.read8()) != 00) {
+			ERROR("Unexpected marker : ", Format<UInt8>("%.2x", tmpMarker), " - Expected 00")
+			break;
+		}
+		size = packet.read8();
+		if (size == 0x22) {
+			packet.read(size, rawId);
+			Util::FormatHex(BIN rawId.data() + 2, PEER_ID_SIZE, newPeerId);
+			if (String::ICompare(rawId, "\x21\x0F", 2) != 0) {
+				ERROR("Unexpected parameter : ", newPeerId, " - Expected Peer Id")
+				break;
+			}
+			TRACE("Group Report - Peer ID : ", newPeerId)
+		}
+		else if (size > 7)
+			packet.next(size); // ignore the addresses if peerId not set
+		else
+			TRACE("Empty parameter...")
+
+		UInt64 time = packet.read7BitLongValue();
+		TRACE("Group Report - Time elapsed : ", time)
+		size = packet.read8(); // Addresses size
+
+		// New peer, read its addresses
+		if (size >= 0x08 && newPeerId != _conn.peerId() && _mapHeardList.find(newPeerId) == _mapHeardList.end() && *packet.current() == 0x0A) {
+
+			BinaryReader addressReader(packet.current() + 1, size - 1); // +1 to ignore 0A
+			hostAddress = _conn.serverAddress(); // default host is the same as ours
+			listAddresses.clear();
+			if (RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress)) {
+				newPeers = true;
+				addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
+			}
+		}
+		packet.next(size);
+	}
+
+	return newPeers;
 }

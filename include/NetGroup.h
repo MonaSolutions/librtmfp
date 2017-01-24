@@ -120,6 +120,9 @@ private:
 	// Connect and disconnect peers to fit the best list
 	void						manageBestConnections();
 
+	// Read the group report and return true if at least a new peer has been found
+	bool						readGroupReport(Mona::PacketReader& packet);
+
 	P2PEvents::OnPeerGroupBegin::Type						onGroupBegin;
 	P2PEvents::OnPeerGroupReport::Type						onGroupReport;
 	P2PEvents::OnNewMedia::Type								onNewMedia;

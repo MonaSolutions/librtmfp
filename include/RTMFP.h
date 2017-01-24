@@ -32,7 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x01020005	// (1.2.5)
+#define RTMFP_LIB_VERSION	0x01020006	// (1.2.6)
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -101,7 +101,7 @@ public:
 		FAILED
 	};
 
-	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, Mona::UInt8 addressType);
+	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, Mona::UInt8& addressType);
 	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
 	static Mona::UInt32				Unpack(Mona::BinaryReader& reader);

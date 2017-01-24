@@ -243,16 +243,6 @@ void RTMFPSession::close(bool abrupt) {
 	FlowManager::close(abrupt);
 }
 
-void RTMFPSession::addConnection(const Mona::SocketAddress& address) {
-
-	if (address.family() == IPAddress::IPv6)
-		DEBUG("Ignored address ", address.toString(), ", IPV6 not supported yet") // TODO: support IPV6
-	else {
-		shared_ptr<RTMFPConnection> pConnection;
-		_pSocketHandler->addConnection(pConnection, address, this, false, false);
-	}
-}
-
 RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
 	FATAL_ASSERT(_pConnection)
 
@@ -288,11 +278,15 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 	}
 
 	_url = url;
+	_host = host;
+
+	// Genereate the raw url
 	RTMFP::Write7BitValue(_rawUrl, strlen(url) + 1);
 	String::Append(_rawUrl, '\x0A', url);
-	_host = host;
-	const char* port = strrchr(host, ':');
-	if (port) {
+
+	// Extract the port
+	const char *port = strrchr(host, ':'), *ipv6End = strrchr(host, ']');
+	if (port && (!ipv6End || port > ipv6End)) {
 		_port = (port + 1);
 		_host[port - host] = '\0';
 	}
@@ -300,13 +294,14 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 	lock_guard<std::mutex> lock(_mutexConnections);
 	DEBUG("Trying to resolve the host address...")
 	HostEntry hostEntry;
+	shared_ptr<RTMFPConnection> pConnection;
 	SocketAddress address;
 	if (address.set(ex, _host, _port))
-		addConnection(address);
+		_pSocketHandler->addConnection(pConnection, address, this, false, false);
 	else if (DNS::Resolve(ex, _host, hostEntry)) {
 		for (auto itAddress : hostEntry.addresses()) {
 			if (address.set(ex, itAddress, _port))
-				addConnection(address);
+				_pSocketHandler->addConnection(pConnection, address, this, false, false);
 			else
 				WARN("Error with address ", itAddress.toString(), " : ", ex.error())
 		}
@@ -624,17 +619,18 @@ void RTMFPSession::onConnect() {
 
 	// Record port for setPeerInfo request
 	if (_pMainStream && _pMainWriter) {
-		UInt16 port = _pSocketHandler->socket().address().port();
-		INFO("Sending peer info (port : ", port, ")")
+		UInt16 port = _pSocketHandler->socket(IPAddress::IPv4).address().port();
+		UInt16 portIPv6 = _pSocketHandler->socket(IPAddress::IPv6).address().port();
+		INFO("Sending peer info (port : ", port, " - port ipv6 : ", portIPv6,")")
 		AMFWriter& amfWriter = _pMainWriter->writeInvocation("setPeerInfo");
 
 		vector<IPAddress> addresses = IPAddress::Locals();
 		string buf;
 		for (auto it : addresses) {
-			if (it.family() == IPAddress::IPv4) {
-				String::Format(buf, it.toString(), ":", port);
-				amfWriter.writeString(buf.c_str(), buf.size());
-			}
+			if (it.isLoopback() || it.isLinkLocal())
+				continue; // ignore loopback and link-local addresses
+			String::Format(buf, it.toString(), ":", (it.family() == IPAddress::IPv4)? port : portIPv6);
+			amfWriter.writeString(buf.c_str(), buf.size());
 		}
 	}
 
@@ -696,23 +692,20 @@ void RTMFPSession::handleP2PAddressExchange(PacketReader& reader) {
 	}
 
 	// Read our peer id and address of initiator
-	string buff, peerId;
+	string buff;
 	reader.read(PEER_ID_SIZE, buff);
 	SocketAddress address;
-	RTMFP::ReadAddress(reader, address, reader.read8());
+	UInt8 addressType;
+	RTMFP::ReadAddress(reader, address, addressType);
 
 	string tag;
 	reader.read(16, tag);
 	DEBUG("A peer will contact us with address : ", address.toString())
-	if (address.family() == IPAddress::IPv6) {
-		DEBUG("Address ", address.toString(), " ignored, IPV6 not supported yet") // TODO: support IPV6
-		return;
-	}
 
 	// Send the handshake 70 to the peer
 	shared_ptr<RTMFPConnection> pConnection;
-	if (_pSocketHandler->addConnection(pConnection, address, NULL, true, true))
-		pConnection->sendHandshake70(tag);
+	_pSocketHandler->addConnection(pConnection, address, NULL, true, true);
+	pConnection->sendHandshake70(tag);
 }
 
 void RTMFPSession::sendGroupConnection(const string& netGroup) {

@@ -175,7 +175,7 @@ void Connection::flush(bool echoTime, UInt8 marker) {
 			DUMP("RTMFP", packet.data() + 6, packet.size() - 6, "Response to ", _address.toString(), " (farId : ", _farId, ")")
 
 		Exception ex;
-		_pThread = _pParent->socket().send<RTMFPSender>(ex, _pSender, _pThread);
+		_pThread = _pParent->socket(_address.family()).send<RTMFPSender>(ex, _pSender, _pThread);
 
 		if (ex)
 			ERROR("RTMFP flush, ", ex.error());
@@ -278,9 +278,6 @@ void Connection::handleP2pAddresses(BinaryReader& reader) {
 	string tagReceived;
 	reader.read(16, tagReceived);
 
-	// Send handshake 30 to peer addresses found
-	SocketAddress hostAddress;
-	PEER_LIST_ADDRESS_TYPE addresses;
-	if (RTMFP::ReadAddresses(reader, addresses, hostAddress))
-		_pParent->onP2PAddresses(tagReceived, addresses, hostAddress);
+	// Read the addresses & send handshake 30 if needed
+	_pParent->onP2PAddresses(tagReceived, reader);
 }

@@ -25,8 +25,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, UInt8 addressType) {
+bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, UInt8& addressType) {
 	string data;
+	addressType = reader.read8();
 	reader.read<string>((addressType & 0x80) ? sizeof(in6_addr) : sizeof(in_addr), data);
 	in_addr addrV4;
 	in6_addr addrV6;
@@ -107,22 +108,19 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 
 	// Read all addresses
 	SocketAddress address;
+	UInt8 addressType;
 	while (reader.available()) {
 
-		UInt8 addressType = reader.read8();
 		RTMFP::ReadAddress(reader, address, addressType);
-		if (address.family() == IPAddress::IPv4) { // TODO: Handle ivp6
-
-			switch (addressType & 0x0F) {
-			case RTMFP::ADDRESS_LOCAL:
-			case RTMFP::ADDRESS_PUBLIC:
-				addresses.emplace(address, (RTMFP::AddressType)addressType);
-				break;
-			case RTMFP::ADDRESS_REDIRECTION:
-				hostAddress = address; break;
-			}
-			TRACE("IP Address : ", address.toString(), " - type : ", addressType)
+		switch (addressType & 0x0F) {
+		case RTMFP::ADDRESS_LOCAL:
+		case RTMFP::ADDRESS_PUBLIC:
+			addresses.emplace(address, (RTMFP::AddressType)addressType);
+			break;
+		case RTMFP::ADDRESS_REDIRECTION:
+			hostAddress = address; break;
 		}
+		TRACE("IP Address : ", address.toString(), " - type : ", addressType)
 	}
 	return !addresses.empty() || hostAddress;
 }

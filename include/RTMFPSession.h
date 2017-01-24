@@ -172,9 +172,6 @@ protected:
 
 private:
 
-	// Add the connection to SocketHandler and subscribe to events
-	void addConnection(const Mona::SocketAddress& address);
-
 	// If there is at least one request of command : create the stream
 	void createWaitingStreams();
 

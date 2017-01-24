@@ -45,11 +45,11 @@ FlashListener::~FlashListener() {
 void FlashListener::closeWriters() {
 	// -1 indicate that it come from the FlashListener class
 	if (_pDataWriter)
-		_pDataWriter->close(-1);
+		_pDataWriter->close(false);
 	if (_pAudioWriter)
-		_pAudioWriter->close(-1);
+		_pAudioWriter->close(false);
 	if (_pVideoWriter)
-		_pVideoWriter->close(-1);
+		_pVideoWriter->close(false);
 	_pDataWriter = _pVideoWriter = _pAudioWriter = NULL;
 	_dataInitialized = false;
 }

@@ -121,6 +121,7 @@ void RTMFPConnection::handleMessage(const PoolBuffer& pBuffer) {
 void RTMFPConnection::manageHandshake(BinaryReader& reader) {
 	UInt8 type = reader.read8();
 	UInt16 length = reader.read16();
+	reader.shrink(length); // resize the buffer to ignore the padding bytes
 
 	switch (type) {
 	case 0x30:
@@ -190,7 +191,7 @@ void RTMFPConnection::manage() {
 				_pSession->unsubscribeConnection(_address);
 				return;
 			}
-			TRACE("Sending new handshake 30 to ", _pSession->name(), " at address ", _address.toString())
+			TRACE("Sending new handshake 30 to ", _pSession->name(), " at address ", _address.toString(), " (", _connectAttempt, "/11)")
 			sendHandshake30(_pSession->epd(), _pSession->tag());
 			if (_pSession->status == RTMFP::STOPPED)
 				_pSession->status = RTMFP::HANDSHAKE30;
@@ -250,6 +251,10 @@ void RTMFPConnection::handleHandshake30(BinaryReader& reader) {
 }
 
 void RTMFPConnection::sendHandshake70(const string& tag) {
+	if (_status > RTMFP::HANDSHAKE70) {
+		DEBUG("handshake 70 not sent, we are already in ", _status, " state")
+		return;
+	}
 
 	// Write Response
 	BinaryWriter writer(packet(), RTMFP_MAX_PACKET_SIZE);
@@ -429,10 +434,8 @@ void RTMFPConnection::sendHandshake78(BinaryReader& reader) {
 	DEBUG("peer ID calculated from public key : ", peerId)
 
 	// Create the session, if already exists and connected we ignore the request
-	if (!_pParent->onNewPeerId(rawId, peerId, _address)) {
-		//close();
+	if (!_pParent->onNewPeerId(rawId, peerId, _address))
 		return;
-	}
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -532,14 +535,10 @@ void RTMFPConnection::handleRedirection(BinaryReader& reader) {
 		return;
 	}
 	SocketAddress address;
+	UInt8 addressType;
 	while (reader.available() && *reader.current() != 0xFF) {
-		UInt8 addressType = reader.read8();
 		RTMFP::ReadAddress(reader, address, addressType);
 		DEBUG("Address added : ", address.toString(), " (type : ", addressType, ")")
-		if (address.family() == IPAddress::IPv6) {
-			DEBUG("Address ", address.toString(), " ignored, IPV6 not supported yet") // TODO: support IPV6
-			continue;
-		}
 
 		// Ask parent to create a new connection and send handshake 30 back
 		shared_ptr<RTMFPConnection> pConnection;
