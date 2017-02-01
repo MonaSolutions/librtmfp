@@ -23,24 +23,55 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Mona.h"
 #include "Mona/PacketWriter.h"
+#include "Mona/UDPSocket.h"
 
-class RTMFPWriter;
+class RTMFPSender;
+class RTMFPEngine;
+class PoolThread;
+/***************************************************
+BandWriter class is used to write messages
+It is implemented by FlowManager & RTMFPHandshaker
+*/
 class BandWriter : public virtual Mona::Object {
 public:
-	BandWriter() {}
+	BandWriter();
 
-	virtual const Mona::PoolBuffers&		poolBuffers() = 0;
-	// Save the new writer to the map of writers
-	virtual void							initWriter(const std::shared_ptr<RTMFPWriter>& pWriter)=0;
-	// Exchange a writer with a new one (generally if an error occurs)
-	virtual std::shared_ptr<RTMFPWriter>	changeWriter(RTMFPWriter& writer) = 0;
+	// Return the pool buffers object
+	virtual const Mona::PoolBuffers&		poolBuffers()=0;
+	
+	// Return the data for writing
+	virtual Mona::UInt8*					packet();
 
-	virtual bool							failed() const = 0;
-	virtual bool							canWriteFollowing(RTMFPWriter& writer)=0;
-	virtual Mona::UInt32					availableToWrite()=0;
-	virtual Mona::BinaryWriter&				writeMessage(Mona::UInt8 type,Mona::UInt16 length,RTMFPWriter* pWriter=NULL)=0;
-	virtual void							flush()=0;
-	//virtual Mona::UInt16					ping() const = 0;
+	// Return the name of the session
 	virtual const std::string&				name() = 0;
-	virtual bool							connected() = 0;	
+
+	// Flush the current packet
+	// marker is : 0B for handshake, 09 for raw request, 89 for AMF request
+	virtual void							flush(bool echoTime, Mona::UInt8 marker);
+
+	// Return true if the session has failed
+	virtual bool							failed()=0;
+
+	// Return the socket object
+	virtual Mona::UDPSocket&				socket(Mona::IPAddress::Family family)=0;
+
+	// Handle receiving packet
+	virtual void							process(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer)=0;
+
+protected:
+	bool									decode(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer);
+
+	std::shared_ptr<RTMFPSender>			_pSender; // Current sender object
+
+	// Encryption/Decryption
+	std::shared_ptr<RTMFPEngine>			_pDecoder;
+	std::shared_ptr<RTMFPEngine>			_pEncoder;
+	
+	Mona::UInt32							_farId;
+	Mona::UInt16							_timeReceived;
+	Mona::Time								_lastReceptionTime;
+	Mona::SocketAddress						_address;
+
+private:
+	Mona::PoolThread*						_pThread; // Thread used to send last message
 };

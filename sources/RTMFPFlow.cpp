@@ -71,16 +71,16 @@ public:
 };
 
 
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const PoolBuffers& poolBuffers, BandWriter& band, const shared_ptr<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const PoolBuffers& poolBuffers, FlowManager& band, const shared_ptr<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
 	_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_writerRef(idWriterRef),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
 
-	DEBUG("New main flow ", id, " on connection ", band.name())
+	DEBUG("New main flow ", id, " on connection ", _band.name())
 }
 
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,const PoolBuffers& poolBuffers, BandWriter& band, UInt64 idWriterRef) : _pStream(pStream),_poolBuffers(poolBuffers),
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,const PoolBuffers& poolBuffers, FlowManager& band, UInt64 idWriterRef) : _pStream(pStream),_poolBuffers(poolBuffers),
 	_numberLostFragments(0),id(id),_writerRef(idWriterRef),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
 
-	DEBUG("New flow ", id, " on connection ", band.name())
+	DEBUG("New flow ", id, " on connection ", _band.name())
 }
 
 

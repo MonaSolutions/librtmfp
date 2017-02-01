@@ -20,7 +20,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #pragma once
-#include "FlashWriter.h"
+#include "RTMFPWriter.h"
 
 class Publisher;
 class Listener : public virtual Mona::Object {
@@ -48,10 +48,9 @@ private:
 	Mona::PacketReader		_publicationNamePacket;
 };
 
-
 class FlashListener : public Listener {
 public:
-	FlashListener(Publisher& publication, const std::string& identifier, FlashWriter* pDataWriter, FlashWriter* pAudioWriter, FlashWriter* pVideoWriter);
+	FlashListener(Publisher& publication, const std::string& identifier, std::shared_ptr<RTMFPWriter>& pDataWriter, std::shared_ptr<RTMFPWriter>& pAudioWriter, std::shared_ptr<RTMFPWriter>& pVideoWriter);
 	virtual ~FlashListener();
 
 	virtual void startPublishing();
@@ -79,15 +78,15 @@ private:
 
 	bool	pushAudioInfos(Mona::UInt32 time);
 
-	Mona::UInt32 			_startTime;
-	Mona::UInt32			_lastTime;
-	bool					_firstTime;
-	Mona::UInt32			_seekTime;
-	bool					_codecInfosSent;
+	Mona::UInt32 					_startTime;
+	Mona::UInt32					_lastTime;
+	bool							_firstTime;
+	Mona::UInt32					_seekTime;
+	bool							_codecInfosSent;
 
-	FlashWriter*			_pDataWriter;
-	FlashWriter*			_pAudioWriter;
-	FlashWriter*			_pVideoWriter;
-	bool					_dataInitialized;
-	bool					_reliable;
+	std::shared_ptr<RTMFPWriter>	_pDataWriter;
+	std::shared_ptr<RTMFPWriter>	_pAudioWriter;
+	std::shared_ptr<RTMFPWriter>	_pVideoWriter;
+	bool							_dataInitialized;
+	bool							_reliable;
 };

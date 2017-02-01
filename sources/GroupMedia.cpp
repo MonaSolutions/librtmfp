@@ -180,6 +180,16 @@ GroupMedia::GroupMedia(const PoolBuffers& poolBuffers, const string& name, const
 			return;
 		}
 
+		// We must ignore fragments too old
+		if (_mapTime2Fragment.size() > 2) {
+			auto itBegin = _mapTime2Fragment.begin();
+			auto itEnd = _mapTime2Fragment.rbegin();
+			if (((itEnd->first - itBegin->first) > groupParameters->windowDuration) && itBegin->second > fragmentId) {
+				TRACE("GroupMedia ", id, " - Fragment ", fragmentId, " too old (min : ", itBegin->second, "), ignored") // TODO: see if we must close the session in this case
+				return;
+			}
+		}
+
 		// Add the fragment to the map
 		addFragment(itFragment, pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet.current(), packet.available());
 
@@ -354,6 +364,8 @@ void GroupMedia::eraseOldFragments() {
 	auto itLast = _fragments.find(_fragmentCounter + 1);
 	if (itLast != _fragments.end())
 		pushFragment(itLast);
+
+	// TODO: also clean _mapPullTime2Fragment
 }
 
 UInt64 GroupMedia::updateFragmentMap() {

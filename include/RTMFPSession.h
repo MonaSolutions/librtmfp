@@ -23,7 +23,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "P2PSession.h"
 #include "Mona/HostEntry.h"
-#include "SocketHandler.h"
+#include "RTMFPHandshaker.h"
 #include <list>
 
 /**************************************************
@@ -36,6 +36,12 @@ public:
 	RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	~RTMFPSession();
+
+	// Return address of the server (cleared if not connected)
+	const Mona::SocketAddress&			address() { return _address; }
+
+	// Return the socket object of the session
+	virtual Mona::UDPSocket&			socket(Mona::IPAddress::Family family) { return (family == Mona::IPAddress::IPv4) ? *_pSocket : *_pSocketIPV6; }
 
 	// Close the conection properly or abruptly if parameter is true
 	virtual void close(bool abrupt);
@@ -105,13 +111,7 @@ public:
 	const std::string&				peerId() { return _peerTxtId; }
 
 	// Return the peer ID in bin format
-	const Mona::UInt8*				rawId() { return _rawId; }
-
-	// Return the server address (for NetGroup)
-	const Mona::SocketAddress&		serverAddress() { FATAL_ASSERT(_pConnection) return _pConnection->address(); }
-
-	// Return the pool buffer (for NetGroup)
-	const Mona::PoolBuffers&		poolBuffers();
+	const std::string&				rawId() { return _rawId; }
 
 	// Return the group Id in hexadecimal format
 	const std::string&				groupIdHex();
@@ -129,6 +129,18 @@ public:
 
 	void							setDataAvailable(bool isAvailable) { handleDataAvailable(isAvailable); }
 
+	// Called when when sending the handshake 38 to build the peer ID if we are RTMFPSession
+	virtual void					buildPeerID(const Mona::UInt8* data, Mona::UInt32 size);
+
+	// Called when we have received the handshake 38 and read peer ID of the far peer
+	bool							onNewPeerId(const Mona::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake, Mona::UInt32 farId, const std::string& rawId, const std::string& peerId);
+
+	// Remove the handshake properly
+	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake) { _handshaker.removeHandshake(pHandshake); }
+
+	// Return the diffie hellman object (related to main session)
+	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh) { return _handshaker.diffieHellman(pDh); }
+
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal					connectSignal; // signal to wait connection
 	Mona::Signal					p2pPublishSignal; // signal to wait p2p publish
@@ -142,6 +154,9 @@ public:
 	bool							dataAvailable; // true if there is asynchronous data available
 
 protected:
+
+	// Handle a writer closed (to release shared pointers)
+	virtual void handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter);
 	
 	// Handle stream creation
 	bool handleStreamCreated(Mona::UInt16 idStream);
@@ -155,9 +170,6 @@ protected:
 	// Handle a P2P address exchange message 0x0f from server (a peer is about to contact us)
 	void handleP2PAddressExchange(Mona::PacketReader& reader);
 
-	// Handle a new writer creation
-	virtual void handleNewWriter(std::shared_ptr<RTMFPWriter>& pWriter);
-
 	// On NetConnection.Connect.Success callback
 	virtual void onConnect();
 
@@ -168,7 +180,10 @@ protected:
 	virtual RTMFPFlow*	createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature, Mona::UInt64 idWriterRef);
 
 	// Called when the server send us the ID of a peer in the NetGroup : connect to it
-	void handleNewGroupPeer(const std::string& peerId);
+	void handleNewGroupPeer(const std::string& rawId, const std::string& peerId);
+
+	// Called when we are connected to the peer/server
+	virtual void onConnection();
 
 private:
 
@@ -183,18 +198,16 @@ private:
 
 	static Mona::UInt32												RTMFPSessionCounter; // Global counter for generating incremental sessions id
 
-	std::unique_ptr<SocketHandler>									_pSocketHandler; // Socket handler object, manage the IO and contain all RTMFPConnection
+	RTMFPHandshaker													_handshaker; // Handshake manager
 
-	std::string														_port; // server port
 	std::string														_host; // server host name
-	std::set<std::string>											_waitingPeers; // queue of tag from waiting p2p connection request (initiators)
 	std::deque<std::string>											_waitingGroup; // queue of waiting connections to groups
 	std::mutex														_mutexConnections; // mutex for waiting connections (normal or p2p)
 	std::map<std::string, std::shared_ptr<P2PSession>>				_mapPeersById; // P2P connections by Id
 
 	std::string														_url; // RTMFP url of the application (base handshake)
 	std::string														_rawUrl; // Header (420A) + Url to be sent in handshake 30
-	Mona::UInt8														_rawId[PEER_ID_SIZE+2]; // my peer ID (computed with HMAC-SHA256) in binary format
+	std::string														_rawId; // my peer ID (computed with HMAC-SHA256) in binary format
 	std::string														_peerTxtId; // my peer ID in hex format
 
 	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
@@ -203,15 +216,15 @@ private:
 	std::shared_ptr<RTMFPWriter>									_pGroupWriter; // Writer for the group requests
 	std::shared_ptr<NetGroup>										_group;
 
+	std::map<Mona::UInt32, FlowManager*>							_mapSessions; // map of session ID to Sessions
+
+	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
+	std::unique_ptr<Mona::UDPSocket>								_pSocketIPV6; // Sending socket established with server
 
 	FlashConnection::OnStreamCreated::Type							onStreamCreated; // Received when stream has been created and is waiting for a command
 	FlashConnection::OnNewPeer::Type								onNewPeer; // Received when a we receive the ID of a new peer from the server in a NetGroup
-	SocketHandler::OnPeerHandshake30::Type							onPeerHandshake30; // Received when a handshake 30 is received (P2P connection request)
-	SocketHandler::OnPeerHandshake70::Type							onPeerHandshake70; // Received when a handshake 70 from an unknwon address is received (P2P connection answer)
-	SocketHandler::OnNewPeerId::Type								onNewPeerId; // Received when a p2p initiator send us its peer id (we must create the P2PSession)
-	SocketHandler::OnIdBuilt::Type									onPeerIdBuilt; // Received when we have built our peer id
-	SocketHandler::OnConnection::Type								onConnection; // Received when a connection succeed
-	SocketHandler::OnP2PAddresses::Type								onP2PAddresses; // Received P2P addresses have been received
+	Mona::UDPSocket::OnPacket::Type									onPacket; // Main input event, received on each raw packet
+	Mona::UDPSocket::OnError::Type									onError; // Main input event, received on socket error
 
 	// Publish/Play commands
 	struct StreamCommand : public Object {
@@ -223,6 +236,5 @@ private:
 		bool			videoReliable;
 	};
 	std::list<StreamCommand>										_waitingCommands;
-	//std::recursive_mutex											_mutexCommands;
 	Mona::UInt16													_nbCreateStreams; // Number of streams to create
 };

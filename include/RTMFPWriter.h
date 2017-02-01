@@ -24,7 +24,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Mona.h"
 #include "RTMFP.h"
 #include "RTMFPTrigger.h"
-#include "BandWriter.h"
+#include "FlowManager.h"
 #include "RTMFPMessage.h"
 #include "FlashWriter.h"
 #include "Mona/Logs.h"
@@ -48,8 +48,8 @@ It manages acknowlegment and lost of packet sent
 */
 class RTMFPWriter : public FlashWriter, public virtual Mona::Object {
 public:
-	RTMFPWriter(State state,const std::string& signature, BandWriter& band, Mona::UInt64 idFlow=0);
-	RTMFPWriter(State state,const std::string& signature, BandWriter& band,std::shared_ptr<RTMFPWriter>& pThis, Mona::UInt64 idFlow=0);
+	RTMFPWriter(State state,const std::string& signature, FlowManager& band, Mona::UInt64 idFlow=0);
+	RTMFPWriter(State state,const std::string& signature, FlowManager& band,std::shared_ptr<RTMFPWriter>& pThis, Mona::UInt64 idFlow=0);
 	virtual ~RTMFPWriter();
 
 
@@ -69,12 +69,13 @@ public:
 		ex.set(Mona::Exception::PROTOCOL, "RTMFPWriter ", id, " has failed, ", args...);
 		WARN("RTMFPWriter ", id, " has failed, ", args ...);
 		abort();
-		_stage = _stageAck = _lostCount = 0;
+		close(false);
+		/*_stage = _stageAck = _lostCount = 0;
 		 _ackCount = 0;
         std::shared_ptr<RTMFPWriter> pThis = _band.changeWriter(*new RTMFPWriter(*this));
         _band.initWriter(pThis);
-		//_qos.reset();
-		//_resetStream = true;
+		_qos.reset();
+		_resetStream = true;*/
 	}
 
 	FlashWriter::State	state() { return _state; }
@@ -85,9 +86,7 @@ public:
 
 	Mona::UInt64		stage() { return _stage; }
 
-	//bool				writeMedia(MediaType type,Mona::UInt32 time,Mona::PacketReader& packet,const Mona::Parameters& properties);
 	virtual void		writeRaw(const Mona::UInt8* data,Mona::UInt32 size);
-	//bool				writeMember(const Client& client);
 
 	// Ask the server to connect to group, netGroup must be in binary format (32 bytes)
 	virtual void		writeGroupConnect(const std::string& netGroup);
@@ -99,8 +98,6 @@ public:
 	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig);
 	// Start to play the group stream
 	virtual void		writeGroupPlay(Mona::UInt8 mode);
-	// Send the UnpublishNotify and closeStream messages
-	//virtual void		sendGroupCloseStream(Mona::UInt8 type, Mona::UInt64 fragmentCounter, Mona::UInt32 time, const std::string& streamName);
 	// Send a pull request to a peer (message 2B)
 	virtual void		writeGroupPull(Mona::UInt64 index);
 
@@ -126,7 +123,7 @@ private:
 	Mona::UInt32				_lostCount; // number of lost messages
 	double						_ackCount; // number of acknowleged messages
 	Mona::UInt32				_repeatable; // number of repeatable messages waiting for acknowledgment
-	BandWriter&					_band; // RTMFP connection for sending message
+	FlowManager&				_band; // RTMFP session to send messages
 	Mona::Time					_closeTime; // time since writer has been closed
 
 };

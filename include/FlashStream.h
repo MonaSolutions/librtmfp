@@ -30,8 +30,8 @@ namespace FlashEvents {
 	struct OnStatus : Mona::Event<bool(const std::string& code, const std::string& description, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler)> {}; // NetConnection or NetStream status event
 	struct OnMedia : Mona::Event<void(const std::string& stream, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate, bool audio)> {};  // Received when we receive media (audio/video) in server or p2p 1-1
 	struct OnPlay: Mona::Event<bool(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler)> {}; // Received when a peer is trying to play a stream
-	struct OnNewPeer : Mona::Event<void(const std::string& peerId)> {};
-	struct OnGroupHandshake : Mona::Event<void(const std::string& groupId, const std::string& key, const std::string& peerId)> {}; // Received when a connected peer send us the Group hansdhake (only for P2PSession)
+	struct OnNewPeer : Mona::Event<void(const std::string& rawId, const std::string& peerId)> {}; // Received when the server send us a peer ID (after NetGroup connection)
+	struct OnGroupHandshake : Mona::Event<bool(const std::string& groupId, const std::string& key, const std::string& peerId)> {}; // Received when a connected peer send us the Group hansdhake (only for P2PSession)
 	struct OnGroupMedia : Mona::Event<bool(Mona::PacketReader& packet, Mona::UInt16 streamId, Mona::UInt64 flowId, Mona::UInt64 writerId)> {}; // Received when a connected peer send us a peer Group Media (Subscription/Infos)
 	struct OnGroupReport : Mona::Event<void(Mona::PacketReader& packet, Mona::UInt16 streamId, Mona::UInt64 flowId, Mona::UInt64 writerId)> {};
 	struct OnGroupPlayPush: Mona::Event<void(Mona::PacketReader& packet, Mona::UInt16 streamId, Mona::UInt64 flowId, Mona::UInt64 writerId)>{};

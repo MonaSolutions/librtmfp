@@ -28,22 +28,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, shared_ptr<RTMFPWriter>& pThis, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
+RTMFPWriter::RTMFPWriter(State state,const string& signature, FlowManager& band, shared_ptr<RTMFPWriter>& pThis, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
 	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 
-	pThis.reset(this);
-	_band.initWriter(pThis);
-	if (signature.empty())
-		open();
 }
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, BandWriter& band, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
+RTMFPWriter::RTMFPWriter(State state,const string& signature, FlowManager& band, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
 	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
 
-	shared_ptr<RTMFPWriter> pThis(this);
-	_band.initWriter(pThis);
-	if (signature.empty())
-		open();
 }
 
 RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : FlashWriter(writer), _band(writer._band),

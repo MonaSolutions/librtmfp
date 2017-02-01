@@ -24,10 +24,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "AMFReader.h"
 #include "Invoker.h"
 #include "RTMFPWriter.h"
-#include "Mona/Logs.h"
 #include "FlashConnection.h"
 #include "RTMFPFlow.h"
-#include "SocketHandler.h"
+#include "RTMFPSender.h"
 
 using namespace Mona;
 using namespace std;
@@ -55,9 +54,9 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 0x00, 0x00, 0x00, 0x00
 };
 
-FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
+FlowManager::FlowManager(bool responder, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 	_firstRead(true), _pInvoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0) {
+	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(1) {
 	onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
@@ -110,19 +109,6 @@ FlowManager::FlowManager(Invoker* invoker, OnSocketError pOnSocketError, OnStatu
 		string buffer;
 		_pOnSocketError(String::Format(buffer, ex.error(), " on connection ", name()).c_str());
 	};*/
-	onMessage = [this](BinaryReader& reader) {
-		receive(reader);
-	};
-	onNewWriter = [this](shared_ptr<RTMFPWriter>& pWriter) {
-		handleNewWriter(pWriter);
-	};
-	onWriterException = [this](shared_ptr<RTMFPWriter>& pWriter) {
-		handleWriterException(pWriter);
-	};
-	onWriterError = [this](const Exception& ex) {
-		INFO("Closing session ", name(), " : ", ex.error())
-		close(true);
-	};
 
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
 
@@ -152,19 +138,99 @@ FlowManager::~FlowManager() {
 	}
 }
 
+BinaryWriter& FlowManager::writeMessage(UInt8 type, UInt16 length, RTMFPWriter* pWriter) {
+
+	_pLastWriter = pWriter;
+
+	UInt16 size = length + 3; // for type and size
+
+	if (size>availableToWrite()) {
+		BandWriter::flush(false, 0x89); // send packet (and without time echo)
+
+		if (size > availableToWrite()) {
+			ERROR("RTMFPMessage truncated because exceeds maximum UDP packet size on connection");
+			size = availableToWrite();
+		}
+	}
+
+	if (!_pSender)
+		_pSender.reset(new RTMFPSender(_pInvoker->poolBuffers, _pEncoder));
+	return _pSender->packet.write8(type).write16(length);
+}
+
+shared_ptr<RTMFPWriter>& FlowManager::writer(UInt64 id, shared_ptr<RTMFPWriter>& pWriter) {
+	auto it = _flowWriters.find(id);
+	if (it != _flowWriters.end())
+		pWriter = it->second;
+	return pWriter;
+}
+
+UInt32 FlowManager::availableToWrite() { 
+	return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); 
+}
+
+const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const string& signature, Mona::UInt64 flowId) {
+
+	RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *this, flowId);
+	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(++_nextRTMFPWriterId), forward_as_tuple(pWriter)).first;
+	(UInt64&)pWriter->id = _nextRTMFPWriterId;
+	pWriter->amf0 = false;
+
+	if (!pWriter->signature.empty())
+		DEBUG("New writer ", pWriter->id, " on connection ", name());
+	return itWriter->second;
+}
+
+void FlowManager::clearWriters() {
+
+	for (auto& it : _flowWriters)
+		it.second->clear();
+}
+
+void FlowManager::flushWriters() {
+	// Every 25s : ping
+	if (_lastPing.isElapsed(25000) && status == RTMFP::CONNECTED) {
+		writeMessage(0x01, 0);
+		BandWriter::flush(false, 0x89);
+		_lastPing.update();
+	}
+
+	// Raise RTMFPWriter
+	auto it = _flowWriters.begin();
+	while (it != _flowWriters.end()) {
+		shared_ptr<RTMFPWriter>& pWriter(it->second);
+		Exception ex;
+		if (!pWriter->manage(ex)) {
+			INFO("Closing session ", name(), " : ", ex.error())
+			close(false);
+			break;
+		}
+		if (pWriter->consumed()) {
+			handleWriterClosed(pWriter);
+			DEBUG("Connection ", name(), " - RTMFPWriter ", pWriter->id, " consumed");
+			_flowWriters.erase(it++);
+			continue;
+		}
+		++it;
+	}
+}
+
+
 void FlowManager::close(bool abrupt) {
 	if (status == RTMFP::FAILED)
 		return;
 
-	for (auto& itConnection : _mapConnections) {
-		itConnection.second->close(abrupt);
-		if (abrupt)
-			unsubscribeConnection(itConnection.second);
+	// Send the close message
+	if (status == RTMFP::CONNECTED) {
+		writeMessage(abrupt ? 0x4C : 0x0C, 0);
+		flush(false, 0x89);
 	}
 
-	if (abrupt) {
-		_pConnection.reset();
-		_mapConnections.clear();
+	// Close writers
+	for (auto& it : _flowWriters) {
+		it.second->clear(); // Here no new sending must happen except "failSignal"
+		if (!abrupt)
+			it.second->close(abrupt);
 	}
 
 	if (abrupt)
@@ -173,44 +239,6 @@ void FlowManager::close(bool abrupt) {
 		status = RTMFP::NEAR_CLOSED;
 		_closeTime.update(); // To wait 90s before deleting session
 	}
-}
-
-UInt16 FlowManager::latency() {
-	return (_pConnection) ? (_pConnection->ping() >> 1) : 0;
-}
-
-void FlowManager::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
-
-	pConnection->OnMessage::subscribe(onMessage);
-	pConnection->OnNewWriter::subscribe(onNewWriter);
-	pConnection->OnWriterException::subscribe(onWriterException);
-	pConnection->OnWriterClose::subscribe(onWriterClose);
-	pConnection->OnWriterError::subscribe(onWriterError);
-	_mapConnections.emplace(pConnection->address(), pConnection);
-}
-
-void FlowManager::unsubscribeConnection(const Mona::SocketAddress& address) {
-	auto it = _mapConnections.find(address);
-	if (it != _mapConnections.end()) {
-		unsubscribeConnection(it->second);
-		_mapConnections.erase(it);
-	} else
-		WARN("Unable to find the connection ", address.toString(), " for unbscribing")
-
-	if (_mapConnections.empty()) {
-		DEBUG("No more connection available, session ", name(), " is closing...")
-		close(false);
-	}
-}
-
-void FlowManager::unsubscribeConnection(shared_ptr<RTMFPConnection>& pConnection) {
-	TRACE("Unsubscribing events of the connection ", pConnection->address().toString())
-
-	pConnection->OnMessage::unsubscribe(onMessage);
-	pConnection->OnNewWriter::unsubscribe(onNewWriter);
-	pConnection->OnWriterException::unsubscribe(onWriterException);
-	pConnection->OnWriterClose::unsubscribe(onWriterClose);
-	pConnection->OnWriterError::unsubscribe(onWriterError);
 }
 
 bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
@@ -297,7 +325,7 @@ void FlowManager::receive(BinaryReader& reader) {
 			/*if(!peer.connected)
 			fail("Timeout connection client");
 			else*/
-			_pConnection->writeMessage(0x41, 0);
+			writeMessage(0x41, 0);
 			break;
 		case 0x41:
 			_lastKeepAlive.update();
@@ -305,7 +333,11 @@ void FlowManager::receive(BinaryReader& reader) {
 
 		case 0x5e : {  // P2P closing flow (RTMFPFlow exception, only for p2p)
 			UInt64 id = message.read7BitLongValue();
-			_pConnection->handleWriterException(id);
+			shared_ptr<RTMFPWriter> pWriter;
+			if (writer(id, pWriter))
+				handleWriterException(pWriter);
+			else
+				WARN("RTMFPWriter ", id, " unfound for failed signal on session ", name());
 			break;
 		}
 			/*case 0x18 :
@@ -321,7 +353,14 @@ void FlowManager::receive(BinaryReader& reader) {
 		case 0x51: {
 			/// Acknowledgment
 			UInt64 id = message.read7BitLongValue();
-			_pConnection->handleAcknowledgment(id, message);
+			shared_ptr<RTMFPWriter> pWriter;
+			if (writer(id, pWriter)) {
+				Exception ex;
+				if (!pWriter->acknowledgment(ex, message))
+					WARN(ex.error(), " on connection ", name())
+			}
+			else
+				WARN("RTMFPWriter ", id, " unfound for acknowledgment on session ", name())
 			break;
 		}
 		/// Request
@@ -433,7 +472,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 
 		// Search in mainstream
 		if (_pMainStream->getStream(idSession, pStream))
-			pFlow = new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *_pConnection, idWriterRef);
+			pFlow = new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this, idWriterRef);
 		else
 			ex.set(Exception::PROTOCOL, "RTMFPFlow ", id, " indicates a non-existent ", idSession, " NetStream on connection ", name());
 	}
@@ -447,6 +486,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 
 void FlowManager::manage() {
 
+	// Release the old flows
 	auto itFlow = _flows.begin();
 	while (itFlow != _flows.end()) {
 		if (itFlow->second->consumed())
@@ -454,6 +494,9 @@ void FlowManager::manage() {
 		else
 			++itFlow;
 	}
+
+	// Send the waiting messages
+	flushWriters();
 }
 
 void FlowManager::removeFlow(RTMFPFlow* pFlow) {
@@ -462,7 +505,7 @@ void FlowManager::removeFlow(RTMFPFlow* pFlow) {
 		DEBUG("Main flow is closing, session ", name(), " will close")
 		if (status != RTMFP::CONNECTED) {
 			// without connection, nothing must be sent!
-			_pConnection->clearWriters();
+			clearWriters();
 		}
 		_mainFlowId = 0;
 		close(false);
@@ -471,3 +514,172 @@ void FlowManager::removeFlow(RTMFPFlow* pFlow) {
 	_flows.erase(pFlow->id);
 	delete pFlow;
 }
+
+bool FlowManager::computeKeys(UInt32 farId) {
+	DiffieHellman* pDh = NULL;
+	if (!diffieHellman(pDh))
+		return false;
+
+	// Compute Diffie-Hellman secret
+	Exception ex;
+	pDh->computeSecret(ex, (UInt8*)_pHandshake->farKey.data(), _pHandshake->farKey.size(), _sharedSecret);
+	if (ex)
+		return false;
+
+	DUMP("RTMFP", _sharedSecret.data(), _sharedSecret.size(), "Shared secret :")
+
+	PacketWriter packet(_pInvoker->poolBuffers);
+	if (packet.size() > 0) {
+		ex.set(Exception::CRYPTO, "RTMFPCookieComputing already executed");
+		return false;
+	}
+
+	// Compute Keys
+	UInt8 responseKey[Crypto::HMAC::SIZE];
+	UInt8 requestKey[Crypto::HMAC::SIZE];
+	Buffer& initiatorNonce = (_responder)? _pHandshake->farNonce : _pHandshake->nonce;
+	Buffer& responderNonce = (_responder)? _pHandshake->nonce : _pHandshake->farNonce;
+	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce.data(), (UInt16)initiatorNonce.size(), BIN responderNonce.data(), responderNonce.size(), requestKey, responseKey);
+	_pDecoder.reset(new RTMFPEngine(_responder ? requestKey : responseKey, RTMFPEngine::DECRYPT));
+	_pEncoder.reset(new RTMFPEngine(_responder ? responseKey : requestKey, RTMFPEngine::ENCRYPT));
+
+	// Save nonces just in case we are in a NetGroup connection
+	Buffer::Append(_farNonce, _pHandshake->farNonce.data(), _pHandshake->farNonce.size());
+	Buffer::Append(_nonce, _pHandshake->nonce.data(), _pHandshake->nonce.size());
+
+	TRACE(_responder ? "Initiator" : "Responder", " Nonce : ", Util::FormatHex(BIN _farNonce.data(), _farNonce.size(), LOG_BUFFER))
+	TRACE(_responder ? "Responder" : "Initiator", " Nonce : ", Util::FormatHex(BIN _nonce.data(), _nonce.size(), LOG_BUFFER))
+
+	_farId = farId; // important, save far ID
+	status = RTMFP::CONNECTED;
+	removeHandshake(_pHandshake);
+	onConnection();
+	return true;
+}
+
+void FlowManager::flush(bool echoTime, Mona::UInt8 marker) {
+
+	// Reset last writer pointer before flush
+	_pLastWriter = NULL;
+	BandWriter::flush(echoTime, marker);
+}
+
+void FlowManager::process(const SocketAddress& address, PoolBuffer& pBuffer) {
+	if (!BandWriter::decode(address, pBuffer))
+		return;
+
+	BinaryReader reader(pBuffer.data(), pBuffer->size());
+	reader.next(2); // TODO: CRC, don't share this part in onPacket() 
+
+	if (Logs::GetLevel() >= 7)
+		DUMP("RTMFP", reader.current(), reader.available(), "Request from ", address.toString())
+
+	UInt8 marker = reader.read8();
+	_timeReceived = reader.read16();
+	_lastReceptionTime.update();
+
+	if (address != _address) {
+		DEBUG("Session ", name(), " has change its address from ", _address.toString(), " to ", address.toString())
+		_address.set(address);
+	}
+
+	// Handshake
+	if (marker == 0x0B) {
+		UInt8 type = reader.read8();
+		UInt16 length = reader.read16();
+		reader.shrink(length); // resize the buffer to ignore the padding bytes
+
+		if (type != 0x78) {
+			WARN("Unexpected Handshake marker : ", Format<UInt8>("%02x", marker));
+			return;
+		}
+		sendConnect(reader);
+		return;
+	}
+
+	// Connected message (normal or P2P)
+	switch (marker | 0xF0) {
+	case 0xFD:
+		if (!_responder) {
+			DEBUG("Responder is sending wrong marker, request ignored")
+			return;
+		}
+	case 0xFE: {
+		if ((marker | 0xF0) == 0xFE && _responder) {
+			DEBUG("Initiator is sending wrong marker, request ignored")
+			return;
+		}
+		UInt16 time = RTMFP::TimeNow();
+		UInt16 timeEcho = reader.read16();
+		setPing(time, timeEcho);
+	}
+	case 0xF9:
+	case 0xFA:
+		receive(reader);
+		break;
+	default:
+		WARN("Unexpected RTMFP marker : ", Format<UInt8>("%02x", marker));
+	}
+}
+
+void FlowManager::setPing(UInt16 time, UInt16 timeEcho) {
+	if (timeEcho > time) {
+		if (timeEcho - time < 30)
+			time = 0;
+		else
+			time += 0xFFFF - timeEcho;
+		timeEcho = 0;
+	}
+	UInt16 value = (time - timeEcho) * RTMFP_TIMESTAMP_SCALE;
+	_ping = (value == 0 ? 1 : value);
+}
+
+void FlowManager::sendConnect(BinaryReader& reader) {
+
+	if (status > RTMFP::HANDSHAKE38) {
+		DEBUG("Handshake 78 ignored, the session is already in ", status, " state")
+		return;
+	}
+
+	UInt32 farId = reader.read32(); // id session
+	UInt32 nonceSize = (UInt32)reader.read7BitLongValue();
+	if ((_pHandshake->isP2P && nonceSize != 73) || (!_pHandshake->isP2P && nonceSize < 0x8A)) {
+		ERROR("Incorrect nonce size : ", nonceSize, " (expected ", _pHandshake->isP2P ? 73 : 138, " bytes)")
+		return;
+	}
+
+	reader.read(nonceSize, _pHandshake->farNonce);
+	if (memcmp(_pHandshake->farNonce.data(), "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
+		ERROR("Far nonce received is not well formated : ", Util::FormatHex(BIN _pHandshake->farNonce.data(), nonceSize, LOG_BUFFER))
+		return;
+	}
+
+	UInt8 endByte = reader.read8();
+	if (endByte != 0x58) {
+		ERROR("Unexpected end of handshake 78 : ", endByte)
+		return;
+	}
+
+	// If we are in client->server session far key = nonce+11
+	if (!_pHandshake->isP2P)
+		_pHandshake->farKey.assign(STR(_pHandshake->farNonce.data() + 11), nonceSize - 11);
+
+	// Compute keys for encryption/decryption
+	computeKeys(farId);
+}
+
+bool FlowManager::onPeerHandshake70(const SocketAddress& address, const string& farKey, const string& cookie) {
+	if (status > RTMFP::HANDSHAKE30) {
+		DEBUG("Handshake 70 ignored for session ", name(), ", we are already in state ", status)
+		return false;
+	}
+
+	// update address
+	_address.set(address);
+	return true;
+};
+
+const PoolBuffers& FlowManager::poolBuffers() {
+	return _pInvoker->poolBuffers;
+}
+

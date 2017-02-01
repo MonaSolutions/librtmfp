@@ -36,192 +36,104 @@ using namespace std;
 
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
-RTMFPSession::RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : 
-	_nbCreateStreams(0), _port("1935"), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+RTMFPSession::RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId("\x21\x0f", PEER_ID_SIZE + 2),
+	_handshaker(this), _nbCreateStreams(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), FlowManager(false, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	onPacket = [this](PoolBuffer& pBuffer, const SocketAddress& address) {
+		lock_guard<mutex> lock(_mutexConnections);
+		if (status < RTMFP::NEAR_CLOSED) {
+
+			// Decode the RTMFP data
+			if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
+				ERROR("Invalid RTMFP packet on connection to ", _address.toString())
+				return;
+			}
+
+			BinaryReader reader(pBuffer.data(), pBuffer.size());
+			UInt32 idSession = RTMFP::Unpack(reader);
+			pBuffer->clip(reader.position());
+
+			if (!idSession)
+				_handshaker.process(address, pBuffer);
+			else {
+				auto itSession = _mapSessions.find(idSession);
+				if (itSession == _mapSessions.end()) {
+					WARN("Unknown session ", Format<UInt32>("0x%.8x", idSession), " in packet from ", address.toString())
+					return;
+				}
+				itSession->second->process(address, pBuffer);
+			}
+		}
+	};
+	onError = [this](const Exception& ex) {
+		SocketAddress address;
+		DEBUG("Socket error : ", ex.error(), " from ", _pSocket->peerAddress(address).toString())
+	};
 	onStreamCreated = [this](UInt16 idStream) {
 		return handleStreamCreated(idStream);
 	};
-	onNewPeer = [this](const string& peerId) {
-		handleNewGroupPeer(peerId);
-	};
-	onPeerHandshake30 = [this](const string& tag, const SocketAddress& address) {
-		if (status != RTMFP::CONNECTED || !_pConnection)
-			DEBUG("Message received but we are not connected, rejected")
-		else if (!_group && !(_pPublisher && _pPublisher->isP2P))
-			DEBUG("P2P connection received but we are not publisher and not in a netgroup, rejected")
-		else {
-			shared_ptr<RTMFPConnection> pConnection;
-			_pSocketHandler->addConnection(pConnection, address, NULL, true, true);
-			pConnection->sendHandshake70(tag);
-			// we don't know the peer id for now, P2PSession will be created after in onNewPeerId
-		}
-	};
-	onPeerHandshake70 = [this](const string& peerId, const SocketAddress& address, const string& farKey, const string& cookie, bool createConnection) {
-		// RTMFP session?
-		if (peerId.empty())
-			return status < RTMFP::HANDSHAKE70;
-
-		// Otherwise : P2P session
-		auto itSession = _mapPeersById.find(peerId);
-		if (itSession == _mapPeersById.end()) {
-			ERROR("Unknown peer ", peerId, " in onPeerHandshake70") // should not happen
-			return false;
-		}
-
-		if (itSession->second->status > RTMFP::HANDSHAKE30) {
-			DEBUG("Handshake 70 ignored for peer ", peerId, " we are already in state ", itSession->second->status)
-			return false;
-		}
-
-		// Add the peer to heard list if needed
-		if (_group && itSession->second->status < RTMFP::HANDSHAKE30)
-			_group->addPeer2HeardList(peerId, itSession->second->rawId.c_str(), itSession->second->addresses(), itSession->second->hostAddress);
-		
-		// If it is a new address, we create the connection
-		if (createConnection) {
-			shared_ptr<RTMFPConnection> pConnection;
-			_pSocketHandler->addConnection(pConnection, address, itSession->second.get(), false, true);
-			pConnection->sendHandshake38(farKey, cookie);
-		}
-		return true;
-	};
-	onNewPeerId = [this](shared_ptr<RTMFPConnection>& pConn, const string& rawId, const string& peerId) {
-		auto itPeer = _mapPeersById.lower_bound(peerId);
-
-		// If the peer session doesn't exists we create it
-		if (itPeer == _mapPeersById.end() || itPeer->first != peerId)
-			itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId),
-				forward_as_tuple(new P2PSession(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _pConnection->address(), true, (bool)_group)));
-		itPeer->second->subscribe(pConn);
-		
-		if (itPeer->second->status > RTMFP::HANDSHAKE38) {
-			DEBUG("Handshake 38 ignored, session is already in state ", itPeer->second->status)
-			return false;
-		}
-
-		if (_group)
-			_group->addPeer2HeardList(itPeer->second->peerId, itPeer->second->rawId.data(), itPeer->second->addresses(), itPeer->second->hostAddress, true);
-		return true;
-	};
-	onPeerIdBuilt = [this](const string& rawId, const string& peerId) {
-		// Peer ID built, we save it
-		_peerTxtId = peerId.c_str();
-		memcpy(_rawId, BIN rawId.data(), PEER_ID_SIZE + 2);
-	};
-	onConnection = [this](shared_ptr<RTMFPConnection>& pConnection, const string& nameSession) {
-
-		auto itPeer = _mapPeersById.find(nameSession);
-		if (itPeer != _mapPeersById.end()) {
-			itPeer->second->onConnection(pConnection);
-		} else {
-			INFO("Connection is now connected to ", name())
-
-			status = RTMFP::CONNECTED;
-			_pConnection = pConnection;
-
-			string signature("\x00\x54\x43\x04\x00", 5);
-			RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *pConnection);  // it will be automatically associated to _pMainWriter
-			
-			// Send the connect request
-			AMFWriter& amfWriter = pWriter->writeInvocation("connect");
-
-			// TODO: add parameters to configuration
-			bool amf = amfWriter.amf0;
-			amfWriter.amf0 = true;
-			amfWriter.beginObject();
-			amfWriter.writeStringProperty("app", "live");
-			amfWriter.writeStringProperty("flashVer", EXPAND("WIN 20,0,0,286")); // TODO: change at least this
-			amfWriter.writeStringProperty("swfUrl", "");
-			amfWriter.writeStringProperty("tcUrl", _url);
-			amfWriter.writeBooleanProperty("fpad", false);
-			amfWriter.writeNumberProperty("capabilities", 235);
-			amfWriter.writeNumberProperty("audioCodecs", 3575);
-			amfWriter.writeNumberProperty("videoCodecs", 252);
-			amfWriter.writeNumberProperty("videoFunction", 1);
-			amfWriter.writeStringProperty("pageUrl", "");
-			amfWriter.writeNumberProperty("objectEncoding", 3);
-			amfWriter.endObject();
-			amfWriter.amf0 = amf;
-
-			pWriter->flush();
-		}
-	};
-	onWriterClose = [this](shared_ptr<RTMFPWriter>& pWriter) {
-		// We reset the pointers before closure
-		if (pWriter == _pGroupWriter)
-			_pGroupWriter.reset();
-		else if (pWriter == _pMainWriter)
-			_pMainWriter.reset();
-	};
-	onP2PAddresses = [this](const string& peerId, const PEER_LIST_ADDRESS_TYPE& addresses) {
-		auto itSession = _mapPeersById.find(peerId);
-		if (itSession != _mapPeersById.end()) {
-			if (itSession->second->status > RTMFP::HANDSHAKE30) {
-				DEBUG("Addresses ignored for peer ", peerId, " we are already in state ", itSession->second->status)
-				return false;
-			}
-
-			// Once we know the addresses we can add the peer to NetGroup heard list
-			const PEER_LIST_ADDRESS_TYPE& knownAddresses = itSession->second->addresses();
-			if (_group && knownAddresses.empty() && !addresses.empty())
-				_group->addPeer2HeardList(itSession->second->peerId, itSession->second->rawId.data(), addresses, itSession->second->hostAddress);
-
-			for (auto itAddress : addresses) {
-				// If new address : connect to it
-				if (knownAddresses.find(itAddress.first) == knownAddresses.end()) {
-					shared_ptr<RTMFPConnection> pConnection;
-					_pSocketHandler->addConnection(pConnection, itAddress.first, itSession->second.get(), false, true);
-					pConnection->manage();
-				}
-			}
-			return true;
-		}
-		else
-			ERROR("Unknown peer ", peerId, " in onP2PAddresses") // should not happen
-		return false;
+	onNewPeer = [this](const string& rawId, const string& peerId) {
+		handleNewGroupPeer(rawId, peerId);
 	};
 
-	_sessionId = ++RTMFPSessionCounter;
+	_sessionId = RTMFPSessionCounter++;
 
 	_pMainStream->OnStreamCreated::subscribe(onStreamCreated);
 	_pMainStream->OnNewPeer::subscribe(onNewPeer);
 
-	_pSocketHandler.reset(new SocketHandler(invoker, this));
-	_pSocketHandler->OnIdBuilt::subscribe(onPeerIdBuilt);
-	_pSocketHandler->OnPeerHandshake30::subscribe(onPeerHandshake30);
-	_pSocketHandler->OnPeerHandshake70::subscribe(onPeerHandshake70);
-	_pSocketHandler->OnNewPeerId::subscribe(onNewPeerId);
-	_pSocketHandler->OnConnection::subscribe(onConnection);
-	_pSocketHandler->OnP2PAddresses::subscribe(onP2PAddresses);
+	_pSocket.reset(new UDPSocket(_pInvoker->sockets));
+	_pSocket->OnError::subscribe(onError);
+	_pSocket->OnPacket::subscribe(onPacket);
+	_pSocketIPV6.reset(new UDPSocket(_pInvoker->sockets));
+	_pSocketIPV6->OnError::subscribe(onError);
+	_pSocketIPV6->OnPacket::subscribe(onPacket);
+	Exception ex;
+	SocketAddress address(SocketAddress::Wildcard(IPAddress::IPv6));
+	if (!_pSocketIPV6->bind(ex, address))
+		WARN("Unable to bind [::], ipv6 will not work : ", ex.error())
+
+	// Add the session ID to the map
+	_mapSessions.emplace(_sessionId, this);
 }
 
 RTMFPSession::~RTMFPSession() {
-	lock_guard<std::mutex> lock(_mutexConnections);
+	DEBUG("Deletion of RTMFPSession ", name())
 
-	// Close the connections
-	close(true);
+	{
+		lock_guard<std::mutex> lock(_mutexConnections);
+		// Close the connections
+		close(true);
 
-	// Close the handler to wait the end of current reception (avoid crashes)
-	_pSocketHandler->close();
-	_pSocketHandler->OnIdBuilt::unsubscribe(onPeerIdBuilt);
-	_pSocketHandler->OnPeerHandshake30::unsubscribe(onPeerHandshake30);
-	_pSocketHandler->OnPeerHandshake70::unsubscribe(onPeerHandshake70);
-	_pSocketHandler->OnNewPeerId::unsubscribe(onNewPeerId);
-	_pSocketHandler->OnConnection::unsubscribe(onConnection);
-	_pSocketHandler->OnP2PAddresses::unsubscribe(onP2PAddresses);
+		// Close the NetGroup
+		if (_group)
+			_group->close();
 
-	// Close the NetGroup
-	if (_group)
-		_group->close();
+		// Close peers
+		for (auto it : _mapPeersById)
+			it.second->close(true);
+		_mapPeersById.clear();
+		_mapSessions.clear();
 
-	// Close peers
-	for(auto it : _mapPeersById)
-		it.second->close(true);
-	_mapPeersById.clear();
+		// Remove all waiting handshakes
+		_handshaker.close();
+	}
 
 	if (_pMainStream) {
 		_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
 		_pMainStream->OnNewPeer::unsubscribe(onNewPeer);
+	}
+
+	// Unsubscribing to socket : we don't want to receive packets anymore
+	if (_pSocket) {
+		TRACE("Closing socket IPV4...")
+		_pSocket->OnPacket::unsubscribe(onPacket);
+		_pSocket->OnError::unsubscribe(onError);
+		_pSocket->close();
+	}
+	if (_pSocketIPV6) {
+		TRACE("Closing socket IPV6...")
+		_pSocketIPV6->OnPacket::unsubscribe(onPacket);
+		_pSocketIPV6->OnError::unsubscribe(onError);
+		_pSocketIPV6->close();
 	}
 }
 
@@ -244,17 +156,16 @@ void RTMFPSession::close(bool abrupt) {
 }
 
 RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
-	FATAL_ASSERT(_pConnection)
 
 	if (signature.size() > 4 && signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0) { // NetConnection
 		DEBUG("Creating new Flow (", id, ") for NetConnection ", name())
 		_mainFlowId = id;
-		return new RTMFPFlow(id, signature, poolBuffers(), *((BandWriter*)_pConnection.get()), _pMainStream, idWriterRef);
+		return new RTMFPFlow(id, signature, poolBuffers(), *this, _pMainStream, idWriterRef);
 	}
 	else if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
 		shared_ptr<FlashStream> pStream;
 		_pMainStream->addStream(pStream, true); // TODO: see if it is really a GroupStream
-		return new RTMFPFlow(id, signature, pStream, poolBuffers(), *((BandWriter*)_pConnection.get()), idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, poolBuffers(), *this, idWriterRef);
 	}
 	else {
 		string tmp;
@@ -263,12 +174,12 @@ RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const strin
 	return NULL;
 }
 
-void RTMFPSession::handleNewWriter(shared_ptr<RTMFPWriter>& pWriter) {
-
-	if (pWriter->signature.size() > 2 && pWriter->signature.compare(0, 3, "\x00\x47\x43", 3) == 0 && !_pGroupWriter)
-		_pGroupWriter = pWriter; // save the group writer (TODO: see if it can happen, I think we are always the initiator of the group communication)
-	if (pWriter->signature.size() > 4 && pWriter->signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0 && !_pMainWriter)
-		_pMainWriter = pWriter;
+void RTMFPSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
+	// We reset the pointers before closure
+	if (pWriter == _pGroupWriter)
+		_pGroupWriter.reset();
+	else if (pWriter == _pMainWriter)
+		_pMainWriter.reset();
 }
 
 bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
@@ -286,70 +197,61 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 
 	// Extract the port
 	const char *port = strrchr(host, ':'), *ipv6End = strrchr(host, ']');
-	if (port && (!ipv6End || port > ipv6End)) {
-		_port = (port + 1);
-		_host[port - host] = '\0';
-	}
+	if (port && (!ipv6End || port > ipv6End))
+		_host.resize(port++ - host);
+	else
+		port = "1935";
 
 	lock_guard<std::mutex> lock(_mutexConnections);
 	DEBUG("Trying to resolve the host address...")
 	HostEntry hostEntry;
-	shared_ptr<RTMFPConnection> pConnection;
 	SocketAddress address;
-	if (address.set(ex, _host, _port))
-		_pSocketHandler->addConnection(pConnection, address, this, false, false);
-	else if (DNS::Resolve(ex, _host, hostEntry)) {
+	if (address.set(ex, _host, port))
+		_handshaker.startHandshake(_pHandshake, address, this, false, false);
+	else if (DNS::Resolve(ex, _host, hostEntry)){
+		PEER_LIST_ADDRESS_TYPE addresses;
 		for (auto itAddress : hostEntry.addresses()) {
-			if (address.set(ex, itAddress, _port))
-				_pSocketHandler->addConnection(pConnection, address, this, false, false);
-			else
-				WARN("Error with address ", itAddress.toString(), " : ", ex.error())
+			if (address.set(ex, itAddress, port))
+				addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
 		}
+		if (addresses.empty())
+			return false;
+		address.clear();
+		_handshaker.startHandshake(_pHandshake, address, addresses, this, false, false);
 	} else
 		return false;
 	return true;
 }
 
 void RTMFPSession::connect2Peer(const char* peerId, const char* streamName) {
-	if (!_pConnection) {
-		ERROR("Cannot start a P2P connection before being connected to the server")
-		return;
-	}
-
 	lock_guard<std::mutex> lock(_mutexConnections);
 	PEER_LIST_ADDRESS_TYPE addresses;
-	connect2Peer(peerId, streamName, addresses, _pConnection->address());
+	connect2Peer(peerId, streamName, addresses, _address);
 }
 
 void RTMFPSession::connect2Peer(const string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress) {
+	if (status != RTMFP::CONNECTED) {
+		ERROR("Cannot start a P2P connection before being connected to the server")
+		return;
+	}
 
 	auto itPeer = _mapPeersById.lower_bound(peerId);
 	if (itPeer != _mapPeersById.end() && itPeer->first == peerId) {
-		TRACE("Unable to create the P2P session to ", peerId, ", we are already connecting/connected to it")
-		return;
-	}
-	if (status != RTMFP::CONNECTED || !_pConnection) {
-		ERROR("Cannot start a P2P connection before being connected to the server")
+		DEBUG("Unable to create the P2P session to ", peerId, ", we are already connecting/connected to it")
 		return;
 	}
 
 	DEBUG("Connecting to peer ", peerId, "...")
 	itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId), 
 		forward_as_tuple(new P2PSession(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, hostAddress, false, (bool)_group)));
+	_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 	shared_ptr<P2PSession> pPeer = itPeer->second;
 	// P2P unicast : add command play to send when connected
 	if (streamName) 
 		pPeer->addCommand(NETSTREAM_PLAY, streamName);
 
-	// P2P multicast : create direct connections
-	for (auto itAddress : addresses) {
-		shared_ptr<RTMFPConnection> pConnection;
-		_pSocketHandler->addConnection(pConnection, itAddress.first, pPeer.get(), false, true);
-	}
-
-	// Ask server for addresses
-	_pSocketHandler->addP2PConnection(pPeer->rawId, peerId, pPeer->tag(), hostAddress);
+	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress, addresses, (FlowManager*)itPeer->second.get(), false, true);
 }
 
 void RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters) {
@@ -468,7 +370,6 @@ bool RTMFPSession::handleStreamCreated(UInt16 idStream) {
 	DEBUG("Stream ", idStream, " created, sending command...")
 
 	// Get command
-	//lock_guard<std::mutex> lock(_mutexConnections);
 	if (_waitingCommands.empty()) {
 		ERROR("created stream without command")
 		return false;
@@ -487,7 +388,7 @@ bool RTMFPSession::handleStreamCreated(UInt16 idStream) {
 	// Stream created, now we create the writer before sending another request
 	string signature("\x00\x54\x43\x04", 4);
 	RTMFP::Write7BitValue(signature, idStream);
-	RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, _mainFlowId); // (a shared pointer is automatically created)
+	shared_ptr<RTMFPWriter> pWriter = createWriter(signature, _mainFlowId);
 
 	// Send createStream command and remove command type from waiting commands
 	switch (command.type) {
@@ -523,6 +424,7 @@ void RTMFPSession::manage() {
 	while (itConnection != _mapPeersById.end()) {
 		if (itConnection->second->closed()) {
 			DEBUG("RTMFPSession management - Deleting closed P2P session to ", itConnection->first)
+			_mapSessions.erase(itConnection->second->sessionId());
 			_mapPeersById.erase(itConnection++);
 		}
 		else {
@@ -540,8 +442,8 @@ void RTMFPSession::manage() {
 	// Send waiting P2P connections
 	sendConnections();
 
-	if (_pSocketHandler)
-		_pSocketHandler->manage();
+	// Send waiting handshake requests
+	_handshaker.manage();
 
 	// Manage NetGroup
 	if (_group)
@@ -618,20 +520,22 @@ void RTMFPSession::sendConnections() {
 void RTMFPSession::onConnect() {
 
 	// Record port for setPeerInfo request
-	if (_pMainStream && _pMainWriter) {
-		UInt16 port = _pSocketHandler->socket(IPAddress::IPv4).address().port();
-		UInt16 portIPv6 = _pSocketHandler->socket(IPAddress::IPv6).address().port();
-		INFO("Sending peer info (port : ", port, " - port ipv6 : ", portIPv6,")")
-		AMFWriter& amfWriter = _pMainWriter->writeInvocation("setPeerInfo");
+	if (!_pMainWriter) {
+		ERROR("Unable to find the main writer to send setPeerInfo request")
+		return;
+	}
+	UInt16 port = _pSocket->address().port();
+	UInt16 portIPv6 = _pSocketIPV6->address().port();
+	INFO("Sending peer info (port : ", port, " - port ipv6 : ", portIPv6,")")
+	AMFWriter& amfWriter = _pMainWriter->writeInvocation("setPeerInfo");
 
-		vector<IPAddress> addresses = IPAddress::Locals();
-		string buf;
-		for (auto it : addresses) {
-			if (it.isLoopback() || it.isLinkLocal())
-				continue; // ignore loopback and link-local addresses
-			String::Format(buf, it.toString(), ":", (it.family() == IPAddress::IPv4)? port : portIPv6);
-			amfWriter.writeString(buf.c_str(), buf.size());
-		}
+	vector<IPAddress> addresses = IPAddress::Locals();
+	string buf;
+	for (auto it : addresses) {
+		if (it.isLoopback() || it.isLinkLocal())
+			continue; // ignore loopback and link-local addresses
+		String::Format(buf, it.toString(), ":", (it.family() == IPAddress::IPv4)? port : portIPv6);
+		amfWriter.writeString(buf.c_str(), buf.size());
 	}
 
 	// We are connected : unlock the possible blocking RTMFP_Connect function
@@ -645,11 +549,11 @@ void RTMFPSession::onPublished(UInt16 streamId) {
 
 	string signature("\x00\x54\x43\x04",4);
 	RTMFP::Write7BitValue(signature, streamId);
-	RTMFPWriter* pDataWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, _mainFlowId);
-	RTMFPWriter* pAudioWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, _mainFlowId);
-	RTMFPWriter* pVideoWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, _mainFlowId);
+	shared_ptr<RTMFPWriter> pDataWriter = createWriter(signature,_mainFlowId);
+	shared_ptr<RTMFPWriter> pAudioWriter = createWriter(signature, _mainFlowId);
+	shared_ptr<RTMFPWriter> pVideoWriter = createWriter(signature, _mainFlowId);
 
-	if (!(_pListener = _pPublisher->addListener<FlashListener, FlashWriter*>(ex, name(), pDataWriter, pAudioWriter, pVideoWriter)))
+	if (!(_pListener = _pPublisher->addListener<FlashListener, shared_ptr<RTMFPWriter>&>(ex, name(), pDataWriter, pAudioWriter, pVideoWriter)))
 		WARN(ex.error())
 
 	publishReady = true;
@@ -662,7 +566,7 @@ void RTMFPSession::stopListening(const std::string& peerId) {
 		_pPublisher->removeListener(peerId);
 }
 
-void RTMFPSession::handleNewGroupPeer(const string& peerId) {
+void RTMFPSession::handleNewGroupPeer(const string& rawId, const string& peerId) {
 	
 	if (!_group || !_group->checkPeer(peerId)) {
 		DEBUG("Unable to add the peer ", peerId, ", it can be a wrong group ID or the peer already exists")
@@ -670,7 +574,8 @@ void RTMFPSession::handleNewGroupPeer(const string& peerId) {
 	}
 
 	PEER_LIST_ADDRESS_TYPE addresses;
-	connect2Peer(peerId.c_str(), "", addresses, _pConnection->address());
+	connect2Peer(peerId.c_str(), "", addresses, _address);
+	_group->addPeer2HeardList(peerId, rawId.c_str(), addresses, _address);
 }
 
 void RTMFPSession::handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter) {
@@ -703,16 +608,13 @@ void RTMFPSession::handleP2PAddressExchange(PacketReader& reader) {
 	DEBUG("A peer will contact us with address : ", address.toString())
 
 	// Send the handshake 70 to the peer
-	shared_ptr<RTMFPConnection> pConnection;
-	_pSocketHandler->addConnection(pConnection, address, NULL, true, true);
-	pConnection->sendHandshake70(tag);
+	_handshaker.sendHandshake70(tag, address, _address);
 }
 
 void RTMFPSession::sendGroupConnection(const string& netGroup) {
 
 	string signature("\x00\x47\x43", 3);
-	new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, _mainFlowId); // it will be automatically associated to _pGroupWriter
-
+	_pGroupWriter = createWriter(signature, _mainFlowId);
 	_pGroupWriter->writeGroupConnect(netGroup);
 	_pGroupWriter->flush();
 }
@@ -739,6 +641,61 @@ const string& RTMFPSession::groupIdTxt() {
 	return _group->idTxt;
 }
 
-const PoolBuffers& RTMFPSession::poolBuffers() {
-	return _pInvoker->poolBuffers;
+void RTMFPSession::buildPeerID(const UInt8* data, UInt32 size) {
+	// Peer ID built, we save it
+	EVP_Digest(data, size, BIN(_rawId.data() + 2), NULL, EVP_sha256(), NULL);
+	INFO("Peer ID : \n", Util::FormatHex(BIN(_rawId.data() + 2), PEER_ID_SIZE, _peerTxtId))
+}
+
+bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshake>& pHandshake, UInt32 farId, const string& rawId, const string& peerId) {
+
+	// If the peer session doesn't exists we create it
+	auto itPeer = _mapPeersById.lower_bound(peerId);
+	if (itPeer == _mapPeersById.end() || itPeer->first != peerId) {
+		itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId),
+			forward_as_tuple(new P2PSession(this, peerId, _pInvoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, _address, true, (bool)_group)));
+		_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
+
+		// associate the handshake & session
+		pHandshake->pSession = itPeer->second.get();
+		itPeer->second->handshake() = pHandshake;
+		itPeer->second->setAddress(address);
+
+		if (_group)
+			_group->addPeer2HeardList(itPeer->second->peerId, itPeer->second->rawId.data(), itPeer->second->addresses(), itPeer->second->hostAddress, true);
+	}
+	else
+		return itPeer->second->onHandshake38(address, pHandshake);
+	
+	return true;
+}
+
+void RTMFPSession::onConnection() {
+	INFO("Connection is now connected to ", name())
+
+	string signature("\x00\x54\x43\x04\x00", 5);
+	_pMainWriter = createWriter(signature, 0);
+
+	// Send the connect request
+	AMFWriter& amfWriter = _pMainWriter->writeInvocation("connect");
+
+	// TODO: add parameters to configuration
+	bool amf = amfWriter.amf0;
+	amfWriter.amf0 = true;
+	amfWriter.beginObject();
+	amfWriter.writeStringProperty("app", "live");
+	amfWriter.writeStringProperty("flashVer", EXPAND("WIN 20,0,0,286")); // TODO: change at least this
+	amfWriter.writeStringProperty("swfUrl", "");
+	amfWriter.writeStringProperty("tcUrl", _url);
+	amfWriter.writeBooleanProperty("fpad", false);
+	amfWriter.writeNumberProperty("capabilities", 235);
+	amfWriter.writeNumberProperty("audioCodecs", 3575);
+	amfWriter.writeNumberProperty("videoCodecs", 252);
+	amfWriter.writeNumberProperty("videoFunction", 1);
+	amfWriter.writeStringProperty("pageUrl", "");
+	amfWriter.writeNumberProperty("objectEncoding", 3);
+	amfWriter.endObject();
+	amfWriter.amf0 = amf;
+
+	_pMainWriter->flush();
 }

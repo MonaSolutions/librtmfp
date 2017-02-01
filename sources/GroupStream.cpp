@@ -43,11 +43,11 @@ bool GroupStream::process(PacketReader& packet, UInt64 flowId, UInt64 writerId, 
 	switch(type) {
 
 		case GroupStream::GROUP_MEMBER: { // RTMFPSession event (TODO: see if it must be moved in FlashStream)
-			string member, id;
-			packet.read(PEER_ID_SIZE, member);
-			Util::FormatHex(BIN member.data(), member.size(), id);
+			string rawId("\x21\x0F", PEER_ID_SIZE + 2), id;
+			packet.read(PEER_ID_SIZE, STR (rawId.data() + 2));
+			Util::FormatHex(BIN rawId.data() + 2, PEER_ID_SIZE, id);
 			DEBUG("NetGroup Peer ID added : ", id)
-			OnNewPeer::raise(id);
+			OnNewPeer::raise(rawId, id);
 			return true;
 		}
 		case GroupStream::GROUP_INIT: {
@@ -56,20 +56,19 @@ bool GroupStream::process(PacketReader& packet, UInt64 flowId, UInt64 writerId, 
 				ERROR("Unexpected format for NetGroup ID header")
 				break;
 			}
-			string netGroupId, encryptKey, peerId;
+			string netGroupId, encryptKey, rawId;
 			packet.read(0x40, netGroupId);
 			if (packet.read16() != 0x2101) {
 				ERROR("Unexpected format for NetGroup ID header")
 				break;
 			}
 			packet.read(0x20, encryptKey);
-			if (packet.read32() != 0x2303210F) {
+			if (packet.read16() != 0x2303) {
 				ERROR("Unexpected format for Peer ID header")
 				break;
 			}
-			packet.read(PEER_ID_SIZE, peerId); 
-			OnGroupHandshake::raise(netGroupId, encryptKey, peerId);
-			return true;
+			packet.read(PEER_ID_SIZE + 2, rawId);
+			return OnGroupHandshake::raise<false>(netGroupId, encryptKey, rawId);
 		}
 		case GroupStream::GROUP_DATA: {
 			string value;

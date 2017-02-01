@@ -24,7 +24,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Mona.h"
 #include "FlashConnection.h"
 #include "Mona/PoolBuffers.h"
-#include "BandWriter.h"
+#include "FlowManager.h"
 
 class RTMFPPacket;
 class RTMFPFragment;
@@ -36,8 +36,8 @@ It manages acknowledgments and lost count of messages received
 */
 class RTMFPFlow : public virtual Mona::Object {
 public:
-	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const Mona::PoolBuffers& poolBuffers, BandWriter& band, const std::shared_ptr<FlashConnection>& pMainStream, Mona::UInt64 idWriterRef);
-	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const std::shared_ptr<FlashStream>& pStream, const Mona::PoolBuffers& poolBuffers, BandWriter& band, Mona::UInt64 idWriterRef);
+	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const Mona::PoolBuffers& poolBuffers, FlowManager& band, const std::shared_ptr<FlashConnection>& pMainStream, Mona::UInt64 idWriterRef);
+	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const std::shared_ptr<FlashStream>& pStream, const Mona::PoolBuffers& poolBuffers, FlowManager& band, Mona::UInt64 idWriterRef);
 	virtual ~RTMFPFlow();
 
 	const Mona::UInt64		id;
@@ -62,7 +62,7 @@ private:
 
 	bool							_completed; // Indicates that the flow is consumed
 	Mona::Time						_completeTime; // Time before closing definetly the flow
-	BandWriter&						_band; // RTMFP connection to send messages
+	FlowManager&					_band; // RTMFP session to send messages
 	const Mona::UInt64				_stage; // Current stage (index) of messages received
 	std::shared_ptr<FlashStream>	_pStream; // NetStream handler of the flow
 	Mona::UInt64					_writerRef; // Id of the writer linked to (read into fullduplex header part)

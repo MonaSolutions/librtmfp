@@ -26,37 +26,20 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Logs.h"
 #include "Listener.h"
 #include "RTMFPSession.h"
+#include "RTMFPWriter.h"
 
 using namespace Mona;
 using namespace std;
 
-UInt32 P2PSession::P2PSessionCounter = 2000000;
+// P2P Session first counter, this number is considered sufficient to never been reached by RTMFPSession ID
+UInt32 P2PSession::P2PSessionCounter = 0x03000000; // Notice that Flash uses incremental values from 3 and do a left align
+
 
 P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, 
-		const Mona::SocketAddress& host, bool responder, bool group) : _responder(responder), peerId(id), rawId("\x21\x0f"), hostAddress(host), _parent(parent), _groupBeginSent(false), 
-		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+		const Mona::SocketAddress& host, bool responder, bool group) : peerId(id), rawId("\x21\x0f"), hostAddress(host), _parent(parent), _groupBeginSent(false), 
+		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
-		handleGroupHandshake(groupId, key, peerId);
-	};
-	onWriterClose = [this](shared_ptr<RTMFPWriter>& pWriter) {
-		// We reset the pointers before closure
-		if (pWriter == _pReportWriter)
-			_pReportWriter.reset();
-		else if (pWriter == _pNetStreamWriter)
-			_pNetStreamWriter.reset();
-		else if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0) {
-			auto itWriter = _mapWriter2PeerMedia.find(pWriter->id);
-			if (itWriter != _mapWriter2PeerMedia.end()) {
-				FATAL_ASSERT(itWriter->second->pStreamKey) // implementation error
-				auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
-				if (itStream != _mapStream2PeerMedia.end()) {
-					if (itStream->second->idFlow)
-						_mapFlow2PeerMedia.erase(itStream->second->idFlow);
-					_mapStream2PeerMedia.erase(itStream);
-				}
-				_mapWriter2PeerMedia.erase(itWriter);
-			}
-		}
+		return handleGroupHandshake(groupId, key, peerId);
 	};
 	onGroupMedia = [this](PacketReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		DEBUG("Group Media Subscription message received from ", peerId)
@@ -88,10 +71,10 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 
 			// Save the streamKey
 			string signature("\x00\x47\x52\x11", 4);
-			RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, _mainFlowId); // writer is automatically added to _mapWriter2PeerMedia
-			shared_ptr<PeerMedia>& pPeerMedia = _mapWriter2PeerMedia.find(pWriter->id)->second;
-			itStream = _mapStream2PeerMedia.emplace_hint(itStream, streamKey, pPeerMedia);
-			pPeerMedia->pStreamKey = &itStream->first;
+			shared_ptr<RTMFPWriter> pWriter = createWriter(signature, _mainFlowId);
+			auto itPeerMedia = _mapWriter2PeerMedia.emplace(piecewise_construct, forward_as_tuple(pWriter->id), forward_as_tuple(new PeerMedia(this, pWriter))).first;
+			itStream = _mapStream2PeerMedia.emplace_hint(itStream, streamKey, itPeerMedia->second);
+			itPeerMedia->second->pStreamKey = &itStream->first;
 		} 
 		// else the stream already exists, it is a subscription
 		else if (itStream->second->idFlow) {
@@ -156,7 +139,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSock
 		return res;
 	};
 
-	_sessionId = ++P2PSessionCounter;
+	_sessionId = P2PSessionCounter++;
 	Util::UnformatHex(BIN peerId.data(), peerId.size(), rawId, true);
 
 	_pMainStream->OnGroupMedia::subscribe(onGroupMedia);
@@ -221,18 +204,6 @@ void P2PSession::closeGroup(bool abrupt) {
 	OnPeerClose::raise(peerId);
 }
 
-void P2PSession::subscribe(shared_ptr<RTMFPConnection>& pConnection) {
-	auto it = _knownAddresses.lower_bound(pConnection->address());
-	if (it != _knownAddresses.end() && it->first == pConnection->address()) {
-		WARN("P2P session ", peerId, " is already subscribed to ", pConnection->address().toString())
-		return;
-	}
-	_knownAddresses.emplace_hint(it, pConnection->address(), RTMFP::ADDRESS_PUBLIC); // TODO: Calculate the address type?
-	pConnection->setSession(this);
-
-	FlowManager::subscribe(pConnection);
-}
-
 RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
 
 	if (signature.size()>6 && signature.compare(0, 6, "\x00\x54\x43\x04\xFA\x89", 6) == 0) { // Direct P2P NetStream
@@ -240,7 +211,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
 		DEBUG("Creating new Flow (2) for P2PSession ", name())
 		_pMainStream->addStream(idSession, pStream);
-		return new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *_pConnection, idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this, idWriterRef);
 	}
 	else if (signature.size() > 3 && ((signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Report stream (main flow)
 		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream
@@ -253,31 +224,40 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
 			_mainFlowId = id;
-		return new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *_pConnection, idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this, idWriterRef);
 	}
 	string tmp;
 	ex.set(Exception::PROTOCOL, "Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow");
 	return NULL;
 }
 
-void P2PSession::handleNewWriter(shared_ptr<RTMFPWriter>& pWriter) {
 
-	if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
-		_pReportWriter = pWriter;
-	// Create the PeerMedia instance (we will only add the peer to GroupMedia and _mapFlow2PeerMedia when we receive the answer)
-	else if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)
-		_mapWriter2PeerMedia.emplace(piecewise_construct, forward_as_tuple(pWriter->id), forward_as_tuple(new PeerMedia(this, pWriter)));
-	else if (pWriter->signature.size() > 6 && pWriter->signature.compare(0, 7, "\x00\x54\x43\x04\xFA\x89\x01", 7) == 0)
-		_pNetStreamWriter = pWriter; // TODO: maybe manage many streams
-	else
-		_pLastWriter = pWriter;
+void P2PSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
+	// We reset the pointers before closure
+	if (pWriter == _pReportWriter)
+		_pReportWriter.reset();
+	else if (pWriter == _pNetStreamWriter)
+		_pNetStreamWriter.reset();
+	else if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0) {
+		auto itWriter = _mapWriter2PeerMedia.find(pWriter->id);
+		if (itWriter != _mapWriter2PeerMedia.end()) {
+			FATAL_ASSERT(itWriter->second->pStreamKey) // implementation error
+				auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
+			if (itStream != _mapStream2PeerMedia.end()) {
+				if (itStream->second->idFlow)
+					_mapFlow2PeerMedia.erase(itStream->second->idFlow);
+				_mapStream2PeerMedia.erase(itStream);
+			}
+			_mapWriter2PeerMedia.erase(itWriter);
+		}
+	}
 }
 
 unsigned int P2PSession::callFunction(const char* function, int nbArgs, const char** args) {
 
 	if (!_pNetStreamWriter) {
 		string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
-		new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection); // writer is automatically associated to _pNetStreamWriter
+		_pNetStreamWriter = createWriter(signature, 0);
 	}
 
 	AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation(function, true);
@@ -301,12 +281,12 @@ bool P2PSession::handlePlay(const string& streamName, UInt16 streamId, UInt64 fl
 	// Create the writers, signature is same as flow/stream and flowId must be set to flow id
 	string signature("\x00\x54\x43\x04\xFA\x89", 6);
 	RTMFP::Write7BitValue(signature, streamId);
-	RTMFPWriter* pDataWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, flowId);
-	RTMFPWriter* pAudioWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, flowId);
-	RTMFPWriter* pVideoWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, flowId);
+	shared_ptr<RTMFPWriter> pDataWriter = createWriter(signature, flowId);
+	shared_ptr<RTMFPWriter> pAudioWriter = createWriter(signature, flowId);
+	shared_ptr<RTMFPWriter> pVideoWriter = createWriter(signature, flowId);
 
 	Exception ex;
-	if(!(_pListener = _parent->startListening<FlashListener, FlashWriter*>(ex, streamName, peerId, pDataWriter, pAudioWriter, pVideoWriter))) {
+	if(!(_pListener = _parent->startListening<FlashListener, shared_ptr<RTMFPWriter>&>(ex, streamName, peerId, pDataWriter, pAudioWriter, pVideoWriter))) {
 		// TODO : See if we can send a specific answer
 		WARN(ex.error())
 		return false;
@@ -315,7 +295,7 @@ bool P2PSession::handlePlay(const string& streamName, UInt16 streamId, UInt64 fl
 
 	// Write the stream play request to other end
 	pDataWriter->setCallbackHandle(cbHandler);
-	((FlashWriter*)pDataWriter)->writeRaw().write16(0).write32(2000000 + streamId); // stream begin
+	((shared_ptr<FlashWriter>)pDataWriter)->writeRaw().write16(0).write32(2000000 + streamId); // stream begin
 	pDataWriter->writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + streamName); // for entire playlist
 	pDataWriter->writeAMFStatus("NetStream.Play.Start", "Started playing " + streamName); // for item
 	AMFWriter& amf(pDataWriter->writeAMFData("|RtmpSampleAccess"));
@@ -330,32 +310,27 @@ bool P2PSession::handlePlay(const string& streamName, UInt16 streamId, UInt64 fl
 	return true;
 }
 
-void P2PSession::handleP2PAddressExchange(PacketReader& reader) {
-	ERROR("Cannot handle P2P Address Exchange command on a P2P Connection") // target error (shouldn't happen)
-}
-
-void P2PSession::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
+bool P2PSession::handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id) {
 	if (!_isGroup)
-		return;
+		return false;
 
 	// TODO: Is it a reconnection? => add the peer to group
 	/*if (_isGroupDisconnected && !_parent->addPeer2Group(peerId))
 		return;*/
 
-	if (String::ICompare(groupId, _parent->groupIdHex()) != 0) {
-		ERROR("Unexpected group ID received : ", groupId, "\nExpected : ", _parent->groupIdHex())
-		return;
-	}
-	string idReceived;
-	Util::FormatHex(BIN id.data(), PEER_ID_SIZE, idReceived);
-	if (String::ICompare(idReceived, _parent->peerId()) != 0) {
-		ERROR("Our peer ID was expected but received : ", idReceived)
-		return;
-	}
-
+	if (String::ICompare(groupId, _parent->groupIdHex()) != 0)
+		WARN("Unexpected group ID received : ", groupId, "\nExpected : ", _parent->groupIdHex())
+	else if (memcmp(id.data(), _parent->rawId().data(), PEER_ID_SIZE+2) != 0)
+		WARN("Our peer ID was expected but received : ", Util::FormatHex(BIN id.data()+2, PEER_ID_SIZE, LOG_BUFFER))
+	else if (!_groupExpectedKey || memcmp(key.data(), _groupExpectedKey->data(), Crypto::HMAC::SIZE) != 0)
+		WARN("Unexpected group key received, group connect request ignored")
 	// Send the group connection request to peer if not already sent
-	if (!_groupConnectSent)
-		sendGroupPeerConnect();
+	else {
+		if (!_groupConnectSent)
+			sendGroupPeerConnect();
+		return true;
+	}
+	return false;
 }
 
 void P2PSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
@@ -415,11 +390,11 @@ shared_ptr<PeerMedia>& P2PSession::getPeerMedia(const string& streamKey) {
 	auto itStream = _mapStream2PeerMedia.lower_bound(streamKey);
 	if (itStream == _mapStream2PeerMedia.end() || itStream->first != streamKey) {
 		string signature("\x00\x47\x52\x11", 4);
-		RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, _mainFlowId); // writer is automatically added to _mapWriter2PeerMedia
-		shared_ptr<PeerMedia>& pPeerMedia = _mapWriter2PeerMedia.find(pWriter->id)->second;
-		itStream = _mapStream2PeerMedia.emplace_hint(itStream, streamKey, pPeerMedia);
-		pPeerMedia->pStreamKey = &itStream->first;
-		return pPeerMedia;
+		shared_ptr<RTMFPWriter> pWriter = createWriter(signature, _mainFlowId);
+		auto itPeerMedia = _mapWriter2PeerMedia.emplace(piecewise_construct, forward_as_tuple(pWriter->id), forward_as_tuple(new PeerMedia(this, pWriter))).first;
+		itStream = _mapStream2PeerMedia.emplace_hint(itStream, streamKey, itPeerMedia->second);
+		itPeerMedia->second->pStreamKey = &itStream->first;
+		return itPeerMedia->second;
 	}
 	else 
 		return itStream->second;
@@ -443,16 +418,7 @@ void P2PSession::sendGroupReport(const UInt8* data, UInt32 size) {
 void P2PSession::sendGroupPeerConnect() {
 	if (!_pReportWriter) {
 		string signature("\x00\x47\x52\x1C", 4);
-		new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection);  // writer is automatically associated to _pReportWriter
-	}
-
-	// Compile encrypted key
-	if (!_groupConnectKey) {
-		_groupConnectKey.reset(new Buffer(Crypto::HMAC::SIZE));
-		UInt8 mdp1[Crypto::HMAC::SIZE];
-		Crypto::HMAC hmac;
-		hmac.compute(EVP_sha256(), _pConnection->sharedSecret().data(), _pConnection->sharedSecret().size(), _pConnection->farNonce().data(), _pConnection->farNonce().size(), mdp1);
-		hmac.compute(EVP_sha256(), _parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::HMAC::SIZE, _groupConnectKey->data());
+		_pReportWriter = createWriter(signature, _mainFlowId);
 	}
 
 	DEBUG("Sending group connection request to peer ", peerId)
@@ -465,12 +431,8 @@ void P2PSession::sendGroupPeerConnect() {
 bool P2PSession::createMediaWriter(shared_ptr<RTMFPWriter>& pWriter, UInt64 flowIdRef) {
 
 	string signature("\x00\x47\x52\x12", 4);
-	RTMFPWriter* writer = new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection, flowIdRef);
-	if (_pLastWriter && writer->id == _pLastWriter->id) {
-		pWriter = _pLastWriter;
-		return true;
-	}
-	return false;
+	pWriter = createWriter(signature, flowIdRef);
+	return true;
 }
 
 void P2PSession::closeFlow(UInt64 id) {
@@ -479,15 +441,12 @@ void P2PSession::closeFlow(UInt64 id) {
 		itFlow->second->close();
 }
 
-void P2PSession::onConnection(shared_ptr<RTMFPConnection>& pConnection) {
-
+void P2PSession::onConnection() {
 	INFO("P2P Connection is now connected to ", name(), (_responder)? " (responder)" : " (initiator)")
-
-	status = RTMFP::CONNECTED;
-	_pConnection = pConnection;
 
 	if (_isGroup) {
 		if (_parent->addPeer2Group(peerId)) {
+			buildGroupKey();
 			if (!_responder) // TODO: not sure, I think initiator must do the peer connect first
 				sendGroupPeerConnect();
 		} else
@@ -496,7 +455,7 @@ void P2PSession::onConnection(shared_ptr<RTMFPConnection>& pConnection) {
 	} else if (!_parent->isPublisher()) {
 		INFO("Sending play request to peer for stream '", _streamName, "'")
 		string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
-		new RTMFPWriter(FlashWriter::OPENED, signature, *_pConnection); // writer is automatically associated to _pNetStreamWriter
+		_pNetStreamWriter = createWriter(signature, _mainFlowId);
 		AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation("play", true);
 		amfWriter.amf0 = true; // Important for p2p unicast play
 		amfWriter.writeString(_streamName.c_str(), _streamName.size());
@@ -516,5 +475,57 @@ void P2PSession::askPeer2Disconnect() {
 		_pReportWriter->writeRaw(BIN "\x0C", 1);
 		_pReportWriter->flush(); // not sure
 		_lastTryDisconnect.update();
+	}
+}
+
+bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshake>& pHandshake) {
+	// This is an existing peer, is it already connected?
+	if (status > RTMFP::HANDSHAKE38) {
+		DEBUG("Handshake 38 ignored, session is already in state ", status)
+		return false;
+	}
+	// is it a concurrent connection ?
+	else if (!_responder) {
+		if (_parent->peerId() > peerId) {
+			DEBUG("Concurrent handshake, our ID is bigger than peer, ignoring the handshake 38")
+			return false;
+		}
+		DEBUG("Concurrent handshake, our ID is smaller than peer, continuing") // TODO: check how Flash manage concurrent connection
+		// First remove the other handshake
+		removeHandshake(_pHandshake);
+
+		// Then reset parameters
+		_pHandshake = pHandshake;
+		_pHandshake->pSession = this;
+		_responder = false;
+		_address.set(address);
+	}
+	return true;
+}
+
+UDPSocket& P2PSession::socket(Mona::IPAddress::Family family) { 
+	return _parent->socket(family); 
+}
+
+void P2PSession::removeHandshake(std::shared_ptr<Handshake>& pHandshake) {
+	_parent->removeHandshake(pHandshake);
+}
+
+bool P2PSession::diffieHellman(DiffieHellman* &pDh) {
+	return _parent->diffieHellman(pDh);
+}
+
+void P2PSession::buildGroupKey() {
+
+	// Compile encrypted keys
+	if (!_groupConnectKey) {
+		_groupConnectKey.reset(new Buffer(Crypto::HMAC::SIZE));
+		_groupExpectedKey.reset(new Buffer(Crypto::HMAC::SIZE));
+		UInt8 mdp1[Crypto::HMAC::SIZE];
+		Crypto::HMAC hmac;
+		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _farNonce.data(), _farNonce.size(), mdp1);
+		hmac.compute(EVP_sha256(), _parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::HMAC::SIZE, _groupConnectKey->data());
+		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
+		hmac.compute(EVP_sha256(), _parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::HMAC::SIZE, _groupExpectedKey->data());
 	}
 }

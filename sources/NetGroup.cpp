@@ -203,7 +203,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		return _bestList.find(peerId) != _bestList.end(); // if peer is not in the Best list return False tu close the main flow, otherwise keep connection open
 	};
 
-	GetGroupAddressFromPeerId(STR _conn.rawId(), _myGroupAddress);
+	GetGroupAddressFromPeerId(_conn.rawId().c_str(), _myGroupAddress);
 
 	// If Publisher create a new GroupMedia
 	if (groupParameters->isPublisher) {
@@ -234,6 +234,8 @@ void NetGroup::stopListener() {
 }
 
 void NetGroup::close() {
+
+	DEBUG("Closing group ", idTxt, "...")
 
 	stopListener();
 
@@ -450,7 +452,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	buildBestList(itNode->second.groupAddress, bestList);
 
 	// Calculate the total size to allocate sufficient memory
-	UInt32 sizeTotal = (UInt32)(pPeer->peerAddress().host().size() + _conn.serverAddress().host().size() + 12);
+	UInt32 sizeTotal = (UInt32)(pPeer->address().host().size() + _conn.address().host().size() + 12);
 	Int64 timeNow(Time::Now());
 	for (auto it1 : bestList) {
 		itNode = _mapHeardList.find(it1);
@@ -461,12 +463,12 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 
 	BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
 	writer.write8(0x0A);
-	writer.write8(pPeer->peerAddress().host().size() + 4);
+	writer.write8(pPeer->address().host().size() + 4);
 	writer.write8(0x0D);
-	RTMFP::WriteAddress(writer, pPeer->peerAddress(), RTMFP::ADDRESS_PUBLIC);
-	writer.write8(_conn.serverAddress().host().size() + 4);
+	RTMFP::WriteAddress(writer, pPeer->address(), RTMFP::ADDRESS_PUBLIC);
+	writer.write8(_conn.address().host().size() + 4);
 	writer.write8(0x0A);
-	RTMFP::WriteAddress(writer, _conn.serverAddress(), RTMFP::ADDRESS_REDIRECTION);
+	RTMFP::WriteAddress(writer, _conn.address(), RTMFP::ADDRESS_REDIRECTION);
 	writer.write8(0);
 
 	for (auto it2 : bestList) {
@@ -569,7 +571,7 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 	SocketAddress myAddress, serverAddress;
 	UInt8 addressType;
 	PEER_LIST_ADDRESS_TYPE listAddresses;
-	SocketAddress hostAddress(_conn.serverAddress());
+	SocketAddress hostAddress(_conn.address());
 
 	UInt8 size = packet.read8();
 	while (size == 1) { // TODO: check what this means
@@ -626,7 +628,7 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 		if (size >= 0x08 && newPeerId != _conn.peerId() && _mapHeardList.find(newPeerId) == _mapHeardList.end() && *packet.current() == 0x0A) {
 
 			BinaryReader addressReader(packet.current() + 1, size - 1); // +1 to ignore 0A
-			hostAddress = _conn.serverAddress(); // default host is the same as ours
+			hostAddress = _conn.address(); // default host is the same as ours
 			listAddresses.clear();
 			if (RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress)) {
 				newPeers = true;

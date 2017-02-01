@@ -24,6 +24,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "FlowManager.h"
 #include "Mona/StopWatch.h"
 #include "PeerMedia.h"
+#include "RTMFP.h"
 
 class RTMFPSession;
 struct RTMFPGroupConfig;
@@ -64,8 +65,6 @@ public:
 	// return 0 if it fails, 1 otherwise
 	unsigned int					callFunction(const char* function, int nbArgs, const char** args);
 
-	const Mona::SocketAddress&		peerAddress() { FATAL_ASSERT(_pConnection) return _pConnection->address(); }
-
 	// Create a flow for special signatures (NetGroup)
 	virtual RTMFPFlow*				createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature, Mona::UInt64 idWriterRef);
 
@@ -83,12 +82,16 @@ public:
 
 	// Return the known addresses of the peer (for RTMFPSession)
 	const PEER_LIST_ADDRESS_TYPE&	addresses() { return _knownAddresses; }
+	
+	// Return the socket object of the session
+	virtual Mona::UDPSocket&		socket(Mona::IPAddress::Family family);
 
-	// Subscribe to all events of the connection and add it to the list of known addresses
-	virtual void					subscribe(std::shared_ptr<RTMFPConnection>& pConnection);
+	std::shared_ptr<Handshake>&		handshake() { return _pHandshake; }
 
-	// Called by parent when we are connected
-	void							onConnection(std::shared_ptr<RTMFPConnection>& pConnection);
+	void							setAddress(const Mona::SocketAddress& address) { _address = address; }
+
+	// Called when receiving handshake 38 to decide if answering
+	bool							onHandshake38(const Mona::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake);
 
 	/*** NetGroup functions ***/
 
@@ -115,6 +118,12 @@ public:
 
 	// Manage the flows
 	virtual void				manage() { FlowManager::manage(); }
+	
+	// Remove the handshake properly
+	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
+
+	// Return the diffie hellman object (related to main session)
+	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh);
 
 	/*** Public members ***/
 
@@ -127,34 +136,38 @@ public:
 	bool							groupReportInitiator; // True if we are the initiator of last Group Report (to avoid endless exchanges)
 
 protected:
+
+	// Handle a writer closed (to release shared pointers)
+	virtual void					handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter);
+
 	// Handle play request (only for P2PSession)
 	virtual bool					handlePlay(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler);
 
 	// Handle a Writer close message (type 5E)
 	virtual void					handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
 
-	// Handle a P2P address exchange message (Only for RTMFPConnection)
-	virtual void					handleP2PAddressExchange(Mona::PacketReader& reader);
-	
-	// Handle a new writer creation
-	virtual void					handleNewWriter(std::shared_ptr<RTMFPWriter>& pWriter);
-
 	// Handle data available or not event (asynchronous read only)
 	virtual void					handleDataAvailable(bool isAvailable);
+
+	// Called when we are connected to the peer/server
+	virtual void					onConnection();
 
 private:
 
 	// Handle a NetGroup connection message from a peer connected (only for P2PSession)
-	void							handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
+	bool							handleGroupHandshake(const std::string& groupId, const std::string& key, const std::string& id);
+
+	// Build the group connection key (after connection suceed)
+	void							buildGroupKey();
 
 	static Mona::UInt32										P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 	RTMFPSession*											_parent; // RTMFPConnection related to
 	PEER_LIST_ADDRESS_TYPE									_knownAddresses; // list of known addresses of the peer/server
 	std::string												_streamName; // playing stream name
-	bool													_responder; // is responder?
 
 	// Group members
 	std::shared_ptr<Mona::Buffer>							_groupConnectKey; // Encrypted key used to connect to the peer
+	std::shared_ptr<Mona::Buffer>							_groupExpectedKey; // Encrypted key expected from far peer
 	bool													_groupConnectSent; // True if group connection request has been sent to peer
 	bool													_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	bool													_isGroup; // True if this peer connection it part of a NetGroup
