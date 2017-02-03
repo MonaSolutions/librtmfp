@@ -33,9 +33,6 @@ extern "C" {
 
 static std::shared_ptr<Invoker>		GlobalInvoker; // manage threads, sockets and connection
 
-static int		(*GlobalInterruptCb)(void*) = NULL;
-static void*	GlobalInterruptArg = NULL;
-
 void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
 	if (!config) {
 		ERROR("config parameter must be not null")
@@ -78,7 +75,6 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 		return 0;
 	}
 
-
 	// Get hostname, port and publication name
 	string host, publication, query;
 	Util::UnpackUrl(url, host, publication, query);
@@ -95,7 +91,7 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	if (parameters->isBlocking) {
 		while (!pConn->connectReady) {
 			pConn->connectSignal.wait(200);
-			if (GlobalInterruptCb(GlobalInterruptArg) == 1) {
+			if (GlobalInvoker->isInterrupted()) {
 				GlobalInvoker->removeConnection(index);
 				return 0;
 			}
@@ -115,7 +111,7 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 	if (blocking) {
 		while (!pConn->p2pPlayReady) {
 			pConn->p2pPlaySignal.wait(200);
-			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
+			if (GlobalInvoker->isInterrupted())
 				return 0;
 		}
 	}
@@ -136,8 +132,8 @@ int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFP
 	if (parameters->isBlocking && parameters->isPublisher) {
 		while (!pConn->publishReady) {
 			pConn->publishSignal.wait(200);
-			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
-				return 0;
+			if (GlobalInvoker->isInterrupted())
+				return -1;
 		}
 	}
 
@@ -168,8 +164,8 @@ int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned sh
 	if (blocking) {
 		while (!pConn->publishReady) {
 			pConn->publishSignal.wait(200);
-			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
-				return 0;
+			if (GlobalInvoker->isInterrupted())
+				return -1;
 		}
 	}
 
@@ -188,8 +184,8 @@ int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned
 	if (blocking) {
 		while (!pConn->p2pPublishReady) {
 			pConn->p2pPublishSignal.wait(200);
-			if (GlobalInterruptCb(GlobalInterruptArg) == 1)
-				return 0;
+			if (GlobalInvoker->isInterrupted())
+				return -1;
 		}
 	}
 
@@ -230,7 +226,7 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 	if (pConn) {
 		UInt32 total = 0;
 		int nbRead = 0;
-		while (nbRead==0 && GlobalInterruptCb(GlobalInterruptArg) != 1) {
+		while (nbRead==0 && !GlobalInvoker->isInterrupted()) {
 			if (!pConn->read(peerId, (UInt8*)buf, size, nbRead)) {
 				WARN("Connection is not established, cannot read data")
 				return -1;
@@ -245,8 +241,8 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 				while (!pConn->dataAvailable) {
 					DEBUG("Nothing available, sleeping...")
 					pConn->readSignal.wait(100);
-					if (GlobalInterruptCb(GlobalInterruptArg) == 1)
-						return 0;
+					if (GlobalInvoker->isInterrupted())
+						return -1;
 				}
 			}
 		}
@@ -283,7 +279,7 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (!pConn)
-		return 0;
+		return -1;
 	
 	return pConn->callFunction(function, nbArgs, args, peerId);
 }
@@ -306,8 +302,9 @@ void RTMFP_DumpSetCallback(void(*onDump)(const char*, const void*, unsigned int)
 }
 
 void RTMFP_InterruptSetCallback(int(*interruptCb)(void*), void* argument) {
-	GlobalInterruptCb = interruptCb;
-	GlobalInterruptArg = argument;
+	if (!GlobalInvoker)
+		ERROR("RTMFP_Init() has not been called, please call it first")
+	GlobalInvoker->setInterruptCallback(interruptCb, argument);
 }
 
 

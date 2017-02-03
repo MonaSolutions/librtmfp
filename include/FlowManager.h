@@ -45,7 +45,7 @@ class FlowManager : public BandWriter {
 public:
 	FlowManager(bool responder, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
-	~FlowManager();
+	virtual ~FlowManager();
 
 	enum CommandType {
 		NETSTREAM_PLAY = 1,

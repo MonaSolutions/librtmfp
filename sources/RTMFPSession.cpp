@@ -98,43 +98,7 @@ RTMFPSession::RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnSta
 RTMFPSession::~RTMFPSession() {
 	DEBUG("Deletion of RTMFPSession ", name())
 
-	{
-		lock_guard<std::mutex> lock(_mutexConnections);
-		// Close the connections
-		close(true);
-
-		// Close the NetGroup
-		if (_group)
-			_group->close();
-
-		// Close peers
-		for (auto it : _mapPeersById)
-			it.second->close(true);
-		_mapPeersById.clear();
-		_mapSessions.clear();
-
-		// Remove all waiting handshakes
-		_handshaker.close();
-	}
-
-	if (_pMainStream) {
-		_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
-		_pMainStream->OnNewPeer::unsubscribe(onNewPeer);
-	}
-
-	// Unsubscribing to socket : we don't want to receive packets anymore
-	if (_pSocket) {
-		TRACE("Closing socket IPV4...")
-		_pSocket->OnPacket::unsubscribe(onPacket);
-		_pSocket->OnError::unsubscribe(onError);
-		_pSocket->close();
-	}
-	if (_pSocketIPV6) {
-		TRACE("Closing socket IPV6...")
-		_pSocketIPV6->OnPacket::unsubscribe(onPacket);
-		_pSocketIPV6->OnError::unsubscribe(onError);
-		_pSocketIPV6->close();
-	}
+	close(true);
 }
 
 void RTMFPSession::close(bool abrupt) {
@@ -152,7 +116,55 @@ void RTMFPSession::close(bool abrupt) {
 		_pPublisher->stop();
 	_pPublisher.reset();
 
-	FlowManager::close(abrupt);
+	{
+		lock_guard<std::mutex> lock(_mutexConnections);
+		// Close the session & writers
+		_pGroupWriter.reset();
+		_pMainWriter.reset();
+		FlowManager::close(abrupt);
+
+		if (abrupt) {
+			// Close the NetGroup
+			if (_group)
+				_group->close();
+
+			// Close peers
+			for (auto it : _mapPeersById)
+				it.second->close(true);
+			_mapPeersById.clear();
+			_mapSessions.clear();
+
+			// Remove all waiting handshakes
+			_handshaker.close();
+
+			// Set all the signals to exit properly
+			connectSignal.set();
+			p2pPublishSignal.set();
+			p2pPlaySignal.set();
+			publishSignal.set();
+			readSignal.set();
+		}
+	}
+
+	// Close the sockets if we are closing abruptly
+	if (abrupt) {
+
+		if (_pMainStream) {
+			_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
+			_pMainStream->OnNewPeer::unsubscribe(onNewPeer);
+		}
+		// Unsubscribing to socket : we don't want to receive packets anymore
+		if (_pSocket) {
+			_pSocket->OnPacket::unsubscribe(onPacket);
+			_pSocket->OnError::unsubscribe(onError);
+			_pSocket.reset();
+		}
+		if (_pSocketIPV6) {
+			_pSocketIPV6->OnPacket::unsubscribe(onPacket);
+			_pSocketIPV6->OnError::unsubscribe(onError);
+			_pSocketIPV6.reset();
+		}
+	}
 }
 
 RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
@@ -671,7 +683,7 @@ bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshak
 }
 
 void RTMFPSession::onConnection() {
-	INFO("Connection is now connected to ", name())
+	INFO("RTMFPSession is now connected to ", name())
 
 	string signature("\x00\x54\x43\x04\x00", 5);
 	_pMainWriter = createWriter(signature, 0);

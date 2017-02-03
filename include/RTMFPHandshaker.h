@@ -61,7 +61,7 @@ public:
 
 	RTMFPHandshaker(RTMFPSession* pSession);
 
-	~RTMFPHandshaker();
+	virtual ~RTMFPHandshaker();
 
 	// Return the name of the session
 	virtual const std::string&			name() { return _name; }

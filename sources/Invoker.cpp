@@ -27,7 +27,7 @@ using namespace std;
 
 /** ConnectionsManager **/
 
-ConnectionsManager::ConnectionsManager(Invoker& invoker):_invoker(invoker),Task(invoker),Startable("ServerManager") {
+ConnectionsManager::ConnectionsManager(Invoker& invoker) :_invoker(invoker), Task(invoker), Startable("ServerManager") {
 }
 
 void ConnectionsManager::run(Exception& ex) {
@@ -40,15 +40,22 @@ void ConnectionsManager::handle(Exception& ex) { _invoker.manage(); }
 
 /** Invoker **/
 
-Invoker::Invoker(UInt16 threads) : Startable("Invoker"), poolThreads(threads), sockets(*this, poolBuffers, poolThreads), _manager(*this), _lastIndex(0), _init(false) {
-	_globalLogger.reset(new RTMFPLogger());
-	Logs::SetLogger(*_globalLogger);
+Invoker::Invoker(UInt16 threads) : Startable("Invoker"), _interruptCb(NULL), _interruptArg(NULL), poolThreads(threads), sockets(*this, poolBuffers, poolThreads), _manager(*this), _lastIndex(0) {
+	_logger.reset(new RTMFPLogger());
+	Logs::SetLogger(*_logger);
 }
 
 Invoker::~Invoker() {
-	Startable::stop();
 
+	TRACE("Closing global invoker...")
+
+	// terminate the tasks (forced to do immediatly, because no more "giveHandle" is called)
+	TaskHandler::stop();
+
+	// Destroy the connections
 	terminate();
+
+	Startable::stop();
 }
 
 // Start the socket manager if not started
@@ -71,7 +78,7 @@ bool Invoker::start() {
 
 unsigned int Invoker::addConnection(std::shared_ptr<RTMFPSession>& pConn) {
 	lock_guard<recursive_mutex>	lock(_mutexConnections);
-	_init = true;
+
 	_mapConnections.emplace(++_lastIndex, pConn);
 	return _lastIndex; // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
 }
@@ -80,7 +87,7 @@ bool	Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& p
 	lock_guard<recursive_mutex>	lock(_mutexConnections);
 	auto it = _mapConnections.find(index);
 	if(it == _mapConnections.end()) {
-		ERROR("There is no connection at specified index ", index)
+		WARN("There is no connection at specified index ", index)
 		return false;
 	}
 
@@ -95,8 +102,13 @@ void Invoker::removeConnection(unsigned int index) {
 		INFO("Connection at index ", index, " as already been removed")
 		return;
 	}
+	removeConnection(it);
+}
 
-	INFO("Deleting connection ", index, "...")
+void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it) {
+
+	INFO("Deleting connection ", it->first, "...")
+	it->second->close(true); // we must close here because there can be shared pointers
 	_mapConnections.erase(it);
 }
 
@@ -104,7 +116,9 @@ void Invoker::terminate() {
 	lock_guard<recursive_mutex>	lock(_mutexConnections);
 
 	Logs::SetDump("");
-	_mapConnections.clear();
+	auto it = _mapConnections.begin();
+	while (it != _mapConnections.end())
+		removeConnection(it++);
 }
 
 unsigned int Invoker::empty() {
@@ -126,9 +140,6 @@ void Invoker::manage() {
 		}
 		it++;
 	}
-
-	if (_init && _mapConnections.empty())
-		terminate();
 }
 
 void Invoker::run(Exception& exc) {
@@ -156,9 +167,18 @@ void Invoker::run(Exception& exc) {
 }
 
 void Invoker::setLogCallback(void(*onLog)(unsigned int, int, const char*, long, const char*)){
-	_globalLogger->setLogCallback(onLog);
+	_logger->setLogCallback(onLog);
 }
 
 void Invoker::setDumpCallback(void(*onDump)(const char*, const void*, unsigned int)) { 
-	_globalLogger->setDumpCallback(onDump);
+	_logger->setDumpCallback(onDump);
+}
+
+void Invoker::setInterruptCallback(int(*interruptCb)(void*), void* argument) {
+	_interruptCb = interruptCb;
+	_interruptArg = argument;
+}
+
+bool Invoker::isInterrupted() {
+	return !Startable::running() || (_interruptCb && _interruptCb(_interruptArg) == 1);
 }

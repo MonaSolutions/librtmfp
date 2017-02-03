@@ -442,7 +442,7 @@ void P2PSession::closeFlow(UInt64 id) {
 }
 
 void P2PSession::onConnection() {
-	INFO("P2P Connection is now connected to ", name(), (_responder)? " (responder)" : " (initiator)")
+	INFO("P2PSession is now connected to ", name(), (_responder)? " (responder)" : " (initiator)")
 
 	if (_isGroup) {
 		if (_parent->addPeer2Group(peerId)) {

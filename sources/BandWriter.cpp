@@ -30,6 +30,11 @@ BandWriter::BandWriter() : _farId(0), _timeReceived(0), _pThread(NULL),
 
 }
 
+BandWriter::~BandWriter() {
+	_pThread = NULL;
+	_pSender.reset();
+}
+
 UInt8* BandWriter::packet() {
 	if (!_pSender)
 		_pSender.reset(new RTMFPSender(poolBuffers(), _pEncoder));

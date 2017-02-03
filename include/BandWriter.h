@@ -35,6 +35,7 @@ It is implemented by FlowManager & RTMFPHandshaker
 class BandWriter : public virtual Mona::Object {
 public:
 	BandWriter();
+	virtual ~BandWriter();
 
 	// Return the pool buffers object
 	virtual const Mona::PoolBuffers&		poolBuffers()=0;

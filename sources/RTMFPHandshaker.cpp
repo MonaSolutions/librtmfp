@@ -30,6 +30,7 @@ RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), 
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
+	close();
 }
 
 void RTMFPHandshaker::close() {

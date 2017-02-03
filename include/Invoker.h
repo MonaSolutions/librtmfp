@@ -56,28 +56,35 @@ public:
 
 	void			removeConnection(unsigned int index);
 
+	bool			isInterrupted();
+
 	unsigned int	empty();
 
 	void			terminate();
 
-	/*** Log functions ***/
+	/*** Callback functions ***/
 	void			setLogCallback(void(*onLog)(unsigned int, int, const char*, long, const char*));
 
 	void			setDumpCallback(void(*onDump)(const char*, const void*, unsigned int));
 
+	void			setInterruptCallback(int(*interruptCb)(void*), void* argument);
+
 	const Mona::SocketManager				sockets;
+	const Mona::PoolBuffers					poolBuffers; // Pool of buffers (important: need to be declared before poolThreads for correct destruction)
 	Mona::PoolThreads						poolThreads;
-	const Mona::PoolBuffers					poolBuffers;
 private:
 	virtual void		manage();
 	void				requestHandle() { wakeUp(); }
 	void				run(Mona::Exception& exc);
 
-	bool											_init; // True if at least a connection has been added
+	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it);
+
 	ConnectionsManager								_manager;
 	int												_lastIndex; // last index of connection
 
 	std::recursive_mutex							_mutexConnections;
 	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;
-	std::unique_ptr<RTMFPLogger>					_globalLogger;
+	std::unique_ptr<RTMFPLogger>					_logger; // global logger for librtmfp
+	int												(*_interruptCb)(void*); // global interrupt callback function (NULL by default)
+	void*											_interruptArg; // global interrup callback argument for interrupt function
 };

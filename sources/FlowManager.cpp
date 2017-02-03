@@ -232,6 +232,8 @@ void FlowManager::close(bool abrupt) {
 		if (!abrupt)
 			it.second->close(abrupt);
 	}
+	if (abrupt)
+		_flowWriters.clear();
 
 	if (abrupt)
 		status = RTMFP::FAILED;
