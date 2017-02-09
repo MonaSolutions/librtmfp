@@ -53,7 +53,17 @@ Invoker::~Invoker() {
 	TaskHandler::stop();
 
 	// Destroy the connections
-	terminate();
+	{
+		lock_guard<mutex>	lock(_mutexConnections);
+		{
+			lock_guard<mutex>	lock(_mutexSocket);
+			Logs::SetDump(""); // we must set Dump to null because static dump object can be destroyed
+		}
+
+		auto it = _mapConnections.begin();
+		while (it != _mapConnections.end())
+			removeConnection(it++);
+	}
 
 	Startable::stop();
 }
@@ -77,14 +87,14 @@ bool Invoker::start() {
 }
 
 unsigned int Invoker::addConnection(std::shared_ptr<RTMFPSession>& pConn) {
-	lock_guard<recursive_mutex>	lock(_mutexConnections);
+	lock_guard<mutex>	lock(_mutexConnections);
 
 	_mapConnections.emplace(++_lastIndex, pConn);
 	return _lastIndex; // Index of a connection is the position in the vector + 1 (0 is reserved for errors)
 }
 
 bool	Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& pConn) {
-	lock_guard<recursive_mutex>	lock(_mutexConnections);
+	lock_guard<mutex>	lock(_mutexConnections);
 	auto it = _mapConnections.find(index);
 	if(it == _mapConnections.end()) {
 		WARN("There is no connection at specified index ", index)
@@ -96,7 +106,7 @@ bool	Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& p
 }
 
 void Invoker::removeConnection(unsigned int index) {
-	lock_guard<recursive_mutex>	lock(_mutexConnections);
+	lock_guard<mutex>	lock(_mutexConnections);
 	auto it = _mapConnections.find(index);
 	if(it == _mapConnections.end()) {
 		INFO("Connection at index ", index, " as already been removed")
@@ -108,31 +118,23 @@ void Invoker::removeConnection(unsigned int index) {
 void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it) {
 
 	INFO("Deleting connection ", it->first, "...")
-	it->second->close(true); // we must close here because there can be shared pointers
+	lock_guard<mutex>	lockSocket(_mutexSocket);
+	it->second->closeSession(); // we must close here because there can be shared pointers
 	_mapConnections.erase(it);
 }
 
-void Invoker::terminate() {
-	lock_guard<recursive_mutex>	lock(_mutexConnections);
-
-	Logs::SetDump("");
-	auto it = _mapConnections.begin();
-	while (it != _mapConnections.end())
-		removeConnection(it++);
-}
-
 unsigned int Invoker::empty() {
-	lock_guard<recursive_mutex>	lock(_mutexConnections);
+	lock_guard<mutex>	lock(_mutexConnections);
 	return _mapConnections.empty();
 }
 
 void Invoker::manage() {
-	lock_guard<recursive_mutex>	lock(_mutexConnections);
+	lock_guard<mutex>	lock(_mutexConnections);
 	auto it = _mapConnections.begin();
 	while(it != _mapConnections.end()) {
 		it->second->manage();
 
-		if (it->second->closed()) {
+		if (it->second->failed()) {
 			int id = it->first;
 			it++;
 			removeConnection(id);
@@ -149,8 +151,10 @@ void Invoker::run(Exception& exc) {
 		ex=exWarn;
 	else if (exWarn)
 		WARN(exWarn.error());
-	while (!ex && sleep() != STOP)
+	while (!ex && sleep() != STOP) {
+		lock_guard<mutex> lock(_mutexSocket);
 		giveHandle(ex);
+	}
 
 	// terminate the tasks (forced to do immediatly, because no more "giveHandle" is called)
 	TaskHandler::stop();

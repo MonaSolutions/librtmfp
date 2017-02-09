@@ -60,7 +60,7 @@ public:
 	virtual void							process(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer)=0;
 
 protected:
-	bool									decode(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer);
+	bool									decode(Mona::Exception& ex, const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer);
 
 	std::shared_ptr<RTMFPSender>			_pSender; // Current sender object
 

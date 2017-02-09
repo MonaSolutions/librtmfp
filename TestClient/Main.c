@@ -37,7 +37,7 @@ static enum TestOption {
 	ASYNC_READ,
 	WRITE,
 	P2P_WRITE
-} _option = 0;
+} _option = ASYNC_READ;
 
 static unsigned int		nbPeers = 0;
 static char*			listPeers[255];
@@ -273,7 +273,7 @@ int main(int argc,char* argv[]) {
 	unsigned int		indexPeer = 0;
 	const char*			peerId = NULL;
 	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
-	const char			*logFile = "log.0", *mediaFile = "out.flv";
+	const char			*logFile = "log.0", *mediaFile = NULL;
 	RTMFPConfig			config;
 	RTMFPGroupConfig	groupConfig;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
@@ -286,9 +286,9 @@ int main(int argc,char* argv[]) {
 	config.isBlocking = groupConfig.isBlocking = 1;
 
 	for(i; i<argc; i++) {
-		if (stricmp(argv[i], "--syncread") == 0) // default
+		if (stricmp(argv[i], "--syncread") == 0)
 			_option = SYNC_READ;
-		else if (stricmp(argv[i], "--asyncread") == 0) {
+		else if (stricmp(argv[i], "--asyncread") == 0) {  // default
 			_option = ASYNC_READ;
 			config.pOnMedia = NULL;
 		} else if (stricmp(argv[i], "--write") == 0) {
@@ -364,7 +364,7 @@ int main(int argc,char* argv[]) {
 			}
 
 			// Open IO files and start the streaming
-			if (initFiles(mediaFile)) {
+			if (!mediaFile || initFiles(mediaFile)) {
 
 				if (groupConfig.netGroup)
 					RTMFP_Connect2Group(context, publication, &groupConfig);

@@ -37,14 +37,14 @@ public:
 
 	~RTMFPSession();
 
+	// Close the session (safe-threaded)
+	void closeSession();
+
 	// Return address of the server (cleared if not connected)
 	const Mona::SocketAddress&			address() { return _address; }
 
 	// Return the socket object of the session
 	virtual Mona::UDPSocket&			socket(Mona::IPAddress::Family family) { return (family == Mona::IPAddress::IPv4) ? *_pSocket : *_pSocketIPV6; }
-
-	// Close the conection properly or abruptly if parameter is true
-	virtual void close(bool abrupt);
 
 	// Connect to the specified url, return true if the command succeed
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
@@ -136,10 +136,13 @@ public:
 	bool							onNewPeerId(const Mona::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake, Mona::UInt32 farId, const std::string& rawId, const std::string& peerId);
 
 	// Remove the handshake properly
-	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake) { _handshaker.removeHandshake(pHandshake); }
+	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
 
 	// Return the diffie hellman object (related to main session)
 	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh) { return _handshaker.diffieHellman(pDh); }
+
+	// Close the session properly or abruptly if parameter is true
+	virtual void					close(bool abrupt);
 
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal					connectSignal; // signal to wait connection
@@ -171,7 +174,7 @@ protected:
 	void handleP2PAddressExchange(Mona::PacketReader& reader);
 
 	// On NetConnection.Connect.Success callback
-	virtual void onConnect();
+	virtual void onNetConnectionSuccess();
 
 	// On NetStream.Publish.Start (only for NetConnection)
 	virtual void onPublished(Mona::UInt16 streamId);

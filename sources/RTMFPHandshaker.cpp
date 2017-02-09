@@ -40,8 +40,11 @@ void RTMFPHandshaker::close() {
 }
 
 void RTMFPHandshaker::process(const SocketAddress& address, PoolBuffer& pBuffer) {
-	if (!BandWriter::decode(address, pBuffer))
+	Exception ex;
+	if (!BandWriter::decode(ex, address, pBuffer)) {
+		WARN(ex.error())
 		return;
+	}
 
 	BinaryReader reader(pBuffer.data(), pBuffer->size());
 	reader.next(2); // TODO: CRC, don't share this part in onPacket() 
@@ -119,33 +122,68 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 }
 
 void RTMFPHandshaker::manage() {
+	// TODO: maybe add a timer to not loop every call of manage()
 
 	// Ask server to send p2p addresses
 	auto itHandshake = _mapTags.begin();
 	while (itHandshake != _mapTags.end()) {
 		shared_ptr<Handshake> pHandshake = itHandshake->second;
-		if (pHandshake->pSession && !pHandshake->pCookie && (!pHandshake->attempt || pHandshake->lastAttempt.isElapsed(pHandshake->attempt * 1500))) {
-			if (pHandshake->attempt++ == 11) {
-				DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 attempt without answer, closing...")
-				_mapTags.erase(itHandshake++);
-				continue;
-			}
+		switch (pHandshake->status) {
+		case RTMFP::STOPPED:
+		case RTMFP::HANDSHAKE30:
+			
+			if (pHandshake->pSession && (!pHandshake->attempt || pHandshake->lastAttempt.isElapsed(pHandshake->attempt * 1500))) {
+				if (pHandshake->attempt++ == 11) {
+					DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 attempt without answer, closing...")
+					removeHandshake((itHandshake++)->second);
+					continue;
+				}
 
-			DEBUG("Sending new handshake 30 to server (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
-			if (pHandshake->hostAddress) {
-				_address.set(pHandshake->hostAddress);
-				sendHandshake30(pHandshake->pSession->epd(), itHandshake->first);
-			}
-			// If we are not in p2p mode we must send to all known addresses
-			if (!pHandshake->isP2P) {
-				for (auto itAddresses : pHandshake->listAddresses) {
-					_address.set(itAddresses.first);
+				DEBUG("Sending new handshake 30 to server (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
+				if (pHandshake->hostAddress) {
+					_address.set(pHandshake->hostAddress);
 					sendHandshake30(pHandshake->pSession->epd(), itHandshake->first);
 				}
+				// If we are not in p2p mode we must send to all known addresses
+				if (!pHandshake->isP2P) {
+					for (auto itAddresses : pHandshake->listAddresses) {
+						_address.set(itAddresses.first);
+						sendHandshake30(pHandshake->pSession->epd(), itHandshake->first);
+					}
+				}
+				if (pHandshake->status == RTMFP::STOPPED)
+					pHandshake->status = RTMFP::HANDSHAKE30;
+				pHandshake->lastAttempt.update();
 			}
-			pHandshake->lastAttempt.update();
+			break;
+		case RTMFP::HANDSHAKE38:
+
+			if (pHandshake->pSession && pHandshake->lastAttempt.isElapsed(pHandshake->attempt * 1500)) {
+				if (pHandshake->attempt++ == 11) {
+					DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 attempt without answer, closing...")
+					removeHandshake((itHandshake++)->second);
+					continue;
+				}
+
+				DEBUG("Sending new handshake 38 to ", pHandshake->pSession->address().toString(), " (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
+				_address.set(pHandshake->pSession->address());
+				sendHandshake38(pHandshake, pHandshake->cookieReceived);
+				pHandshake->lastAttempt.update();
+			}
+			break;
+		default:
+			break;
 		}
 		++itHandshake;
+	}
+
+	// Release cookies after 95s
+	auto itCookie = _mapCookies.begin(); 
+	while (itCookie != _mapCookies.end()) {
+		if (itCookie->second->cookieCreation.isElapsed(95000))
+			removeHandshake((itCookie++)->second);
+		else
+			++itCookie;
 	}
 }
 
@@ -195,6 +233,7 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& 
 		TRACE("Creating cookie ", Util::FormatHex(BIN cookie.data(), cookie.size(), LOG_BUFFER))
 		auto itCookie = _mapCookies.emplace(piecewise_construct, forward_as_tuple(cookie), forward_as_tuple(pHandshake)).first;
 		pHandshake->pCookie = &itCookie->first;
+		pHandshake->cookieCreation.update();
 	}	
 
 	// Write Response
@@ -219,6 +258,7 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& 
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x70).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	flush(0x0B, writer.size());
+	pHandshake->status = RTMFP::HANDSHAKE70;
 }
 
 void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
@@ -241,6 +281,7 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 		WARN("Unexpected handshake 70 received on responder session")
 		return;
 	}
+	DEBUG("Peer ", pHandshake->pSession->name(), " has answered, handshake continues")
 
 	// Normal NetConnection
 	UInt8 cookieSize = reader.read8();
@@ -269,8 +310,14 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 	}
 
 	// Handshake 70 accepted? => We send the handshake 38
-	if (pHandshake->pSession->onPeerHandshake70(_address, pHandshake->farKey, cookie))
-		sendHandshake38(pHandshake, cookie);
+	if (pHandshake->pSession->onPeerHandshake70(_address, pHandshake->farKey, cookie)) {
+		pHandshake->cookieReceived.assign(cookie.data(), cookie.size());
+		sendHandshake38(pHandshake, pHandshake->cookieReceived);
+		pHandshake->attempt = 1;
+		pHandshake->lastAttempt.update();
+		pHandshake->status = RTMFP::HANDSHAKE38;
+		pHandshake->pSession->status = RTMFP::HANDSHAKE38;
+	}
 }
 
 void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, const string& cookie) {
@@ -301,18 +348,13 @@ void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, c
 	// Build and save Peer ID if it is RTMFPSession
 	pHandshake->pSession->buildPeerID(writer.data() + idPos, writer.size() - idPos);
 
-	BinaryWriter nonceWriter(pHandshake->nonce.data(), 0x4C);
-	nonceWriter.write(EXPAND("\x02\x1D\x02\x41\x0E"));
-	Util::Random(pHandshake->nonce.data() + 5, 64); // nonce 64 random bytes
-	nonceWriter.next(64);
-	nonceWriter.write(EXPAND("\x03\x1A\x02\x0A\x02\x1E\x02"));
-	writer.write7BitValue(pHandshake->nonce.size());
-	writer.write(pHandshake->nonce);
+	Buffer& nonce = pHandshake->pSession->getNonce();
+	writer.write7BitValue(nonce.size());
+	writer.write(nonce);
 	writer.write8(0x58);
 
 	BinaryWriter(writer.data() + RTMFP_HEADER_SIZE, 3).write8(0x38).write16(writer.size() - RTMFP_HEADER_SIZE - 3);
 	flush(0x0B, writer.size());
-	pHandshake->pSession->status = RTMFP::HANDSHAKE38;
 }
 
 
@@ -384,11 +426,8 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 
 	writer.write32(pSession->sessionId());
 	writer.write8(0x49); // nonce is 73 bytes long
-	pHandshake->nonce.resize(0x49, false);
-	BinaryWriter nonceWriter(pHandshake->nonce.data(), 0x49);
-	nonceWriter.write(EXPAND("\x03\x1A\x00\x00\x02\x1E\x00\x41\x0E"));
-	Util::Random(pHandshake->nonce.data() + 9, 0x40); // nonce 64 random bytes
-	writer.write(pHandshake->nonce.data(), pHandshake->nonce.size());
+	Buffer& nonce = pSession->getNonce();
+	writer.write(nonce.data(), nonce.size());
 	writer.write8(0x58);
 
 	// Important: send this before computing encoder key because we need the default encoder
@@ -397,8 +436,12 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	flush(0x0B, writer.size());
 	_farId = 0; // reset far Id to default
 
-	// Compute P2P keys for decryption/encryption
-	pSession->computeKeys(farId);
+	// Compute P2P keys for decryption/encryption if not already computed
+	if (pSession->status < RTMFP::HANDSHAKE78) {
+		pSession->computeKeys(farId);
+		pSession->status = RTMFP::HANDSHAKE78;
+	}
+	pHandshake->status = RTMFP::HANDSHAKE78;
 }
 
 void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
@@ -473,7 +516,14 @@ const PoolBuffers&	RTMFPHandshaker::poolBuffers() {
 }
 
 // Remove the handshake properly
-void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake>& pHandshake) {
+void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake> pHandshake) {
+	TRACE("Deleting ", pHandshake->isP2P ? "P2P" : "", " handshake to ", pHandshake->pSession ? pHandshake->pSession->name() : "unknown session")
+
+	// Set the session to failed state
+	if (pHandshake->pSession) {
+		pHandshake->pSession->close(true);
+		pHandshake->pSession = NULL;
+	}
 
 	// We can now erase the handshake object
 	if (pHandshake->pCookie)
@@ -481,5 +531,4 @@ void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake>& pHandshake) {
 	if (pHandshake->pTag)
 		_mapTags.erase(*pHandshake->pTag);
 	pHandshake->pCookie = pHandshake->pTag = NULL;
-	pHandshake.reset();
 }

@@ -175,7 +175,7 @@ void P2PSession::close(bool abrupt) {
 
 	_pLastWriter.reset();
 
-	closeGroup(true);
+	closeGroup(abrupt);
 
 	if (_pListener) {
 		_parent->stopListening(peerId);
@@ -242,7 +242,7 @@ void P2PSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
 		auto itWriter = _mapWriter2PeerMedia.find(pWriter->id);
 		if (itWriter != _mapWriter2PeerMedia.end()) {
 			FATAL_ASSERT(itWriter->second->pStreamKey) // implementation error
-				auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
+			auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
 			if (itStream != _mapStream2PeerMedia.end()) {
 				if (itStream->second->idFlow)
 					_mapFlow2PeerMedia.erase(itStream->second->idFlow);
@@ -338,8 +338,7 @@ void P2PSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 	if (pWriter == _pReportWriter) {
 		DEBUG(peerId, " want to close the report writer ", pWriter->id, " we close the session")
 		_pReportWriter.reset();
-		close();
-		return;
+		close(false);
 	}
 	else if (pWriter == _pNetStreamWriter)
 		_pNetStreamWriter.reset();
@@ -348,24 +347,19 @@ void P2PSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 		if (itWriter != _mapWriter2PeerMedia.end()) {
 			DEBUG(peerId, " want to close the subscription media report writer ", pWriter->id)
 			itWriter->second->close(false);
-			return;
 		}
 	}
 	else if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0) {
 		auto itPeerMedia = _mapFlow2PeerMedia.find(pWriter->flowId);
 		if (itPeerMedia != _mapFlow2PeerMedia.end()) {
 			DEBUG(peerId, " want to close the media writer ", pWriter->id)
-
-			// Inform the PeerMedia
 			itPeerMedia->second->closeMediaWriter(false);
-			return;
 		}
-	}
-
-	Exception ex;
-	pWriter->fail(ex, "Writer terminated on connection ", peerId);
-	if (ex)
-		WARN(ex.error())
+	} 
+	else
+		DEBUG(peerId, " want to close the unknown writer ", pWriter->id, " (possible already closed writer)")
+	
+	pWriter->close(false);
 }
 
 bool P2PSession::sendGroupBegin() {
@@ -443,6 +437,8 @@ void P2PSession::closeFlow(UInt64 id) {
 
 void P2PSession::onConnection() {
 	INFO("P2PSession is now connected to ", name(), (_responder)? " (responder)" : " (initiator)")
+	removeHandshake(_pHandshake);
+	status = RTMFP::CONNECTED;
 
 	if (_isGroup) {
 		if (_parent->addPeer2Group(peerId)) {
@@ -450,7 +446,7 @@ void P2PSession::onConnection() {
 			if (!_responder) // TODO: not sure, I think initiator must do the peer connect first
 				sendGroupPeerConnect();
 		} else
-			close();
+			close(false);
 	// Start playing
 	} else if (!_parent->isPublisher()) {
 		INFO("Sending play request to peer for stream '", _streamName, "'")
@@ -469,18 +465,20 @@ void P2PSession::handleDataAvailable(bool isAvailable) {
 	_parent->setDataAvailable(isAvailable); // only for P2P direct play
 }
 
-void P2PSession::askPeer2Disconnect() {
+bool P2PSession::askPeer2Disconnect() {
 	if (_pReportWriter && _lastTryDisconnect.isElapsed(NETGROUP_DISCONNECT_DELAY)) {
 		DEBUG("Best Peer - Asking ", peerId, " to close")
 		_pReportWriter->writeRaw(BIN "\x0C", 1);
 		_pReportWriter->flush(); // not sure
 		_lastTryDisconnect.update();
+		return true;
 	}
+	return false;
 }
 
 bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshake>& pHandshake) {
 	// This is an existing peer, is it already connected?
-	if (status > RTMFP::HANDSHAKE38) {
+	if (status > RTMFP::HANDSHAKE78) {
 		DEBUG("Handshake 38 ignored, session is already in state ", status)
 		return false;
 	}
@@ -497,7 +495,7 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 		// Then reset parameters
 		_pHandshake = pHandshake;
 		_pHandshake->pSession = this;
-		_responder = false;
+		_responder = true;
 		_address.set(address);
 	}
 	return true;

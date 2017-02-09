@@ -77,12 +77,8 @@ public:
 	// Latency (ping / 2)
 	Mona::UInt16					latency() { return _ping >> 1; }
 
-	// A session is considered closed when it has failed or if it is in NEAR_CLOSED status since at least 90s
-	bool							closed() { return status == RTMFP::FAILED || ((status == RTMFP::NEAR_CLOSED) && _closeTime.isElapsed(90000)); }
-
-	// Return true if the session has failed
-	// TODO: refactorize with closed()
-	virtual bool					failed() { return status >= RTMFP::NEAR_CLOSED; }
+	// Return true if the session has failed (we will not send packets anymore)
+	virtual bool					failed() { return (status == RTMFP::FAILED && _closeTime.isElapsed(19000)) || ((status == RTMFP::NEAR_CLOSED) && _closeTime.isElapsed(90000)); }
 
 	// Return the pool buffers object
 	virtual const Mona::PoolBuffers&	poolBuffers();
@@ -100,7 +96,7 @@ public:
 	virtual void					flush(bool echoTime, Mona::UInt8 marker);
 
 	// Send the current packet
-	virtual void					flush() { flush(status == RTMFP::CONNECTED, (status == RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B); }
+	virtual void					flush() { flush(status >= RTMFP::CONNECTED, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B); }
 
 	// Handle receiving packet
 	virtual void					process(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer);
@@ -122,6 +118,12 @@ public:
 
 	// Return the diffie hellman object (related to main session)
 	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh)=0;
+
+	// Return the nonce (generate it if not ready)
+	Mona::Buffer&					getNonce();
+
+	// Close the session properly or abruptly if parameter is true
+	virtual void					close(bool abrupt);
 
 protected:
 
@@ -146,11 +148,8 @@ protected:
 	// Handle a P2P address exchange message (Only for RTMFPSession)
 	virtual void				handleP2PAddressExchange(Mona::PacketReader& reader) {}
 
-	// Close the conection properly or abruptly if parameter is true
-	virtual void				close(bool abrupt);
-
-	// On NetConnection success callback
-	virtual void				onConnect() {}
+	// On NetConnection.Connect.Success callback (only for RTMFPSession)
+	virtual void				onNetConnectionSuccess() {}
 
 	// On NetStream.Publish.Start (only for NetConnection)
 	virtual void				onPublished(Mona::UInt16 streamId) {}
@@ -164,7 +163,6 @@ protected:
 	// Manage the flows
 	virtual void				manage();
 
-	// TODO: maybe refactorize with onConnect()
 	// Called when we are connected to the peer/server
 	virtual void				onConnection() = 0;
 
@@ -199,7 +197,7 @@ protected:
 
 	Mona::Buffer										_sharedSecret; // shared secret for crypted communication
 	Mona::Buffer										_farNonce; // far nonce (saved for p2p group key building)
-	Mona::Buffer										_nonce; // nonce (saved for p2p group key control)
+	Mona::Buffer										_nonce; // Our Nonce for key exchange, can be of size 0x4C or 0x49 for responder
 
 private:
 
@@ -221,14 +219,18 @@ private:
 	// Update the ping value
 	void												setPing(Mona::UInt16 time, Mona::UInt16 timeEcho);
 
+	// Send the close message (0C if normal, 4C if abrupt)
+	void												sendCloseChunk(bool abrupt);
+
 	Mona::Time																	_closeTime; // Time since closure
 	Mona::Time																	_lastPing; // Time since last ping sent
+	Mona::Time																	_lastClose; // Time since last close chunk
 	Mona::UInt16																_ping; // ping value
 
 	// writers members
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter>>						_flowWriters; // Map of writers identified by id
 	RTMFPWriter*																_pLastWriter; // Write pointer used to check if it is possible to write
-	Mona::UInt64																_nextRTMFPWriterId;
+	Mona::UInt64																_nextRTMFPWriterId; // Writer id to use for the next writer to create
 
 	// Asynchronous read
 	struct RTMFPMediaPacket : public Mona::Object {

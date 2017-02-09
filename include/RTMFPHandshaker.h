@@ -33,22 +33,24 @@ class FlowManager;
 struct Handshake : public virtual Mona::Object {
 
 	Handshake(FlowManager* session, const Mona::SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses, bool p2p) :
-		nonce(0x4C), pCookie(NULL), pTag(NULL), attempt(0), hostAddress(host), pSession(session), listAddresses(addresses), isP2P(p2p) {}
+		status(RTMFP::STOPPED), pCookie(NULL), pTag(NULL), attempt(0), hostAddress(host), pSession(session), listAddresses(addresses), isP2P(p2p) {}
 
 	bool					isP2P; // True if it is a p2p handshake
 	const std::string*		pCookie; // pointer to the cookie buffer
 	const std::string*		pTag; // pointer to the tag
+	std::string				cookieReceived; // Value of the far peer cookie (initiator)
 	FlowManager*			pSession; // Session related to (it can be null if we are in a handshake of a responder)
 	Mona::UInt8				attempt; // Counter of connection attempts to the server
 	Mona::Time				lastAttempt; // Last attempt to connect to the server
+	Mona::Time				cookieCreation; // Time when the cookie has been created
 	Mona::SocketAddress		hostAddress; // Address of the host server (if cleared : it is a direct connection)
+	RTMFP::SessionStatus	status; // Status of the handshake
 	PEER_LIST_ADDRESS_TYPE	listAddresses; // List of direct addresses (server or p2p addresses)
 
 	// Coding keys
 	std::string				farKey; // Far public key
 	Mona::Buffer			pubKey; // Our public key
 	Mona::Buffer			farNonce; // Far nonce
-	Mona::Buffer			nonce; // Our Nonce for key exchange, can be of size 0x4C or 0x49 for responder
 };
 
 /**************************************************
@@ -99,7 +101,7 @@ public:
 	void								flush(Mona::UInt8 marker, Mona::UInt32 size);
 
 	// Remove the handshake properly
-	void								removeHandshake(std::shared_ptr<Handshake>& pHandshake);
+	void								removeHandshake(std::shared_ptr<Handshake> pHandshake);
 
 private:
 

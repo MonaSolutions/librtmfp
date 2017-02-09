@@ -69,7 +69,7 @@ public:
 	virtual RTMFPFlow*				createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature, Mona::UInt64 idWriterRef);
 
 	// Close the group writers but keep the connection open if full is false
-	virtual void					close(bool abrupt=false);
+	virtual void					close(bool abrupt);
 
 	// Close the Group connection to peer
 	void							closeGroup(bool abrupt);
@@ -96,28 +96,29 @@ public:
 	/*** NetGroup functions ***/
 
 	// Write the Group publication infos
-	std::shared_ptr<PeerMedia>& getPeerMedia(const std::string& streamKey);
+	std::shared_ptr<PeerMedia>&		getPeerMedia(const std::string& streamKey);
 
 	// Send the group report (message 0A)
-	void sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);
+	void							sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);
 
 	// Send the group begin message (02 + 0E messages), return true if the message has been sent
-	bool sendGroupBegin();
+	bool							sendGroupBegin();
 
 	// Send the Group Peer Connect request
-	void sendGroupPeerConnect();
+	void							sendGroupPeerConnect();
 
 	// called by a PeerMedia to create the media writer
-	bool createMediaWriter(std::shared_ptr<RTMFPWriter>& pWriter, Mona::UInt64 flowIdRef);
+	bool							createMediaWriter(std::shared_ptr<RTMFPWriter>& pWriter, Mona::UInt64 flowIdRef);
 
 	// called by PeerMedia to close the media report and the media flows
-	void closeFlow(Mona::UInt64 id);
+	void							closeFlow(Mona::UInt64 id);
 
 	// Ask a peer from the group to disconnect
-	void askPeer2Disconnect();
+	// return : True if the request has been sent
+	bool							askPeer2Disconnect();
 
 	// Manage the flows
-	virtual void				manage() { FlowManager::manage(); }
+	virtual void					manage() { FlowManager::manage(); }
 	
 	// Remove the handshake properly
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);

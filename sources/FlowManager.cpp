@@ -56,12 +56,12 @@ const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
 
 FlowManager::FlowManager(bool responder, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 	_firstRead(true), _pInvoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(1) {
+	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2) {
 	onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
 		if (code == "NetConnection.Connect.Success")
-			onConnect();
+			onNetConnectionSuccess();
 		else if (code == "NetStream.Publish.Start")
 			onPublished(streamId);
 		else if (code == "NetConnection.Connect.Closed" || code == "NetConnection.Connect.Rejected" || code == "NetStream.Publish.BadName") {
@@ -125,8 +125,6 @@ FlowManager::~FlowManager() {
 		delete it.second;
 	_flows.clear();
 
-	close(true);
-
 	// delete media packets
 	lock_guard<recursive_mutex> lock(_readMutex);
 	_mediaPackets.clear();
@@ -172,8 +170,8 @@ UInt32 FlowManager::availableToWrite() {
 const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const string& signature, Mona::UInt64 flowId) {
 
 	RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *this, flowId);
-	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(++_nextRTMFPWriterId), forward_as_tuple(pWriter)).first;
-	(UInt64&)pWriter->id = _nextRTMFPWriterId;
+	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(_nextRTMFPWriterId), forward_as_tuple(pWriter)).first;
+	(UInt64&)pWriter->id = _nextRTMFPWriterId++;
 	pWriter->amf0 = false;
 
 	if (!pWriter->signature.empty())
@@ -195,6 +193,10 @@ void FlowManager::flushWriters() {
 		_lastPing.update();
 	}
 
+	// Every 5s : send back session close request
+	if (status == RTMFP::NEAR_CLOSED && _lastClose.isElapsed(5000))
+		sendCloseChunk(false);
+
 	// Raise RTMFPWriter
 	auto it = _flowWriters.begin();
 	while (it != _flowWriters.end()) {
@@ -207,7 +209,7 @@ void FlowManager::flushWriters() {
 		}
 		if (pWriter->consumed()) {
 			handleWriterClosed(pWriter);
-			DEBUG("Connection ", name(), " - RTMFPWriter ", pWriter->id, " consumed");
+			DEBUG("Writer ", pWriter->id, " of Session ", name(), " consumed")
 			_flowWriters.erase(it++);
 			continue;
 		}
@@ -215,31 +217,37 @@ void FlowManager::flushWriters() {
 	}
 }
 
+void FlowManager::sendCloseChunk(bool abrupt) {
+	writeMessage(abrupt ? 0x4C : 0x0C, 0);
+	flush(false, 0x89);
+	_lastClose.update();
+}
 
 void FlowManager::close(bool abrupt) {
 	if (status == RTMFP::FAILED)
 		return;
 
 	// Send the close message
-	if (status == RTMFP::CONNECTED) {
-		writeMessage(abrupt ? 0x4C : 0x0C, 0);
-		flush(false, 0x89);
-	}
+	if (status >= RTMFP::CONNECTED)
+		sendCloseChunk(abrupt);
 
 	// Close writers
-	for (auto& it : _flowWriters) {
-		it.second->clear(); // Here no new sending must happen except "failSignal"
-		if (!abrupt)
-			it.second->close(abrupt);
+	if (!_flowWriters.empty()) {
+		for (auto& it : _flowWriters) {
+			it.second->clear(); // Here no new sending must happen except "failSignal"
+		}
+		if (abrupt)
+			_flowWriters.clear();
 	}
-	if (abrupt)
-		_flowWriters.clear();
 
-	if (abrupt)
+	if (status <= RTMFP::CONNECTED) {
+		_closeTime.update(); // To wait (90s or 19s) before deleting session
+		status = abrupt ? RTMFP::FAILED : RTMFP::NEAR_CLOSED;
+	}
+	// switch from NEARCLOSED to FARCLOSE_LINGER
+	else if (status == RTMFP::NEAR_CLOSED && abrupt) {
+		_closeTime.update(); // To wait 19s before deleting session
 		status = RTMFP::FAILED;
-	else {
-		status = RTMFP::NEAR_CLOSED;
-		_closeTime.update(); // To wait 90s before deleting session
 	}
 }
 
@@ -298,6 +306,10 @@ void FlowManager::receive(BinaryReader& reader) {
 	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF;
 	bool answer = false;
 
+	// If it is a p2p responder and it is the first message we call onConnection()
+	if (_responder && status < RTMFP::CONNECTED)
+		onConnection();
+
 	// Can have nested queries
 	while (type != 0xFF) {
 
@@ -317,17 +329,18 @@ void FlowManager::receive(BinaryReader& reader) {
 			break;
 		case 0x0c:
 			INFO("Session ", name(), " is closing");
-			close(true);
+			if (status == RTMFP::FAILED)
+				sendCloseChunk(true); // send back 4C message anyway
+			else
+				close(true);
 			break;
 		case 0x4c : // P2P closing session (only for p2p I think)
 			INFO("P2P Session ", name(), " is closing abruptly")
 			close(true);
 			return;
 		case 0x01: // KeepAlive
-			/*if(!peer.connected)
-			fail("Timeout connection client");
-			else*/
-			writeMessage(0x41, 0);
+			if (status == RTMFP::CONNECTED)
+				writeMessage(0x41, 0);
 			break;
 		case 0x41:
 			_lastKeepAlive.update();
@@ -512,7 +525,7 @@ void FlowManager::removeFlow(RTMFPFlow* pFlow) {
 		_mainFlowId = 0;
 		close(false);
 	}
-	DEBUG("Session ", name(), " - RTMFPFlow ", pFlow->id, " consumed");
+	DEBUG("RTMFPFlow ", pFlow->id, " of session ", name(), " consumed")
 	_flows.erase(pFlow->id);
 	delete pFlow;
 }
@@ -527,35 +540,24 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	pDh->computeSecret(ex, (UInt8*)_pHandshake->farKey.data(), _pHandshake->farKey.size(), _sharedSecret);
 	if (ex)
 		return false;
-
 	DUMP("RTMFP", _sharedSecret.data(), _sharedSecret.size(), "Shared secret :")
-
-	PacketWriter packet(_pInvoker->poolBuffers);
-	if (packet.size() > 0) {
-		ex.set(Exception::CRYPTO, "RTMFPCookieComputing already executed");
-		return false;
-	}
 
 	// Compute Keys
 	UInt8 responseKey[Crypto::HMAC::SIZE];
 	UInt8 requestKey[Crypto::HMAC::SIZE];
-	Buffer& initiatorNonce = (_responder)? _pHandshake->farNonce : _pHandshake->nonce;
-	Buffer& responderNonce = (_responder)? _pHandshake->nonce : _pHandshake->farNonce;
+	Buffer& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
+	Buffer& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
 	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce.data(), (UInt16)initiatorNonce.size(), BIN responderNonce.data(), responderNonce.size(), requestKey, responseKey);
 	_pDecoder.reset(new RTMFPEngine(_responder ? requestKey : responseKey, RTMFPEngine::DECRYPT));
 	_pEncoder.reset(new RTMFPEngine(_responder ? responseKey : requestKey, RTMFPEngine::ENCRYPT));
 
 	// Save nonces just in case we are in a NetGroup connection
 	Buffer::Append(_farNonce, _pHandshake->farNonce.data(), _pHandshake->farNonce.size());
-	Buffer::Append(_nonce, _pHandshake->nonce.data(), _pHandshake->nonce.size());
 
 	TRACE(_responder ? "Initiator" : "Responder", " Nonce : ", Util::FormatHex(BIN _farNonce.data(), _farNonce.size(), LOG_BUFFER))
 	TRACE(_responder ? "Responder" : "Initiator", " Nonce : ", Util::FormatHex(BIN _nonce.data(), _nonce.size(), LOG_BUFFER))
 
 	_farId = farId; // important, save far ID
-	status = RTMFP::CONNECTED;
-	removeHandshake(_pHandshake);
-	onConnection();
 	return true;
 }
 
@@ -567,8 +569,14 @@ void FlowManager::flush(bool echoTime, Mona::UInt8 marker) {
 }
 
 void FlowManager::process(const SocketAddress& address, PoolBuffer& pBuffer) {
-	if (!BandWriter::decode(address, pBuffer))
+	Exception ex;
+	if (!BandWriter::decode(ex, address, pBuffer)) {
+		if (status < RTMFP::CONNECTED)
+			DEBUG("Decoding issue during handshake : ", ex.error()) 
+		else
+			WARN(ex.error())
 		return;
+	}
 
 	BinaryReader reader(pBuffer.data(), pBuffer->size());
 	reader.next(2); // TODO: CRC, don't share this part in onPacket() 
@@ -591,8 +599,14 @@ void FlowManager::process(const SocketAddress& address, PoolBuffer& pBuffer) {
 		UInt16 length = reader.read16();
 		reader.shrink(length); // resize the buffer to ignore the padding bytes
 
-		if (type != 0x78) {
-			WARN("Unexpected Handshake marker : ", Format<UInt8>("%02x", marker));
+		switch (type) {
+		case 0x78:
+			break;
+		case 0x79:
+			WARN("Handshake 79 received, we have sent wrong cookie to far peer"); // TODO: handle?
+			return;
+		default:
+			WARN("Unexpected Handshake marker : ", Format<UInt8>("%02X", type));
 			return;
 		}
 		sendConnect(reader);
@@ -666,8 +680,9 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 	if (!_pHandshake->isP2P)
 		_pHandshake->farKey.assign(STR(_pHandshake->farNonce.data() + 11), nonceSize - 11);
 
-	// Compute keys for encryption/decryption
-	computeKeys(farId);
+	// Compute keys for encryption/decryption and start connect requests
+	if (computeKeys(farId))
+		onConnection();
 }
 
 bool FlowManager::onPeerHandshake70(const SocketAddress& address, const string& farKey, const string& cookie) {
@@ -685,3 +700,23 @@ const PoolBuffers& FlowManager::poolBuffers() {
 	return _pInvoker->poolBuffers;
 }
 
+Buffer& FlowManager::getNonce() {
+	if (_nonce.size())
+		return _nonce; // already computed
+	
+	if (_responder) {
+		_nonce.resize(0x49, false);
+		BinaryWriter nonceWriter(_nonce.data(), 0x49);
+		nonceWriter.write(EXPAND("\x03\x1A\x00\x00\x02\x1E\x00\x41\x0E"));
+		Util::Random(_nonce.data() + 9, 0x40); // nonce 64 random bytes
+	}
+	else {
+		_nonce.resize(0x4C, false);
+		BinaryWriter nonceWriter(_nonce.data(), 0x4C);
+		nonceWriter.write(EXPAND("\x02\x1D\x02\x41\x0E"));
+		Util::Random(_nonce.data() + 5, 64); // nonce 64 random bytes
+		nonceWriter.next(64);
+		nonceWriter.write(EXPAND("\x03\x1A\x02\x0A\x02\x1E\x02"));
+	}
+	return _nonce;
+}

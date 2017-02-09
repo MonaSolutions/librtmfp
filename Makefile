@@ -6,6 +6,10 @@ LIBDIR=$(prefix)/lib
 ifeq ($(shell uname -m), x86_64)
 	LIBDIR = $(prefix)/lib64
 endif
+PKGCONFIGPATH=$(shell pkg-config --variable pc_path pkg-config | cut -d ':' -f 1)
+ifeq ($(PKGCONFIGPATH), )
+	PKGCONFIGPATH=$(LIBDIR)/pkgconfig
+endif
 
 CRYPTO_REQ=libssl,libcrypto
 PUBLIC_LIBS=
@@ -69,7 +73,7 @@ install: librtmfp.pc
 	-mkdir -p $(INCDIR)
 	cp ./include/librtmfp.h $(INCDIR)
 	cp $(LIB) $(LIBDIR)
-	cp librtmfp.pc $(LIBDIR)/pkgconfig
+	cp librtmfp.pc $(PKGCONFIGPATH)
 
 $(OBJECT): tmp/Release/%.o: sources/%.cpp
 	@echo compiling $(@:tmp/Release/%.o=sources/%.cpp)

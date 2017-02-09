@@ -123,7 +123,7 @@ LIBRTMFP_API void RTMFP_ActiveDump();
 LIBRTMFP_API void RTMFP_InterruptSetCallback(int (* interruptCb)(void*), void* argument);
 
 // Retrieve publication name and url from original uri
-LIBRTMFP_API void RTMFP_GetPublicationAndUrlFromUri(char* uri, char** publication);
+LIBRTMFP_API void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication);
 
 #ifdef __cplusplus
 }

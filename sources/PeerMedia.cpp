@@ -39,23 +39,17 @@ PeerMedia::~PeerMedia() {
 
 void PeerMedia::close(bool abrupt) {
 	closeMediaWriter(abrupt);
-	if (_pMediaReportWriter) {
-		if (!abrupt)
-			_pParent->closeFlow(idFlow);
-		_pMediaReportWriter->close(abrupt);
-		idFlow = 0;
-	}
+	if (idFlow && !abrupt)
+		_pParent->closeFlow(idFlow);
+	_pMediaReportWriter.reset();
 
 	OnPeerClose::raise(_pParent->peerId, pushInMode); // notify GroupMedia to reset push masks and remove pointer
 }
 
 void PeerMedia::closeMediaWriter(bool abrupt) {
-	if (_pMediaWriter) {
-		if (!abrupt)
-			_pParent->closeFlow(idFlowMedia);
-		_pMediaWriter->close(abrupt);
-		idFlowMedia = 0;
-	}
+	if (idFlowMedia && !abrupt)
+		_pParent->closeFlow(idFlowMedia);
+	_pMediaWriter.reset();
 }
 
 void PeerMedia::setMediaWriter(shared_ptr<RTMFPWriter>& pWriter) {

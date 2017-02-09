@@ -60,8 +60,6 @@ public:
 
 	unsigned int	empty();
 
-	void			terminate();
-
 	/*** Callback functions ***/
 	void			setLogCallback(void(*onLog)(unsigned int, int, const char*, long, const char*));
 
@@ -82,7 +80,8 @@ private:
 	ConnectionsManager								_manager;
 	int												_lastIndex; // last index of connection
 
-	std::recursive_mutex							_mutexConnections;
+	std::mutex										_mutexConnections;
+	std::mutex										_mutexSocket;
 	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;
 	std::unique_ptr<RTMFPLogger>					_logger; // global logger for librtmfp
 	int												(*_interruptCb)(void*); // global interrupt callback function (NULL by default)

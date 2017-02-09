@@ -61,26 +61,8 @@ public:
 
 	bool				acknowledgment(Mona::Exception& ex, Mona::PacketReader& packet);
 	bool				manage(Mona::Exception& ex);
-
-	template <typename ...Args>
-	void fail(Mona::Exception& ex, Args&&... args) {
-		if (_state >= NEAR_CLOSED)
-			return;
-		ex.set(Mona::Exception::PROTOCOL, "RTMFPWriter ", id, " has failed, ", args...);
-		WARN("RTMFPWriter ", id, " has failed, ", args ...);
-		abort();
-		close(false);
-		/*_stage = _stageAck = _lostCount = 0;
-		 _ackCount = 0;
-        std::shared_ptr<RTMFPWriter> pThis = _band.changeWriter(*new RTMFPWriter(*this));
-        _band.initWriter(pThis);
-		_qos.reset();
-		_resetStream = true;*/
-	}
-
 	FlashWriter::State	state() { return _state; }
 	void				clear();
-	void				abort();
 	void				close(bool abrupt);
 	bool				consumed() { return _messages.empty() && _state == CLOSED || (_state == NEAR_CLOSED && _closeTime.isElapsed(130000)); } // Wait 130s before closing the writer definetly
 

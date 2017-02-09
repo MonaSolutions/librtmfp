@@ -48,8 +48,6 @@ public:
 	// Send acknowledgment
 	void	commit();
 
-	void	fail(const std::string& error);
-
 	void	close();
 
 	bool	consumed() { return _completed && _completeTime.isElapsed(120000); } // Wait 120s before closing the flow definetly

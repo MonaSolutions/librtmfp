@@ -82,10 +82,10 @@ void BandWriter::flush(bool echoTime, UInt8 marker) {
 	_pSender.reset();
 }
 
-bool BandWriter::decode(const SocketAddress& address, PoolBuffer& pBuffer) {
+bool BandWriter::decode(Exception& ex, const SocketAddress& address, PoolBuffer& pBuffer) {
 	// Decode the RTMFP data
 	if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
-		ERROR("Invalid RTMFP packet on connection to ", _address.toString())
+		ex.set(Exception::PROTOCOL, "Invalid RTMFP packet on connection to ", _address.toString());
 		return false;
 	}
 
@@ -94,7 +94,7 @@ bool BandWriter::decode(const SocketAddress& address, PoolBuffer& pBuffer) {
 	memcpy(copy.data(), pBuffer.data(), pBuffer.size());
 #endif
 	if (!_pDecoder->process(BIN pBuffer.data(), pBuffer.size())) {
-		WARN("Bad RTMFP CRC sum computing (address : ", address.toString(), ", session : ", name(),")")
+		ex.set(Exception::PROTOCOL, "Bad RTMFP CRC sum computing (address : ", address.toString(), ", session : ", name(), ")");
 #if defined(_DEBUG)
 		DUMP("RTMFP", copy.data(), copy.size(), "Raw request : ")
 #endif

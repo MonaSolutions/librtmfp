@@ -47,32 +47,11 @@ RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : FlashWriter(writer), _band(write
 
 RTMFPWriter::~RTMFPWriter() {
 
-	abort();
-}
-
-void RTMFPWriter::abort() {
-
 	// delete messages
-	RTMFPMessage* pMessage;
-	while(!_messages.empty()) {
-		pMessage = _messages.front();
-		_lostCount += pMessage->fragments.size();
+	clear();
+	for (RTMFPMessage* pMessage : _messagesSent)
 		delete pMessage;
-		_messages.pop_front();
-	}
-	while(!_messagesSent.empty()) {
-		pMessage = _messagesSent.front();
-		_lostCount += pMessage->fragments.size();
-		if(pMessage->repeatable)
-			--_repeatable;
-		delete pMessage;
-		_messagesSent.pop_front();
-	}
-	if(_stage>0) {
-		createMessage(); // Send a MESSAGE_ABANDONMENT just in the case where the receiver has been created
-		flush(false);
-		_trigger.stop();
-	}
+	_messagesSent.clear();
 }
 
 void RTMFPWriter::clear() {
@@ -503,7 +482,6 @@ bool RTMFPWriter::flush(bool full) {
 			// Write packet
 			size-=3; // type + timestamp removed, before the "writeMessage"
 			packMessage(_band.writeMessage(head ? 0x10 : 0x11,(UInt16)size,this),_stage,flags,head,message,fragments,contentSize);
-			//DEBUG("RTMFPWriter ", id, " : sending message ", _stage);
 			
 			message.fragments[fragments] = _stage;
 			available -= contentSize;

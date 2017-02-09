@@ -308,7 +308,7 @@ void RTMFP_InterruptSetCallback(int(*interruptCb)(void*), void* argument) {
 }
 
 
-void RTMFP_GetPublicationAndUrlFromUri(char* uri, char** publication) {
+void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication) {
 	char* pos = (char*)strrchr(uri, '\\');
 	char* pos2 = (char*)strrchr(uri, '/');
 

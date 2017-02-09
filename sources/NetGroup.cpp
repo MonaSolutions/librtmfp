@@ -497,10 +497,11 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 void NetGroup::manageBestConnections() {
 
 	// Close old peers
+	int nbDisconnect = _mapPeers.size() - _bestList.size(); // trick to keep the target count of peers
 	auto it2Close = _mapPeers.begin();
-	while (it2Close != _mapPeers.end()) {
-		if (_bestList.find(it2Close->first) == _bestList.end())
-			it2Close->second->askPeer2Disconnect();
+	while (nbDisconnect > 0 && it2Close != _mapPeers.end()) {
+		if (_bestList.find(it2Close->first) == _bestList.end() && it2Close->second->askPeer2Disconnect())
+			--nbDisconnect;
 		++it2Close;
 	}
 

@@ -37,7 +37,8 @@ using namespace std;
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId("\x21\x0f", PEER_ID_SIZE + 2),
-	_handshaker(this), _nbCreateStreams(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), FlowManager(false, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+	_handshaker(this), _nbCreateStreams(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), 
+	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onPacket = [this](PoolBuffer& pBuffer, const SocketAddress& address) {
 		lock_guard<mutex> lock(_mutexConnections);
 		if (status < RTMFP::NEAR_CLOSED) {
@@ -98,7 +99,27 @@ RTMFPSession::RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnSta
 RTMFPSession::~RTMFPSession() {
 	DEBUG("Deletion of RTMFPSession ", name())
 
-	close(true);
+	closeSession();
+}
+
+void RTMFPSession::closeSession() {
+
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+		close(true);
+	}
+
+	// Unsubscribing to socket : we don't want to receive packets anymore
+	if (_pSocket) {
+		_pSocket->OnPacket::unsubscribe(onPacket);
+		_pSocket->OnError::unsubscribe(onError);
+		_pSocket.reset();
+	}
+	if (_pSocketIPV6) {
+		_pSocketIPV6->OnPacket::unsubscribe(onPacket);
+		_pSocketIPV6->OnError::unsubscribe(onError);
+		_pSocketIPV6.reset();
+	}
 }
 
 void RTMFPSession::close(bool abrupt) {
@@ -116,53 +137,35 @@ void RTMFPSession::close(bool abrupt) {
 		_pPublisher->stop();
 	_pPublisher.reset();
 
-	{
-		lock_guard<std::mutex> lock(_mutexConnections);
-		// Close the session & writers
-		_pGroupWriter.reset();
-		_pMainWriter.reset();
-		FlowManager::close(abrupt);
+	// Close the session & writers
+	_pGroupWriter.reset();
+	_pMainWriter.reset();
+	FlowManager::close(abrupt);
 
-		if (abrupt) {
-			// Close the NetGroup
-			if (_group)
-				_group->close();
-
-			// Close peers
-			for (auto it : _mapPeersById)
-				it.second->close(true);
-			_mapPeersById.clear();
-			_mapSessions.clear();
-
-			// Remove all waiting handshakes
-			_handshaker.close();
-
-			// Set all the signals to exit properly
-			connectSignal.set();
-			p2pPublishSignal.set();
-			p2pPlaySignal.set();
-			publishSignal.set();
-			readSignal.set();
-		}
-	}
-
-	// Close the sockets if we are closing abruptly
 	if (abrupt) {
+		// Close the NetGroup
+		if (_group)
+			_group->close();
+
+		// Close peers
+		for (auto it : _mapPeersById)
+			it.second->close(true);
+		_mapPeersById.clear();
+		_mapSessions.clear();
+
+		// Remove all waiting handshakes
+		_handshaker.close();
+
+		// Set all the signals to exit properly
+		connectSignal.set();
+		p2pPublishSignal.set();
+		p2pPlaySignal.set();
+		publishSignal.set();
+		readSignal.set();
 
 		if (_pMainStream) {
 			_pMainStream->OnStreamCreated::unsubscribe(onStreamCreated);
 			_pMainStream->OnNewPeer::unsubscribe(onNewPeer);
-		}
-		// Unsubscribing to socket : we don't want to receive packets anymore
-		if (_pSocket) {
-			_pSocket->OnPacket::unsubscribe(onPacket);
-			_pSocket->OnError::unsubscribe(onError);
-			_pSocket.reset();
-		}
-		if (_pSocketIPV6) {
-			_pSocketIPV6->OnPacket::unsubscribe(onPacket);
-			_pSocketIPV6->OnError::unsubscribe(onError);
-			_pSocketIPV6.reset();
 		}
 	}
 }
@@ -214,7 +217,7 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 	else
 		port = "1935";
 
-	lock_guard<std::mutex> lock(_mutexConnections);
+	lock_guard<mutex> lock(_mutexConnections);
 	DEBUG("Trying to resolve the host address...")
 	HostEntry hostEntry;
 	SocketAddress address;
@@ -236,7 +239,7 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 }
 
 void RTMFPSession::connect2Peer(const char* peerId, const char* streamName) {
-	lock_guard<std::mutex> lock(_mutexConnections);
+	lock_guard<mutex> lock(_mutexConnections);
 	PEER_LIST_ADDRESS_TYPE addresses;
 	connect2Peer(peerId, streamName, addresses, _address);
 }
@@ -313,7 +316,7 @@ void RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* param
 	Util::FormatHex(encryptedGroup, 32, groupHex);
 	DEBUG("Encrypted Group Id : ", groupHex)
 
-	lock_guard<std::mutex> lock(_mutexConnections);
+	lock_guard<mutex> lock(_mutexConnections);
 	_group.reset(new NetGroup(groupHex, groupTxt, streamName, *this, parameters));
 	_waitingGroup.push_back(groupHex);
 }
@@ -429,19 +432,19 @@ bool RTMFPSession::handleStreamCreated(UInt16 idStream) {
 void RTMFPSession::manage() {
 	if (!_pMainStream)
 		return;
-	lock_guard<std::mutex> lock(_mutexConnections);
+	lock_guard<mutex> lock(_mutexConnections);
 
 	// Release closed P2P connections
-	auto itConnection = _mapPeersById.begin();
-	while (itConnection != _mapPeersById.end()) {
-		if (itConnection->second->closed()) {
-			DEBUG("RTMFPSession management - Deleting closed P2P session to ", itConnection->first)
-			_mapSessions.erase(itConnection->second->sessionId());
-			_mapPeersById.erase(itConnection++);
+	auto itPeer = _mapPeersById.begin();
+	while (itPeer != _mapPeersById.end()) {
+		if (itPeer->second->failed()) {
+			DEBUG("RTMFPSession management - Deleting closed P2P session to ", itPeer->first)
+			_mapSessions.erase(itPeer->second->sessionId());
+			_mapPeersById.erase(itPeer++);
 		}
 		else {
-			itConnection->second->manage();
-			++itConnection;
+			itPeer->second->manage();
+			++itPeer;
 		}
 	}
 
@@ -471,7 +474,7 @@ void RTMFPSession::addCommand(CommandType command, const char* streamName, bool 
 }
 
 void RTMFPSession::createWaitingStreams() {
-	//lock_guard<std::mutex>	lock(_mutexConnections);
+	//lock_guard<mutex>	lock(_mutexConnections);
 	if (status != RTMFP::CONNECTED || _waitingCommands.empty())
 		return;
 
@@ -529,13 +532,12 @@ void RTMFPSession::sendConnections() {
 	}
 }
 
-void RTMFPSession::onConnect() {
-
-	// Record port for setPeerInfo request
+void RTMFPSession::onNetConnectionSuccess() {
 	if (!_pMainWriter) {
 		ERROR("Unable to find the main writer to send setPeerInfo request")
 		return;
 	}
+
 	UInt16 port = _pSocket->address().port();
 	UInt16 portIPv6 = _pSocketIPV6->address().port();
 	INFO("Sending peer info (port : ", port, " - port ipv6 : ", portIPv6,")")
@@ -572,7 +574,7 @@ void RTMFPSession::onPublished(UInt16 streamId) {
 	publishSignal.set();
 }
 
-void RTMFPSession::stopListening(const std::string& peerId) {
+void RTMFPSession::stopListening(const string& peerId) {
 	INFO("Deletion of the listener to ", peerId)
 	if (_pPublisher)
 		_pPublisher->removeListener(peerId);
@@ -590,16 +592,15 @@ void RTMFPSession::handleNewGroupPeer(const string& rawId, const string& peerId)
 	_group->addPeer2HeardList(peerId, rawId.c_str(), addresses, _address);
 }
 
-void RTMFPSession::handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter) {
-	Exception ex;
-	pWriter->fail(ex, "Writer terminated on connection ", name());
+void RTMFPSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 
 	if (pWriter == _pGroupWriter)
 		_pGroupWriter.reset();
 	else if (pWriter == _pMainWriter)
 		_pMainWriter.reset();
 
-	WARN(ex.error())
+	WARN("Writer ", pWriter->id, " terminated on session ", name())
+	pWriter->close(false);
 }
 
 void RTMFPSession::handleP2PAddressExchange(PacketReader& reader) {
@@ -654,6 +655,9 @@ const string& RTMFPSession::groupIdTxt() {
 }
 
 void RTMFPSession::buildPeerID(const UInt8* data, UInt32 size) {
+	if (!_peerTxtId.empty())
+		return;
+
 	// Peer ID built, we save it
 	EVP_Digest(data, size, BIN(_rawId.data() + 2), NULL, EVP_sha256(), NULL);
 	INFO("Peer ID : \n", Util::FormatHex(BIN(_rawId.data() + 2), PEER_ID_SIZE, _peerTxtId))
@@ -684,6 +688,8 @@ bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshak
 
 void RTMFPSession::onConnection() {
 	INFO("RTMFPSession is now connected to ", name())
+	removeHandshake(_pHandshake);
+	status = RTMFP::CONNECTED;
 
 	string signature("\x00\x54\x43\x04\x00", 5);
 	_pMainWriter = createWriter(signature, 0);
@@ -710,4 +716,10 @@ void RTMFPSession::onConnection() {
 	amfWriter.amf0 = amf;
 
 	_pMainWriter->flush();
+}
+
+void RTMFPSession::removeHandshake(shared_ptr<Handshake>& pHandshake) { 
+	pHandshake->pSession = NULL; // to not close the session
+	_handshaker.removeHandshake(pHandshake); 
+	pHandshake.reset(); 
 }
