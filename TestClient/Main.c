@@ -229,7 +229,7 @@ void onManage() {
 	unsigned int i = 0;
 
 	// Asynchronous read
-	if (_option == ASYNC_READ) {
+	if (_option == ASYNC_READ && pOutFile) {
 		if (nbPeers>0) {
 			for (i = 0; i < nbPeers; i++) {
 				if ((read = RTMFP_Read(listPeers[i], context, buf, MIN_BUFFER_SIZE))>0)
@@ -267,13 +267,13 @@ void onManage() {
 
 ////////////////////////////////////////////////////////
 // Main Function
-int main(int argc,char* argv[]) {
+int main(int argc, char* argv[]) {
 	char 				url[1024];
-	int					i=1, version = 0;
+	int					i = 1, version = 0;
 	unsigned int		indexPeer = 0;
 	const char*			peerId = NULL;
 	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
-	const char			*logFile = "log.0", *mediaFile = NULL;
+	const char			*logFile = NULL, *mediaFile = NULL;
 	RTMFPConfig			config;
 	RTMFPGroupConfig	groupConfig;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
@@ -285,16 +285,17 @@ int main(int argc,char* argv[]) {
 	config.pOnMedia = onMedia;
 	config.isBlocking = groupConfig.isBlocking = 1;
 
-	for(i; i<argc; i++) {
+	for (i; i < argc; i++) {
 		if (stricmp(argv[i], "--syncread") == 0)
 			_option = SYNC_READ;
 		else if (stricmp(argv[i], "--asyncread") == 0) {  // default
 			_option = ASYNC_READ;
 			config.pOnMedia = NULL;
-		} else if (stricmp(argv[i], "--write") == 0) {
+		}
+		else if (stricmp(argv[i], "--write") == 0) {
 			_option = WRITE;
 			groupConfig.isPublisher = 1;
-		} 
+		}
 		else if (stricmp(argv[i], "--p2pWrite") == 0) {
 			_option = P2P_WRITE;
 			groupConfig.isPublisher = 1;
@@ -311,7 +312,7 @@ int main(int argc,char* argv[]) {
 			audioReliable = 0;
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
 			videoReliable = 0;
-		else if (strlen(argv[i]) > 15 && strnicmp(argv[i], "--updatePeriod=", 15)==0) // for NetGroup mode (multicastAvailabilityUpdatePeriod)
+		else if (strlen(argv[i]) > 15 && strnicmp(argv[i], "--updatePeriod=", 15) == 0) // for NetGroup mode (multicastAvailabilityUpdatePeriod)
 			groupConfig.availabilityUpdatePeriod = atoi(argv[i] + 15);
 		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--windowDuration=", 17) == 0) // for NetGroup mode (multicastWindowDuration)
 			groupConfig.windowDuration = atoi(argv[i] + 17);
@@ -321,7 +322,7 @@ int main(int argc,char* argv[]) {
 			groupConfig.pushLimit = atoi(argv[i] + 12);
 		else if (stricmp(argv[i], "--sendToAll") == 0) // for NetGroup mode (multicastAvailabilitySendToAll)
 			groupConfig.availabilitySendToAll = 1;
-		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6)==0)
+		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6) == 0)
 			snprintf(url, 1024, "%s", argv[i] + 6);
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) // p2p direct
 			peerId = argv[i] + 9;
@@ -338,58 +339,58 @@ int main(int argc,char* argv[]) {
 	}
 
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
-		printf("Cannot catch SIGINT\n");
+		onLog(0, 4, __FILE__, __LINE__, "Cannot catch SIGINT\n");
 	if (signal(SIGTERM, ConsoleCtrlHandler) == SIG_ERR)
-		printf("Cannot catch SIGTERM\n");
+		onLog(0, 4, __FILE__, __LINE__, "Cannot catch SIGTERM\n");
 
 	version = RTMFP_LibVersion();
 	printf("Librtmfp version %u.%u.%u\n", (version >> 24) & 0xFF, (version >> 16) & 0xFF, version & 0xFFFF);
 
 	// Open log file
-	if (openFile(&pLogFile, logFile, "w")) {
-
+	if (logFile) {
+		openFile(&pLogFile, logFile, "w");
 		RTMFP_LogSetCallback(onLog);
-		RTMFP_InterruptSetCallback(IsInterrupted, NULL);
-		RTMFP_GetPublicationAndUrlFromUri(url, &publication);
+	}
+	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
+	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 
-		printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
-		context = RTMFP_Connect(url, &config);
-
-		if (context) {
-			if (peerId != NULL) {
-				nbPeers = 1;
-				listPeers[0] = (char*)peerId;
-				listStreams[0] = publication;
-				listFileNames[0] = (char*)mediaFile;
-			}
-
-			// Open IO files and start the streaming
-			if (!mediaFile || initFiles(mediaFile)) {
-
-				if (groupConfig.netGroup)
-					RTMFP_Connect2Group(context, publication, &groupConfig);
-				else if (_option == WRITE)
-					RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
-				else if (_option == P2P_WRITE)
-					RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
-				else if (nbPeers > 0) { // P2p Play
-					for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
-						RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer], 1);
-				}
-				else if (_option == SYNC_READ || _option == ASYNC_READ)
-					RTMFP_Play(context, publication);
-
-				while (!IsInterrupted(NULL)) {
-					onManage();
-					SLEEP(50); // delay between each async IO (in msec)
-				}
-			}
-
-			printf("Closing connection...\n");
-			RTMFP_Close(context);
-			closeFiles();
+	printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
+	if (context = RTMFP_Connect(url, &config)) {
+		if (peerId != NULL) {
+			nbPeers = 1;
+			listPeers[0] = (char*)peerId;
+			listStreams[0] = publication;
+			listFileNames[0] = (char*)mediaFile;
 		}
 
+		// Open IO files and start the streaming
+		if (!mediaFile || initFiles(mediaFile)) {
+
+			if (groupConfig.netGroup)
+				RTMFP_Connect2Group(context, publication, &groupConfig);
+			else if (_option == WRITE)
+				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
+			else if (_option == P2P_WRITE)
+				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
+			else if (nbPeers > 0) { // P2p Play
+				for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
+					RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer], 1);
+			}
+			else if (_option == SYNC_READ || _option == ASYNC_READ)
+				RTMFP_Play(context, publication);
+
+			while (!IsInterrupted(NULL)) {
+				onManage();
+				SLEEP(50); // delay between each async IO (in msec)
+			}
+		}
+
+		onLog(0, 6, __FILE__, __LINE__, "Closing connection...");
+		RTMFP_Close(context);
+		closeFiles();
+	}
+
+	if (logFile) {
 		fclose(pLogFile);
 		pLogFile = NULL;
 	}

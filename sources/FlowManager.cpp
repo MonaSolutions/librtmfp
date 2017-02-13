@@ -572,9 +572,7 @@ void FlowManager::process(const SocketAddress& address, PoolBuffer& pBuffer) {
 	Exception ex;
 	if (!BandWriter::decode(ex, address, pBuffer)) {
 		if (status < RTMFP::CONNECTED)
-			DEBUG("Decoding issue during handshake : ", ex.error()) 
-		else
-			WARN(ex.error())
+			DEBUG(ex.error()) // can be a problem of packet order
 		return;
 	}
 
@@ -601,7 +599,8 @@ void FlowManager::process(const SocketAddress& address, PoolBuffer& pBuffer) {
 
 		switch (type) {
 		case 0x78:
-			break;
+			sendConnect(reader);
+			return;
 		case 0x79:
 			WARN("Handshake 79 received, we have sent wrong cookie to far peer"); // TODO: handle?
 			return;
@@ -609,8 +608,6 @@ void FlowManager::process(const SocketAddress& address, PoolBuffer& pBuffer) {
 			WARN("Unexpected Handshake marker : ", Format<UInt8>("%02X", type));
 			return;
 		}
-		sendConnect(reader);
-		return;
 	}
 
 	// Connected message (normal or P2P)

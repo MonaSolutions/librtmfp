@@ -496,6 +496,7 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 		_pHandshake = pHandshake;
 		_pHandshake->pSession = this;
 		_responder = true;
+		_nonce.clear(); // reset the nonce to avoid handshake error
 		_address.set(address);
 	}
 	return true;

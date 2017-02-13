@@ -55,10 +55,7 @@ Invoker::~Invoker() {
 	// Destroy the connections
 	{
 		lock_guard<mutex>	lock(_mutexConnections);
-		{
-			lock_guard<mutex>	lock(_mutexSocket);
-			Logs::SetDump(""); // we must set Dump to null because static dump object can be destroyed
-		}
+		Logs::SetDump(""); // we must set Dump to null because static dump object can be destroyed
 
 		auto it = _mapConnections.begin();
 		while (it != _mapConnections.end())
@@ -118,7 +115,6 @@ void Invoker::removeConnection(unsigned int index) {
 void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it) {
 
 	INFO("Deleting connection ", it->first, "...")
-	lock_guard<mutex>	lockSocket(_mutexSocket);
 	it->second->closeSession(); // we must close here because there can be shared pointers
 	_mapConnections.erase(it);
 }
@@ -135,9 +131,7 @@ void Invoker::manage() {
 		it->second->manage();
 
 		if (it->second->failed()) {
-			int id = it->first;
-			it++;
-			removeConnection(id);
+			_mapConnections.erase(it++);
 			continue;
 		}
 		it++;
@@ -151,10 +145,8 @@ void Invoker::run(Exception& exc) {
 		ex=exWarn;
 	else if (exWarn)
 		WARN(exWarn.error());
-	while (!ex && sleep() != STOP) {
-		lock_guard<mutex> lock(_mutexSocket);
+	while (!ex && sleep() != STOP)
 		giveHandle(ex);
-	}
 
 	// terminate the tasks (forced to do immediatly, because no more "giveHandle" is called)
 	TaskHandler::stop();

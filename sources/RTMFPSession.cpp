@@ -104,22 +104,23 @@ RTMFPSession::~RTMFPSession() {
 
 void RTMFPSession::closeSession() {
 
+	// Unsubscribing to socket : we don't want to receive packets anymore
+	if (_pSocket) {
+		_pSocket->OnPacket::unsubscribe(onPacket);
+		_pSocket->OnError::unsubscribe(onError);
+	}
+	if (_pSocketIPV6) {
+		_pSocketIPV6->OnPacket::unsubscribe(onPacket);
+		_pSocketIPV6->OnError::unsubscribe(onError);
+	}
+
 	{
 		lock_guard<mutex> lock(_mutexConnections);
 		close(true);
 	}
 
-	// Unsubscribing to socket : we don't want to receive packets anymore
-	if (_pSocket) {
-		_pSocket->OnPacket::unsubscribe(onPacket);
-		_pSocket->OnError::unsubscribe(onError);
-		_pSocket.reset();
-	}
-	if (_pSocketIPV6) {
-		_pSocketIPV6->OnPacket::unsubscribe(onPacket);
-		_pSocketIPV6->OnError::unsubscribe(onError);
-		_pSocketIPV6.reset();
-	}
+	_pSocket.reset();
+	_pSocketIPV6.reset();
 }
 
 void RTMFPSession::close(bool abrupt) {
