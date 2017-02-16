@@ -10,6 +10,7 @@ UPDATEPERIOD=100
 WINDOWDURATION=8000
 NB=1
 NOMEDIA=0
+NOLOG=0
 
 for i in "$@"
 do
@@ -31,6 +32,9 @@ case $i in
     ;;
     --nomedia)
     NOMEDIA=1
+    ;;
+    --nolog)
+    NOLOG=1
     ;;
     --nb=*)
     NB="${i#*=}"
@@ -55,7 +59,8 @@ done
 for (( i=1; i<=$NB; i++ ))
 do
   MEDIAFILE=$([ $NOMEDIA == 0 ] && echo "--mediaFile=out$i.flv" || echo "")
-  echo "./TestClient --url=$URL --netgroup=$GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION --logFile=testPlay$i.log $MEDIAFILE &>/dev/null &"
-  ./TestClient --url=$URL --netgroup=$GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION --logFile=testPlay$i.log $MEDIAFILE &>/dev/null &
+  LOGFILE=$([ $NOLOG == 0 ] && echo "--logFile=testPlay$i.log" || echo "")
+  echo "./TestClient --url=$URL --netgroup=$GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &"
+  ./TestClient --url=$URL --netgroup=$GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &
 done
 
