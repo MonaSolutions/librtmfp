@@ -61,7 +61,7 @@ It is the entry point for all IO
 class RTMFPHandshaker : public BandWriter  {
 public:
 
-	RTMFPHandshaker(RTMFPSession* pSession);
+	RTMFPHandshaker(Invoker& invoker, RTMFPSession* pSession);
 
 	virtual ~RTMFPHandshaker();
 
@@ -125,6 +125,9 @@ private:
 
 	// Send the first handshake response (only in P2P mode)
 	void								sendHandshake70(const std::string& tag, std::shared_ptr<Handshake>& pHandshake);
+
+	// Treat decoded message
+	virtual void						receive(const Mona::SocketAddress& address, Mona::BinaryReader& packet);
 
 	std::map<std::string, std::shared_ptr<Handshake>>		_mapTags; // map of Tag to waiting handshake
 	std::map<std::string, std::shared_ptr<Handshake>>		_mapCookies; // map of Cookies to waiting handshake

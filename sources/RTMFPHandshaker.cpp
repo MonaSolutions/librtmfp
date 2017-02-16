@@ -26,7 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker") {
+RTMFPHandshaker::RTMFPHandshaker(Invoker& invoker, RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), BandWriter(invoker, RTMFP_DEFAULT_KEY) {
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
@@ -41,21 +41,19 @@ void RTMFPHandshaker::close() {
 
 void RTMFPHandshaker::process(const SocketAddress& address, PoolBuffer& pBuffer) {
 	Exception ex;
-	if (!BandWriter::decode(ex, address, pBuffer)) {
+	if (!BandWriter::decode(ex, address, pBuffer))
 		WARN(ex.error())
-		return;
-	}
+}
 
-	BinaryReader reader(pBuffer.data(), pBuffer->size());
-	reader.next(2); // TODO: CRC, don't share this part in onPacket() 
-	
+void RTMFPHandshaker::receive(const SocketAddress& address, BinaryReader& packet) {
+
 	_address.set(address); // update address
 
 	if (Logs::GetLevel() >= 7)
-		DUMP("RTMFP", reader.current(), reader.available(), "Request from ", address.toString())
+		DUMP("RTMFP", packet.current(), packet.available(), "Request from ", address.toString())
 
-	UInt8 marker = reader.read8();
-	_timeReceived = reader.read16();
+	UInt8 marker = packet.read8();
+	_timeReceived = packet.read16();
 	_lastReceptionTime.update();
 
 	// Handshake
@@ -64,19 +62,19 @@ void RTMFPHandshaker::process(const SocketAddress& address, PoolBuffer& pBuffer)
 		return;
 	}
 
-	UInt8 type = reader.read8();
-	UInt16 length = reader.read16();
-	reader.shrink(length); // resize the buffer to ignore the padding bytes
+	UInt8 type = packet.read8();
+	UInt16 length = packet.read16();
+	packet.shrink(length); // resize the buffer to ignore the padding bytes
 
 	switch (type) {
 	case 0x30:
-		handleHandshake30(reader); break; // P2P only (and send handshake 70)
+		handleHandshake30(packet); break; // P2P only (and send handshake 70)
 	case 0x38:
-		sendHandshake78(reader); break; // P2P only
+		sendHandshake78(packet); break; // P2P only
 	case 0x70:
-		handleHandshake70(reader); break; // (and send handshake 38)
+		handleHandshake70(packet); break; // (and send handshake 38)
 	case 0x71:
-		handleRedirection(reader); break; // p2p address exchange or server redirection
+		handleRedirection(packet); break; // p2p address exchange or server redirection
 	default:
 		ERROR("Unexpected p2p handshake type : ", Format<UInt8>("%.2x", (UInt8)type))
 		break;
@@ -220,6 +218,7 @@ void RTMFPHandshaker::handleHandshake30(BinaryReader& reader) {
 			WARN("Incorrect Peer ID in p2p handshake 30 : ", peerId)
 			return;
 		}
+		TRACE("Handshake 30 received from ", _address.toString())
 
 		sendHandshake70(tag, _address, _pSession->address());
 	}
@@ -470,10 +469,19 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 	}
 
 	// Read addresses
-	RTMFP::ReadAddresses(reader, pHandshake->listAddresses, pHandshake->hostAddress);
+	SocketAddress hostAddress;
+	RTMFP::ReadAddresses(reader, pHandshake->listAddresses, hostAddress);
 
 	if (pHandshake->isP2P) {
 		DEBUG("Server has sent to us the peer addresses of responders") // (we are the initiator)
+
+		// Reset the host address if it changes
+		if (hostAddress != pHandshake->hostAddress) {
+			pHandshake->pSession->setAddresses(hostAddress, pHandshake->listAddresses);
+			pHandshake->hostAddress = hostAddress;
+		}
+
+		// Send the handshake 30 to all addresses
 		for (auto itAddresses : pHandshake->listAddresses) {
 			_address.set(itAddresses.first);
 			sendHandshake30(pHandshake->pSession->epd(), tagReceived);

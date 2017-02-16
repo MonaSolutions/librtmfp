@@ -1,0 +1,238 @@
+/*
+Copyright 2016 Thomas Jammet
+mathieu.poux[a]gmail.com
+jammetthomas[a]gmail.com
+
+This file is part of Librtmfp.
+
+Librtmfp is free software: you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+Librtmfp is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
+*/
+
+#pragma once
+
+#include "Invoker.h"
+#include "Mona/Logs.h"
+#include "RTMFP.h"
+
+namespace DecoderEvents {
+	struct OnDecoded : Mona::Event<void(Mona::BinaryReader& packet, const Mona::SocketAddress& address)> {};
+	struct OnDecodedEnd : Mona::Event<void()> {};
+	struct OnDecoding : Mona::Event<Mona::UInt32(Mona::Exception& ex, Mona::UInt8* data, Mona::UInt32 size)> {};
+};
+
+class Decoder : public virtual Mona::Object,
+	public DecoderEvents::OnDecoded,
+	public DecoderEvents::OnDecodedEnd {
+
+public:
+	Decoder(Invoker& invoker, const char* name) : poolBuffers(invoker.poolBuffers), _name(name), _pThread(NULL), _poolThreads(invoker.poolThreads), _pDecoding(new Decoding(invoker, name)),
+		onDecoding([this](Mona::Exception& ex, Mona::UInt8* data, Mona::UInt32 size) { return decoding(ex, data, size); }) {
+
+		_pDecoding->OnDecodedEnd::subscribe(*this);
+		_pDecoding->DecoderEvents::OnDecoded::subscribe(*this);
+		_pDecoding->DecoderEvents::OnDecoding::subscribe(onDecoding);
+	}
+
+	virtual ~Decoder() {
+		_pDecoding->DecoderEvents::OnDecoding::unsubscribe(onDecoding);
+		_pDecoding->DecoderEvents::OnDecoded::unsubscribe(*this);
+		_pDecoding->OnDecodedEnd::unsubscribe(*this);
+	}
+
+	Mona::UInt32 decode(Mona::PoolBuffer& pBuffer) {
+		return decode(Mona::SocketAddress::Wildcard(), pBuffer);
+	}
+
+	Mona::UInt32 decode(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer) {
+		Mona::Exception ex;
+		Mona::UInt32 consumed(pBuffer.size());
+		std::lock_guard<std::mutex> lock(_pDecoding->_inMutex);
+		_pThread = _poolThreads.enqueue(ex, _pDecoding, _pThread);
+		if (ex) {
+			WARN(_name, ", ", ex.error(), " - address : ", address.toString());
+			pBuffer.release();
+		} else {
+			_pDecoding->_input.emplace_back(poolBuffers);
+			_pDecoding->_input.back().swap(pBuffer);
+			_pDecoding->_inAddresses.emplace_back(address);
+		}
+		return consumed;
+	}
+
+protected:
+
+	const Mona::PoolBuffers& poolBuffers;
+
+	template <typename ...Args>
+	void receive(Args&&... args) { _pDecoding->receive(args ...); }
+
+private:
+
+	// return the rest
+	virtual Mona::UInt32 decoding(Mona::Exception& ex, Mona::UInt8* data, Mona::UInt32 size) = 0;
+
+	class Decoding : public Mona::WorkThread, private Mona::Task, public virtual Mona::Object,
+		public DecoderEvents::OnDecoding,
+		public DecoderEvents::OnDecoded,
+		public DecoderEvents::OnDecodedEnd {
+	public:
+
+		class OutType : public virtual Mona::Object {
+		public:
+			template <typename ...Args>
+			OutType(const Mona::PoolBuffers& poolBuffers,Args&&... args) : pBuffer(poolBuffers), decoded(args ...) {}
+
+			Mona::BinaryReader	decoded;
+			Mona::PoolBuffer	pBuffer;
+		};
+
+		Decoding(Invoker& invoker, const char* name) : _pBuffer(invoker.poolBuffers), Mona::WorkThread(name), Mona::Task(invoker) {}
+
+		virtual ~Decoding() {
+			for (OutType* pOut : _output)
+				delete pOut;
+		}
+
+		template <typename ...Args>
+		void receive(Args&&... args) {
+			_new = true;
+			_pLastOut = new OutType(_pBuffer.poolBuffers,args ...);
+			std::lock_guard<std::mutex> lock(_outMutex);
+			_output.emplace_back(_pLastOut);
+			_outAddresses.emplace_back(_address);
+		}
+
+		bool run(Mona::Exception& ex) {
+
+			// Just one!
+
+			_new = false;
+
+			Mona::PoolBuffer pBuffer(_pBuffer.poolBuffers);
+			{
+				std::lock_guard<std::mutex> lock(_inMutex);
+				FATAL_ASSERT(!_input.empty())
+				pBuffer.swap(_input.front());
+				_input.pop_front();
+				_address = _inAddresses.front();
+				_inAddresses.pop_front();
+			}
+
+			// add general buffer in front
+			if (!_pBuffer.empty()) {
+				if (!pBuffer.empty())
+					_pBuffer->append(pBuffer.data(),pBuffer.size());
+				pBuffer.swap(_pBuffer);
+				_pBuffer.release();
+			}
+
+			Mona::UInt32 consumed(0);
+			
+			while(consumed<pBuffer.size()) { // while everything is not consumed
+
+				if (consumed) {
+					// not execute the first loop!
+					if (_pLastOut) {
+						_pBuffer->resize(pBuffer.size()-consumed, false);
+						memcpy(_pBuffer->data(), pBuffer->data()+consumed, _pBuffer->size());
+						pBuffer->resize(consumed);
+						_pLastOut->pBuffer.swap(pBuffer);
+						pBuffer.swap(_pBuffer);
+					} else
+						pBuffer->clip(consumed);
+				}
+
+				Mona::Exception exc;
+				_pLastOut = NULL;
+				consumed = OnDecoding::raise<0xFFFFFFFF>(exc, pBuffer->data(),pBuffer->size());
+
+				if (exc)
+					WARN(name, ", ", exc.error(), " - address : ", _address.toString());
+		
+				if (!consumed) {
+					_pBuffer.swap(pBuffer); // memorize the rest in general buffer
+					break;
+				}
+
+				if (_pLastOut && consumed >= pBuffer.size()) {
+					_pLastOut->pBuffer.swap(pBuffer);
+					break;
+				}
+
+			}
+		
+			if (_new)
+				waitHandle();
+			return true;
+		}
+
+
+		void handle(Mona::Exception& ex) {
+			OutType* pOut(NULL);
+			Mona::SocketAddress address;
+
+			while (true) {
+				{
+					std::lock_guard<std::mutex> lock(_outMutex);
+					if (_output.empty())
+						break;
+					pOut = _output.front();
+					_output.pop_front();
+					address = _outAddresses.front();
+					_outAddresses.pop_front();
+				}
+				DecoderEvents::OnDecoded::raise(pOut->decoded, address);
+				delete pOut;
+			}
+			if (pOut) // at less one has been done
+				DecoderEvents::OnDecodedEnd::raise();
+		}
+
+		bool									_new;
+		OutType*								_pLastOut;
+		Mona::SocketAddress						_address;
+		Mona::PoolBuffer						_pBuffer;
+
+		std::mutex								_inMutex;
+		std::deque<Mona::PoolBuffer>			_input;
+		std::deque<Mona::SocketAddress>			_inAddresses;
+		
+		std::mutex								_outMutex;
+		std::deque<OutType*>					_output;
+		std::deque<Mona::SocketAddress>			_outAddresses;
+	};
+
+	typename Decoding::OnDecoding::Type			onDecoding;
+	typename Decoding::OnDecoded::Type			onDecoded;
+	typename Decoding::OnDecodedEnd::Type		onDecodeEnd;
+
+	const std::shared_ptr<Decoding>	_pDecoding;
+
+	Mona::PoolThread*							_pThread;
+	Mona::PoolThreads&							_poolThreads;
+	const char*									_name;
+};
+
+class RTMFPDecoder : public Decoder, public virtual Mona::Object {
+public:
+	RTMFPDecoder(Invoker& invoker, const Mona::UInt8* decryptKey) : Decoder(invoker, "RTMFPDecoder"), _pDecoder(new RTMFPEngine(decryptKey, RTMFPEngine::DECRYPT)) {}
+	RTMFPDecoder(Invoker& invoker, const std::shared_ptr<RTMFPEngine>& pDecoder) : Decoder(invoker, "RTMFPDecoder"), _pDecoder(pDecoder) {}
+
+	// Reset the decoder after key computing
+	void resetDecoder(const Mona::UInt8* decryptKey); // TODO: make it safe?
+
+private:
+	Mona::UInt32 decoding(Mona::Exception& ex, Mona::UInt8* data, Mona::UInt32 size);
+	std::shared_ptr<RTMFPEngine>	  _pDecoder;
+};

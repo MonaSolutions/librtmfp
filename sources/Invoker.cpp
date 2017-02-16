@@ -21,6 +21,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Invoker.h"
 #include "RTMFPLogger.h"
+#include "RTMFPSession.h"
 
 using namespace Mona;
 using namespace std;

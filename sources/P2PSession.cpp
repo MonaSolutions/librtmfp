@@ -35,7 +35,7 @@ using namespace std;
 UInt32 P2PSession::P2PSessionCounter = 0x03000000; // Notice that Flash uses incremental values from 3 and do a left align
 
 
-P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, 
+P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, 
 		const Mona::SocketAddress& host, bool responder, bool group) : peerId(id), rawId("\x21\x0f"), hostAddress(host), _parent(parent), _groupBeginSent(false), 
 		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
 	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
@@ -211,7 +211,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
 		DEBUG("Creating new Flow (2) for P2PSession ", name())
 		_pMainStream->addStream(idSession, pStream);
-		return new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this, idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, _invoker.poolBuffers, *this, idWriterRef);
 	}
 	else if (signature.size() > 3 && ((signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Report stream (main flow)
 		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream
@@ -224,7 +224,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
 			_mainFlowId = id;
-		return new RTMFPFlow(id, signature, pStream, _pInvoker->poolBuffers, *this, idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, _invoker.poolBuffers, *this, idWriterRef);
 	}
 	string tmp;
 	ex.set(Exception::PROTOCOL, "Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow");
@@ -484,11 +484,13 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 	}
 	// is it a concurrent connection ?
 	else if (!_responder) {
-		if (_parent->peerId() > peerId) {
+		if (status < RTMFP::HANDSHAKE38)
+			DEBUG("Concurrent handshake, initiator has not received any answer, continuing")
+		else if (_parent->peerId() > peerId) {
 			DEBUG("Concurrent handshake, our ID is bigger than peer, ignoring the handshake 38")
 			return false;
-		}
-		DEBUG("Concurrent handshake, our ID is smaller than peer, continuing") // TODO: check how Flash manage concurrent connection
+		} else 
+			DEBUG("Concurrent handshake, our ID is smaller than peer, continuing") // TODO: check how Flash manage concurrent connection
 		// First remove the other handshake
 		removeHandshake(_pHandshake);
 

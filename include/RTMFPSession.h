@@ -33,7 +33,7 @@ RTMFP Server
 class NetGroup;
 class RTMFPSession : public FlowManager {
 public:
-	RTMFPSession(Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
+	RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	~RTMFPSession();
 

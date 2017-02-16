@@ -43,7 +43,7 @@ It is the base class of RTMFPSession and P2PSession
 */
 class FlowManager : public BandWriter {
 public:
-	FlowManager(bool responder, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
+	FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	virtual ~FlowManager();
 
@@ -125,6 +125,9 @@ public:
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt);
 
+	// Set the host and peer addresses when receiving redirection address (only for P2P)
+	virtual void					setAddresses(const Mona::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses) {}
+
 protected:
 
 	// Handle a writer closed (to release shared pointers)
@@ -188,7 +191,7 @@ protected:
 	std::shared_ptr<FlashConnection>					_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
 	std::map<Mona::UInt64, RTMFPFlow*>					_flows;
 	Mona::UInt64										_mainFlowId; // Main flow ID, if it is closed we must close the session
-	Invoker*											_pInvoker; // Main invoker pointer to get poolBuffers
+	Invoker&											_invoker; // Main invoker pointer to get poolBuffers
 	Mona::UInt32										_sessionId; // id of the session;
 
 	FlashListener*										_pListener; // Listener of the main publication (only one by intance)
@@ -221,6 +224,9 @@ private:
 
 	// Send the close message (0C if normal, 4C if abrupt)
 	void												sendCloseChunk(bool abrupt);
+	
+	// Treat decoded message
+	virtual void										receive(const Mona::SocketAddress& address, Mona::BinaryReader& packet);
 
 	Mona::Time																	_closeTime; // Time since closure
 	Mona::Time																	_lastPing; // Time since last ping sent

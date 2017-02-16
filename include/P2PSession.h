@@ -50,7 +50,7 @@ class P2PSession : public FlowManager,
 	public P2PEvents::OnPeerClose,
 	public P2PEvents::OnPeerGroupAskClose {
 public:
-	P2PSession(RTMFPSession* parent, std::string id, Invoker* invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, /*const PEER_LIST_ADDRESS_TYPE& addresses,*/
+	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent,
 		const Mona::SocketAddress& host, bool responder, bool group);
 
 	virtual ~P2PSession();
@@ -125,6 +125,9 @@ public:
 
 	// Return the diffie hellman object (related to main session)
 	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh);
+	
+	// Set the host and peer addresses when receiving redirection address (only for P2P)
+	virtual void					setAddresses(const Mona::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses) { hostAddress = address; _knownAddresses.insert(addresses.begin(), addresses.end()); }
 
 	/*** Public members ***/
 

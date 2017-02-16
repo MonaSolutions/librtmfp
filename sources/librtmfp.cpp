@@ -80,7 +80,7 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	Util::UnpackUrl(url, host, publication, query);
 
 	Exception ex;
-	shared_ptr<RTMFPSession> pConn(new RTMFPSession(GlobalInvoker.get(), parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
+	shared_ptr<RTMFPSession> pConn(new RTMFPSession(*GlobalInvoker, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
 	if (!pConn->connect(ex, url, host.c_str())) {
 		ERROR("Error in connect : ", ex.error())

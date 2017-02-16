@@ -118,16 +118,14 @@ short initFiles(const char* mediaFile) {
 				return 0;
 
 			printf("Output file %s opened\n", listFileNames[i]);
-			if (_option == SYNC_READ)
-				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, listFiles[i]);
+			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, listFiles[i]);
 		}
 	}
 	else { // Normal read file
 		if (!openFile(&pOutFile, mediaFile, "wb+"))
 			return 0;
 		printf("Output file %s opened\n", mediaFile);
-		if (_option == SYNC_READ)
-			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pOutFile);
+		fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pOutFile);
 	}
 	return 1;
 }
@@ -396,3 +394,4 @@ int main(int argc, char* argv[]) {
 	}
 	printf("End of the program\n");
 }
+

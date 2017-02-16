@@ -39,10 +39,11 @@ public:
 
 	// Return the size of peer addresses for Group Report 
 	UInt32	addressesSize() {
-		UInt32 size = hostAddress.host().size() + 4; // +4 for 0A, address type and port
+		UInt32 size = 1; // 1 for 0A header
+		if (hostAddress.host())
+			size += hostAddress.host().size() + 3; // +3 for address type and port
 		for (auto itAddress : addresses)
-			if (itAddress.second != RTMFP::ADDRESS_LOCAL)
-				size += itAddress.first.host().size() + 3; // +3 for address type and port
+			size += itAddress.first.host().size() + 3; // +3 for address type and port
 		return size;
 	}
 
@@ -117,12 +118,6 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
 		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
 		ReadGroupConfig(pParameters, packet);  // TODO: check groupParameters
-
-		// We do not accept peer if they are not in the best list (TODO: not sure it is true anymore)
-		/*if (!_bestList.empty() && _bestList.find(peerId) == _bestList.end()) {
-			DEBUG("Best Peer - peer ", peerId, " media subscription rejected, not in the Best List")
-			return false;
-		}*/
 
 		if (streamName != stream) {
 			INFO("New stream available in the group but not registered : ", streamName)
@@ -265,7 +260,8 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 
 bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 
-	if (_mapHeardList.find(peerId) == _mapHeardList.end()) {
+	auto itHeardList = _mapHeardList.find(peerId);
+	if (itHeardList == _mapHeardList.end()) {
 		ERROR("Unknown peer to add : ", peerId)
 		return false;
 	}
@@ -276,6 +272,13 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 		return false;
 	}
 	DEBUG("Adding the peer ", peerId, " to the Best List")
+
+	// Update the heard list addresses
+	itHeardList->second.hostAddress = pPeer->hostAddress;
+	for (auto itAddress : pPeer->addresses())
+		if (itAddress.second & RTMFP::ADDRESS_LOCAL)
+			itHeardList->second.addresses.emplace(itAddress.first, itAddress.second);
+
 	_mapPeers.emplace_hint(it, peerId, pPeer);
 
 	pPeer->OnNewMedia::subscribe(onNewMedia);
@@ -435,7 +438,7 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 		}
 	}
 
-	if (bestList == _bestList && _mapPeers.size() != _bestList.size())
+	if (bestList == _bestList)
 		INFO("Best Peer - Peers connected : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
 }
 
@@ -481,10 +484,10 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 			writer.write7BitLongValue(timeElapsed);
 			writer.write8(itNode->second.addressesSize());
 			writer.write8(0x0A);
-			RTMFP::WriteAddress(writer, itNode->second.hostAddress, RTMFP::ADDRESS_REDIRECTION);
+			if (itNode->second.hostAddress)
+				RTMFP::WriteAddress(writer, itNode->second.hostAddress, RTMFP::ADDRESS_REDIRECTION);
 			for (auto itAddress : itNode->second.addresses)
-				if (itAddress.second != RTMFP::ADDRESS_LOCAL)
-					RTMFP::WriteAddress(writer, itAddress.first, itAddress.second);
+				RTMFP::WriteAddress(writer, itAddress.first, itAddress.second);
 			writer.write8(0);
 		}
 	}
@@ -626,15 +629,22 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 		size = packet.read8(); // Addresses size
 
 		// New peer, read its addresses
-		if (size >= 0x08 && newPeerId != _conn.peerId() && _mapHeardList.find(newPeerId) == _mapHeardList.end() && *packet.current() == 0x0A) {
+		if (newPeerId != _conn.peerId() && *packet.current() == 0x0A) {
 
 			BinaryReader addressReader(packet.current() + 1, size - 1); // +1 to ignore 0A
-			hostAddress = _conn.address(); // default host is the same as ours
-			listAddresses.clear();
-			if (RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress)) {
+			auto itHeardList = _mapHeardList.find(newPeerId);
+			// New peer? => add it to heard list
+			if (itHeardList == _mapHeardList.end()) {
+				hostAddress.clear();
+				listAddresses.clear();
+				RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress);
 				newPeers = true;
 				addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-			}
+			} 
+			// Else if no host is set update the addresses
+			else if (!itHeardList->second.hostAddress)
+				RTMFP::ReadAddresses(addressReader, itHeardList->second.addresses, itHeardList->second.hostAddress);
+				
 		}
 		packet.next(size);
 	}

@@ -46,7 +46,6 @@ bool GroupStream::process(PacketReader& packet, UInt64 flowId, UInt64 writerId, 
 			string rawId("\x21\x0F", PEER_ID_SIZE + 2), id;
 			packet.read(PEER_ID_SIZE, STR (rawId.data() + 2));
 			Util::FormatHex(BIN rawId.data() + 2, PEER_ID_SIZE, id);
-			DEBUG("NetGroup Peer ID added : ", id)
 			OnNewPeer::raise(rawId, id);
 			return true;
 		}

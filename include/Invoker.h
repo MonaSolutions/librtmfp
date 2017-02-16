@@ -23,7 +23,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/SocketManager.h"
 #include "Mona/TerminateSignal.h"
-#include "RTMFPSession.h"
 
 #define DELAY_CONNECTIONS_MANAGER	50 // Delay between each onManage (in msec)
 
@@ -39,6 +38,7 @@ private:
 	Invoker& _invoker;
 };
 
+class RTMFPSession;
 class RTMFPLogger;
 class Invoker : public Mona::TaskHandler, private Mona::Startable {
 friend class ConnectionsManager;

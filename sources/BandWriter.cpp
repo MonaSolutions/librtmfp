@@ -24,15 +24,20 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 using namespace Mona;
 
-BandWriter::BandWriter() : _farId(0), _timeReceived(0), _pThread(NULL),
+BandWriter::BandWriter(Invoker& invoker, const Mona::UInt8* decryptKey) : _farId(0), _timeReceived(0), _pThread(NULL),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
-	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)) {
-
+	_decoder(invoker, decryptKey),
+	onDecoded([this](BinaryReader& packet, const SocketAddress& address) { receive(address, packet); }),
+	onDecodedEnd([this]() { /*TODO*/ }) {
+	_decoder.OnDecodedEnd::subscribe(onDecodedEnd);
+	_decoder.OnDecoded::subscribe(onDecoded);
 }
 
 BandWriter::~BandWriter() {
 	_pThread = NULL;
 	_pSender.reset();
+	_decoder.OnDecodedEnd::unsubscribe(onDecodedEnd);
+	_decoder.OnDecoded::unsubscribe(onDecoded);
 }
 
 UInt8* BandWriter::packet() {
@@ -89,16 +94,6 @@ bool BandWriter::decode(Exception& ex, const SocketAddress& address, PoolBuffer&
 		return false;
 	}
 
-#if defined(_DEBUG)
-	Buffer copy(pBuffer.size());
-	memcpy(copy.data(), pBuffer.data(), pBuffer.size());
-#endif
-	if (!_pDecoder->process(BIN pBuffer.data(), pBuffer.size())) {
-		ex.set(Exception::PROTOCOL, "Bad RTMFP CRC sum computing (address : ", address.toString(), ", session : ", name(), ")");
-#if defined(_DEBUG)
-		DUMP("RTMFP", copy.data(), copy.size(), "Raw request : ")
-#endif
-		return false;
-	}
+	_decoder.decode(address, pBuffer);
 	return true;
 }

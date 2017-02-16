@@ -24,6 +24,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Mona.h"
 #include "Mona/PacketWriter.h"
 #include "Mona/UDPSocket.h"
+#include "Decoder.h"
 
 class RTMFPSender;
 class RTMFPEngine;
@@ -34,7 +35,7 @@ It is implemented by FlowManager & RTMFPHandshaker
 */
 class BandWriter : public virtual Mona::Object {
 public:
-	BandWriter();
+	BandWriter(Invoker& invoker, const Mona::UInt8* decryptKey);
 	virtual ~BandWriter();
 
 	// Return the pool buffers object
@@ -65,7 +66,9 @@ protected:
 	std::shared_ptr<RTMFPSender>			_pSender; // Current sender object
 
 	// Encryption/Decryption
-	std::shared_ptr<RTMFPEngine>			_pDecoder;
+	RTMFPDecoder							_decoder;
+	RTMFPDecoder::OnDecodedEnd::Type		onDecodedEnd;
+	RTMFPDecoder::OnDecoded::Type			onDecoded;
 	std::shared_ptr<RTMFPEngine>			_pEncoder;
 	
 	Mona::UInt32							_farId;
@@ -74,5 +77,8 @@ protected:
 	Mona::SocketAddress						_address;
 
 private:
+	// Treat decoded message
+	virtual void							receive(const Mona::SocketAddress& address, Mona::BinaryReader& packet) = 0 ;
+
 	Mona::PoolThread*						_pThread; // Thread used to send last message
 };

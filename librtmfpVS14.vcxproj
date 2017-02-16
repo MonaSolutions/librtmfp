@@ -96,6 +96,7 @@
     <ClInclude Include="include\BandWriter.h" />
     <ClInclude Include="include\DataReader.h" />
     <ClInclude Include="include\DataWriter.h" />
+    <ClInclude Include="include\Decoder.h" />
     <ClInclude Include="include\FlashConnection.h" />
     <ClInclude Include="include\FlashStream.h" />
     <ClInclude Include="include\FlashWriter.h" />
@@ -144,6 +145,7 @@
     <ClCompile Include="sources\Publisher.cpp" />
     <ClCompile Include="sources\ReferableReader.cpp" />
     <ClCompile Include="sources\RTMFP.cpp" />
+    <ClCompile Include="sources\RTMFPDecoder.cpp" />
     <ClCompile Include="sources\RTMFPFlow.cpp" />
     <ClCompile Include="sources\RTMFPHandshaker.cpp" />
     <ClCompile Include="sources\RTMFPSender.cpp" />
