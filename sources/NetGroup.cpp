@@ -130,6 +130,14 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_conn.poolBuffers(), stream, streamKey, pParameters));
 			itGroupMedia->second.subscribe(onGroupPacket);
 			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id," for the stream ", stream, " :\n", Util::FormatHex(BIN streamKey.data(), streamKey.size(), LOG_BUFFER))
+
+			// Send the group media infos to each other peers
+			for (auto itPeer : _mapPeers) {
+				if (itPeer.first == peerId)
+					continue;
+				auto pPeerMedia = itPeer.second->getPeerMedia(itGroupMedia->first);
+				itGroupMedia->second.sendGroupMedia(pPeerMedia);
+			}
 		}
 		
 		// And finally try to add the peer and send the GroupMedia subscription

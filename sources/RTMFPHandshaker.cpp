@@ -476,7 +476,7 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		DEBUG("Server has sent to us the peer addresses of responders") // (we are the initiator)
 
 		// Reset the host address if it changes
-		if (hostAddress != pHandshake->hostAddress) {
+		if (hostAddress && hostAddress != pHandshake->hostAddress) {
 			pHandshake->pSession->setAddresses(hostAddress, pHandshake->listAddresses);
 			pHandshake->hostAddress = hostAddress;
 		}
