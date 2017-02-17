@@ -1,9 +1,13 @@
 #!/bin/bash
 #
 # Test script for starting many group viewers
+#
+# Sample usage :
+# ./runViewers.sh --nomedia --nb=5 --url=rtmfp://localhost/test --group=G:027f02010101000103010c050e74657374011b00 --dump
+#
 
 URL="rtmfp://127.0.0.1/test"
-GROUP="G:027f02010101000103010c050e74657374011b00"
+GROUP=""
 LOG=8
 DUMP=""
 UPDATEPERIOD=100
@@ -20,7 +24,7 @@ case $i in
     shift # past argument=value
     ;;
     --group=*)
-    GROUP="${i#*=}"
+    GROUP="--netGroup=${i#*=}"
     shift # past argument=value
     ;;
     --log=*)
@@ -60,7 +64,7 @@ for (( i=1; i<=$NB; i++ ))
 do
   MEDIAFILE=$([ $NOMEDIA == 0 ] && echo "--mediaFile=out$i.flv" || echo "")
   LOGFILE=$([ $NOLOG == 0 ] && echo "--logFile=testPlay$i.log" || echo "")
-  echo "./TestClient --url=$URL --netgroup=$GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &"
-  ./TestClient --url=$URL --netgroup=$GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &
+  echo "./TestClient --url=$URL $GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &"
+  ./TestClient --url=$URL $GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &
 done
 
