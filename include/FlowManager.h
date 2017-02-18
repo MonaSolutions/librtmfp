@@ -125,8 +125,8 @@ public:
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt);
 
-	// Set the host and peer addresses when receiving redirection address (only for P2P)
-	virtual void					setAddresses(const Mona::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses) {}
+	// Set the host and peer addresses when receiving redirection request (only for P2P)
+	virtual void					addAddress(const Mona::SocketAddress& address, RTMFP::AddressType type) {}
 
 protected:
 

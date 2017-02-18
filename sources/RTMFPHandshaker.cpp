@@ -142,12 +142,9 @@ void RTMFPHandshaker::manage() {
 					_address.set(pHandshake->hostAddress);
 					sendHandshake30(pHandshake->pSession->epd(), itHandshake->first);
 				}
-				// If we are not in p2p mode we must send to all known addresses
-				if (!pHandshake->isP2P) {
-					for (auto itAddresses : pHandshake->listAddresses) {
-						_address.set(itAddresses.first);
-						sendHandshake30(pHandshake->pSession->epd(), itHandshake->first);
-					}
+				for (auto itAddresses : pHandshake->listAddresses) {
+					_address.set(itAddresses.first);
+					sendHandshake30(pHandshake->pSession->epd(), itHandshake->first);
 				}
 				if (pHandshake->status == RTMFP::STOPPED)
 					pHandshake->status = RTMFP::HANDSHAKE30;
@@ -450,10 +447,10 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		ERROR("Unexpected tag size : ", tagSize)
 			return;
 	}
-	string tagReceived;
-	reader.read(16, tagReceived);
+	string tag;
+	reader.read(16, tag);
 
-	auto itTag = _mapTags.find(tagReceived);
+	auto itTag = _mapTags.find(tag);
 	if (itTag == _mapTags.end()) {
 		DEBUG("Unexpected tag received from ", _address.toString(), ", possible old request")
 		return;
@@ -467,27 +464,20 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		DEBUG("Redirection message ignored, we have already received handshake 70")
 		return;
 	}
+	DEBUG(pHandshake->isP2P ? "Server has sent to us the peer addresses of responders" : "Server redirection messsage, sending back the handshake 30")
 
 	// Read addresses
 	SocketAddress hostAddress;
-	RTMFP::ReadAddresses(reader, pHandshake->listAddresses, hostAddress);
+	RTMFP::ReadAddresses(reader, pHandshake->listAddresses, pHandshake->hostAddress, [this, pHandshake, hostAddress, tag](const SocketAddress& address, RTMFP::AddressType type) {
+		if (pHandshake->isP2P)
+			pHandshake->pSession->addAddress(address, type);
 
-	if (pHandshake->isP2P) {
-		DEBUG("Server has sent to us the peer addresses of responders") // (we are the initiator)
-
-		// Reset the host address if it changes
-		if (hostAddress && hostAddress != pHandshake->hostAddress) {
-			pHandshake->pSession->setAddresses(hostAddress, pHandshake->listAddresses);
-			pHandshake->hostAddress = hostAddress;
+		// Send the handshake 30 to new address
+		if (type != RTMFP::ADDRESS_REDIRECTION) {
+			_address.set(address);
+			sendHandshake30(pHandshake->pSession->epd(), tag);
 		}
-
-		// Send the handshake 30 to all addresses
-		for (auto itAddresses : pHandshake->listAddresses) {
-			_address.set(itAddresses.first);
-			sendHandshake30(pHandshake->pSession->epd(), tagReceived);
-		}
-	} else
-		DEBUG("Server redirection messsage, sending back the handshake 30")
+	});
 }
 
 void RTMFPHandshaker::flush(UInt8 marker, UInt32 size) {

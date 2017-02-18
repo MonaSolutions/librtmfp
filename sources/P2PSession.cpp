@@ -504,16 +504,23 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 	return true;
 }
 
-UDPSocket& P2PSession::socket(Mona::IPAddress::Family family) { 
+UDPSocket& P2PSession::socket(IPAddress::Family family) { 
 	return _parent->socket(family); 
 }
 
-void P2PSession::removeHandshake(std::shared_ptr<Handshake>& pHandshake) {
+void P2PSession::removeHandshake(shared_ptr<Handshake>& pHandshake) {
 	_parent->removeHandshake(pHandshake);
 }
 
 bool P2PSession::diffieHellman(DiffieHellman* &pDh) {
 	return _parent->diffieHellman(pDh);
+}
+
+void P2PSession::addAddress(const SocketAddress& address, RTMFP::AddressType type) {
+	if (type == RTMFP::ADDRESS_REDIRECTION)
+		hostAddress == address;
+	else
+		_knownAddresses.emplace(address, type);
 }
 
 void P2PSession::buildGroupKey() {

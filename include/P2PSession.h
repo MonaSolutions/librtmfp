@@ -126,8 +126,8 @@ public:
 	// Return the diffie hellman object (related to main session)
 	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh);
 	
-	// Set the host and peer addresses when receiving redirection address (only for P2P)
-	virtual void					setAddresses(const Mona::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses) { hostAddress = address; _knownAddresses.insert(addresses.begin(), addresses.end()); }
+	// Set the host and peer addresses when receiving redirection request (only for P2P)
+	virtual void					addAddress(const Mona::SocketAddress& address, RTMFP::AddressType type);
 
 	/*** Public members ***/
 

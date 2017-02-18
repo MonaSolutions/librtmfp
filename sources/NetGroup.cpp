@@ -517,16 +517,20 @@ void NetGroup::manageBestConnections() {
 	}
 
 	// Connect to new peers
-	for (auto it : _bestList) {
-		if (_mapPeers.find(it) == _mapPeers.end()) {
-			auto itNode = _mapHeardList.find(it);
+	int nbConnect = _bestList.size() - _mapPeers.size(); // trick to keep the target count of peers
+	auto it2Connect = _bestList.begin();
+	while (nbConnect > 0 && it2Connect != _bestList.end()) {
+		if (_mapPeers.find(*it2Connect) == _mapPeers.end()) {
+			auto itNode = _mapHeardList.find(*it2Connect);
 			if (itNode == _mapHeardList.end())
-				WARN("Unable to find the peer ", it) // implementation error, should not happen
+				WARN("Unable to find the peer ", *it2Connect) // implementation error, should not happen
 			else {
-				DEBUG("Best Peer - Connecting to peer ", it, "...")
-				_conn.connect2Peer(it.c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress);
+				DEBUG("Best Peer - Connecting to peer ", *it2Connect, "...")
+				_conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress);
+				--nbConnect;
 			}
 		}
+		++it2Connect;
 	}
 }
 
@@ -581,7 +585,7 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, PacketR
 bool NetGroup::readGroupReport(PacketReader& packet) {
 	string tmp, newPeerId, rawId;
 	SocketAddress myAddress, serverAddress;
-	UInt8 addressType;
+	RTMFP::AddressType addressType;
 	PEER_LIST_ADDRESS_TYPE listAddresses;
 	SocketAddress hostAddress(_conn.address());
 
@@ -607,7 +611,7 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 		return false;
 	}
 	BinaryReader peerAddressReader(packet.current(), size - 1);
-	RTMFP::ReadAddresses(peerAddressReader, listAddresses, hostAddress);
+	RTMFP::ReadAddresses(peerAddressReader, listAddresses, hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 	packet.next(size - 1);
 
 	// Loop on each peer of the NetGroup
@@ -645,13 +649,13 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 			if (itHeardList == _mapHeardList.end()) {
 				hostAddress.clear();
 				listAddresses.clear();
-				RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress);
+				RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 				newPeers = true;
 				addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 			} 
-			// Else if no host is set update the addresses
-			else if (!itHeardList->second.hostAddress)
-				RTMFP::ReadAddresses(addressReader, itHeardList->second.addresses, itHeardList->second.hostAddress);
+			// Else update the addresses
+			else
+				RTMFP::ReadAddresses(addressReader, itHeardList->second.addresses, itHeardList->second.hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 				
 		}
 		packet.next(size);

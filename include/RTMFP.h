@@ -32,7 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x0102000C	// (1.2.12)
+#define RTMFP_LIB_VERSION	0x0102000D	// (1.2.13)
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -101,7 +101,7 @@ public:
 		FAILED
 	};
 
-	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, Mona::UInt8& addressType);
+	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, AddressType& addressType);
 	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
 	static Mona::UInt32				Unpack(Mona::BinaryReader& reader);
@@ -126,7 +126,7 @@ public:
 
 	// Read addresses from the buffer reader
 	// return : True if at least an address has been read
-	static bool	ReadAddresses(Mona::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Mona::SocketAddress& hostAddress);
+	static bool	ReadAddresses(Mona::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Mona::SocketAddress& hostAddress, std::function<void(const Mona::SocketAddress&, AddressType)> onNewAddress);
 
 	// Return a random iterator which respect the isAllowed condition
 	template<class ContainerType, typename Iterator>

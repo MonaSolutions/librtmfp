@@ -25,9 +25,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, UInt8& addressType) {
+bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, AddressType& addressType) {
 	string data;
-	addressType = reader.read8();
+	addressType = (AddressType)reader.read8();
 	reader.read<string>((addressType & 0x80) ? sizeof(in6_addr) : sizeof(in_addr), data);
 	in_addr addrV4;
 	in6_addr addrV6;
@@ -104,21 +104,30 @@ void RTMFP::Write7BitValue(string& buff,UInt64 value) {
 	String::Append(buff, (char)(max ? value&0xFF : value&0x7F));
 }
 
-bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, SocketAddress& hostAddress) {
+bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, SocketAddress& hostAddress, function<void(const SocketAddress&, AddressType)> onNewAddress) {
 
 	// Read all addresses
 	SocketAddress address;
-	UInt8 addressType;
+	AddressType addressType;
 	while (reader.available()) {
 
 		RTMFP::ReadAddress(reader, address, addressType);
 		switch (addressType & 0x0F) {
 		case RTMFP::ADDRESS_LOCAL:
-		case RTMFP::ADDRESS_PUBLIC:
-			addresses.emplace(address, (RTMFP::AddressType)addressType);
+		case RTMFP::ADDRESS_PUBLIC: {
+			auto itAddress = addresses.lower_bound(address);
+			if (itAddress == addresses.end() || itAddress->first != address) { // new address?
+				addresses.emplace_hint(itAddress, address, addressType);
+				onNewAddress(address, addressType);
+			}
 			break;
+		}
 		case RTMFP::ADDRESS_REDIRECTION:
-			hostAddress = address; break;
+			if (hostAddress != address) { // new address?
+				hostAddress = address;
+				onNewAddress(address, addressType);
+			}
+			break;
 		}
 		TRACE("IP Address : ", address.toString(), " - type : ", addressType)
 	}

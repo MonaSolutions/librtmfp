@@ -617,7 +617,7 @@ void RTMFPSession::handleP2PAddressExchange(PacketReader& reader) {
 	string buff;
 	reader.read(PEER_ID_SIZE, buff);
 	SocketAddress address;
-	UInt8 addressType;
+	RTMFP::AddressType addressType;
 	RTMFP::ReadAddress(reader, address, addressType);
 
 	string tag;
