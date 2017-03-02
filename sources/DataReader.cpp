@@ -25,21 +25,39 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-DataReaderNull  DataReader::Null;
-DataWriterNull  DataWriter::Null;
+DataWriter& DataWriter::Null() {
+	static struct DataWriterNull : DataWriter, virtual Object {
+		DataWriterNull() {}
 
-DataReader::DataReader() : packet(PacketReader::Null),_pos(0),_nextType(END) {
+		UInt64 beginObject(const char* type = NULL) { return 0; }
+		void writePropertyName(const char* value) {}
+		void endObject() {}
 
+		UInt64 beginArray(UInt32 size) { return 0; }
+		void endArray() {}
+
+		void   writeNumber(double value) {}
+		void   writeString(const char* value, UInt32 size) {}
+		void   writeBoolean(bool value) {}
+		void   writeNull() {}
+		UInt64 writeDate(const Date& date) { return 0; }
+		UInt64 writeBytes(const UInt8* data, UInt32 size) { return 0; }
+	} Null;
+	return Null;
 }
 
-DataReader::DataReader(PacketReader& packet): packet(packet),_pos(packet.position()),_nextType(END) {
-
+DataReader& DataReader::Null() {
+	static struct DataReaderNull : DataReader, virtual Object {
+		bool	readOne(UInt8 type, DataWriter& writer) { return false; }
+		UInt8	followingType() { return END; }
+	} Null;
+	return Null;
 }
 
 bool DataReader::readNext(DataWriter& writer) {
 	UInt8 type(nextType());
 	_nextType = END; // to prevent recursive readNext call (and refresh followingType call)
-	if(type!=END)
+	if (type != END)
 		return readOne(type, writer);
 	return false;
 }
@@ -48,7 +66,6 @@ bool DataReader::readNext(DataWriter& writer) {
 UInt32 DataReader::read(DataWriter& writer, UInt32 count) {
 	bool all(count == END);
 	UInt32 results(0);
-	UInt8 type(END);
 	while ((all || count-- > 0) && readNext(writer))
 		++results;
 	return results;
@@ -59,8 +76,8 @@ bool DataReader::read(UInt8 type, DataWriter& writer) {
 		return false;
 	UInt32 count(read(writer, 1));
 	if (count>1) {
-		WARN(typeid(*this).name(), " has written many object for just one reading of type ",type);
+		WARN(typeof(*this), " has written many object for just one reading of type ", type);
 		return true;
 	}
-	return count==1;
+	return count == 1;
 }

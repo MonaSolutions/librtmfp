@@ -2,7 +2,7 @@
 
 #include <stdio.h>
 
-#if defined(WIN32)
+#if defined(_WIN32)
 	#include <share.h>
 	#undef fopen
 	#define fopen(PATH,FLAGS) _fsopen(PATH, FLAGS, _SH_DENYNO)

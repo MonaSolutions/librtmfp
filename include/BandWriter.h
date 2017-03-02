@@ -22,11 +22,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "Mona/Mona.h"
-#include "Mona/PacketWriter.h"
 #include "Mona/UDPSocket.h"
-#include "Decoder.h"
+#include "Invoker.h"
+#include "RTMFPDecoder.h"
 
-class RTMFPSender;
+struct RTMFPSender;
 class RTMFPEngine;
 class PoolThread;
 /***************************************************
@@ -35,14 +35,11 @@ It is implemented by FlowManager & RTMFPHandshaker
 */
 class BandWriter : public virtual Mona::Object {
 public:
-	BandWriter(Invoker& invoker, const Mona::UInt8* decryptKey);
+	BandWriter(Invoker& invoker);
 	virtual ~BandWriter();
-
-	// Return the pool buffers object
-	virtual const Mona::PoolBuffers&		poolBuffers()=0;
 	
 	// Return the data for writing
-	virtual Mona::UInt8*					packet();
+	virtual Mona::BinaryWriter&				packet();
 
 	// Return the name of the session
 	virtual const std::string&				name() = 0;
@@ -55,20 +52,17 @@ public:
 	virtual bool							failed()=0;
 
 	// Return the socket object
-	virtual Mona::UDPSocket&				socket(Mona::IPAddress::Family family)=0;
+	virtual const std::shared_ptr<Mona::Socket>&		socket(Mona::IPAddress::Family family)=0;
 
-	// Handle receiving packet
-	virtual void							process(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer)=0;
+	// Return the decoder to start the decoding process
+	std::shared_ptr<RTMFPEngine>&			decoder() { return _pDecoder; }
 
 protected:
-	bool									decode(Mona::Exception& ex, const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer);
 
 	std::shared_ptr<RTMFPSender>			_pSender; // Current sender object
 
 	// Encryption/Decryption
-	RTMFPDecoder							_decoder;
-	RTMFPDecoder::OnDecodedEnd::Type		onDecodedEnd;
-	RTMFPDecoder::OnDecoded::Type			onDecoded;
+	std::shared_ptr<RTMFPEngine>			_pDecoder;
 	std::shared_ptr<RTMFPEngine>			_pEncoder;
 	
 	Mona::UInt32							_farId;
@@ -77,8 +71,7 @@ protected:
 	Mona::SocketAddress						_address;
 
 private:
-	// Treat decoded message
-	virtual void							receive(const Mona::SocketAddress& address, Mona::BinaryReader& packet) = 0 ;
 
-	Mona::PoolThread*						_pThread; // Thread used to send last message
+	Mona::UInt16							_threadSend; // Thread used to send last message
+	Invoker&								_invoker;
 };

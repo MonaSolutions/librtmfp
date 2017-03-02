@@ -25,19 +25,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "P2PSession.h"
 #include "GroupListener.h"
 
-namespace GroupMediaEvents {
-	struct OnGroupPacket : Mona::Event<void(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size, double lostRate, bool audio)> {}; // called when receiving a new packet
-}
-
-class MediaPacket;
 /**********************************************
 GroupMedia is the class that manage a stream
 from a NetGroup connection
 */
-class GroupMedia : public virtual Mona::Object,
-	public GroupMediaEvents::OnGroupPacket {
-public:
-	GroupMedia(const Mona::PoolBuffers& poolBuffers, const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters);
+struct GroupMedia : virtual Mona::Object {
+	typedef Mona::Event<void(Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type)> ON(GroupPacket); // called when receiving a new packet
+	
+	GroupMedia(const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters);
 	virtual ~GroupMedia();
 
 	// Regularly called to send the fragments maps, the pull requests and the push requests
@@ -55,20 +50,21 @@ public:
 	// Create a new fragment that will call a function
 	void						callFunction(const char* function, int nbArgs, const char** args);
 
+	GroupListener::OnMedia						onMedia; // Create a new fragment from a media packet
+
 	Mona::UInt32								id; // id of the GroupMedia (incremental)
 	std::shared_ptr<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream
-	GroupEvents::OnMedia::Type					onMedia; // onMedia event when it is publisher
 	
 private:
 	#define MAP_PEERS_INFO_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>
 	#define MAP_PEERS_INFO_ITERATOR_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>::iterator
-	#define MAP_FRAGMENTS_ITERATOR std::map<Mona::UInt64, MediaPacket>::iterator
+	#define MAP_FRAGMENTS_ITERATOR std::map<Mona::UInt64, GroupFragment>::iterator
 
 	// Add a new fragment to the map _fragments
-	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt8 splitedNumber, Mona::UInt8 mediaType, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
+	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt8 splitedNumber, Mona::UInt8 mediaType, Mona::UInt32 time, const Mona::Packet& packet);
 
 	// Push an arriving fragment to the peers and write it into the output file (recursive function)
-	bool						pushFragment(std::map<Mona::UInt64, MediaPacket>::iterator& itFragment);
+	bool						pushFragment(std::map<Mona::UInt64, GroupFragment>::iterator& itFragment);
 
 	// Update the fragment map
 	// Return 0 if there is no fragments, otherwise the last fragment number
@@ -97,26 +93,26 @@ private:
 	// Remove the peer from the map
 	void						removePeer(MAP_PEERS_INFO_ITERATOR_TYPE itPeer);
 
+	PeerMedia::OnPeerClose										_onPeerClose; // notify parent that the peer is closing (update the NetGroup push flags)
+	PeerMedia::OnPlayPull										_onPlayPull; // called when we receive a pull request
+	PeerMedia::OnFragmentsMap									_onFragmentsMap; // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
+	PeerMedia::OnFragment										_onFragment;
+
 	const std::string&											_stream; // stream name
 	const std::string											_streamKey; // stream key
-	const Mona::PoolBuffers&									_poolBuffers; // Pool buffer used to write media packets
 
 	Mona::Time													_lastPushUpdate; // last Play Push calculation
 	Mona::Time													_lastPullUpdate; // last Play Pull calculation
 	Mona::Time													_lastFragmentsMap; // last Fragments Map Message calculation
 
-	std::map<Mona::UInt64, MediaPacket>							_fragments;
+	std::map<Mona::UInt64, GroupFragment>						_fragments;
 	std::map<Mona::UInt32, Mona::UInt64>						_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
 	Mona::UInt64												_fragmentCounter; // Current fragment counter of writed fragments (fragments sent to application)
 
-	static Mona::Buffer											_fragmentsMapBuffer; // General buffer for fragments map
+	Mona::Buffer												_fragmentsMapBuffer; // General buffer for fragments map
 	static Mona::UInt32											GroupMediaCounter; // static counter of GroupMedia for id assignment
 
 	MAP_PEERS_INFO_TYPE											_mapPeers; // map of peers subscribed to this media stream
-	PeerMediaEvents::OnPeerClose::Type							onPeerClose;
-	PeerMediaEvents::OnPlayPull::Type							onPlayPull;
-	PeerMediaEvents::OnFragmentsMap::Type						onFragmentsMap;
-	PeerMediaEvents::OnFragment::Type							onFragment;
 
 	// map of peers iterators
 	MAP_PEERS_INFO_ITERATOR_TYPE								_itFragmentsPeer; // Current peer for fragments map requests

@@ -21,18 +21,19 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
 #include "Mona/SocketAddress.h"
+#include "Mona/Mona.h"
 #include "Mona/BinaryReader.h"
 #include "Mona/BinaryWriter.h"
 #include "Mona/Time.h"
 #include "Mona/Crypto.h"
+#include "Mona/Util.h"
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x0102000D	// (1.2.13)
+#define RTMFP_LIB_VERSION	0x02000000	// (2.0.0)
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -70,7 +71,7 @@ public:
 		if (_direction == DECRYPT) { // check CRC
 			Mona::BinaryReader reader(data, size);
 			Mona::UInt16 crc(reader.read16());
-			return (Mona::Crypto::ComputeCRC(reader) == crc);
+			return (Mona::Crypto::ComputeCRC32(reader.current(), reader.available()) == crc);
 		}
 		return true;
 	}
@@ -90,6 +91,15 @@ public:
 		ADDRESS_REDIRECTION=3
 	};
 
+	enum {
+		MESSAGE_OPTIONS = 0x80,
+		MESSAGE_WITH_BEFOREPART = 0x20,
+		MESSAGE_WITH_AFTERPART = 0x10,
+		MESSAGE_RELIABLE = 0x04, // not a RTMFP spec., just for a RTMFPPacket need
+		MESSAGE_ABANDON = 0x02,
+		MESSAGE_END = 0x01
+	};
+
 	enum SessionStatus {
 		STOPPED,
 		HANDSHAKE30,
@@ -105,18 +115,16 @@ public:
 	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
 	static Mona::UInt32				Unpack(Mona::BinaryReader& reader);
-	static void						Pack(Mona::BinaryWriter& writer,Mona::UInt32 farId);
+	static void						Pack(Mona::Buffer& buffer,Mona::UInt32 farId);
 
-	static void						ComputeAsymetricKeys(const Mona::Buffer& sharedSecret,
-														const Mona::UInt8* initiatorNonce,Mona::UInt16 initNonceSize,
-														const Mona::UInt8* responderNonce,Mona::UInt16 respNonceSize,
+	static void						ComputeAsymetricKeys(const Mona::Binary& sharedSecret,
+														const Mona::UInt8* initiatorNonce,Mona::UInt32 initNonceSize,
+														const Mona::UInt8* responderNonce,Mona::UInt32 respNonceSize,
 														 Mona::UInt8* requestKey,
 														 Mona::UInt8* responseKey);
 
 	static Mona::UInt16				TimeNow() { return Time(Mona::Time::Now()); }
 	static Mona::UInt16				Time(Mona::Int64 timeVal) { return (timeVal / RTMFP_TIMESTAMP_SCALE)&0xFFFF; }
-
-	static void						Write7BitValue(std::string& buff,Mona::UInt64 value);
 
 	static bool						IsKeyFrame(const Mona::UInt8* data, Mona::UInt32 size) { return size>0 && (*data & 0xF0) == 0x10; }
 

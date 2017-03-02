@@ -27,8 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-
-AMFReader::AMFReader(PacketReader& packet) : ReferableReader(packet),_amf3(0),_referencing(true) {
+AMFReader::AMFReader(const UInt8* data, UInt32 size) : ReferableReader(data, size), _amf3(0), _referencing(true) {
 
 }
 
@@ -42,112 +41,117 @@ void AMFReader::reset() {
 	_referencing = true;
 }
 
-const char* AMFReader::readText(UInt32& size,bool nullIfEmpty) {
-	const char* value(NULL);
-	if (!_amf3) {
-		size = packet.read16();
-		value = (const char*)packet.current();
-		packet.next(size);
-		return nullIfEmpty && size==0 ? NULL : value;
+const char* AMFReader::readText(UInt32& size) {
+	UInt32 reset(0), reference(0);
+	if (_amf3) {
+		reference = reader.position();
+		size = reader.read7BitValue();
+		bool isInline = size & 0x01;
+		size >>= 1;
+		if (!isInline) {
+			if (size >= _stringReferences.size()) {
+				ERROR("AMF3 string reference not found");
+				return NULL;
+			}
+			reset = reader.position();
+			reader.reset(_stringReferences[size]);
+			size = (reader.read7BitValue() >> 1);
+		}
 	}
-	
-	UInt32 reference = packet.position();
-	size = packet.read7BitValue();
-	bool isInline = size&0x01;
-	size >>= 1;
-	if(isInline) {
-		value = (const char*)packet.current();
-		if (size > 0) {
+	else
+		size = reader.read16();
+
+	if (size > reader.available()) {
+		ERROR("AMF text bad-formed with a ", size, " size exceeding the ", reader.available(), " bytes available");
+		if (reset)
+			reader.reset(reset);
+		return NULL;
+	}
+	const char* text(STR reader.current());
+
+	if (reset)
+		reader.reset(reset);
+	else if (size) { // not record string empty
+		if (reference)
 			_stringReferences.emplace_back(reference);
-			packet.next(size);
-		}
-	} else {
-		if(size>=_stringReferences.size()) {
-			ERROR("AMF3 string reference not found")
-			return NULL;
-		}
-		UInt32 reset = packet.position();
-		packet.reset(_stringReferences[size]);
-		size = (packet.read7BitValue() >> 1);
-		value = (const char*)packet.current();
-		packet.reset(reset);
+		reader.next(size);
 	}
-	return nullIfEmpty && size==0 ? NULL : value;
+	return text;
 }
 
 UInt8 AMFReader::followingType() {
 
-	if(!packet.available())
+	if (!reader.available())
 		return END;
-	UInt8 type = *packet.current();
-	
-	if(_amf3) {
-		switch(type) {
-			case AMF3_UNDEFINED:
-			case AMF3_NULL:
-				return NIL;
-			case AMF3_FALSE:
-			case AMF3_TRUE:
-				return BOOLEAN;
-			case AMF3_INTEGER:
-			case AMF3_NUMBER:
-				return NUMBER;
-			case AMF3_STRING:
-				return STRING;
-			case AMF3_DATE:
-				return DATE;
-			case AMF3_BYTEARRAY:
-				return BYTES;
-			case AMF3_ARRAY:
-				return ARRAY;
-			case AMF3_DICTIONARY:
-				return MAP;
-			case AMF3_OBJECT:
-				return OBJECT;
+	UInt8 type = *reader.current();
+
+	if (_amf3) {
+		switch (type) {
+		case AMF::AMF3_UNDEFINED:
+		case AMF::AMF3_NULL:
+			return NIL;
+		case AMF::AMF3_FALSE:
+		case AMF::AMF3_TRUE:
+			return BOOLEAN;
+		case AMF::AMF3_INTEGER:
+		case AMF::AMF3_NUMBER:
+			return NUMBER;
+		case AMF::AMF3_STRING:
+			return STRING;
+		case AMF::AMF3_DATE:
+			return DATE;
+		case AMF::AMF3_BYTEARRAY:
+			return BYTES;
+		case AMF::AMF3_ARRAY:
+			return ARRAY;
+		case AMF::AMF3_DICTIONARY:
+			return MAP;
+		case AMF::AMF3_OBJECT:
+			return OBJECT;
 		}
 
-		ERROR("Unknown AMF3 type ",Format<UInt8>("%.2x",(UInt8)type))
-		packet.next(packet.available());
+		ERROR("Unknown AMF3 type ", String::Format<UInt8>("%.2x", type))
+			reader.next(reader.available());
 		return END;
 	}
-		
-	switch(type) {
-		case AMF_AVMPLUS_OBJECT:
-			packet.next();
-			_amf3 = 1;
-			return followingType();
-		case AMF_UNDEFINED:
-		case AMF_NULL:
-			return NIL;
-		case AMF_BOOLEAN:
-			return BOOLEAN;
-		case AMF_NUMBER:
-			return NUMBER;
-		case AMF_LONG_STRING:
-		case AMF_STRING:
-			return STRING;
-		case AMF_MIXED_ARRAY:
-		case AMF_STRICT_ARRAY:
-			return ARRAY;
-		case AMF_DATE:
-			return DATE;
-		case AMF_BEGIN_OBJECT:
-		case AMF_BEGIN_TYPED_OBJECT:
-			return OBJECT;
-		case AMF_REFERENCE:
-			return AMF0_REF;
-		case AMF_END_OBJECT:
-			ERROR("AMF0 end object type without begin object type before")
-			packet.next(packet.available());
-			return END;
-		case AMF_UNSUPPORTED:
-			WARN("Unsupported type in AMF0 format")
-			packet.next(packet.available());
-			return END;		
+
+	switch (type) {
+	case AMF::AMF0_AMF3_OBJECT:
+		reader.next();
+		_amf3 = 1;
+		return followingType();
+	case AMF::AMF0_UNDEFINED:
+	case AMF::AMF0_NULL:
+		return NIL;
+	case AMF::AMF0_BOOLEAN:
+		return BOOLEAN;
+	case AMF::AMF0_NUMBER:
+		return NUMBER;
+	case AMF::AMF0_LONG_STRING:
+	case AMF::AMF0_STRING:
+		return STRING;
+	case AMF::AMF0_MIXED_ARRAY:
+	case AMF::AMF0_STRICT_ARRAY:
+		return ARRAY;
+	case AMF::AMF0_DATE:
+		return DATE;
+	case AMF::AMF0_BEGIN_OBJECT:
+	case AMF::AMF0_BEGIN_TYPED_OBJECT:
+		return OBJECT;
+	case AMF::AMF0_REFERENCE:
+		return AMF0_REF;
+	case AMF::AMF0_END_OBJECT:
+		ERROR("AMF0 end object type without begin object type before")
+			reader.next(reader.available());
+		return END;
+	case AMF::AMF0_UNSUPPORTED:
+		WARN("Unsupported type in AMF0 format")
+			reader.next(reader.available());
+		return END;
 	}
 
-	ERROR("Unknown AMF0 type ",Format<UInt8>("%.2x",type))
-	packet.next(packet.available());
+	ERROR("Unknown AMF0 type ", String::Format<UInt8>("%.2x", type))
+		reader.next(reader.available());
 	return END;
 }
 
@@ -170,321 +174,371 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 
 	switch (type) {
 
-		case AMF0_REF: {
-			packet.next();
-			UInt16 reference = packet.read16();
-			if(reference>=_amf0References.size()) {
-				ERROR("AMF0 reference not found")
+	case AMF0_REF: {
+		reader.next();
+		UInt16 reference = reader.read16();
+		if (reference >= _amf0References.size()) {
+			ERROR("AMF0 reference not found")
+				return false;
+		}
+		if (writeReference(writer, (reference + 1) << 1))
+			return true;
+		UInt32 reset(reader.position());
+		reader.reset(_amf0References[reference]);
+		bool referencing(_referencing);
+		_referencing = false;
+		bool written = readNext(writer);
+		_referencing = referencing;
+		reader.reset(reset);
+		return written;
+	}
+
+	case STRING: {
+		type = reader.read8();
+		UInt32 size(0);
+		if (type == AMF::AMF0_LONG_STRING) {
+			size = reader.read32();
+			if (size > reader.available()) {
+				ERROR("AMF long string bad-formed with a ", size, " size exceeding the ", reader.available(), " bytes available");
 				return false;
 			}
-			if (writeReference(writer, (reference+1) << 1))
-				return true;
-			UInt32 reset(packet.position());
-			packet.reset(_amf0References[reference]);
-			bool referencing(_referencing);
-			_referencing = false;
-			bool written = readNext(writer);
-			_referencing = referencing;
-			packet.reset(reset);
-			return written;
+			writer.writeString(STR reader.current(), size);
+			reader.next(size);
+			return true;
+		}
+		const char* value(readText(size));
+		if (!value)
+			return false;
+		writer.writeString(value, size);
+		return true;
+	}
+
+	case BOOLEAN:
+		type = reader.read8();
+		writer.writeBoolean(_amf3 ? (type == AMF::AMF3_TRUE) : reader.read8() != 0x00);
+		return true;
+
+	case NUMBER: {
+		type = reader.read8();
+		if (!_amf3 || type == AMF::AMF3_NUMBER) {
+			writer.writeNumber(reader.readDouble());
+			return true;
+		}
+		// Forced in AMF3 here!
+		UInt32 value = reader.read7BitValue();
+		if (value>0xFFFFFFF)
+			value -= (1 << 29);
+		writer.writeNumber(value);
+		return true;
+	}
+
+	case NIL:
+		reader.next();
+		writer.writeNull();
+		return true;
+
+	case BYTES: {
+		reader.next();
+		// Forced in AMF3 here!
+		UInt32 pos = reader.position();
+		UInt32 size = reader.read7BitValue();
+		bool isInline = size & 0x01;
+		size >>= 1;
+
+		if (size > reader.available()) {
+			ERROR("AMF ByteArray bad-formed with a ", size, " size exceeding the ", reader.available(), " bytes available");
+			return false;
 		}
 
-		case STRING:  {
-			type = packet.read8();
-			UInt32 size(0);
-			if (type == AMF_LONG_STRING) {
-				size = packet.read32();
-				writer.writeString(STR packet.current(), size);
-				packet.next(size);
-				return true;
+		if (isInline) {
+			if (_referencing) {
+				_references.emplace_back(pos);
+				writeBytes(writer, (_references.size() << 1) | 0x01, reader.current(), size);
 			}
-			const char* value(readText(size));
-			if (!value)
-				return false;
-			writer.writeString(value, size);
+			else
+				writer.writeBytes(reader.current(), size);
+			reader.next(size);
 			return true;
 		}
-
-		case BOOLEAN:
-			type = packet.read8();
-			writer.writeBoolean(_amf3 ? (type == AMF3_TRUE) : packet.read8()!=0x00);
-			return true;
-
-		case NUMBER: {
-			type = packet.read8();
-			if (!_amf3 || type==AMF3_NUMBER) {
-				writer.writeNumber(packet.readNumber<double>());
-				return true;
+		if (!writeReference(writer, ((size + 1) << 1) | 0x01)) {
+			if (size >= _references.size()) {
+				ERROR("AMF3 reference not found")
+					return false;
 			}
-			// Forced in AMF3 here!
-			UInt32 value = packet.read7BitValue();
-			if(value>AMF_MAX_INTEGER)
-				value-=(1<<29);
-			writer.writeNumber(value);
-			return true;
+			UInt32 reset = reader.position();
+			reader.reset(_references[size]);
+			writeBytes(writer, ((++size) << 1) | 0x01, reader.current(), reader.read7BitValue() >> 1);
+			reader.reset(reset);
 		}
+		return true;
+	}
 
-		case NIL:
-			packet.next();
-			writer.writeNull();
-			return true;
-
-		case BYTES: {
-			packet.next();
-			// Forced in AMF3 here!
-			UInt32 pos = packet.position();
-			UInt32 size = packet.read7BitValue();
-			bool isInline = size&0x01;
-			size >>= 1;
-			if(isInline) {
+	case DATE: {
+		reader.next();
+		Date date;
+		if (_amf3) {
+			UInt32 pos = reader.position();
+			UInt32 flags = reader.read7BitValue();
+			bool isInline = flags & 0x01;
+			if (isInline) {
 				if (_referencing) {
 					_references.emplace_back(pos);
-					writeBytes(writer, (_references.size()<<1) | 0x01, packet.current(), size);
-				} else
-					writer.writeBytes(packet.current(), size);
-				packet.next(size);
+					writeDate(writer, (_references.size() << 1) | 0x01, date = reader.read64());
+				}
+				else
+					writer.writeDate(date = reader.read64());
 				return true;
 			}
-			if(!writeReference(writer, ((size+1)<<1) | 0x01)) {
-				if(size>=_references.size()) {
+			flags >>= 1;
+			if (!writeReference(writer, ((flags + 1) << 1) | 0x01)) {
+				if (flags >= _references.size()) {
 					ERROR("AMF3 reference not found")
-					return false;
+						return false;
 				}
-				UInt32 reset = packet.position();
-				packet.reset(_references[size]);
-				writeBytes(writer, ((++size)<<1) | 0x01, packet.current(), packet.read7BitValue()>>1);
-				packet.reset(reset);
+				UInt32 reset = reader.position();
+				reader.reset(_references[flags]);
+				writeDate(writer, ((++flags) << 1) | 0x01, date = reader.read64());
+				reader.reset(reset);
 			}
 			return true;
 		}
 
-		case DATE: {
-			packet.next();
-			Date date;
-			if (_amf3) {
-				UInt32 pos = packet.position();
-				UInt32 flags = packet.read7BitValue();
-				bool isInline = flags & 0x01;
-				if (isInline) {
-					if (_referencing) {
-						_references.emplace_back(pos);
-						writeDate(writer, (_references.size()<<1) | 0x01, date = (Int64)packet.readNumber<double>());
-					} else
-						writer.writeDate(date = (Int64)packet.readNumber<double>());
-					return true;
-				}
-				flags >>= 1;
-				if(!writeReference(writer, ((flags+1)<<1) | 0x01)) {
-					if (flags >= _references.size()) {
-						ERROR("AMF3 reference not found")
-						return false;
-					}
-					UInt32 reset = packet.position();
-					packet.reset(_references[flags]);
-					writeDate(writer,((++flags)<<1) | 0x01,date = (Int64)packet.readNumber<double>());
-					packet.reset(reset);
-				}
+		writer.writeDate(date = reader.read64());
+		reader.next(2); // Timezone, useless
+		return true;
+	}
+
+	case MAP: {
+		reader.next();
+		// AMF3
+		UInt32 reference = reader.position();
+		UInt32 size = reader.read7BitValue();
+		bool isInline = size & 0x01;
+		size >>= 1;
+
+
+		UInt32 reset(0);
+		bool referencing(_referencing);
+		Reference* pReference(NULL);
+		Exception ex;
+
+		if (!isInline) {
+			if (writeReference(writer, (((reference = size) + 1) << 1) | 0x01))
 				return true;
-			}
-			
-			writer.writeDate(date = (Int64)packet.readNumber<double>());
-			packet.next(2); // Timezone, useless
-			return true;
-		}
-
-		case MAP: {
-			packet.next();
-			// AMF3
-			UInt32 reference = packet.position();
-			UInt32 size = packet.read7BitValue();
-			bool isInline = size&0x01;
-			size >>= 1;
-
-
-			UInt32 reset(0);
-			bool referencing(_referencing);
-			Reference* pReference(NULL);
-			Exception ex;
-
-			if (!isInline) {
-				if (writeReference(writer, (((reference=size)+1)<<1) | 0x01))
-					return true;
-				if (size >= _references.size()) {
-					ERROR("AMF3 map reference not found")
+			if (size >= _references.size()) {
+				ERROR("AMF3 map reference not found")
 					return false;
-				}
-				reset = packet.position();
-				packet.reset(_references[reference]);
-				size = packet.read7BitValue() >> 1;
-				pReference = beginMap(writer,((++reference)<<1) | 0x01, ex, size, packet.read8() & 0x01);
-				_referencing = false;
-			} else if (_referencing) {
-				_references.emplace_back(reference);
-				pReference = beginMap(writer,(_references.size()<<1) | 0x01,ex, size, packet.read8() & 0x01);
-			} else
-				writer.beginMap(ex, size, packet.read8() & 0x01);
-
-			if (ex)
-				WARN(ex.error());
-
-			while (size-- > 0) {
-				if (ex) {
-					string prop;
-					StringWriter stringWriter(prop);
-					if (!readNext(stringWriter))
-						continue;
-					writer.writePropertyName(prop.c_str());
-				} else if (!readNext(writer)) // key
-					writer.writeNull();
-
-				if (!readNext(writer)) // value
-					writer.writeNull();
 			}
+			reset = reader.position();
+			reader.reset(_references[reference]);
+			size = reader.read7BitValue() >> 1;
+			pReference = beginMap(writer, ((++reference) << 1) | 0x01, ex, size, reader.read8() & 0x01);
+			_referencing = false;
+		}
+		else if (_referencing) {
+			_references.emplace_back(reference);
+			pReference = beginMap(writer, (_references.size() << 1) | 0x01, ex, size, reader.read8() & 0x01);
+		}
+		else
+			writer.beginMap(ex, size, reader.read8() & 0x01);
 
-			endMap(writer,pReference);
+		if (ex)
+			WARN(ex);
 
-			if (reset)
-				packet.reset(reset);
+		while (size-- > 0) {
+			if (ex) {
+				_buffer.clear();
+				StringWriter stringWriter(_buffer);
+				if (!readNext(stringWriter))
+					continue;
+				writer.writePropertyName(_buffer.c_str());
+			}
+			else if (!readNext(writer)) // key
+				writer.writeNull();
 
-			_referencing = referencing;
-
-			return true;
-
+			if (!readNext(writer)) // value
+				writer.writeNull();
 		}
 
-		case ARRAY: {
+		endMap(writer, pReference);
 
-			UInt32 size(0);
-			const char* text(NULL);
-			UInt32 reset(0);
-			bool referencing(_referencing);
-			Reference* pReference(NULL);
-			UInt32 reference(0);
+		if (reset)
+			reader.reset(reset);
 
-			if(!_amf3) {
+		_referencing = referencing;
 
-				type = packet.read8();
+		return true;
 
-				if (_referencing) {
-					_amf0References.emplace_back(packet.position());
-					reference = _amf0References.size();
+	}
+
+	case ARRAY: {
+
+		UInt32 size(0);
+		const char* text(NULL);
+		UInt32 reset(0);
+		bool referencing(_referencing);
+		Reference* pReference(NULL);
+		UInt32 reference(0);
+
+		if (!_amf3) {
+
+			type = reader.read8();
+
+			if (_referencing) {
+				_amf0References.emplace_back(reader.position());
+				reference = _amf0References.size();
+			}
+			size = reader.read32();
+
+			if (type == AMF::AMF0_MIXED_ARRAY) {
+
+				// skip the elements
+				_referencing = false;
+				UInt32 position(reader.position());
+				UInt32 sizeText;
+				UInt32 i;
+				for (i = 0; i < size; ++i) {
+					reset = reader.position();
+					text = readText(sizeText);
+					if (text) {
+						if (!String::ToNumber(text, sizeText, sizeText)) {
+							reader.reset(reset);
+							size = i; // end of array (can be size=3 with just index 0!)
+							break;
+						}
+						// key (string number, "0")
+						readNext(DataWriter::Null()); // value
+						if (++sizeText == size) {
+							size = ++i;
+							break; // anticipate end (next key number exceeds array size)
+						}
+					}
+					else {
+						// Fix beginning
+						if (!i)
+							position = reader.position();
+						--i;
+					}
+					if (!reader.available()) {
+						// Fix size!
+						ERROR("AMF array bad-formed with a ", size, " of elements unfound");
+						size = ++i;
+						break;
+					}
 				}
-				size = packet.read32();
+				_referencing = referencing;
 
-				if (type == AMF_MIXED_ARRAY) {
-					
-					// AMF_MIXED_ARRAY
-					pReference = beginObjectArray(writer,reference<<1,size);
-	
-					// skip the elements
-					_referencing = false;
-					UInt32 position(packet.position());
-					UInt32 sizeText;
-					for (UInt32 i = 0; i < size; ++i) {
-						readText(sizeText); // key (string number, "0")
-						readNext(DataWriter::Null); // value
-					}
-					_referencing = referencing;
-		
-					// write properties in first
-					while ((text = readText(sizeText,true))) {
-						if (!packet.available())
-							break; // no stringify possible!
-						SCOPED_STRINGIFY(text, sizeText, writer.writePropertyName(text))
-						if (!readNext(writer))
-							writer.writeNull();
-					}
-					// skip end object marker
-					if(packet.read8()!=AMF_END_OBJECT)
-						ERROR("AMF0 end marker object absent for this mixed array");
+				// AMF_MIXED_ARRAY
+				pReference = beginObjectArray(writer, reference << 1, size);
 
-					// finalize object part
-					endObject(writer,pReference);
-
-					// reset on elements
-					reset = packet.position();
-					packet.reset(position);
-
-					while (size-- > 0) {
-						if (!readText(sizeText) || !readNext(writer))
-							writer.writeNull();
-					}
-
-					endArray(writer,pReference);
-
-					packet.reset(reset);
-					_referencing = referencing;
-					return true;
-				} 
-				
-				// AMF_STRICT_ARRAY
-				pReference = beginArray(writer,reference<<1,size);
-
-			} else {
-	
-				// AMF3
-				packet.next();
-				
-				UInt32 reference = packet.position();
-				size = packet.read7BitValue();
-				bool isInline = size&0x01;
-				size >>= 1;
-
-				if(!isInline) {
-					reference = ((size+1)<<1) | 0x01;
-					if (writeReference(writer, reference))
-						return true;
-					if (size >= _references.size()) {
-						ERROR("AMF3 array reference not found")
-						return false;
-					}
-		
-					reset = packet.position();
-					packet.reset(_references[size]);
-					size = packet.read7BitValue() >> 1;
-					_referencing = false;
-				} else if (_referencing) {
-					_references.emplace_back(reference);
-					reference = (_references.size()<<1) | 0x01;
-				} else
-					reference = 0;
-
-				bool started(false);
-
-				UInt32 sizeTest(0);
-				while ((text = readText(sizeTest,true))) {
-					if (!packet.available())
-						break; // no stringify possible!
-					if (!started) {
-						pReference = beginObjectArray(writer,reference,size);
-						started = true;
-					}
-					SCOPED_STRINGIFY(text, sizeTest, writer.writePropertyName(text))
+				// write properties in first
+				while ((text = readText(sizeText)) && sizeText) { // property can't be empty
+					writer.writePropertyName(_buffer.assign(text, sizeText).c_str());
 					if (!readNext(writer))
 						writer.writeNull();
 				}
+				// skip end object marker
+				if (reader.read8() != AMF::AMF0_END_OBJECT)
+					ERROR("AMF0 end marker object absent for this mixed array");
 
-				if (!started)
-					pReference = beginArray(writer,reference, size);
-				else
-					endObject(writer,pReference);
+				// finalize object part
+				endObject(writer, pReference);
 
+				// reset on elements
+
+				reset = reader.position();
+				reader.reset(position);
+
+				i = 0;
+				while (size--) {
+					text = readText(sizeText);
+					if (text) {
+						String::ToNumber<UInt32>(text, sizeText, sizeText);
+						while (sizeText > i++)
+							writer.writeNull();
+						if (readNext(writer))
+							continue;
+					}
+					writer.writeNull();
+				}
+
+				endArray(writer, pReference);
+
+				reader.reset(reset);
+
+				_referencing = referencing;
+				return true;
 			}
 
-			while (size-- > 0) {
+			// AMF::AMF0_STRICT_ARRAY
+			pReference = beginArray(writer, reference << 1, size);
+
+		}
+		else {
+
+			// AMF3
+			reader.next();
+
+			UInt32 reference = reader.position();
+			size = reader.read7BitValue();
+			bool isInline = size & 0x01;
+			size >>= 1;
+
+			if (!isInline) {
+				reference = ((size + 1) << 1) | 0x01;
+				if (writeReference(writer, reference))
+					return true;
+				if (size >= _references.size()) {
+					ERROR("AMF3 array reference not found")
+						return false;
+				}
+
+				reset = reader.position();
+				reader.reset(_references[size]);
+				size = reader.read7BitValue() >> 1;
+				_referencing = false;
+			}
+			else if (_referencing) {
+				_references.emplace_back(reference);
+				reference = (_references.size() << 1) | 0x01;
+			}
+			else
+				reference = 0;
+
+			bool started(false);
+
+			UInt32 sizeText(0);
+			while ((text = readText(sizeText)) && sizeText) {  // property can't be empty
+				if (!started) {
+					pReference = beginObjectArray(writer, reference, size);
+					started = true;
+				}
+				writer.writePropertyName(_buffer.assign(text, sizeText).c_str());
 				if (!readNext(writer))
 					writer.writeNull();
 			}
 
-			endArray(writer,pReference);
+			if (!started)
+				pReference = beginArray(writer, reference, size);
+			else
+				endObject(writer, pReference);
 
-			if (reset)
-				packet.reset(reset);
-
-			_referencing = referencing;
-
-			return true;
 		}
+
+		while (size-- > 0) {
+			if (!readNext(writer))
+				writer.writeNull();
+		}
+
+		endArray(writer, pReference);
+
+		if (reset)
+			reader.reset(reset);
+
+		_referencing = referencing;
+
+		return true;
+	}
 
 	}
 
@@ -493,138 +547,154 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 	Reference* pReference(NULL);
 	UInt32 reference(0);
 
-	if(!_amf3) {
+	if (!_amf3) {
 
 		///  AMF0
 
-		type = packet.read8();
+		type = reader.read8();
 		if (_referencing) {
-			_amf0References.emplace_back(packet.position());
+			_amf0References.emplace_back(reader.position());
 			reference = _amf0References.size() << 1;
 		}
 		const char* text(NULL);
 		UInt32 size(0);
-		if(type==AMF_BEGIN_TYPED_OBJECT)			
+		if (type == AMF::AMF0_BEGIN_TYPED_OBJECT) {
 			text = readText(size);
-
-		if (!text || size==0 || !packet.available()) // to avoid stringify
-			pReference = beginObject(writer,reference);
+			pReference = beginObject(writer, reference, _buffer.assign(text, size).c_str());
+		}
 		else
-			SCOPED_STRINGIFY(text, size, pReference=beginObject(writer,reference,text))
+			pReference = beginObject(writer, reference);
 
-		while ((text = readText(size,true))) {
-			if (!packet.available())
-				break; // no stringify possible!
-			SCOPED_STRINGIFY(text, size, writer.writePropertyName(text))
+		while ((text = readText(size)) && size) {  // property can't be empty
+			writer.writePropertyName(_buffer.assign(text, size).c_str());
 			if (!readNext(writer))
 				writer.writeNull();
 		}
 
-		if(packet.read8()!=AMF_END_OBJECT)
+		if (reader.read8() != AMF::AMF0_END_OBJECT)
 			ERROR("AMF0 end marker object absent");
 
-		endObject(writer,pReference);
+		endObject(writer, pReference);
 
 		return true;
 	}
-	
-	///  AMF3
-	packet.next();
 
-	UInt32 flags = packet.read7BitValue();
-	UInt32 pos(packet.position());
+	///  AMF3
+	reader.next();
+
+	UInt32 flags = reader.read7BitValue();
+	UInt32 pos(reader.position());
 	UInt32 resetObject(0);
-	bool isInline = flags&0x01;
+	bool isInline = flags & 0x01;
 	flags >>= 1;
 	bool referencing(_referencing);
 
-	if(!isInline) {
-		reference = ((flags+1)<<1) | 0x01;
+	if (!isInline) {
+		reference = ((flags + 1) << 1) | 0x01;
 		if (writeReference(writer, reference))
 			return true;
 		if (flags >= _references.size()) {
 			ERROR("AMF3 object reference not found")
-			return false;
+				return false;
 		}
-		
-		resetObject = packet.position();
-		packet.reset(_references[flags]);
-		flags = packet.read7BitValue() >> 1;
+
+		resetObject = reader.position();
+		reader.reset(_references[flags]);
+		flags = reader.read7BitValue() >> 1;
 		_referencing = false;
-	} else if (_referencing) {
+	}
+	else if (_referencing) {
 		_references.emplace_back(pos);
-		reference = (_references.size()<<1) | 0x01;
-	} else
+		reference = (_references.size() << 1) | 0x01;
+	}
+	else
 		reference = 0;
 
 	// classdef reading
-	isInline = flags&0x01; 
+	isInline = flags & 0x01;
 	flags >>= 1;
-	UInt32 reset=0;
+	UInt32 reset = 0;
 	UInt32 size(0);
 	const char* text(NULL);
-	bool stringify(false);
-	if(isInline) {
-		 _classDefReferences.emplace_back(pos);
+	if (isInline) {
+		_classDefReferences.emplace_back(pos);
 		text = readText(size); // type
-		stringify = packet.available()>0;
-	} else if(flags<_classDefReferences.size()) {
-		reset = packet.position();
-		packet.reset(_classDefReferences[flags]);
-		flags = packet.read7BitValue()>>2;
+	}
+	else if (flags<_classDefReferences.size()) {
+		reset = reader.position();
+		reader.reset(_classDefReferences[flags]);
+		flags = reader.read7BitValue() >> 2;
 		text = readText(size);
-		stringify = packet.available()>0;
 		_referencing = false;
-	} else
+	}
+	else
 		ERROR("AMF3 classDef reference not found")
 
-	if (flags & 0x01) {
-		// external, support just "flex.messaging.io.ArrayCollection"
-		if (reset)
-			packet.reset(reset);
-		return readNext(writer);
-	}
+		if (flags & 0x01) {
+			// external, support just "flex.messaging.io.ArrayCollection"
+			if (reset)
+				reader.reset(reset);
+			bool result(readNext(writer));
+			if (resetObject)
+				reader.reset(resetObject); // reset object
+			_referencing = referencing;
+			return result;
+		}
 
-	flags>>=2;
-	if (reset && flags == 0) {
-		packet.reset(reset);
+	if (size)
+		pReference = beginObject(writer, reference, _buffer.assign(text, size).c_str());
+	else
+		pReference = beginObject(writer, reference);
+
+	isInline = (flags & 0x02) ? true : false; // is dynamic!
+
+	flags >>= 2;
+
+	// Find values position for classdef name properties
+	pos = reader.position(); // save name position
+	for (UInt32 i = 0; i < flags; ++i) {
+		if (!readText(size)) {
+			// fix flags if error during properties reading
+			if (!i)
+				pos = reader.position();
+			--flags;
+		}
+	}
+	// Reset classdef to be on values now!
+	if (reset) {
+		reader.reset(reset);
 		reset = 0;
 		if (!resetObject)
 			_referencing = referencing;
 	}
 
-	if (!text || size==0 || !stringify) // to avoid stringify
-		pReference = beginObject(writer,reference);
-	else
-		SCOPED_STRINGIFY(text, size, pReference = beginObject(writer,reference,text);)
-
-	while ((text = readText(size,true))) {
-		if (!packet.available())
-			break; // no stringify possible!
-		SCOPED_STRINGIFY(text, size, writer.writePropertyName(text))
-		UInt32 position(packet.position());
-		if(reset)
- 			packet.reset(reset); // reset classdef
+	// Read classdef properties
+	while (flags--) {
+		reset = reader.position(); // save value position
+									// Read property name in classdef
+		reader.reset(pos); // reset on name
+		while (!(text = readText(size)));
+		writer.writePropertyName(_buffer.assign(text, size).c_str());
+		pos = reader.position(); // save new name position
+									// Read value
+		reader.reset(reset); // reset on value
 		if (!readNext(writer))
 			writer.writeNull();
-		if (reset) {
-			if (--flags == 0) {
-				packet.reset(reset);
-				reset = 0;
-				if (!resetObject)
-					_referencing = referencing;
-			} else
-				packet.reset(position);
+	}
+
+
+	if (isInline) { // is dynamic
+		while ((text = readText(size)) && size) { // property can't be empty
+			writer.writePropertyName(_buffer.assign(text, size).c_str());
+			if (!readNext(writer))
+				writer.writeNull();
 		}
 	}
 
-	endObject(writer,pReference);
+	endObject(writer, pReference);
 
 	if (resetObject)
-		packet.reset(resetObject); // reset object
-	else if(reset)
- 		packet.reset(reset); // reset classdef
-
+		reader.reset(resetObject); // reset object
 	_referencing = referencing;
 
 	return true;

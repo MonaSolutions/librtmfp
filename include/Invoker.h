@@ -21,30 +21,19 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/SocketManager.h"
-#include "Mona/TerminateSignal.h"
+#include "Mona/IOSocket.h"
+#include "Mona/Timer.h"
 
 #define DELAY_CONNECTIONS_MANAGER	50 // Delay between each onManage (in msec)
 
-class Invoker;
-// Thread class that call manage() function of the connections each second to flush the writers and send ping requests
-class ConnectionsManager : private Mona::Task, public Mona::Startable, public virtual Mona::Object {
-public:
-	ConnectionsManager(Invoker& invoker);
-	virtual ~ConnectionsManager() {}
-private:
-	void run(Mona::Exception& ex);
-	void handle(Mona::Exception& ex);
-	Invoker& _invoker;
-};
-
 class RTMFPSession;
 class RTMFPLogger;
-class Invoker : public Mona::TaskHandler, private Mona::Startable {
-friend class ConnectionsManager;
+class Invoker : private Mona::Thread {
 public:
 
-	Invoker(Mona::UInt16 threads);
+	// Create the Invoker
+	// createLogger : if True it will associate a logger instance to the static log class, otherwise it will let the default logger
+	Invoker(bool createLogger=true);
 	virtual ~Invoker();
 
 	// Start the socket manager if not started
@@ -61,25 +50,24 @@ public:
 	unsigned int	empty();
 
 	/*** Callback functions ***/
-	void			setLogCallback(void(*onLog)(unsigned int, int, const char*, long, const char*));
+	void			setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*));
 
 	void			setDumpCallback(void(*onDump)(const char*, const void*, unsigned int));
 
 	void			setInterruptCallback(int(*interruptCb)(void*), void* argument);
 
-	const Mona::SocketManager				sockets;
-	const Mona::PoolBuffers					poolBuffers; // Pool of buffers (important: need to be declared before poolThreads for correct destruction)
-	Mona::PoolThreads						poolThreads;
+	Mona::ThreadPool					threadPool;
+	Mona::IOSocket						sockets;
+	const Mona::Timer&					timer; 
+	const Mona::Handler&				handler;
 private:
 	virtual void		manage();
-	void				requestHandle() { wakeUp(); }
-	void				run(Mona::Exception& exc);
+	bool				run(Mona::Exception& exc, const volatile bool& stopping);
 
 	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it);
-
-	ConnectionsManager								_manager;
+	Mona::Timer										_timer;
+	Mona::Handler									_handler;
 	int												_lastIndex; // last index of connection
-
 	std::mutex										_mutexConnections;
 	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;
 	std::unique_ptr<RTMFPLogger>					_logger; // global logger for librtmfp

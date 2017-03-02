@@ -23,21 +23,16 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Listener.h"
 
-namespace GroupEvents {
-	struct OnMedia : Mona::Event<void(bool reliable, AMF::ContentType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size)> {};
-};
-
-class GroupListener : public Listener,
-	public GroupEvents::OnMedia {
-public:
+struct GroupListener : Listener {
+	typedef Mona::Event<void(bool reliable, AMF::Type type, Mona::UInt32 time, const Mona::Packet& packet)> ON(Media);
 	GroupListener(Publisher& publication, const std::string& identifier);
 	virtual ~GroupListener();
 
 	virtual void startPublishing();
 	virtual void stopPublishing();
 
-	virtual void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
-	virtual void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
+	virtual void pushAudio(Mona::UInt32 time, const Mona::Packet& packet);
+	virtual void pushVideo(Mona::UInt32 time, const Mona::Packet& packet);
 
 	virtual void flush();
 
@@ -45,7 +40,7 @@ private:
 
 	bool	firstTime() { return !_dataInitialized; }
 
-	bool	pushVideoInfos(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
+	bool	pushVideoInfos(Mona::UInt32 time, const Mona::Packet& packet);
 	bool	pushAudioInfos(Mona::UInt32 time);
 
 	Mona::UInt32 			_startTime;

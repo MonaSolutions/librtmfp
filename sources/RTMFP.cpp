@@ -21,6 +21,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "RTMFP.h"
 #include "Mona/Util.h"
+#include "AMF.h"
 
 using namespace std;
 using namespace Mona;
@@ -51,7 +52,7 @@ BinaryWriter& RTMFP::WriteAddress(BinaryWriter& writer,const SocketAddress& addr
 	else
 		writer.write8(type);
 	NET_SOCKLEN size(host.size());
-	const UInt8* bytes = (const UInt8*)host.addr();
+	const UInt8* bytes = (const UInt8*)host.data();
 	for(NET_SOCKLEN i=0;i<size;++i)
 		writer.write8(bytes[i]);
 	return writer.write16(address.port());
@@ -66,42 +67,19 @@ UInt32 RTMFP::Unpack(BinaryReader& reader) {
 	return id;
 }
 
-void RTMFP::Pack(BinaryWriter& writer,UInt32 farId) {
-	BinaryReader reader(writer.data()+4,writer.size()-4);
-	BinaryWriter(writer.data(),4).write32(reader.read32()^reader.read32()^farId);
+void RTMFP::Pack(Buffer& buffer,UInt32 farId) {
+	BinaryReader reader(buffer.data()+4, buffer.size()-4);
+	BinaryWriter(buffer.data(),4).write32(reader.read32()^reader.read32()^farId);
 }
 
 
-void RTMFP::ComputeAsymetricKeys(const Buffer& sharedSecret, const UInt8* initiatorNonce,UInt16 initNonceSize,
-														    const UInt8* responderNonce,UInt16 respNonceSize,
-														    UInt8* requestKey,UInt8* responseKey) {
-	UInt8 mdp1[Crypto::HMAC::SIZE];
-	UInt8 mdp2[Crypto::HMAC::SIZE];
-	Crypto::HMAC hmac;
+void RTMFP::ComputeAsymetricKeys(const Binary& sharedSecret, const UInt8* initiatorNonce,UInt32 initNonceSize, const UInt8* responderNonce, UInt32 respNonceSize, UInt8* requestKey,UInt8* responseKey) {
 
-	// doing HMAC-SHA256 of one side
-	hmac.compute(EVP_sha256(),responderNonce,respNonceSize,initiatorNonce,initNonceSize,mdp1);
-	// doing HMAC-SHA256 of the other side
-	hmac.compute(EVP_sha256(),initiatorNonce,initNonceSize,responderNonce,respNonceSize,mdp2);
-
+	Crypto::HMAC::SHA256(responderNonce, respNonceSize, initiatorNonce, initNonceSize, requestKey);
+	Crypto::HMAC::SHA256(initiatorNonce, initNonceSize, responderNonce, respNonceSize, responseKey);
 	// now doing HMAC-sha256 of both result with the shared secret DH key
-	hmac.compute(EVP_sha256(),sharedSecret.data(),sharedSecret.size(),mdp1,Crypto::HMAC::SIZE,requestKey);
-	hmac.compute(EVP_sha256(),sharedSecret.data(),sharedSecret.size(),mdp2,Crypto::HMAC::SIZE,responseKey);
-}
-
-void RTMFP::Write7BitValue(string& buff,UInt64 value) {
-	UInt8 shift = (Util::Get7BitValueSize(value)-1)*7;
-	bool max = false;
-	if(shift>=21) { // 4 bytes maximum
-		shift = 22;
-		max = true;
-	}
-
-	while(shift>=7) {
-		String::Append(buff, (char)(0x80 | ((value>>shift)&0x7F)));
-		shift -= 7;
-	}
-	String::Append(buff, (char)(max ? value&0xFF : value&0x7F));
+	Crypto::HMAC::SHA256(sharedSecret.data(), sharedSecret.size(), requestKey, Crypto::SHA256_SIZE, requestKey);
+	Crypto::HMAC::SHA256(sharedSecret.data(), sharedSecret.size(), responseKey, Crypto::SHA256_SIZE, responseKey);
 }
 
 bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, SocketAddress& hostAddress, function<void(const SocketAddress&, AddressType)> onNewAddress) {
@@ -129,7 +107,8 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 			}
 			break;
 		}
-		TRACE("IP Address : ", address.toString(), " - type : ", addressType)
+		TRACE("IP Address : ", address, " - type : ", addressType)
 	}
 	return !addresses.empty() || hostAddress;
 }
+

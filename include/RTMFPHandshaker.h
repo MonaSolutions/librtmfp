@@ -48,9 +48,8 @@ struct Handshake : public virtual Mona::Object {
 	PEER_LIST_ADDRESS_TYPE	listAddresses; // List of direct addresses (server or p2p addresses)
 
 	// Coding keys
-	std::string				farKey; // Far public key
-	Mona::Buffer			pubKey; // Our public key
-	Mona::Buffer			farNonce; // Far nonce
+	Mona::Packet							farKey; // Far public key
+	Mona::Packet							farNonce; // Far nonce
 };
 
 /**************************************************
@@ -82,31 +81,25 @@ public:
 	// Close the socket all connections
 	void								close();
 
-	// Initialize (if not already) the diffie hellman object and return it
-	bool								diffieHellman(Mona::DiffieHellman * &pDh);
-
-	// Handle receiving packet
-	virtual void						process(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer);
-
 	// Return the socket object
-	virtual Mona::UDPSocket&			socket(Mona::IPAddress::Family family);
+	virtual const std::shared_ptr<Mona::Socket>&	socket(Mona::IPAddress::Family family);
 
 	// Return true if the session has failed
 	virtual bool						failed();
-
-	// Return the pool buffers object
-	virtual const Mona::PoolBuffers&	poolBuffers();
 	
 	// Clear the packet and flush the connection
-	void								flush(Mona::UInt8 marker, Mona::UInt32 size);
+	void								flush(Mona::UInt8 marker);
 
 	// Remove the handshake properly
 	void								removeHandshake(std::shared_ptr<Handshake> pHandshake);
 
+	// Treat decoded message
+	virtual void						receive(const Mona::SocketAddress& address, const Mona::Packet& packet);
+
 private:
 
 	// Send the first handshake message (with rtmfp url/peerId + tag)
-	void								sendHandshake30(const std::string& epd, const std::string& tag);
+	void								sendHandshake30(const Mona::Binary& epd, const std::string& tag);
 
 	// Handle the handshake 30 (p2p concurrent connection)
 	void								handleHandshake30(Mona::BinaryReader& reader);
@@ -126,13 +119,13 @@ private:
 	// Send the first handshake response (only in P2P mode)
 	void								sendHandshake70(const std::string& tag, std::shared_ptr<Handshake>& pHandshake);
 
-	// Treat decoded message
-	virtual void						receive(const Mona::SocketAddress& address, Mona::BinaryReader& packet);
+	// Compute the public key if not already done
+	bool								computePublicKey();
 
 	std::map<std::string, std::shared_ptr<Handshake>>		_mapTags; // map of Tag to waiting handshake
 	std::map<std::string, std::shared_ptr<Handshake>>		_mapCookies; // map of Cookies to waiting handshake
-	Mona::DiffieHellman										_diffieHellman; // diffie hellman object used for the shared object building
 
 	RTMFPSession*						_pSession; // Pointer to the main RTMFP session for assocation with new connections
 	const std::string					_name; // name of the session (handshaker)
+	Mona::Packet						_publicKey; // Our public key (fixed for the session) TODO: see if we move it into RTMFPSession
 };

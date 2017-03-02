@@ -22,37 +22,29 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "BandWriter.h"
 #include "RTMFPSender.h"
 
+using namespace std;
 using namespace Mona;
 
-BandWriter::BandWriter(Invoker& invoker, const Mona::UInt8* decryptKey) : _farId(0), _timeReceived(0), _pThread(NULL),
+BandWriter::BandWriter(Invoker& invoker) : _farId(0), _timeReceived(0), _threadSend(0), _invoker(invoker),
 	_pEncoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::ENCRYPT)),
-	_decoder(invoker, decryptKey),
-	onDecoded([this](BinaryReader& packet, const SocketAddress& address) { receive(address, packet); }),
-	onDecodedEnd([this]() { /*TODO*/ }) {
-	_decoder.OnDecodedEnd::subscribe(onDecodedEnd);
-	_decoder.OnDecoded::subscribe(onDecoded);
+	_pDecoder(new RTMFPEngine((const Mona::UInt8*)RTMFP_DEFAULT_KEY, RTMFPEngine::DECRYPT)) {
 }
 
 BandWriter::~BandWriter() {
-	_pThread = NULL;
 	_pSender.reset();
-	_decoder.OnDecodedEnd::unsubscribe(onDecodedEnd);
-	_decoder.OnDecoded::unsubscribe(onDecoded);
 }
 
-UInt8* BandWriter::packet() {
+BinaryWriter& BandWriter::packet() {
 	if (!_pSender)
-		_pSender.reset(new RTMFPSender(poolBuffers(), _pEncoder));
-	_pSender->packet.resize(RTMFP_MAX_PACKET_SIZE, false);
-	return _pSender->packet.data();
-}
+		_pSender.reset(new RTMFPSender(socket(_address.family()), _pEncoder));
+	return *_pSender;
+}	
 
 void BandWriter::flush(bool echoTime, UInt8 marker) {
-
 	if (!_pSender)
 		return;
-	if (!failed() && _pSender->available()) {
-		BinaryWriter& packet(_pSender->packet);
+
+	if (!failed() && _pSender->size()) {
 
 		// After 30 sec, send packet without echo time
 		if (_lastReceptionTime.isElapsed(30000))
@@ -61,9 +53,9 @@ void BandWriter::flush(bool echoTime, UInt8 marker) {
 		if (echoTime)
 			marker += 4;
 		else
-			packet.clip(2);
+			_pSender->clip(2);
 
-		BinaryWriter writer(packet.data() + 6, 5);
+		BinaryWriter writer(_pSender->buffer().data() + 6, 5);
 		writer.write8(marker).write16(RTMFP::TimeNow());
 		if (echoTime)
 			writer.write16(_timeReceived + RTMFP::Time(_lastReceptionTime.elapsed()));
@@ -71,29 +63,15 @@ void BandWriter::flush(bool echoTime, UInt8 marker) {
 		_pSender->farId = _farId;
 		_pSender->address.set(_address); // set the right address for sending
 
-		if (packet.size() > RTMFP_MAX_PACKET_SIZE)
-			ERROR(Exception::PROTOCOL, "Message exceeds max RTMFP packet size on connection (", packet.size(), ">", RTMFP_MAX_PACKET_SIZE, ")");
+		if (_pSender->buffer().size() > RTMFP_MAX_PACKET_SIZE)
+			ERROR("Message exceeds max RTMFP packet size on connection (", _pSender->buffer().size(), ">", RTMFP_MAX_PACKET_SIZE, ")");
 
 		// executed just in debug mode, or in dump mode
 		if (Logs::GetLevel() >= 7)
-			DUMP("RTMFP", packet.data() + 6, packet.size() - 6, "Response to ", _address.toString(), " (farId : ", _farId, ")")
+			DUMP("LIBRTMFP", _pSender->buffer().data() + 6, _pSender->buffer().size() - 6, "Response to ", _address, " (farId : ", _farId, ")")
 
 		Exception ex;
-		_pThread = socket(_address.family()).send<RTMFPSender>(ex, _pSender, _pThread);
-
-		if (ex)
-			ERROR("RTMFP flush, ", ex.error());
+		AUTO_ERROR(_invoker.threadPool.queue(ex, _pSender, _threadSend), "RTMFP flush")
 	}
 	_pSender.reset();
-}
-
-bool BandWriter::decode(Exception& ex, const SocketAddress& address, PoolBuffer& pBuffer) {
-	// Decode the RTMFP data
-	if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
-		ex.set(Exception::PROTOCOL, "Invalid RTMFP packet on connection to ", _address.toString());
-		return false;
-	}
-
-	_decoder.decode(address, pBuffer);
-	return true;
 }

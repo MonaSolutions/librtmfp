@@ -27,8 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-Listener::Listener(Publisher& publication, const string& identifier) : publication(publication), identifier(identifier),
-	_publicationNamePacket((const UInt8*)publication.name().c_str(), publication.name().size()) {
+Listener::Listener(Publisher& publication, const string& identifier) : publication(publication), identifier(identifier) {
 
 }
 
@@ -80,29 +79,24 @@ void FlashListener::startPublishing() {
 		return;
 	}
 
-	if (!writeReliableMedia(*_pDataWriter, FlashWriter::START, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
+	if (!writeReliableMedia(*_pDataWriter, FlashWriter::START, FlashWriter::DATA, Packet(publication.name().data(), publication.name().size())))// unsubscribe can be done here!
 		return;
-	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::START, FlashWriter::AUDIO, publicationNamePacket()))
+	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::START, FlashWriter::AUDIO, Packet(publication.name().data(), publication.name().size())))
 		return; // Here consider that the FlashListener have to be closed by the caller
-	if (!writeReliableMedia(*_pVideoWriter, FlashWriter::START, FlashWriter::VIDEO, publicationNamePacket()))
+	if (!writeReliableMedia(*_pVideoWriter, FlashWriter::START, FlashWriter::VIDEO, Packet(publication.name().data(), publication.name().size())))
 		return; // Here consider that the FlashListener have to be closed by the caller
 }
 
 void FlashListener::stopPublishing() {
 
-	if (firstTime())
+	if (!_pVideoWriter || !_pAudioWriter || !_dataInitialized)
 		return;
 
-	if (!_pVideoWriter || !_pAudioWriter || !_dataInitialized) {
-		if (!initWriters())
-			return;
-	}
-
-	if (!writeReliableMedia(*_pDataWriter, FlashWriter::STOP, FlashWriter::DATA, publicationNamePacket()))// unsubscribe can be done here!
+	if (!writeReliableMedia(*_pDataWriter, FlashWriter::STOP, FlashWriter::DATA, Packet(publication.name().data(), publication.name().size())))// unsubscribe can be done here!
 		return;
-	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::STOP, FlashWriter::AUDIO, publicationNamePacket()))
+	if (!writeReliableMedia(*_pAudioWriter, FlashWriter::STOP, FlashWriter::AUDIO, Packet(publication.name().data(), publication.name().size())))
 		return; // Here consider that the FlashListener have to be closed by the caller
-	if (!writeReliableMedia(*_pVideoWriter, FlashWriter::STOP, FlashWriter::VIDEO, publicationNamePacket()))
+	if (!writeReliableMedia(*_pVideoWriter, FlashWriter::STOP, FlashWriter::VIDEO, Packet(publication.name().data(), publication.name().size())))
 		return; // Here consider that the FlashListener have to be closed by the caller
 
 	_seekTime = _lastTime;
@@ -112,16 +106,16 @@ void FlashListener::stopPublishing() {
 }
 
 
-void FlashListener::pushVideo(UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
-	if (!receiveVideo && !RTMFP::IsH264CodecInfos(data,size))
+void FlashListener::pushVideo(UInt32 time, const Packet& packet) {
+	if (!receiveVideo && !RTMFP::IsH264CodecInfos(packet.data(), packet.size()))
 		return;
 
 	if (!_codecInfosSent) {
-		if (RTMFP::IsKeyFrame(data, size)) {
+		if (RTMFP::IsKeyFrame(packet.data(), packet.size())) {
 			_codecInfosSent = true;
-			if (!publication.videoCodecBuffer().empty() && !RTMFP::IsH264CodecInfos(data, size)) {
+			if (!publication.videoCodecBuffer() && !RTMFP::IsH264CodecInfos(packet.data(), packet.size())) {
 				INFO("H264 codec infos sent to one FlashListener of ", publication.name(), " publication")
-				pushVideo(time, publication.videoCodecBuffer()->data(), publication.videoCodecBuffer()->size());
+				pushVideo(time, publication.videoCodecBuffer());
 			}
 		}
 		else {
@@ -138,20 +132,20 @@ void FlashListener::pushVideo(UInt32 time, const Mona::UInt8* data, Mona::UInt32
 		_firstTime = false;
 
 		// for audio sync (audio is usually the reference track)
-		if (pushAudioInfos(time))
-			pushAudio(time, NULL, 0); // push a empty audio packet to avoid a video which waits audio tracks!
+		if (pushAudioInfos(time)) 
+			pushAudio(time, Packet::Null()); // push a empty audio packet to avoid a video which waits audio tracks!
 	}
 	time -= _startTime;
 
 	//TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, "), size : ", size);
 
-	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(data, size) || _reliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), data, size))
+	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(packet.data(), packet.size()) || _reliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), packet))
 		initWriters();
 }
 
 
-void FlashListener::pushAudio(UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) {
-	if (!receiveAudio && !RTMFP::IsAACCodecInfos(data, size))
+void FlashListener::pushAudio(UInt32 time, const Packet& packet) {
+	if (!receiveAudio && !RTMFP::IsAACCodecInfos(packet.data(), packet.size()))
 		return;
 
 	if (!_pAudioWriter && !initWriters())
@@ -166,15 +160,15 @@ void FlashListener::pushAudio(UInt32 time, const Mona::UInt8* data, Mona::UInt32
 
 	//TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");
 
-	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(data, size) || _reliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), data, size))
+	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(packet.data(), packet.size()) || _reliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), packet))
 		initWriters();
 }
 
 bool FlashListener::pushAudioInfos(UInt32 time) {
-	if (publication.audioCodecBuffer().empty())
+	if (!publication.audioCodecBuffer())
 		return false;
 	INFO("AAC codec infos sent to one FlashListener of ", publication.name(), " publication")
-	pushAudio(time, publication.audioCodecBuffer()->data(), publication.audioCodecBuffer()->size());
+	pushAudio(time, publication.audioCodecBuffer());
 	return true;
 }
 
@@ -189,10 +183,10 @@ void FlashListener::flush() {
 		_pVideoWriter->flush();
 }
 
-bool FlashListener::writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, UInt32 time, const UInt8* data, UInt32 size) {
+bool FlashListener::writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, UInt32 time, const Packet& packet) {
 	bool wasReliable(writer.reliable);
 	writer.reliable = reliable;
-	bool success(writer.writeMedia(type, time, data, size));
+	bool success(writer.writeMedia(type, time, packet));
 	writer.reliable = wasReliable;
 	return success;
 }

@@ -19,9 +19,9 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(LIBRTMFP_STATIC)
 	// Windows DLL declaration
-	#ifdef LIBRTMFP_EXPORT
+	#if defined(LIBRTMFP_EXPORT)
 		#define LIBRTMFP_API	__declspec(dllexport)
 	#else
 		#define LIBRTMFP_API	__declspec(dllimport)
@@ -50,12 +50,18 @@ LIBRTMFP_API typedef struct RTMFPConfig {
 	short	isBlocking; // False by default, if True the function will return only when we are connected
 	void	(*pOnSocketError)(const char*); // Socket Error callback
 	void	(*pOnStatusEvent)(const char*, const char*); // RTMFP Status Event callback
-	void	(*pOnMedia)(const char *, const char*, unsigned int, const char*, unsigned int, int); // In synchronous read mode this callback is called when receiving data
+	void	(*pOnMedia)(const char *, const char*, unsigned int, const char*, unsigned int, unsigned int); // In synchronous read mode this callback is called when receiving data
 } RTMFPConfig;
 
 // This function MUST be called before any other
 // Initialize the RTMFP parameters with default values
-LIBRTMFP_API void RTMFP_Init(RTMFPConfig*, RTMFPGroupConfig*);
+// config : CANNOT be null, it is the main configuration parameter
+// groupConfig : can be null, it is used for netgroup configuration
+// createLogger : if 0 it will let the default log system (RTMFP_LogSetCallback will not work)
+LIBRTMFP_API void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLogger);
+
+// Terminate all the connections brutaly
+LIBRTMFP_API void RTMFP_Terminate();
 
 // Return the version of librtmfp
 // First byte : (main version)
@@ -108,7 +114,7 @@ LIBRTMFP_API int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int siz
 LIBRTMFP_API unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId);
 
 // Set log callback
-LIBRTMFP_API void RTMFP_LogSetCallback(void (* onLog)(unsigned int, int, const char*, long, const char*));
+LIBRTMFP_API void RTMFP_LogSetCallback(void (* onLog)(unsigned int, const char*, long, const char*));
 
 // Set dump callback
 LIBRTMFP_API void RTMFP_DumpSetCallback(void (*onDump)(const char*, const void*, unsigned int));

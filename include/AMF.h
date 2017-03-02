@@ -19,64 +19,62 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Mona/Mona.h"
-
 #pragma once
 
-#define AMF_NULL			0x05
-#define AMF_UNDEFINED		0x06
-#define AMF_UNSUPPORTED		0x0D
-#define	AMF_AVMPLUS_OBJECT	0x11
-
-#define AMF_NUMBER			0x00
-#define AMF_BOOLEAN			0x01
-#define AMF_STRING			0x02
-#define AMF_DATE			0x0B
-
-#define AMF_BEGIN_OBJECT		0x03
-#define AMF_BEGIN_TYPED_OBJECT	0x10
-#define AMF_END_OBJECT			0x09
-#define AMF_REFERENCE			0x07
-
-#define AMF_MIXED_ARRAY	    0x08 
-#define	AMF_STRICT_ARRAY	0x0A
-
-#define	AMF_LONG_STRING		0x0C
-
-
-#define AMF3_UNDEFINED		0x00
-#define AMF3_NULL			0x01
-#define AMF3_FALSE			0x02
-#define AMF3_TRUE			0x03
-#define AMF3_INTEGER		0x04
-#define AMF3_NUMBER			0x05
-#define AMF3_STRING			0x06
-#define AMF3_DATE			0x08
-#define AMF3_ARRAY			0x09
-#define AMF3_OBJECT			0x0A
-#define AMF3_BYTEARRAY		0x0C
-#define AMF3_DICTIONARY		0x11
-
-#define	AMF_END				0xFF
-
-#define AMF_MAX_INTEGER		268435455
-
+#include "Mona/Mona.h"
 
 class AMF : virtual Mona::Static {
 public:
-	enum ContentType {
-		EMPTY				=0x00,
-		CHUNKSIZE			=0x01,
-		ABORT				=0x02,
-		ACK					=0x03,
-		RAW					=0x04,
-		WIN_ACKSIZE			=0x05,
-		BANDWITH			=0x06,
-		AUDIO				=0x08,
-		VIDEO				=0x09,
-		DATA_AMF3			=0x0F,
-		INVOCATION_AMF3		=0x11,
-		DATA				=0x12,
-		INVOCATION			=0x14
+	enum Type {
+		TYPE_EMPTY = 0x00,
+		TYPE_CHUNKSIZE = 0x01,
+		TYPE_ABORT = 0x02,
+		TYPE_ACK = 0x03,
+		TYPE_RAW = 0x04,
+		TYPE_WIN_ACKSIZE = 0x05,
+		TYPE_BANDWIDTH = 0x06,
+		TYPE_AUDIO = 0x08,
+		TYPE_VIDEO = 0x09,
+		TYPE_DATA_AMF3 = 0x0F,
+		TYPE_INVOCATION_AMF3 = 0x11,
+		TYPE_DATA = 0x12,
+		TYPE_INVOCATION = 0x14
+	};
+
+	enum AMF3 {
+		AMF3_UNDEFINED = 0x00,
+		AMF3_NULL = 0x01,
+		AMF3_FALSE = 0x02,
+		AMF3_TRUE = 0x03,
+		AMF3_INTEGER = 0x04,
+		AMF3_NUMBER = 0x05,
+		AMF3_STRING = 0x06,
+		AMF3_DATE = 0x08,
+		AMF3_ARRAY = 0x09,
+		AMF3_OBJECT = 0x0A,
+		AMF3_BYTEARRAY = 0x0C,
+		AMF3_DICTIONARY = 0x11
+	};
+
+	enum AMF0 {
+		AMF0_NULL = 0x05,
+		AMF0_UNDEFINED = 0x06,
+		AMF0_UNSUPPORTED = 0x0D,
+		AMF0_AMF3_OBJECT = 0x11,
+
+		AMF0_NUMBER = 0x00,
+		AMF0_BOOLEAN = 0x01,
+		AMF0_STRING = 0x02,
+		AMF0_DATE = 0x0B,
+
+		AMF0_BEGIN_OBJECT = 0x03,
+		AMF0_BEGIN_TYPED_OBJECT = 0x10,
+		AMF0_END_OBJECT = 0x09,
+		AMF0_REFERENCE = 0x07,
+
+		AMF0_MIXED_ARRAY = 0x08,
+		AMF0_STRICT_ARRAY = 0x0A,
+
+		AMF0_LONG_STRING = 0x0C
 	};
 };

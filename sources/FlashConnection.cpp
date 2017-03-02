@@ -19,11 +19,11 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "Mona/IPAddress.h"
 #include "FlashConnection.h"
 #include "GroupStream.h"
-#include "ParameterWriter.h"
-#include "Mona/IPAddress.h"
-#include "Mona/Logs.h"
+#include "MapWriter.h"
+#include "Mona/Parameters.h"
 
 using namespace std;
 using namespace Mona;
@@ -34,19 +34,19 @@ FlashConnection::FlashConnection() : FlashStream(0), _creatingStream(0) {
 
 FlashConnection::~FlashConnection() {
 	for (auto& it : _streams) {
-		it.second->OnStatus::unsubscribe((OnStatus&)*this);
-		it.second->OnMedia::unsubscribe((OnMedia&)*this);
-		it.second->OnPlay::unsubscribe((OnPlay&)*this);
-		it.second->OnNewPeer::unsubscribe((OnNewPeer&)*this);
-		it.second->OnGroupHandshake::unsubscribe((OnGroupHandshake&)*this);
-		it.second->OnGroupMedia::unsubscribe((OnGroupMedia&)*this);
-		it.second->OnGroupReport::unsubscribe((OnGroupReport&)*this);
-		it.second->OnGroupPlayPush::unsubscribe((OnGroupPlayPush&)*this);
-		it.second->OnGroupPlayPull::unsubscribe((OnGroupPlayPull&)*this);
-		it.second->OnFragmentsMap::unsubscribe((OnFragmentsMap&)*this);
-		it.second->OnGroupBegin::unsubscribe((OnGroupBegin&)*this);
-		it.second->OnFragment::unsubscribe((OnFragment&)*this);
-		it.second->OnGroupAskClose::unsubscribe((OnGroupAskClose&)*this);
+		it.second->onStatus = nullptr;
+		it.second->onMedia = nullptr;
+		it.second->onPlay = nullptr;
+		it.second->onNewPeer = nullptr;
+		it.second->onGroupHandshake = nullptr;
+		it.second->onGroupMedia = nullptr;
+		it.second->onGroupReport = nullptr;
+		it.second->onGroupPlayPush = nullptr;
+		it.second->onGroupPlayPull = nullptr;
+		it.second->onFragmentsMap = nullptr;
+		it.second->onGroupBegin = nullptr;
+		it.second->onFragment = nullptr;
+		it.second->onGroupAskClose = nullptr;
 	}
 }
 
@@ -63,24 +63,23 @@ FlashStream* FlashConnection::addStream(shared_ptr<FlashStream>& pStream, bool g
 	return addStream((UInt16)_streams.size(), pStream, group);
 }
 
-//TODO: make a template function instead of boolean
 FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStream, bool group) {
 
 	pStream.reset(group? new GroupStream(id) : new FlashStream(id));
 	_streams[id] = pStream;
-	pStream->OnStatus::subscribe((OnStatus&)*this);
-	pStream->OnMedia::subscribe((OnMedia&)*this);
-	pStream->OnPlay::subscribe((OnPlay&)*this);
-	pStream->OnNewPeer::subscribe((OnNewPeer&)*this);
-	pStream->OnGroupHandshake::subscribe((OnGroupHandshake&)*this);
-	pStream->OnGroupMedia::subscribe((OnGroupMedia&)*this);
-	pStream->OnGroupReport::subscribe((OnGroupReport&)*this);
-	pStream->OnGroupPlayPush::subscribe((OnGroupPlayPush&)*this);
-	pStream->OnGroupPlayPull::subscribe((OnGroupPlayPull&)*this);
-	pStream->OnFragmentsMap::subscribe((OnFragmentsMap&)*this);
-	pStream->OnGroupBegin::subscribe((OnGroupBegin&)*this);
-	pStream->OnFragment::subscribe((OnFragment&)*this);
-	pStream->OnGroupAskClose::subscribe((OnGroupAskClose&)*this);
+	pStream->onStatus = onStatus;
+	pStream->onMedia = onMedia;
+	pStream->onPlay = onPlay;
+	pStream->onNewPeer = onNewPeer;
+	pStream->onGroupHandshake = onGroupHandshake;
+	pStream->onGroupMedia = onGroupMedia;
+	pStream->onGroupReport = onGroupReport;
+	pStream->onGroupPlayPush = onGroupPlayPush;
+	pStream->onGroupPlayPull = onGroupPlayPull;
+	pStream->onFragmentsMap = onFragmentsMap;
+	pStream->onGroupBegin = onGroupBegin;
+	pStream->onFragment = onFragment;
+	pStream->onGroupAskClose = onGroupAskClose;
 
 	return pStream.get();
 }
@@ -90,8 +89,8 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 	while (type != AMFReader::END) {
 		if (name == "_result") {
 			if (type == AMFReader::OBJECT || type == AMFReader::MAP) {
-				MapParameters params;
-				ParameterWriter paramWriter(params);
+				Parameters params;
+				MapWriter<Parameters> paramWriter(params);
 				message.read(type, paramWriter);
 
 				string level;
@@ -101,7 +100,7 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 					params.getString("code", code);
 					params.getString("description", description);
 
-					return OnStatus::raise<true>(code, description, id, flowId, callbackHandler);
+					return onStatus(code, description, id, flowId, callbackHandler);
 				} // TODO: else
 			}
 			else if (type == AMFReader::NUMBER && _creatingStream) {
@@ -113,13 +112,13 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 				_creatingStream = false;
 				shared_ptr<FlashStream> pStream;
 				addStream((UInt16)idStream, pStream);
-				return OnStreamCreated::raise<true>((UInt16)idStream);
+				return onStreamCreated((UInt16)idStream);
 			}
 		}
 		else if (name == "_error") {
 			if (type == AMFReader::OBJECT) {
-				MapParameters params;
-				ParameterWriter paramWriter(params);
+				Parameters params;
+				MapWriter<Parameters> paramWriter(params);
 				message.read(AMFReader::OBJECT, paramWriter);
 
 				string level;
@@ -128,7 +127,7 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 					string code, description;
 					params.getString("code", code);
 					params.getString("description", description);
-					return OnStatus::raise<true>(code, description, id, flowId, callbackHandler);
+					return onStatus(code, description, id, flowId, callbackHandler);
 				}
 			}
 		}
@@ -143,17 +142,17 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 	return true;
 }
 
-bool FlashConnection::rawHandler(UInt16 type,PacketReader& packet) {
-
+bool FlashConnection::rawHandler(UInt16 type, const Packet& packet) {
+	BinaryReader reader(packet.data(), packet.size());
 	switch (type) {
 		case 0x0022: // TODO Here we receive RTMFP flow sync signal, useless to support it?
-			INFO("Sync ", id, " : (syncId=", packet.read32(), ", count=", packet.read32(), ")")
+			INFO("Sync ", id, " : (syncId=", reader.read32(), ", count=", reader.read32(), ")")
 			break;
 		case 0x0029:
-			INFO("Set Keepalive timer : server period=", packet.read32(), "ms - peer period=", packet.read32(), "ms")
+			INFO("Set Keepalive timer : server period=", reader.read32(), "ms - peer period=", reader.read32(), "ms")
 			break;
 		default:
-			ERROR("Raw message ", Format<UInt16>("%.4x", type), " unknown on main stream ", id);
+			ERROR("Raw message ", String::Format<UInt16>("%.4x", type), " unknown on main stream ", id);
 			break;
 	}
 	return true;

@@ -22,24 +22,21 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "Mona/Mona.h"
-#include "Mona/UDPSender.h"
-#include "Mona/PacketWriter.h"
 #include "RTMFP.h"
+#include "Mona/Socket.h"
+#include "Mona/Runner.h"
 
-class RTMFPSender : public Mona::UDPSender, public virtual Mona::Object {
-public:
-	RTMFPSender(const Mona::PoolBuffers& poolBuffers,const std::shared_ptr<RTMFPEngine>& pEncoder): _pEncoder(pEncoder),Mona::UDPSender("RTMFPSender"),packet(poolBuffers),farId(0) {
-		packet.next(RTMFP_HEADER_SIZE);
+struct RTMFPSender : Mona::Runner, Mona::BinaryWriter, virtual Mona::Object {
+	RTMFPSender(const std::shared_ptr<Mona::Socket>& pSocket, const std::shared_ptr<RTMFPEngine>& pEncoder): _pSocket(pSocket), _pEncoder(pEncoder), Mona::Runner("RTMFPSender"), farId(0), Mona::BinaryWriter(*new Mona::Buffer(RTMFP_HEADER_SIZE)) {
+		_pBuffer.reset(&buffer());
 	}
 	
-	Mona::UInt32		farId;
-	Mona::PacketWriter	packet;
+	Mona::UInt32					farId;
+	Mona::SocketAddress				address;
 
-private:
-	const Mona::UInt8*	data() const { return packet.size() < RTMFP_MIN_PACKET_SIZE ? NULL : packet.data(); }
-	Mona::UInt32		size() const { return packet.size(); }
-	
+private:	
 	bool			run(Mona::Exception& ex);
-
-	const std::shared_ptr<RTMFPEngine>	_pEncoder;
+	std::shared_ptr<RTMFPEngine>	_pEncoder;
+	std::shared_ptr<Mona::Socket>	_pSocket;
+	std::shared_ptr<Mona::Buffer>	_pBuffer;
 };

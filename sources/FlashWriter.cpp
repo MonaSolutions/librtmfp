@@ -43,14 +43,13 @@ AMFWriter& FlashWriter::writeMessage() {
 }
 
 AMFWriter& FlashWriter::writeInvocation(const char* name, double callback, bool amf3) {
-	AMFWriter& writer = write(amf3? AMF::INVOCATION_AMF3 : AMF::INVOCATION);
-	BinaryWriter& packet = writer.packet;
-	packet.write8(AMF_STRING).write16((UInt16)strlen(name)).write(name);
-	packet.write8(AMF_NUMBER).writeNumber<double>(callback);
-	if (amf3) // TODO: strange, without this connect or play doesn't work with AMS
-		packet.write8(AMF_NULL);
-	//TODO: see if needed :
-	//writer.amf0 = amf0;
+	AMFWriter& writer(write(amf3 ? AMF::TYPE_INVOCATION_AMF3 : AMF::TYPE_INVOCATION, Packet::Null()));
+	writer.amf0 = true;
+	writer.writeString(name, strlen(name));
+	writer.writeNumber(callback);
+	if (amf3) // without this condition connect or play doesn't work with AMS
+		writer->write8(AMF::AMF0_NULL);
+	writer.amf0 = amf0;
 	return writer;
 }
 
@@ -72,14 +71,14 @@ AMFWriter& FlashWriter::writeAMFState(const char* name,const char* code,const st
 }
 
 AMFWriter& FlashWriter::writeAMFData(const string& name) {
-	AMFWriter& writer(write(AMF::DATA));
+	AMFWriter& writer(write(AMF::TYPE_DATA, Packet::Null()));
 	writer.amf0 = true;
 	writer.writeString(name.data(),name.size());
 	writer.amf0 = false;
 	return writer;
 }
 
-bool FlashWriter::writeMedia(MediaType type,UInt32 time, const UInt8* data, UInt32 size) {
+bool FlashWriter::writeMedia(MediaType type,UInt32 time, const Packet& packet) {
 	
 	switch(type) {
 		case START:
@@ -91,10 +90,10 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time, const UInt8* data, UInt
 				writeAMFStatus("NetStream.Play.UnpublishNotify",string(STR data, size) + " is now unpublished");*/
 			break;
 		case AUDIO:
-			write(AMF::AUDIO,time,data,size);
+			write(AMF::TYPE_AUDIO, packet, time);
 			break;
 		case VIDEO:
-			write(AMF::VIDEO,time,data,size);
+			write(AMF::TYPE_VIDEO, packet, time);
 			break;
 		case DATA: {
 			// convert to AMF ?
@@ -119,7 +118,7 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time, const UInt8* data, UInt
 			break;
 		}
 		default:
-			WARN("writeMedia method not supported by RTMFP for ",Format<UInt8>("%.2x",(UInt8)type)," type")
+			WARN("writeMedia method not supported by RTMFP for ", String::Format<MediaType>("%.2x",type)," type")
 	}
 	return true;
 }

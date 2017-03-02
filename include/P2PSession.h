@@ -28,28 +28,18 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 class RTMFPSession;
 struct RTMFPGroupConfig;
-class P2PSession;
-
-// Peer Group Events
-namespace P2PEvents {
-	struct OnPeerGroupReport : Mona::Event<void(P2PSession*, Mona::PacketReader&, bool)> {}; // called when receiving a Group Report message from the peer
-	struct OnNewMedia : Mona::Event<bool(const std::string&, std::shared_ptr<PeerMedia>&, const std::string&, const std::string&, Mona::PacketReader&)> {}; // called when a new PeerMedia is called (new stream available for the peer)
-	struct OnPeerGroupBegin : Mona::Event<void(P2PSession*)> {}; // called when receiving a Group Begin message from the peer
-	struct OnPeerClose : Mona::Event<void(const std::string&)> {}; // called when the peer is closing
-	struct OnPeerGroupAskClose : Mona::Event<bool(const std::string&)> {}; // called when a peer ask to close its session
-}
 
 /**************************************************
 P2PSession represents a direct P2P connection 
 with another peer
 */
-class P2PSession : public FlowManager,
-	public P2PEvents::OnPeerGroupBegin,
-	public P2PEvents::OnPeerGroupReport,
-	public P2PEvents::OnNewMedia,
-	public P2PEvents::OnPeerClose,
-	public P2PEvents::OnPeerGroupAskClose {
-public:
+struct P2PSession : FlowManager, virtual Mona::Object {
+	typedef Mona::Event<void(P2PSession*, Mona::BinaryReader&, bool)>																		ON(PeerGroupReport); // called when receiving a Group Report message from the peer
+	typedef Mona::Event<bool(const std::string&, std::shared_ptr<PeerMedia>&, const std::string&, const std::string&, Mona::BinaryReader&)> ON(NewMedia); // called when a new PeerMedia is called (new stream available for the peer)
+	typedef Mona::Event<void(P2PSession*)>																									ON(PeerGroupBegin); // called when receiving a Group Begin message from the peer
+	typedef Mona::Event<void(const std::string&)>																							ON(PeerClose); // called when the peer is closing
+	typedef Mona::Event<bool(const std::string&)>																							ON(PeerGroupAskClose); // called when a peer ask to close its session
+
 	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent,
 		const Mona::SocketAddress& host, bool responder, bool group);
 
@@ -78,13 +68,13 @@ public:
 	virtual const std::string&		name() { return peerId; }
 
 	// Return the raw peerId of the session (for RTMFPConnection)
-	virtual const std::string&		epd() { return rawId; }
+	virtual const Mona::Binary&		epd() { return rawId; }
 
 	// Return the known addresses of the peer (for RTMFPSession)
 	const PEER_LIST_ADDRESS_TYPE&	addresses() { return _knownAddresses; }
 	
 	// Return the socket object of the session
-	virtual Mona::UDPSocket&		socket(Mona::IPAddress::Family family);
+	virtual const std::shared_ptr<Mona::Socket>&		socket(Mona::IPAddress::Family family);
 
 	std::shared_ptr<Handshake>&		handshake() { return _pHandshake; }
 
@@ -124,14 +114,14 @@ public:
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
 
 	// Return the diffie hellman object (related to main session)
-	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh);
+	virtual Mona::DiffieHellman&	diffieHellman();
 	
 	// Set the host and peer addresses when receiving redirection request (only for P2P)
 	virtual void					addAddress(const Mona::SocketAddress& address, RTMFP::AddressType type);
 
 	/*** Public members ***/
 
-	std::string						rawId; // Peer Id in binary format + header (210f)
+	Mona::Buffer					rawId; // Peer Id in binary format + header (210f)
 	std::string						peerId; // Peer Id of the peer connected
 	Mona::SocketAddress				hostAddress; // Host address (server address)
 
@@ -184,14 +174,4 @@ private:
 	std::map<Mona::UInt64, std::shared_ptr<PeerMedia>>		_mapWriter2PeerMedia; // map of writer id to peer media
 	std::map<std::string, std::shared_ptr<PeerMedia>>		_mapStream2PeerMedia; // map of stream key to peer media
 	std::map<Mona::UInt64, std::shared_ptr<PeerMedia>>		_mapFlow2PeerMedia; // map of flow id to peer media
-
-	FlashConnection::OnGroupHandshake::Type					onGroupHandshake;
-	FlashConnection::OnGroupMedia::Type						onGroupMedia;
-	FlashConnection::OnGroupReport::Type					onGroupReport;
-	FlashConnection::OnGroupPlayPush::Type					onGroupPlayPush;
-	FlashConnection::OnGroupPlayPull::Type					onGroupPlayPull;
-	FlashConnection::OnFragmentsMap::Type					onFragmentsMap;
-	FlashConnection::OnGroupBegin::Type						onGroupBegin;
-	FlashConnection::OnFragment::Type						onFragment;
-	FlashConnection::OnGroupAskClose::Type					onGroupAskClose;
 };

@@ -19,21 +19,21 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#pragma once
+
+#include "Mona/Mona.h"
 #include "AMF.h"
 #include "ReferableReader.h"
 #include <vector>
 
-#pragma once
-
-class AMFReader : public ReferableReader, public virtual Mona::Object {
-public:
-	AMFReader(Mona::PacketReader& reader);
+struct AMFReader : ReferableReader, virtual Mona::Object {
+	AMFReader(const Mona::UInt8* data, Mona::UInt32 size);
 
 	enum {
-		OBJECT =	OTHER,
-		ARRAY =		OTHER+1,
-		MAP =		OTHER+2,
-		AMF0_REF =	OTHER+3
+		OBJECT = OTHER,
+		ARRAY = OTHER + 1,
+		MAP = OTHER + 2,
+		AMF0_REF = OTHER + 3
 	};
 
 
@@ -44,19 +44,19 @@ public:
 
 private:
 
-	Mona::UInt8			followingType();
+	Mona::UInt8		followingType();
 
 	bool			readOne(Mona::UInt8 type, DataWriter& writer);
 	bool			writeOne(Mona::UInt8 type, DataWriter& writer);
 
-	const char*		readText(Mona::UInt32& size,bool nullIfEmpty=false);
+	const char*		readText(Mona::UInt32& size);
 
 	std::vector<Mona::UInt32>		_stringReferences;
 	std::vector<Mona::UInt32>		_classDefReferences;
 	std::vector<Mona::UInt32>		_references;
 	std::vector<Mona::UInt32>		_amf0References;
 
-	Mona::UInt8						_amf3;
-	bool							_referencing;
-
+	Mona::UInt8				_amf3;
+	bool					_referencing;
+	std::string				_buffer;
 };

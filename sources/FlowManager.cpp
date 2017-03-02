@@ -19,8 +19,8 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "Mona/Util.h"
 #include "FlowManager.h"
-#include "Mona/PacketWriter.h"
 #include "AMFReader.h"
 #include "Invoker.h"
 #include "RTMFPWriter.h"
@@ -31,33 +31,12 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-FlowManager::RTMFPMediaPacket::RTMFPMediaPacket(const PoolBuffers& poolBuffers, const UInt8* data, UInt32 size, UInt32 time, bool audio) : pBuffer(poolBuffers, size + 15), pos(0) {
-	BinaryWriter writer(pBuffer->data(), size + 15);
-
-	writer.write8(audio ? '\x08' : '\x09');
-	// size on 3 bytes
-	writer.write24(size);
-	// time on 3 bytes
-	writer.write24(time);
-	// unknown 4 bytes set to 0
-	writer.write32(0);
-	// payload
-	writer.write(data, size);
-	// footer
-	writer.write32(11 + size);
-
-}
-
-const char FlowManager::_FlvHeader[] = { 'F', 'L', 'V', 0x01,
-0x05,				/* 0x04 == audio, 0x01 == video */
-0x00, 0x00, 0x00, 0x09,
-0x00, 0x00, 0x00, 0x00
-};
-
 FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 	_firstRead(true), _invoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2), BandWriter(invoker, RTMFP_DEFAULT_KEY) {
-	onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
+	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2), BandWriter(invoker) {
+
+	_pMainStream.reset(new FlashConnection());
+	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
 		if (code == "NetConnection.Connect.Success")
@@ -70,25 +49,26 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 		}
 		return true;
 	};
-	onPlay = [this](const string& streamName, UInt16 streamId, UInt64 flowId, double cbHandler) {
+	_pMainStream->onPlay = [this](const string& streamName, UInt16 streamId, UInt64 flowId, double cbHandler) {
 		return handlePlay(streamName, streamId, flowId, cbHandler);
 	};
-	onMedia = [this](const string& stream, UInt32 time, PacketReader& packet, double lostRate, bool audio) {
+	onMedia = _pMainStream->onMedia = [this](const string& stream, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 
 		if (!_codecInfosRead) {
-			if (!audio && RTMFP::IsH264CodecInfos(packet.current(), packet.available())) {
+			if (type == AMF::TYPE_VIDEO && RTMFP::IsH264CodecInfos(packet.data(), packet.size())) {
 				INFO("Video codec infos found, starting to read")
 				_codecInfosRead = true;
-			} else {
-				if (!audio)
+			}
+			else {
+				if (type == AMF::TYPE_VIDEO)
 					DEBUG("Video frame dropped to wait first key frame");
 				return;
 			}
 		}
 
-		if(_firstMedia) {
-			_firstMedia=false;
-			_timeStart=time; // to set to 0 the first packets
+		if (_firstMedia) {
+			_firstMedia = false;
+			_timeStart = time; // to set to 0 the first packets
 		}
 		else if (time < _timeStart) {
 			DEBUG("Packet ignored because it is older (", time, ") than start time (", _timeStart, ")")
@@ -96,11 +76,11 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 		}
 
 		if (_pOnMedia) // Synchronous read
-			_pOnMedia(name().c_str(), stream.c_str(), time-_timeStart, (const char*)packet.current(), packet.available(), audio);
+			_pOnMedia(name().c_str(), stream.c_str(), time - _timeStart, STR packet.data(), packet.size(), type);
 		else { // Asynchronous read
 			{
 				lock_guard<recursive_mutex> lock(_readMutex); // TODO: use the 'stream' parameter
-				_mediaPackets[name()].emplace_back(new RTMFPMediaPacket(_invoker.poolBuffers, packet.current(), packet.available(), time - _timeStart, audio));
+				_mediaPackets.emplace_back(new RTMFPMediaPacket(packet, time - _timeStart, type));
 			}
 			handleDataAvailable(true);
 		}
@@ -111,11 +91,6 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 	};*/
 
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
-
-	_pMainStream.reset(new FlashConnection());
-	_pMainStream->OnStatus::subscribe(onStatus);
-	_pMainStream->OnMedia::subscribe(onMedia);
-	_pMainStream->OnPlay::subscribe(onPlay);
 }
 
 FlowManager::~FlowManager() {
@@ -130,9 +105,9 @@ FlowManager::~FlowManager() {
 	_mediaPackets.clear();
 
 	if (_pMainStream) {
-		_pMainStream->OnStatus::unsubscribe(onStatus);
-		_pMainStream->OnMedia::unsubscribe(onMedia);
-		_pMainStream->OnPlay::unsubscribe(onPlay);
+		_pMainStream->onStatus = nullptr;
+		_pMainStream->onMedia = nullptr;
+		_pMainStream->onPlay = nullptr;
 	}
 }
 
@@ -152,8 +127,8 @@ BinaryWriter& FlowManager::writeMessage(UInt8 type, UInt16 length, RTMFPWriter* 
 	}
 
 	if (!_pSender)
-		_pSender.reset(new RTMFPSender(_invoker.poolBuffers, _pEncoder));
-	return _pSender->packet.write8(type).write16(length);
+		_pSender.reset(new RTMFPSender(socket(_address.family()), _pEncoder));
+	return _pSender->write8(type).write16(length);
 }
 
 shared_ptr<RTMFPWriter>& FlowManager::writer(UInt64 id, shared_ptr<RTMFPWriter>& pWriter) {
@@ -164,18 +139,17 @@ shared_ptr<RTMFPWriter>& FlowManager::writer(UInt64 id, shared_ptr<RTMFPWriter>&
 }
 
 UInt32 FlowManager::availableToWrite() { 
-	return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->packet.size() : RTMFP_HEADER_SIZE); 
+	return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->size() : RTMFP_HEADER_SIZE); 
 }
 
-const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const string& signature, Mona::UInt64 flowId) {
+const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const Packet& signature, Mona::UInt64 flowId) {
 
 	RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *this, flowId);
 	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(_nextRTMFPWriterId), forward_as_tuple(pWriter)).first;
 	(UInt64&)pWriter->id = _nextRTMFPWriterId++;
 	pWriter->amf0 = false;
 
-	if (!pWriter->signature.empty())
-		DEBUG("New writer ", pWriter->id, " on connection ", name());
+	DEBUG("New writer ", pWriter->id, " on connection ", name());
 	return itWriter->second;
 }
 
@@ -203,7 +177,7 @@ void FlowManager::flushWriters() {
 		shared_ptr<RTMFPWriter>& pWriter(it->second);
 		Exception ex;
 		if (!pWriter->manage(ex)) {
-			INFO("Closing session ", name(), " : ", ex.error())
+			INFO("Closing session ", name(), " : ", ex)
 			close(false);
 			break;
 		}
@@ -258,35 +232,43 @@ bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
 
 		bool available = false;
 		lock_guard<recursive_mutex> lock(_readMutex);
-		if (!_mediaPackets[name()].empty()) {
+		if (!_mediaPackets.empty()) {
 			// First read => send header
-			if (_firstRead && size > sizeof(_FlvHeader)) { // TODO: make a real context with a recorded position
-				memcpy(buf, _FlvHeader, sizeof(_FlvHeader));
+			BinaryWriter writer(buf, size);
+			if (_firstRead && size > 13) {
+				writer.write(EXPAND("FLV\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00"));
 				_firstRead = false;
-				size -= sizeof(_FlvHeader);
-				nbRead += sizeof(_FlvHeader);
 			}
 
-			UInt32 bufferSize = 0, toRead = 0;
-			auto& queue = _mediaPackets[name()];
-			while (!queue.empty() && (nbRead < size)) {
+			// While media packets are available and buffer is not full
+			while (!_mediaPackets.empty() && (writer.size() < size - 15)) {
 
 				// Read next packet
-				std::shared_ptr<RTMFPMediaPacket>& packet = queue.front();
-				bufferSize = packet->pBuffer.size() - packet->pos;
-				toRead = (bufferSize > (size - nbRead)) ? size - nbRead : bufferSize;
-				memcpy(buf + nbRead, packet->pBuffer.data() + packet->pos, toRead);
-				nbRead += toRead;
+				std::shared_ptr<RTMFPMediaPacket>& packet = _mediaPackets.front();
+				UInt32 bufferSize = packet->size() - packet->pos;
+				UInt32 toRead = (bufferSize > (size - writer.size() - 15)) ? size - writer.size() - 15 : bufferSize;
 
-				// If packet too big : save position and exit
+				// header
+				if (!packet->pos) {
+					writer.write8(packet->type);
+					writer.write24(packet->size()); // size on 3 bytes
+					writer.write24(packet->time); // time on 3 bytes
+					writer.write32(0); // unknown 4 bytes set to 0
+				}
+				writer.write(packet->data() + packet->pos, toRead); // payload
+
+				// If packet too big : save position and exit, else write footer
 				if (bufferSize > toRead) {
 					packet->pos += toRead;
 					break;
 				}
-				queue.pop_front();
+				writer.write32(11 + packet->size()); // footer, size on 4 bytes
+				_mediaPackets.pop_front();
 			}
-			available = !queue.empty();
-			}
+			// Finally update the nbRead & available
+			nbRead = writer.size();
+			available = !_mediaPackets.empty();
+		}
 		if (!available)
 			handleDataAvailable(false); // change the available status
 		return true;
@@ -295,7 +277,7 @@ bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
 	return false;
 }
 
-void FlowManager::receive(BinaryReader& reader) {
+void FlowManager::receive(const Packet& packet) {
 
 	// Variables for request (0x10 and 0x11)
 	UInt8 flags;
@@ -303,6 +285,7 @@ void FlowManager::receive(BinaryReader& reader) {
 	UInt64 stage = 0;
 	UInt64 deltaNAck = 0;
 
+	BinaryReader reader(packet.data(), packet.size());
 	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF;
 	bool answer = false;
 
@@ -315,7 +298,7 @@ void FlowManager::receive(BinaryReader& reader) {
 
 		UInt16 size = reader.read16();
 
-		PacketReader message(reader.current(), size);
+		BinaryReader message(reader.current(), size);
 
 		switch (type) {
 		case 0x0f: // P2P address destinator exchange
@@ -324,7 +307,7 @@ void FlowManager::receive(BinaryReader& reader) {
 		case 0xcc:
 			INFO("CC message received (unknown for now) from connection ", name())
 #if defined(_DEBUG)
-			Logs::Dump(reader.current(), size);
+			DUMP("LIBRTMFP", reader.current(), size, "CC message :");
 #endif
 			break;
 		case 0x0c:
@@ -334,8 +317,8 @@ void FlowManager::receive(BinaryReader& reader) {
 			else
 				close(true);
 			break;
-		case 0x4c : // P2P closing session (only for p2p I think)
-			INFO("P2P Session ", name(), " is closing abruptly")
+		case 0x4c : // Closing session abruptly
+			INFO("Session ", name(), " is closing abruptly")
 			close(true);
 			return;
 		case 0x01: // KeepAlive
@@ -372,7 +355,7 @@ void FlowManager::receive(BinaryReader& reader) {
 			if (writer(id, pWriter)) {
 				Exception ex;
 				if (!pWriter->acknowledgment(ex, message))
-					WARN(ex.error(), " on connection ", name())
+					WARN(ex, " on connection ", name())
 			}
 			else
 				WARN("RTMFPWriter ", id, " unfound for acknowledgment on session ", name())
@@ -394,7 +377,7 @@ void FlowManager::receive(BinaryReader& reader) {
 			pFlow = it == _flows.end() ? NULL : it->second;
 
 			// Header part if present
-			if (flags & MESSAGE_HEADER) {
+			if (flags & RTMFP::MESSAGE_OPTIONS) {
 				string signature;
 				message.read(message.read8(), signature);
 
@@ -432,7 +415,6 @@ void FlowManager::receive(BinaryReader& reader) {
 		}
 		case 0x11: {
 			++stage;
-			++deltaNAck;
 
 			// has Header?
 			if (type == 0x11)
@@ -440,12 +422,12 @@ void FlowManager::receive(BinaryReader& reader) {
 
 			// Process request
 			if (pFlow && (status != RTMFP::FAILED))
-				pFlow->receive(stage, deltaNAck, message, flags);
+				pFlow->input(stage, flags, Packet(packet, message.current(), message.available()));
 
 			break;
 		}
 		default:
-			ERROR("RTMFPMessage type '", Format<UInt8>("%02x", type), "' unknown on connection ", name());
+			ERROR("RTMFPMessage type '", String::Format<UInt8>("%02x", type), "' unknown on connection ", name());
 			return;
 		}
 
@@ -487,12 +469,12 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 
 		// Search in mainstream
 		if (_pMainStream->getStream(idSession, pStream))
-			pFlow = new RTMFPFlow(id, signature, pStream, _invoker.poolBuffers, *this, idWriterRef);
+			pFlow = new RTMFPFlow(id, signature, pStream, *this, idWriterRef);
 		else
-			ex.set(Exception::PROTOCOL, "RTMFPFlow ", id, " indicates a non-existent ", idSession, " NetStream on connection ", name());
+			ex.set<Ex::Protocol>("RTMFPFlow ", id, " indicates a non-existent ", idSession, " NetStream on connection ", name());
 	}
 	if (!pFlow) {
-		ERROR(ex.error())
+		ERROR(ex)
 		return NULL;
 	}
 
@@ -531,31 +513,32 @@ void FlowManager::removeFlow(RTMFPFlow* pFlow) {
 }
 
 bool FlowManager::computeKeys(UInt32 farId) {
-	DiffieHellman* pDh = NULL;
-	if (!diffieHellman(pDh))
-		return false;
-
 	// Compute Diffie-Hellman secret
 	Exception ex;
-	pDh->computeSecret(ex, (UInt8*)_pHandshake->farKey.data(), _pHandshake->farKey.size(), _sharedSecret);
-	if (ex)
+	shared_ptr<Buffer> pSharedSecret(new Buffer(DiffieHellman::SIZE));
+	UInt8 sizeSecret = diffieHellman().computeSecret(ex, _pHandshake->farKey.data(), _pHandshake->farKey.size(), pSharedSecret->data());
+	if (ex) {
+		WARN(ex)
 		return false;
-	DUMP("RTMFP", _sharedSecret.data(), _sharedSecret.size(), "Shared secret :")
+	}
+	pSharedSecret->resize(sizeSecret);
+	_sharedSecret = pSharedSecret;
+	DUMP("LIBRTMFP", _sharedSecret.data(), _sharedSecret.size(), "Shared secret :")
 
 	// Compute Keys
-	UInt8 responseKey[Crypto::HMAC::SIZE];
-	UInt8 requestKey[Crypto::HMAC::SIZE];
-	Buffer& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
-	Buffer& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
-	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce.data(), (UInt16)initiatorNonce.size(), BIN responderNonce.data(), responderNonce.size(), requestKey, responseKey);
-	_decoder.resetDecoder(_responder ? requestKey : responseKey);
+	UInt8 responseKey[Crypto::SHA256_SIZE];
+	UInt8 requestKey[Crypto::SHA256_SIZE];
+	Packet& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
+	Packet& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
+	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce.data(), initiatorNonce.size(), BIN responderNonce.data(), responderNonce.size(), requestKey, responseKey);
+	_pDecoder.reset(new RTMFPEngine(_responder ? requestKey : responseKey, RTMFPEngine::DECRYPT));
 	_pEncoder.reset(new RTMFPEngine(_responder ? responseKey : requestKey, RTMFPEngine::ENCRYPT));
 
 	// Save nonces just in case we are in a NetGroup connection
-	Buffer::Append(_farNonce, _pHandshake->farNonce.data(), _pHandshake->farNonce.size());
+	_farNonce = _pHandshake->farNonce;
 
-	TRACE(_responder ? "Initiator" : "Responder", " Nonce : ", Util::FormatHex(BIN _farNonce.data(), _farNonce.size(), LOG_BUFFER))
-	TRACE(_responder ? "Responder" : "Initiator", " Nonce : ", Util::FormatHex(BIN _nonce.data(), _nonce.size(), LOG_BUFFER))
+	TRACE(_responder ? "Initiator" : "Responder", " Nonce : ", String::Hex(BIN _farNonce.data(), _farNonce.size()))
+	TRACE(_responder ? "Responder" : "Initiator", " Nonce : ", String::Hex(BIN _nonce.data(), _nonce.size()))
 
 	_farId = farId; // important, save far ID
 	return true;
@@ -568,40 +551,35 @@ void FlowManager::flush(bool echoTime, Mona::UInt8 marker) {
 	BandWriter::flush(echoTime, marker);
 }
 
-void FlowManager::process(const SocketAddress& address, PoolBuffer& pBuffer) {
-	Exception ex;
-	if (!BandWriter::decode(ex, address, pBuffer))
-		DEBUG(ex.error()) // can be a problem of packet order
-}
-
-void FlowManager::receive(const SocketAddress& address, BinaryReader& packet) {
+void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
 	if (Logs::GetLevel() >= 7)
-		DUMP("RTMFP", packet.current(), packet.available(), "Request from ", address.toString())
+		DUMP("LIBRTMFP", packet.data(), packet.size(), "Request from ", address)
 
-	UInt8 marker = packet.read8();
-	_timeReceived = packet.read16();
+	BinaryReader reader(packet.data(), packet.size());
+	UInt8 marker = reader.read8();
+	_timeReceived = reader.read16();
 	_lastReceptionTime.update();
 
 	if (address != _address) {
-		DEBUG("Session ", name(), " has change its address from ", _address.toString(), " to ", address.toString())
+		DEBUG("Session ", name(), " has change its address from ", _address, " to ", address)
 		_address.set(address);
 	}
 
 	// Handshake
 	if (marker == 0x0B) {
-		UInt8 type = packet.read8();
-		UInt16 length = packet.read16();
-		packet.shrink(length); // resize the buffer to ignore the padding bytes
+		UInt8 type = reader.read8();
+		UInt16 length = reader.read16();
+		reader.shrink(length); // resize the buffer to ignore the padding bytes
 
 		switch (type) {
 		case 0x78:
-			sendConnect(packet);
+			sendConnect(reader);
 			return;
 		case 0x79:
 			WARN("Handshake 79 received, we have sent wrong cookie to far peer"); // TODO: handle?
 			return;
 		default:
-			WARN("Unexpected Handshake marker : ", Format<UInt8>("%02X", type));
+			WARN("Unexpected Handshake marker : ", String::Format<UInt8>("%02X", type));
 			return;
 		}
 	}
@@ -611,23 +589,23 @@ void FlowManager::receive(const SocketAddress& address, BinaryReader& packet) {
 	case 0xFD:
 		if (!_responder) {
 			DEBUG("Responder is sending wrong marker, request ignored")
-				return;
+			return;
 		}
 	case 0xFE: {
 		if ((marker | 0xF0) == 0xFE && _responder) {
 			DEBUG("Initiator is sending wrong marker, request ignored")
-				return;
+			return;
 		}
 		UInt16 time = RTMFP::TimeNow();
-		UInt16 timeEcho = packet.read16();
+		UInt16 timeEcho = reader.read16();
 		setPing(time, timeEcho);
 	}
 	case 0xF9:
 	case 0xFA:
-		receive(packet);
+		receive(Packet(packet, reader.current(), reader.available()));
 		break;
 	default:
-		WARN("Unexpected RTMFP marker : ", Format<UInt8>("%02x", marker));
+		WARN("Unexpected RTMFP marker : ", String::Format<UInt8>("%02x", marker));
 	}
 }
 
@@ -657,11 +635,13 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 		return;
 	}
 
-	reader.read(nonceSize, _pHandshake->farNonce);
-	if (memcmp(_pHandshake->farNonce.data(), "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
-		ERROR("Far nonce received is not well formated : ", Util::FormatHex(BIN _pHandshake->farNonce.data(), nonceSize, LOG_BUFFER))
+	shared_ptr<Buffer> pFarNonce(new Buffer());
+	reader.read(nonceSize, *pFarNonce);
+	if (memcmp(pFarNonce->data(), "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
+		ERROR("Far nonce received is not well formated : ", String::Hex(pFarNonce->data(), nonceSize))
 		return;
 	}
+	_pHandshake->farNonce.set(pFarNonce);
 
 	UInt8 endByte = reader.read8();
 	if (endByte != 0x58) {
@@ -671,14 +651,14 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 
 	// If we are in client->server session far key = nonce+11
 	if (!_pHandshake->isP2P)
-		_pHandshake->farKey.assign(STR(_pHandshake->farNonce.data() + 11), nonceSize - 11);
+		_pHandshake->farKey.set(_pHandshake->farNonce, _pHandshake->farNonce.data() + 11, nonceSize - 11);
 
 	// Compute keys for encryption/decryption and start connect requests
 	if (computeKeys(farId))
 		onConnection();
 }
 
-bool FlowManager::onPeerHandshake70(const SocketAddress& address, const string& farKey, const string& cookie) {
+bool FlowManager::onPeerHandshake70(const SocketAddress& address, const Packet& farKey, const string& cookie) {
 	if (status > RTMFP::HANDSHAKE30) {
 		DEBUG("Handshake 70 ignored for session ", name(), ", we are already in state ", status)
 		return false;
@@ -689,27 +669,21 @@ bool FlowManager::onPeerHandshake70(const SocketAddress& address, const string& 
 	return true;
 };
 
-const PoolBuffers& FlowManager::poolBuffers() {
-	return _invoker.poolBuffers;
-}
-
-Buffer& FlowManager::getNonce() {
-	if (_nonce.size())
+const Packet& FlowManager::getNonce() {
+	if (_nonce)
 		return _nonce; // already computed
 	
+	shared<Buffer> pBuffer(new Buffer());
+	BinaryWriter nonceWriter(*pBuffer);
 	if (_responder) {
-		_nonce.resize(0x49, false);
-		BinaryWriter nonceWriter(_nonce.data(), 0x49);
+		
 		nonceWriter.write(EXPAND("\x03\x1A\x00\x00\x02\x1E\x00\x41\x0E"));
-		Util::Random(_nonce.data() + 9, 0x40); // nonce 64 random bytes
+		nonceWriter.writeRandom(0x40); // nonce 64 random bytes
+		return _nonce.set(pBuffer);
 	}
-	else {
-		_nonce.resize(0x4C, false);
-		BinaryWriter nonceWriter(_nonce.data(), 0x4C);
-		nonceWriter.write(EXPAND("\x02\x1D\x02\x41\x0E"));
-		Util::Random(_nonce.data() + 5, 64); // nonce 64 random bytes
-		nonceWriter.next(64);
-		nonceWriter.write(EXPAND("\x03\x1A\x02\x0A\x02\x1E\x02"));
-	}
-	return _nonce;
+
+	nonceWriter.write(EXPAND("\x02\x1D\x02\x41\x0E"));
+	nonceWriter.writeRandom(64); // nonce 64 random bytes
+	nonceWriter.write(EXPAND("\x03\x1A\x02\x0A\x02\x1E\x02"));
+	return _nonce.set(pBuffer);
 }

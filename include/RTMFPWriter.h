@@ -28,16 +28,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPMessage.h"
 #include "FlashWriter.h"
 #include "Mona/Logs.h"
-
 #include <deque>
 
-
-#define MESSAGE_HEADER			0x80
-#define MESSAGE_WITH_AFTERPART  0x10 
-#define MESSAGE_WITH_BEFOREPART	0x20
-#define MESSAGE_ABANDONMENT		0x02
-#define MESSAGE_END				0x01
-
+struct GroupFragment;
 struct RTMFPGroupConfig;
 /*******************************************************
 RTMFPWriter is the class for sending RTMFP messages to
@@ -48,18 +41,18 @@ It manages acknowlegment and lost of packet sent
 */
 class RTMFPWriter : public FlashWriter, public virtual Mona::Object {
 public:
-	RTMFPWriter(State state,const std::string& signature, FlowManager& band, Mona::UInt64 idFlow=0);
-	RTMFPWriter(State state,const std::string& signature, FlowManager& band,std::shared_ptr<RTMFPWriter>& pThis, Mona::UInt64 idFlow=0);
+	RTMFPWriter(State state,const Mona::Packet& signature, FlowManager& band, Mona::UInt64 idFlow=0);
+	RTMFPWriter(State state,const Mona::Packet& signature, FlowManager& band,std::shared_ptr<RTMFPWriter>& pThis, Mona::UInt64 idFlow=0);
 	virtual ~RTMFPWriter();
 
 
 	const Mona::UInt64	id;
 	const Mona::UInt64	flowId; // ID of the flow associated to
-	const std::string	signature;
+	const Mona::Packet	signature;
 
 	bool				flush() { return flush(true); }
 
-	bool				acknowledgment(Mona::Exception& ex, Mona::PacketReader& packet);
+	bool				acknowledgment(Mona::Exception& ex, Mona::BinaryReader& reader);
 	bool				manage(Mona::Exception& ex);
 	FlashWriter::State	state() { return _state; }
 	void				clear();
@@ -73,7 +66,7 @@ public:
 	// Ask the server to connect to group, netGroup must be in binary format (32 bytes)
 	virtual void		writeGroupConnect(const std::string& netGroup);
 	// Init the group session with a peer, netGroup must be in hexa format (64 bytes)
-	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const char* rawId);
+	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const Mona::Binary& rawId);
 	// Send the Group begin message (02 + 0E)
 	virtual void		writeGroupBegin();
 	// Play the stream in argument
@@ -82,6 +75,8 @@ public:
 	virtual void		writeGroupPlay(Mona::UInt8 mode);
 	// Send a pull request to a peer (message 2B)
 	virtual void		writeGroupPull(Mona::UInt64 index);
+	// Send a fragment
+	virtual void		writeGroupFragment(const GroupFragment& fragment);
 
 private:
 	RTMFPWriter(RTMFPWriter& writer);
@@ -95,7 +90,7 @@ private:
 	// Write again repeatable messages
 	void					raiseMessage();
 	RTMFPMessageBuffered&	createMessage();
-	AMFWriter&				write(AMF::ContentType type,Mona::UInt32 time=0,const Mona::UInt8* data=NULL, Mona::UInt32 size=0);
+	AMFWriter&				write(AMF::Type type, const Mona::Packet& packet, Mona::UInt32 time=0);
 
 	RTMFPTrigger				_trigger; // count the number of sended cycles for managing repeated/lost counts
 	std::deque<RTMFPMessage*>	_messages; // queue of messages to send

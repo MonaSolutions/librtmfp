@@ -23,6 +23,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "P2PSession.h"
 #include "GroupStream.h"
 #include "librtmfp.h"
+#include "Mona/Util.h"
 
 using namespace Mona;
 using namespace std;
@@ -51,14 +52,14 @@ public:
 	string groupAddress;
 	PEER_LIST_ADDRESS_TYPE addresses;
 	SocketAddress hostAddress;
-	UInt64 lastGroupReport; // Time in msec of last Group report received
+	Int64 lastGroupReport; // Time in msec of last Group report received
 };
 
 const string& NetGroup::GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress) {
 	
 	static UInt8 tmp[PEER_ID_SIZE];
 	EVP_Digest(rawId, PEER_ID_SIZE+2, tmp, NULL, EVP_sha256(), NULL);
-	Util::FormatHex(tmp, PEER_ID_SIZE, groupAddress);
+	String::Assign(groupAddress, String::Hex(tmp, PEER_ID_SIZE));
 	TRACE("Group address : ", groupAddress)
 	return groupAddress;
 }
@@ -113,7 +114,7 @@ UInt32 NetGroup::targetNeighborsCount() {
 
 NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters) : groupParameters(parameters),
 	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()) {
-	onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, PacketReader& packet) {
+	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
 		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
@@ -127,9 +128,9 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		// Create the Group Media if it does not exists
 		auto itGroupMedia = _mapGroupMedias.lower_bound(streamKey);
 		if (itGroupMedia == _mapGroupMedias.end() || itGroupMedia->first != streamKey) {
-			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_conn.poolBuffers(), stream, streamKey, pParameters));
-			itGroupMedia->second.subscribe(onGroupPacket);
-			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id," for the stream ", stream, " :\n", Util::FormatHex(BIN streamKey.data(), streamKey.size(), LOG_BUFFER))
+			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters));
+			itGroupMedia->second.onGroupPacket = _onGroupPacket;
+			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id," for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
 
 			// Send the group media infos to each other peers
 			for (auto itPeer : _mapPeers) {
@@ -144,7 +145,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		itGroupMedia->second.addPeer(peerId, pPeerMedia);
 		return true;
 	};
-	onGroupReport = [this](P2PSession* pPeer, PacketReader& packet, bool sendMediaSubscription) {
+	_onGroupReport = [this](P2PSession* pPeer, BinaryReader& packet, bool sendMediaSubscription) {
 		
 		auto itNode = _mapHeardList.find(pPeer->peerId);
 		if (itNode != _mapHeardList.end())
@@ -158,11 +159,11 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		if (_groupMediaPublisher != _mapGroupMedias.end() && !_pListener) {
 			Exception ex;
 			if (!(_pListener = _conn.startListening<GroupListener>(ex, stream, idTxt))) {
-				WARN(ex.error()) // TODO : See if we can send a specific answer
+				WARN(ex) // TODO : See if we can send a specific answer
 				return;
 			}
 			INFO("First viewer play request, starting to play Stream ", stream)
-			_pListener->OnMedia::subscribe(_groupMediaPublisher->second.onMedia);
+			_pListener->onMedia = _groupMediaPublisher->second.onMedia;
 			_conn.publishReady = true; // A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 		}
 
@@ -183,7 +184,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 			}
 		}
 	};
-	onGroupBegin = [this](P2PSession* pPeer) {
+	_onGroupBegin = [this](P2PSession* pPeer) {
 
 		 // When we receive the 0E NetGroup message type we must send the group report if not already sent
 		auto itNode = _mapHeardList.find(pPeer->peerId);
@@ -193,13 +194,13 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		sendGroupReport(pPeer, true);
 		_lastReport.update();
 	};
-	onGroupPacket = [this](UInt32 time, const UInt8* data, UInt32 size, double lostRate, bool audio) {
-		_conn.pushMedia(stream, time, data, size, lostRate, audio);
+	_onGroupPacket = [this](UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
+		_conn.pushMedia(stream, time, packet, lostRate, type);
 	};
-	onPeerClose = [this](const string& peerId) {
+	_onPeerClose = [this](const string& peerId) {
 		removePeer(peerId);
 	};
-	onGroupAskClose = [this](const string& peerId) {
+	_onGroupAskClose = [this](const string& peerId) {
 		if (_bestList.empty())
 			return true; // do not disconnect peer if we have not calculated the best list (can it happen?)
 
@@ -218,8 +219,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
 		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
-		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_conn.poolBuffers(), stream, streamKey, pParameters)).first;
-		_groupMediaPublisher->second.subscribe(onGroupPacket);
+		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters)).first;
+		_groupMediaPublisher->second.onGroupPacket = nullptr; // we do not need to follow the packet
 	}
 }
 
@@ -229,7 +230,7 @@ NetGroup::~NetGroup() {
 void NetGroup::stopListener() {
 	if (_pListener) {
 		if (_groupMediaPublisher != _mapGroupMedias.end())
-			_pListener->OnMedia::unsubscribe(_groupMediaPublisher->second.onMedia);
+			_groupMediaPublisher->second.onMedia = nullptr;
 		_groupMediaPublisher = _mapGroupMedias.end();
 		_conn.stopListening(idTxt);
 		_pListener = NULL;
@@ -242,9 +243,8 @@ void NetGroup::close() {
 
 	stopListener();
 
-	for (auto& itGroupMedia : _mapGroupMedias) {
-		itGroupMedia.second.unsubscribe(onGroupPacket);
-	}
+	for (auto& itGroupMedia : _mapGroupMedias)
+		itGroupMedia.second.onGroupPacket = nullptr;
 	_mapGroupMedias.clear();
 
 	MAP_PEERS_ITERATOR_TYPE itPeer = _mapPeers.begin();
@@ -289,11 +289,11 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 
 	_mapPeers.emplace_hint(it, peerId, pPeer);
 
-	pPeer->OnNewMedia::subscribe(onNewMedia);
-	pPeer->OnPeerGroupReport::subscribe(onGroupReport);
-	pPeer->OnPeerGroupBegin::subscribe(onGroupBegin);
-	pPeer->OnPeerClose::subscribe(onPeerClose);
-	pPeer->OnPeerGroupAskClose::subscribe(onGroupAskClose);
+	pPeer->onNewMedia = _onNewMedia;
+	pPeer->onPeerGroupReport = _onGroupReport;
+	pPeer->onPeerGroupBegin = _onGroupBegin;
+	pPeer->onPeerClose = _onPeerClose;
+	pPeer->onPeerGroupAskClose = _onGroupAskClose;
 
 	buildBestList(_myGroupAddress, _bestList); // rebuild the best list to know if the peer is in it
 	return true;
@@ -311,11 +311,11 @@ void NetGroup::removePeer(const string& peerId) {
 void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 	DEBUG("Deleting peer ", itPeer->first, " from the NetGroup Best List")
 
-	itPeer->second->OnNewMedia::unsubscribe(onNewMedia);
-	itPeer->second->OnPeerGroupReport::unsubscribe(onGroupReport);
-	itPeer->second->OnPeerGroupBegin::unsubscribe(onGroupBegin);
-	itPeer->second->OnPeerClose::unsubscribe(onPeerClose);
-	itPeer->second->OnPeerGroupAskClose::unsubscribe(onGroupAskClose);
+	itPeer->second->onNewMedia = nullptr;
+	itPeer->second->onPeerGroupReport = nullptr;
+	itPeer->second->onPeerGroupBegin = nullptr;
+	itPeer->second->onPeerClose = nullptr;
+	itPeer->second->onPeerGroupAskClose = nullptr;
 	_mapPeers.erase(itPeer);
 }
 
@@ -432,7 +432,7 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 
 			auto itNode = _mapGroupAddress.lower_bound(groupAddress);
 			UInt32 rest = (_mapGroupAddress.size() / 2) - 1;
-			UInt32 step = rest / (2 * count);
+			int step = rest / (2 * count);
 			for (; count > 0; count--) {
 				if (distance(itNode, _mapGroupAddress.end()) <= step) {
 					itNode = _mapGroupAddress.begin();
@@ -468,7 +468,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	for (auto it1 : bestList) {
 		itNode = _mapHeardList.find(it1);
 		if (itNode != _mapHeardList.end())
-			sizeTotal += itNode->second.addressesSize() + PEER_ID_SIZE + 5 + ((itNode->second.lastGroupReport > 0) ? Util::Get7BitValueSize((timeNow - itNode->second.lastGroupReport) / 1000) : 1);
+			sizeTotal += itNode->second.addressesSize() + PEER_ID_SIZE + 5 + ((itNode->second.lastGroupReport > 0) ? Binary::Get7BitValueSize((UInt32)((timeNow - itNode->second.lastGroupReport) / 1000)) : 1);
 	}
 	_reportBuffer.resize(sizeTotal);
 
@@ -542,7 +542,7 @@ unsigned int NetGroup::callFunction(const char* function, int nbArgs, const char
 	return 1;
 }
 
-void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, PacketReader& packet) {
+void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryReader& packet) {
 
 	// Update the NetGroup stream properties
 	UInt8 size = 0, id = 0;
@@ -582,7 +582,7 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, PacketR
 	}
 }
 
-bool NetGroup::readGroupReport(PacketReader& packet) {
+bool NetGroup::readGroupReport(BinaryReader& packet) {
 	string tmp, newPeerId, rawId;
 	SocketAddress myAddress, serverAddress;
 	RTMFP::AddressType addressType;
@@ -598,16 +598,16 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 	// Read my address & the far peer addresses
 	UInt8 tmpMarker = packet.read8();
 	if (tmpMarker != 0x0D) {
-		ERROR("Unexpected marker : ", Format<UInt8>("%.2x", tmpMarker), " - Expected 0D")
+		ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 0D")
 		return false;
 	}
 	RTMFP::ReadAddress(packet, myAddress, addressType);
-	TRACE("Group Report - My address : ", myAddress.toString())
+	TRACE("Group Report - My address : ", myAddress)
 	
 	size = packet.read8();
 	tmpMarker = packet.read8();
 	if (tmpMarker != 0x0A) {
-		ERROR("Unexpected marker : ", Format<UInt8>("%.2x", tmpMarker), " - Expected 0A")
+		ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 0A")
 		return false;
 	}
 	BinaryReader peerAddressReader(packet.current(), size - 1);
@@ -618,13 +618,13 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 	bool newPeers = false;
 	while (packet.available() > 4) {
 		if ((tmpMarker = packet.read8()) != 00) {
-			ERROR("Unexpected marker : ", Format<UInt8>("%.2x", tmpMarker), " - Expected 00")
+			ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 00")
 			break;
 		}
 		size = packet.read8();
 		if (size == 0x22) {
 			packet.read(size, rawId);
-			Util::FormatHex(BIN rawId.data() + 2, PEER_ID_SIZE, newPeerId);
+			String::Assign(newPeerId, String::Hex(BIN rawId.data() + 2, PEER_ID_SIZE));
 			if (String::ICompare(rawId, "\x21\x0F", 2) != 0) {
 				ERROR("Unexpected parameter : ", newPeerId, " - Expected Peer Id")
 				break;
@@ -647,7 +647,7 @@ bool NetGroup::readGroupReport(PacketReader& packet) {
 			auto itHeardList = _mapHeardList.find(newPeerId);
 			// New peer? => add it to heard list
 			if (itHeardList == _mapHeardList.end()) {
-				hostAddress.clear();
+				hostAddress.reset();
 				listAddresses.clear();
 				RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 				newPeers = true;

@@ -22,66 +22,37 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Invoker.h"
 #include "RTMFPLogger.h"
 #include "RTMFPSession.h"
+#include "Mona/BufferPool.h"
 
 using namespace Mona;
 using namespace std;
 
-/** ConnectionsManager **/
-
-ConnectionsManager::ConnectionsManager(Invoker& invoker) :_invoker(invoker), Task(invoker), Startable("ServerManager") {
-}
-
-void ConnectionsManager::run(Exception& ex) {
-	do {
-		waitHandle();
-	} while (sleep(DELAY_CONNECTIONS_MANAGER) != STOP);
-}
-
-void ConnectionsManager::handle(Exception& ex) { _invoker.manage(); }
-
 /** Invoker **/
 
-Invoker::Invoker(UInt16 threads) : Startable("Invoker"), _interruptCb(NULL), _interruptArg(NULL), poolThreads(threads), sockets(*this, poolBuffers, poolThreads), _manager(*this), _lastIndex(0) {
-	_logger.reset(new RTMFPLogger());
-	Logs::SetLogger(*_logger);
+Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _interruptArg(NULL), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp) {
+	if (createLogger) {
+		_logger.reset(new RTMFPLogger());
+		Logs::SetLogger(*_logger);
+	}
 }
 
 Invoker::~Invoker() {
 
 	TRACE("Closing global invoker...")
 
-	// terminate the tasks (forced to do immediatly, because no more "giveHandle" is called)
-	TaskHandler::stop();
-
-	// Destroy the connections
-	{
-		lock_guard<mutex>	lock(_mutexConnections);
-		Logs::SetDump(""); // we must set Dump to null because static dump object can be destroyed
-
-		auto it = _mapConnections.begin();
-		while (it != _mapConnections.end())
-			removeConnection(it++);
-	}
-
-	Startable::stop();
+	// terminate the tasks
+	stop();
 }
 
 // Start the socket manager if not started
 bool Invoker::start() {
-	if(Startable::running()) {
+	if(running()) {
 		ERROR("Invoker is already running, call stop method before");
 		return false;
 	}
-
-	Exception ex;
-	if (!((Mona::SocketManager&)sockets).start(ex) || ex || !sockets.running())
-		return false;
 	
-	bool result;
-	EXCEPTION_TO_LOG(result = Startable::start(ex, Startable::PRIORITY_HIGH), "Invoker");
-	if (result)
-		TaskHandler::start();
-	return result;
+	Exception ex;
+	return Thread::start(ex);
 }
 
 unsigned int Invoker::addConnection(std::shared_ptr<RTMFPSession>& pConn) {
@@ -139,36 +110,70 @@ void Invoker::manage() {
 	}
 }
 
-void Invoker::run(Exception& exc) {
-	Exception exWarn, ex;
+bool Invoker::run(Exception& exc, const volatile bool& stopping) {
+	BufferPool bufferPool(timer);
+	Buffer::SetAllocator(bufferPool);
 
-	if (!_manager.start(exWarn, Startable::PRIORITY_LOW))
-		ex=exWarn;
-	else if (exWarn)
-		WARN(exWarn.error());
-	while (!ex && sleep() != STOP)
-		giveHandle(ex);
+	Timer::OnTimer onManage;
+	
+#if !defined(_DEBUG)
+	try
+#endif
+	{ // Encapsulate sessions!
 
-	// terminate the tasks (forced to do immediatly, because no more "giveHandle" is called)
-	TaskHandler::stop();
+		UInt32 countClient(0);
+		onManage = ([&](UInt32 count) {
+			manage(); // client manage (script, etc..)
+			return DELAY_CONNECTIONS_MANAGER;
+		}); // manage every 2 seconds!
+		_timer.set(onManage, DELAY_CONNECTIONS_MANAGER);
+		while (!stopping) {
+			if (wakeUp.wait(_timer.raise()))
+				_handler.flush();
+		}
 
-	_manager.stop();
+		// Sessions deletion!
+	}
+#if !defined(_DEBUG)
+	catch (exception& ex) {
+		FATAL("Server, ", ex.what());
+	}
+	catch (...) {
+		FATAL("Server, unknown error");
+	}
+#endif
+	// Stop onManage (useless now)
+	_timer.set(onManage, 0);
 
-	if (sockets.running())
-		((Mona::SocketManager&)sockets).stop();
+	// Destroy the connections
+	{
+		lock_guard<mutex>	lock(_mutexConnections);
+		if (_logger)
+			Logs::SetDump(""); // we must set Dump to null because static dump object can be destroyed
 
-	poolThreads.join();
+		auto it = _mapConnections.begin();
+		while (it != _mapConnections.end())
+			removeConnection(it++);
+	}
+
+	// stop socket sending (it waits the end of sending last session messages)
+	threadPool.join();
 
 	// release memory
-	((Mona::PoolBuffers&)poolBuffers).clear();
+	INFO("Server memory release");
+	Buffer::SetAllocator();
+	bufferPool.clear();
+	return true;
 }
 
-void Invoker::setLogCallback(void(*onLog)(unsigned int, int, const char*, long, const char*)){
-	_logger->setLogCallback(onLog);
+void Invoker::setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*)){
+	if (_logger)
+		_logger->setLogCallback(onLog);
 }
 
 void Invoker::setDumpCallback(void(*onDump)(const char*, const void*, unsigned int)) { 
-	_logger->setDumpCallback(onDump);
+	if (_logger)
+		_logger->setDumpCallback(onDump);
 }
 
 void Invoker::setInterruptCallback(int(*interruptCb)(void*), void* argument) {
@@ -177,5 +182,5 @@ void Invoker::setInterruptCallback(int(*interruptCb)(void*), void* argument) {
 }
 
 bool Invoker::isInterrupted() {
-	return !Startable::running() || (_interruptCb && _interruptCb(_interruptArg) == 1);
+	return !Thread::running() || (_interruptCb && _interruptCb(_interruptArg) == 1);
 }

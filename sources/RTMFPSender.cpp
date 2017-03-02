@@ -25,16 +25,18 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 
 bool RTMFPSender::run(Exception& ex) {
-	int paddingBytesLength = (0xFFFFFFFF-packet.size()+5)&0x0F;
+	int paddingBytesLength = (0xFFFFFFFF-_pBuffer->size()+5)&0x0F;
 	// Padd the plain request with paddingBytesLength of value 0xff at the end
 	while (paddingBytesLength-->0)
-		packet.write8(0xFF);
+		write8(0xFF);
 	// Write CRC (at the beginning of the request)
-	BinaryReader reader(packet.data()+6,packet.size()-6);
-	BinaryWriter(packet.data()+4,2).write16(Crypto::ComputeCRC(reader));
+	BinaryReader reader(_pBuffer->data()+6, _pBuffer->size()-6);
+	BinaryWriter(_pBuffer->data()+4,2).write16(Crypto::ComputeChecksum(reader));
 	// Encrypt the resulted request
-	_pEncoder->process((UInt8*)packet.data()+4,packet.size()-4);
-	RTMFP::Pack(packet,farId);
+	_pEncoder->process(_pBuffer->data()+4, _pBuffer->size()-4);
+	RTMFP::Pack(*_pBuffer,farId);
 
-	return UDPSender::run(ex);
+	if (_pSocket->write(ex, Packet(_pBuffer), address) < 0 || ex)
+		DEBUG(ex);
+	return true;
 }

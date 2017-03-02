@@ -36,12 +36,12 @@ UInt32 P2PSession::P2PSessionCounter = 0x03000000; // Notice that Flash uses inc
 
 
 P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, 
-		const Mona::SocketAddress& host, bool responder, bool group) : peerId(id), rawId("\x21\x0f"), hostAddress(host), _parent(parent), _groupBeginSent(false), 
+		const Mona::SocketAddress& host, bool responder, bool group) : peerId(id), hostAddress(host), _parent(parent), _groupBeginSent(false), 
 		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
-	onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
+	_pMainStream->onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		return handleGroupHandshake(groupId, key, peerId);
 	};
-	onGroupMedia = [this](PacketReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+	_pMainStream->onGroupMedia = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		DEBUG("Group Media Subscription message received from ", peerId)
 
 		if (packet.available() < 0x24) {
@@ -70,8 +70,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		if (itStream == _mapStream2PeerMedia.end() || itStream->first != streamKey) {
 
 			// Save the streamKey
-			string signature("\x00\x47\x52\x11", 4);
-			shared_ptr<RTMFPWriter> pWriter = createWriter(signature, _mainFlowId);
+			shared_ptr<RTMFPWriter> pWriter = createWriter(Packet(EXPAND("\x00\x47\x52\x11")), _mainFlowId);
 			auto itPeerMedia = _mapWriter2PeerMedia.emplace(piecewise_construct, forward_as_tuple(pWriter->id), forward_as_tuple(new PeerMedia(this, pWriter))).first;
 			itStream = _mapStream2PeerMedia.emplace_hint(itStream, streamKey, itPeerMedia->second);
 			itPeerMedia->second->pStreamKey = &itStream->first;
@@ -87,85 +86,76 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		itStream->second->idFlow = flowId;
 
 		// If we accept the request and are responder => send the Media Subscription message
-		if (!OnNewMedia::raise<false>(peerId, itStream->second, streamName, streamKey, packet))
+		if (!onNewMedia(peerId, itStream->second, streamName, streamKey, packet))
 			itStream->second->close(false); // else we close the writer & flow
 		return true;
 	};
-	onGroupReport = [this](PacketReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+	_pMainStream->onGroupReport = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		DEBUG("NetGroup Report message received from ", peerId)
-		OnPeerGroupReport::raise(this, packet, _mapStream2PeerMedia.empty()); // no PeerMedia => no Group Media received for now, we can send the group media subscription message
+		onPeerGroupReport(this, packet, _mapStream2PeerMedia.empty()); // no PeerMedia => no Group Media received for now, we can send the group media subscription message
 	};
-	onGroupBegin = [this](UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+	_pMainStream->onGroupBegin = [this](UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		DEBUG("NetGroup Begin message received from ", peerId)
-		OnPeerGroupBegin::raise(this);
+		onPeerGroupBegin(this);
 	};
-	onGroupPlayPush = [this](PacketReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
-		DEBUG("Group Push Out mode received from peer ", peerId, " : ", Format<UInt8>("%.2x", *packet.current()))
+	_pMainStream->onGroupPlayPush = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+		DEBUG("Group Push Out mode received from peer ", peerId, " : ", String::Format<UInt8>("%.2x", *packet.current()))
 
 		auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
 		if (itPeerMedia != _mapFlow2PeerMedia.end())
 			itPeerMedia->second->setPushMode(packet.read8());
 	};
-	onGroupPlayPull = [this](PacketReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+	_pMainStream->onGroupPlayPull = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		UInt64 fragment = packet.read7BitLongValue();
 		TRACE("Group Pull message received from peer ", peerId, " - fragment : ", fragment)
 
 		auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
 		if (itPeerMedia != _mapFlow2PeerMedia.end())
-			itPeerMedia->second->onPlayPull(fragment);
+			itPeerMedia->second->handlePlayPull(fragment);
 	};
-	onFragmentsMap = [this](PacketReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+	_pMainStream->onFragmentsMap = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		UInt64 counter = packet.read7BitLongValue();
 		DEBUG("Group Fragments map (type 22) received from ", peerId, " : ", counter)
 
 		auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
 		if (itPeerMedia != _mapFlow2PeerMedia.end())
-			itPeerMedia->second->onFragmentsMap(counter, packet.current(), packet.available());
+			itPeerMedia->second->handleFragmentsMap(counter, packet.current(), packet.available());
 
 		packet.next(packet.available());
 	};
-	onFragment = [this](UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, PacketReader& packet, double lostRate, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+	_pMainStream->onFragment = [this](UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet, double lostRate, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		auto itPeerMedia = _mapWriter2PeerMedia.find(writerId);
 		if (itPeerMedia != _mapWriter2PeerMedia.end()) {
 			// save the media flow id if new
 			if (!itPeerMedia->second->idFlowMedia)
 				itPeerMedia->second->idFlowMedia = flowId;
-			itPeerMedia->second->onFragment(marker, id, splitedNumber, mediaType, time, packet, lostRate);
+			itPeerMedia->second->handleFragment(marker, id, splitedNumber, mediaType, time, packet, lostRate);
 		}
 	};
-	onGroupAskClose = [this](UInt16 streamId, UInt64 flowId, UInt64 writerId) {
-		bool res = OnPeerGroupAskClose::raise<false>(peerId);
+	_pMainStream->onGroupAskClose = [this](UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+		bool res = onPeerGroupAskClose(peerId);
 		DEBUG("NetGroup close message received from peer ", peerId, " : ", res ? "refused" : "accepted")
 		return res;
 	};
 
 	_sessionId = P2PSessionCounter++;
-	Util::UnformatHex(BIN peerId.data(), peerId.size(), rawId, true);
-
-	_pMainStream->OnGroupMedia::subscribe(onGroupMedia);
-	_pMainStream->OnGroupReport::subscribe(onGroupReport);
-	_pMainStream->OnGroupPlayPush::subscribe(onGroupPlayPush);
-	_pMainStream->OnGroupPlayPull::subscribe(onGroupPlayPull);
-	_pMainStream->OnFragmentsMap::subscribe(onFragmentsMap);
-	_pMainStream->OnGroupBegin::subscribe(onGroupBegin);
-	_pMainStream->OnFragment::subscribe(onFragment);
-	_pMainStream->OnGroupHandshake::subscribe(onGroupHandshake);
-	_pMainStream->OnGroupAskClose::subscribe(onGroupAskClose);
+	rawId.append("\x21\x0f", 2);
+	String::ToHex(peerId, rawId);
 }
 
 P2PSession::~P2PSession() {
 	DEBUG("Deletion of P2PSession ", peerId)
 	close(true);
 
-	_pMainStream->OnGroupMedia::unsubscribe(onGroupMedia);
-	_pMainStream->OnGroupReport::unsubscribe(onGroupReport);
-	_pMainStream->OnGroupPlayPush::unsubscribe(onGroupPlayPush);
-	_pMainStream->OnGroupPlayPull::unsubscribe(onGroupPlayPull);
-	_pMainStream->OnFragmentsMap::unsubscribe(onFragmentsMap);
-	_pMainStream->OnGroupBegin::unsubscribe(onGroupBegin);
-	_pMainStream->OnFragment::unsubscribe(onFragment);
-	_pMainStream->OnGroupHandshake::unsubscribe(onGroupHandshake);
-	_pMainStream->OnGroupAskClose::unsubscribe(onGroupAskClose);
+	_pMainStream->onGroupMedia = nullptr;
+	_pMainStream->onGroupReport = nullptr;
+	_pMainStream->onGroupPlayPush = nullptr;
+	_pMainStream->onGroupPlayPull = nullptr;
+	_pMainStream->onFragmentsMap = nullptr;
+	_pMainStream->onGroupBegin = nullptr;
+	_pMainStream->onFragment = nullptr;
+	_pMainStream->onGroupHandshake = nullptr;
+	_pMainStream->onGroupAskClose = nullptr;
 	_parent = NULL;
 }
 
@@ -201,7 +191,7 @@ void P2PSession::closeGroup(bool abrupt) {
 	_mapStream2PeerMedia.clear();
 	_mapWriter2PeerMedia.clear();
 	_mapFlow2PeerMedia.clear();
-	OnPeerClose::raise(peerId);
+	onPeerClose(peerId);
 }
 
 RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
@@ -211,7 +201,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
 		DEBUG("Creating new Flow (2) for P2PSession ", name())
 		_pMainStream->addStream(idSession, pStream);
-		return new RTMFPFlow(id, signature, pStream, _invoker.poolBuffers, *this, idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, *this, idWriterRef);
 	}
 	else if (signature.size() > 3 && ((signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Report stream (main flow)
 		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream
@@ -224,10 +214,9 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
 			_mainFlowId = id;
-		return new RTMFPFlow(id, signature, pStream, _invoker.poolBuffers, *this, idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, *this, idWriterRef);
 	}
-	string tmp;
-	ex.set(Exception::PROTOCOL, "Unhandled signature type : ", Util::FormatHex((const UInt8*)signature.data(), signature.size(), tmp), " , cannot create RTMFPFlow");
+	ex.set<Ex::Protocol>("Unhandled signature type : ", String::Hex((const UInt8*)signature.data(), signature.size()), " , cannot create RTMFPFlow");
 	return NULL;
 }
 
@@ -238,10 +227,10 @@ void P2PSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
 		_pReportWriter.reset();
 	else if (pWriter == _pNetStreamWriter)
 		_pNetStreamWriter.reset();
-	else if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0) {
+	else if (pWriter->signature.size() > 3 && memcmp(pWriter->signature.data(), "\x00\x47\x52\x11", 4) == 0) {
 		auto itWriter = _mapWriter2PeerMedia.find(pWriter->id);
 		if (itWriter != _mapWriter2PeerMedia.end()) {
-			FATAL_ASSERT(itWriter->second->pStreamKey) // implementation error
+			FATAL_CHECK(itWriter->second->pStreamKey) // implementation error
 			auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
 			if (itStream != _mapStream2PeerMedia.end()) {
 				if (itStream->second->idFlow)
@@ -255,10 +244,8 @@ void P2PSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
 
 unsigned int P2PSession::callFunction(const char* function, int nbArgs, const char** args) {
 
-	if (!_pNetStreamWriter) {
-		string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
-		_pNetStreamWriter = createWriter(signature, 0);
-	}
+	if (!_pNetStreamWriter)
+		_pNetStreamWriter = createWriter(Packet(EXPAND("\x00\x54\x43\x04\xFA\x89\x01")), 0);  // stream id = 1
 
 	AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation(function, true);
 	for (int i = 0; i < nbArgs; i++) {
@@ -279,8 +266,9 @@ bool P2PSession::handlePlay(const string& streamName, UInt16 streamId, UInt64 fl
 	DEBUG("The peer ", peerId, " is trying to play '", streamName, "'...")
 
 	// Create the writers, signature is same as flow/stream and flowId must be set to flow id
-	string signature("\x00\x54\x43\x04\xFA\x89", 6);
-	RTMFP::Write7BitValue(signature, streamId);
+	shared_ptr<Buffer> pSignature(new Buffer(6, "\x00\x54\x43\x04\xFA\x89"));
+	BinaryWriter(*pSignature).write7BitValue(streamId);
+	Packet signature(pSignature);
 	shared_ptr<RTMFPWriter> pDataWriter = createWriter(signature, flowId);
 	shared_ptr<RTMFPWriter> pAudioWriter = createWriter(signature, flowId);
 	shared_ptr<RTMFPWriter> pVideoWriter = createWriter(signature, flowId);
@@ -288,7 +276,7 @@ bool P2PSession::handlePlay(const string& streamName, UInt16 streamId, UInt64 fl
 	Exception ex;
 	if(!(_pListener = _parent->startListening<FlashListener, shared_ptr<RTMFPWriter>&>(ex, streamName, peerId, pDataWriter, pAudioWriter, pVideoWriter))) {
 		// TODO : See if we can send a specific answer
-		WARN(ex.error())
+		WARN(ex)
 		return false;
 	}
 	INFO("Stream ", streamName, " found, sending start answer")
@@ -321,8 +309,8 @@ bool P2PSession::handleGroupHandshake(const std::string& groupId, const std::str
 	if (String::ICompare(groupId, _parent->groupIdHex()) != 0)
 		WARN("Unexpected group ID received : ", groupId, "\nExpected : ", _parent->groupIdHex())
 	else if (memcmp(id.data(), _parent->rawId().data(), PEER_ID_SIZE+2) != 0)
-		WARN("Our peer ID was expected but received : ", Util::FormatHex(BIN id.data()+2, PEER_ID_SIZE, LOG_BUFFER))
-	else if (!_groupExpectedKey || memcmp(key.data(), _groupExpectedKey->data(), Crypto::HMAC::SIZE) != 0)
+		WARN("Our peer ID was expected but received : ", String::Hex(BIN id.data() + 2, PEER_ID_SIZE))
+	else if (!_groupExpectedKey || memcmp(key.data(), _groupExpectedKey->data(), Crypto::SHA256_SIZE) != 0)
 		WARN("Unexpected group key received, group connect request ignored")
 	// Send the group connection request to peer if not already sent
 	else {
@@ -342,14 +330,14 @@ void P2PSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 	}
 	else if (pWriter == _pNetStreamWriter)
 		_pNetStreamWriter.reset();
-	else if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0) {
+	else if (pWriter->signature.size() > 3 && memcmp(pWriter->signature.data(), "\x00\x47\x52\x11", 4) == 0) {
 		auto itWriter = _mapWriter2PeerMedia.find(pWriter->id);
 		if (itWriter != _mapWriter2PeerMedia.end()) {
 			DEBUG(peerId, " want to close the subscription media report writer ", pWriter->id)
 			itWriter->second->close(false);
 		}
 	}
-	else if (pWriter->signature.size() > 3 && pWriter->signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0) {
+	else if (pWriter->signature.size() > 3 && memcmp(pWriter->signature.data(), "\x00\x47\x52\x12", 4) == 0) {
 		auto itPeerMedia = _mapFlow2PeerMedia.find(pWriter->flowId);
 		if (itPeerMedia != _mapFlow2PeerMedia.end()) {
 			DEBUG(peerId, " want to close the media writer ", pWriter->id)
@@ -383,8 +371,7 @@ shared_ptr<PeerMedia>& P2PSession::getPeerMedia(const string& streamKey) {
 	// Create a new writer if the stream key is unknown
 	auto itStream = _mapStream2PeerMedia.lower_bound(streamKey);
 	if (itStream == _mapStream2PeerMedia.end() || itStream->first != streamKey) {
-		string signature("\x00\x47\x52\x11", 4);
-		shared_ptr<RTMFPWriter> pWriter = createWriter(signature, _mainFlowId);
+		shared_ptr<RTMFPWriter> pWriter = createWriter(Packet(EXPAND("\x00\x47\x52\x11")), _mainFlowId);
 		auto itPeerMedia = _mapWriter2PeerMedia.emplace(piecewise_construct, forward_as_tuple(pWriter->id), forward_as_tuple(new PeerMedia(this, pWriter))).first;
 		itStream = _mapStream2PeerMedia.emplace_hint(itStream, streamKey, itPeerMedia->second);
 		itPeerMedia->second->pStreamKey = &itStream->first;
@@ -410,13 +397,11 @@ void P2PSession::sendGroupReport(const UInt8* data, UInt32 size) {
 }
 
 void P2PSession::sendGroupPeerConnect() {
-	if (!_pReportWriter) {
-		string signature("\x00\x47\x52\x1C", 4);
-		_pReportWriter = createWriter(signature, _mainFlowId);
-	}
+	if (!_pReportWriter)
+		_pReportWriter = createWriter(Packet(EXPAND("\x00\x47\x52\x1C")), _mainFlowId);
 
 	DEBUG("Sending group connection request to peer ", peerId)
-	_pReportWriter->writePeerGroup(_parent->groupIdHex(), _groupConnectKey->data(), rawId.c_str());
+	_pReportWriter->writePeerGroup(_parent->groupIdHex(), _groupConnectKey->data(), rawId);
 	_pReportWriter->flush();
 	_groupConnectSent = true;
 	sendGroupBegin();
@@ -424,8 +409,7 @@ void P2PSession::sendGroupPeerConnect() {
 
 bool P2PSession::createMediaWriter(shared_ptr<RTMFPWriter>& pWriter, UInt64 flowIdRef) {
 
-	string signature("\x00\x47\x52\x12", 4);
-	pWriter = createWriter(signature, flowIdRef);
+	pWriter = createWriter(Packet(EXPAND("\x00\x47\x52\x12")), flowIdRef);
 	return true;
 }
 
@@ -450,8 +434,7 @@ void P2PSession::onConnection() {
 	// Start playing
 	} else if (!_parent->isPublisher()) {
 		INFO("Sending play request to peer for stream '", _streamName, "'")
-		string signature("\x00\x54\x43\x04\xFA\x89\x01", 7); // stream id = 1
-		_pNetStreamWriter = createWriter(signature, _mainFlowId);
+		_pNetStreamWriter = createWriter(Packet(EXPAND("\x00\x54\x43\x04\xFA\x89\x01")), _mainFlowId); // stream id = 1
 		AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation("play", true);
 		amfWriter.amf0 = true; // Important for p2p unicast play
 		amfWriter.writeString(_streamName.c_str(), _streamName.size());
@@ -498,13 +481,13 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 		_pHandshake = pHandshake;
 		_pHandshake->pSession = this;
 		_responder = true;
-		_nonce.clear(); // reset the nonce to avoid handshake error
+		_nonce.reset(); // reset the nonce to avoid handshake error
 		_address.set(address);
 	}
 	return true;
 }
 
-UDPSocket& P2PSession::socket(IPAddress::Family family) { 
+const shared_ptr<Socket>& P2PSession::socket(IPAddress::Family family) { 
 	return _parent->socket(family); 
 }
 
@@ -512,8 +495,8 @@ void P2PSession::removeHandshake(shared_ptr<Handshake>& pHandshake) {
 	_parent->removeHandshake(pHandshake);
 }
 
-bool P2PSession::diffieHellman(DiffieHellman* &pDh) {
-	return _parent->diffieHellman(pDh);
+DiffieHellman&	P2PSession::diffieHellman() {
+	return _parent->diffieHellman();
 }
 
 void P2PSession::addAddress(const SocketAddress& address, RTMFP::AddressType type) {
@@ -527,13 +510,12 @@ void P2PSession::buildGroupKey() {
 
 	// Compile encrypted keys
 	if (!_groupConnectKey) {
-		_groupConnectKey.reset(new Buffer(Crypto::HMAC::SIZE));
-		_groupExpectedKey.reset(new Buffer(Crypto::HMAC::SIZE));
-		UInt8 mdp1[Crypto::HMAC::SIZE];
-		Crypto::HMAC hmac;
-		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _farNonce.data(), _farNonce.size(), mdp1);
-		hmac.compute(EVP_sha256(), _parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::HMAC::SIZE, _groupConnectKey->data());
-		hmac.compute(EVP_sha256(), _sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
-		hmac.compute(EVP_sha256(), _parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::HMAC::SIZE, _groupExpectedKey->data());
+		_groupConnectKey.reset(new Buffer(Crypto::SHA256_SIZE));
+		_groupExpectedKey.reset(new Buffer(Crypto::SHA256_SIZE));
+		UInt8 mdp1[Crypto::SHA256_SIZE];
+		Crypto::HMAC::SHA256(_sharedSecret.data(), _sharedSecret.size(), _farNonce.data(), _farNonce.size(), mdp1);
+		Crypto::HMAC::SHA256(_parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::SHA256_SIZE, _groupConnectKey->data());
+		Crypto::HMAC::SHA256(_sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
+		Crypto::HMAC::SHA256(_parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::SHA256_SIZE, _groupExpectedKey->data());
 	}
 }

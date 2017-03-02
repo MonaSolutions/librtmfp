@@ -43,7 +43,7 @@ void PeerMedia::close(bool abrupt) {
 		_pParent->closeFlow(idFlow);
 	_pMediaReportWriter.reset();
 
-	OnPeerClose::raise(_pParent->peerId, pushInMode); // notify GroupMedia to reset push masks and remove pointer
+	onPeerClose(_pParent->peerId, pushInMode); // notify GroupMedia to reset push masks and remove pointer
 }
 
 void PeerMedia::closeMediaWriter(bool abrupt) {
@@ -68,16 +68,16 @@ void PeerMedia::sendGroupMedia(const string& stream, const std::string& streamKe
 	groupMediaSent = true;
 }
 
-bool PeerMedia::sendMedia(const UInt8* data, UInt32 size, UInt64 fragment, bool pull) {
-	if ((!pull && !isPushable((UInt8)fragment%8)))
+bool PeerMedia::sendMedia(const GroupFragment& fragment, bool pull) {
+	if ((!pull && !isPushable((UInt8)fragment.id%8)))
 		return false;
 
 	if (!_pMediaWriter && !_pParent->createMediaWriter(_pMediaWriter, idFlow)) {
 		ERROR("Unable to create media writer for peer ", _pParent->peerId)
 		return false;
-	}
+	}	
 
-	_pMediaWriter->writeRaw(data, size);
+	_pMediaWriter->writeGroupFragment(fragment);
 	_pMediaWriter->flush();
 	return true;
 }
@@ -107,20 +107,20 @@ void PeerMedia::sendPushMode(UInt8 mode) {
 		if (mode > 0) {
 			for (int i = 0; i < 8; i++) {
 				if ((mode & (1 << i)) > 0)
-					String::Append(masks, (masks.empty() ? "" : ", "), i, ", ", Format<UInt8>("%.1X", i + 8));
+					String::Append(masks, (masks.empty() ? "" : ", "), i, ", ", String::Format<UInt8>("%.1X", i + 8));
 			}
 		}
 
-		TRACE("Setting Group Push In mode to ", Format<UInt8>("%.2x", mode), " (", masks,") for peer ", _pParent->peerId, " - last fragment : ", _idFragmentsMapIn)
+		TRACE("Setting Group Push In mode to ", String::Format<UInt8>("%.2x", mode), " (", masks, ") for peer ", _pParent->peerId, " - last fragment : ", _idFragmentsMapIn)
 		_pMediaReportWriter->writeGroupPlay(mode);
 		_pMediaReportWriter->flush();
 		pushInMode = mode;
 	}
 }
 
-void PeerMedia::onFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
+void PeerMedia::handleFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
 	// If the group is publisher for this media we ignore the request
-	if (!OnFragmentsMap::raise<true>(id))
+	if (!onFragmentsMap(id))
 		return;
 
 	if (id <= _idFragmentsMapIn) {
@@ -139,8 +139,8 @@ void PeerMedia::onFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
 	writer.write(data, size);
 }
 
-void PeerMedia::onFragment(UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, PacketReader& packet, double lostRate) {
-	OnFragment::raise(this, _pParent->peerId, marker, id, splitedNumber, mediaType, time, packet, lostRate);
+void PeerMedia::handleFragment(UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet, double lostRate) {
+	onFragment(this, _pParent->peerId, marker, id, splitedNumber, mediaType, time, packet, lostRate);
 }
 
 bool PeerMedia::checkMask(UInt8 bitNumber) {
@@ -154,7 +154,7 @@ bool PeerMedia::checkMask(UInt8 bitNumber) {
 	UInt64 lastFragment = _idFragmentsMapIn - (_idFragmentsMapIn % 8);
 	lastFragment += ((_idFragmentsMapIn % 8) > bitNumber) ? bitNumber : bitNumber - 8;
 
-	TRACE("Searching ", lastFragment, " into ", Format<UInt8>("%.2x", *_fragmentsMap.data()), " ; (current id : ", _idFragmentsMapIn, ") ; result = ",
+	TRACE("Searching ", lastFragment, " into ", String::Format<UInt8>("%.2x", *_fragmentsMap.data()), " ; (current id : ", _idFragmentsMapIn, ") ; result = ",
 		((*_fragmentsMap.data()) & (1 << (8 - _idFragmentsMapIn + lastFragment))) > 0, " ; bit : ", bitNumber, " ; address : ", _pParent->peerId, " ; latency : ", _pParent->latency())
 
 	return ((*_fragmentsMap.data()) & (1 << (8 - _idFragmentsMapIn + lastFragment))) > 0;
@@ -181,15 +181,15 @@ bool PeerMedia::hasFragment(UInt64 index) {
 		return false; // Fragment deleted from buffer
 	}
 
-	TRACE("Searching ", index, " into ", Format<UInt8>("%.2x", *(_fragmentsMap.data() + offset)), " ; (current id : ", _idFragmentsMapIn, ", offset : ", offset, ") ; result = ",
+	TRACE("Searching ", index, " into ", String::Format<UInt8>("%.2x", *(_fragmentsMap.data() + offset)), " ; (current id : ", _idFragmentsMapIn, ", offset : ", offset, ") ; result = ",
 		(*(_fragmentsMap.data() + offset) & (1 << rest)) > 0)
 
 	return (*(_fragmentsMap.data() + offset) & (1 << rest)) > 0;
 }
 
-void PeerMedia::onPlayPull(UInt64 index) {
+void PeerMedia::handlePlayPull(UInt64 index) {
 
-	OnPlayPull::raise(this, index);
+	onPlayPull(this, index);
 }
 
 void PeerMedia::sendPull(UInt64 index) {

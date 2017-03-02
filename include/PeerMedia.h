@@ -23,34 +23,39 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Mona.h"
 #include "Mona/Event.h"
-#include "Mona/PacketReader.h"
+#include "Mona/Packet.h"
+#include "AMF.h"
 #include <set>
 
 #define MAX_FRAGMENT_MAP_SIZE			1024 // TODO: check this
 
-class PeerMedia;
-class P2PSession;
+struct P2PSession;
 class RTMFPWriter;
 struct RTMFPGroupConfig;
 
-namespace PeerMediaEvents {
-	struct OnPeerClose : Mona::Event<void(const std::string& peerId, Mona::UInt8 mask)> {}; // notify parent that the peer is closing (update the NetGroup push flags)
-	struct OnPlayPull : Mona::Event<void(PeerMedia*, Mona::UInt64)> {}; // called when we receive a pull request
-	struct OnFragmentsMap : Mona::Event<bool(Mona::UInt64)> {}; // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
-	struct OnFragment : Mona::Event<void(PeerMedia*, const std::string&, Mona::UInt8, Mona::UInt64, Mona::UInt8, Mona::UInt8, Mona::UInt32, Mona::PacketReader&, double) > {}; // called when receiving a fragment
-}
+// Fragment instance
+struct GroupFragment : Mona::Packet, virtual Mona::Object {
+	GroupFragment(const Mona::Packet& packet, Mona::UInt32 time, AMF::Type mediaType, Mona::UInt64 fragmentId, Mona::UInt8 groupMarker, Mona::UInt8 splitId) :
+		id(fragmentId), splittedId(splitId), type(mediaType), marker(groupMarker), time(time), Packet(std::move(packet)) {}
+
+	Mona::UInt32		time;
+	AMF::Type			type;
+	Mona::UInt8			marker;
+	Mona::UInt64		id;
+	Mona::UInt8			splittedId;
+};
 
 /***************************************************
 Class used to save group media infos for
 a peer in a NetGroup stream and send media and report
 media messages to the peer
 */
-class PeerMedia : public virtual Mona::Object,
-	public PeerMediaEvents::OnPeerClose,
-	public PeerMediaEvents::OnPlayPull,
-	public PeerMediaEvents::OnFragmentsMap,
-	public PeerMediaEvents::OnFragment {
-public:
+struct PeerMedia : public virtual Mona::Object {
+	typedef Mona::Event<void(const std::string& peerId, Mona::UInt8 mask)>	ON(PeerClose); // notify parent that the peer is closing (update the NetGroup push flags)
+	typedef Mona::Event<void(PeerMedia*, Mona::UInt64)>						ON(PlayPull); // called when we receive a pull request
+	typedef Mona::Event<bool(Mona::UInt64)>									ON(FragmentsMap); // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
+	typedef Mona::Event<void(PeerMedia*, const std::string&, Mona::UInt8, Mona::UInt64, Mona::UInt8, Mona::UInt8, Mona::UInt32, const Mona::Packet&, double)> ON(Fragment); // called when receiving a fragment
+
 	PeerMedia(P2PSession* pSession, std::shared_ptr<RTMFPWriter>& pMediaReportWriter);
 	virtual ~PeerMedia();
 
@@ -67,10 +72,10 @@ public:
 	void flushReportWriter();
 
 	// Called by P2PSession when receiving a fragments map
-	void onFragmentsMap(Mona::UInt64 id, const Mona::UInt8* data, Mona::UInt32 size);
+	void handleFragmentsMap(Mona::UInt64 id, const Mona::UInt8* data, Mona::UInt32 size);
 
 	// Called by P2PSession when receiving a fragment
-	void onFragment(Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt8 splitedNumber, Mona::UInt8 mediaType, Mona::UInt32 time, Mona::PacketReader& packet, double lostRate);
+	void handleFragment(Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt8 splitedNumber, Mona::UInt8 mediaType, Mona::UInt32 time, const Mona::Packet& packet, double lostRate);
 
 	// Return True if bit number is available in the fragments map (for push out mode)
 	bool checkMask(Mona::UInt8 bitNumber);
@@ -83,7 +88,7 @@ public:
 
 	// Create the flow if necessary and send media
 	// The fragment is sent if pull is true or if this is a pushable fragment
-	bool sendMedia(const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt64 fragment, bool pull = false);
+	bool sendMedia(const GroupFragment& fragment, bool pull = false);
 
 	// Send the Fragments map message
 	// param lastFragment : latest fragment in the message
@@ -100,7 +105,7 @@ public:
 	void sendPull(Mona::UInt64 index);
 
 	// Handle a pull request
-	void onPlayPull(Mona::UInt64 index);
+	void handlePlayPull(Mona::UInt64 index);
 
 	// Add a fragment to the blacklist of pull to avoid a new pull request for this peer
 	void addPullBlacklist(Mona::UInt64 idFragment);
@@ -110,6 +115,7 @@ public:
 	const std::string*				pStreamKey; // pointer to the streamKey index in the map P2PSession::_mapStream2PeerMedia
 	Mona::UInt8						pushInMode; // Group Play Push mode
 	bool							groupMediaSent; // True if the Group Media infos have been sent
+
 private:
 	// Return true if the new fragment is pushable (according to the Group push mode)
 	bool							isPushable(Mona::UInt8 rest);

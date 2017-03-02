@@ -19,25 +19,23 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Decoder.h"
+#include "RTMFPDecoder.h"
 #include "Mona/Crypto.h"
 
 using namespace std;
 using namespace Mona;
 
-UInt32 RTMFPDecoder::decoding(Exception& ex, UInt8* data,UInt32 size) {
+bool RTMFPDecoder::run(Exception& ex) {
 	// Decrypt
-	_pDecoder->process(data, size);
+	_pDecoder->process(_pBuffer->data(), _pBuffer->size());
 	// Check CRC
-	BinaryReader reader(data, size);
+	BinaryReader reader(_pBuffer->data(), _pBuffer->size());
 	UInt16 crc(reader.read16());
-	if (Crypto::ComputeCRC(reader) == crc)
-		receive(reader.current(),reader.available());
-	else
-		ex.set(Exception::CRYPTO, "Bad RTMFP CRC sum computing");	
-	return size;
-}
-
-void RTMFPDecoder::resetDecoder(const Mona::UInt8* decryptKey) {
-	_pDecoder.reset(new RTMFPEngine(decryptKey, RTMFPEngine::DECRYPT));
+	if (Crypto::ComputeChecksum(reader) == crc) {
+		_pBuffer->clip(reader.position());
+		_handler.queue(onDecoded, _idSession, _address, _pBuffer);
+		return true;
+	}
+	ex.set<Ex::Extern::Crypto>("Bad RTMFP CRC sum computing");
+	return false;
 }

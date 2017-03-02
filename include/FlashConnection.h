@@ -24,18 +24,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Mona.h"
 #include "FlashStream.h"
 
-namespace FlashEvents {
-	struct OnStreamCreated: Mona::Event<bool(Mona::UInt16 idStream)> {};
-};
-
 /**************************************************************
 FlashConnection is linked to an as3 NetConnection
 It creates FlashStream (NetStream) and handle messages on the
 connection
 */
-class FlashConnection : public FlashStream, public virtual Mona::Object,
-	public FlashEvents::OnStreamCreated {
-public:
+struct FlashConnection : FlashStream, virtual Mona::Object {
+	typedef Mona::Event<bool(Mona::UInt16 idStream)> ON(StreamCreated);
+
 	FlashConnection();
 	virtual ~FlashConnection();
 
@@ -54,7 +50,7 @@ public:
 	
 private:
 	virtual bool	messageHandler(const std::string& name, AMFReader& message, Mona::UInt64 flowId, Mona::UInt64 writerId, double callbackHandler);
-	virtual bool	rawHandler(Mona::UInt16 type, Mona::PacketReader& packet);
+	virtual bool	rawHandler(Mona::UInt16 type, const Mona::Packet& packet);
 
 	std::map<Mona::UInt16,std::shared_ptr<FlashStream>>	_streams;
 	std::string											_buffer;

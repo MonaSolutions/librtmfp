@@ -24,23 +24,24 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Logs.h"
 #include "GroupStream.h"
 #include "librtmfp.h"
+#include "PeerMedia.h"
 
 using namespace std;
 using namespace Mona;
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, FlowManager& band, shared_ptr<RTMFPWriter>& pThis, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
-	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+RTMFPWriter::RTMFPWriter(State state,const Packet& signature, FlowManager& band, shared_ptr<RTMFPWriter>& pThis, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
+	_stage(0), _stageAck(0), flowId(idFlow), signature(move(signature)), _repeatable(0), _lostCount(0), _ackCount(0) {
 
 }
 
-RTMFPWriter::RTMFPWriter(State state,const string& signature, FlowManager& band, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
-	_stage(0), _stageAck(0), flowId(idFlow), signature(signature), _repeatable(0), _lostCount(0), _ackCount(0) {
+RTMFPWriter::RTMFPWriter(State state,const Packet& signature, FlowManager& band, UInt64 idFlow) : FlashWriter(state), id(0), _band(band),
+	_stage(0), _stageAck(0), flowId(idFlow), signature(move(signature)), _repeatable(0), _lostCount(0), _ackCount(0) {
 
 }
 
 RTMFPWriter::RTMFPWriter(RTMFPWriter& writer) : FlashWriter(writer), _band(writer._band),
 	_repeatable(writer._repeatable), _stage(writer._stage), _stageAck(writer._stageAck),
-	_ackCount(writer._ackCount), _lostCount(writer._lostCount), flowId(writer.flowId), signature(writer.signature), id(writer.id) {
+	_ackCount(writer._ackCount), _lostCount(writer._lostCount), flowId(writer.flowId), signature(move(writer.signature)), id(writer.id) {
 	reliable = true;
 	close(false);
 }
@@ -74,9 +75,9 @@ void RTMFPWriter::close(bool abrupt) {
 	flush();
 }
 
-bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
+bool RTMFPWriter::acknowledgment(Exception& ex, BinaryReader& reader) {
 
-	UInt64 bufferSize = packet.read7BitLongValue(); // TODO use this value in reliability mechanism?
+	UInt64 bufferSize = reader.read7BitLongValue(); // TODO use this value in reliability mechanism?
 	
 	if(bufferSize==0) {
 		// In fact here, we should send a 0x18 message (with id flow),
@@ -87,7 +88,7 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 	}
 
 	UInt64 stageAckPrec = _stageAck;
-	UInt64 stageReaden = packet.read7BitLongValue();
+	UInt64 stageReaden = reader.read7BitLongValue();
 	UInt64 stage = _stageAck+1;
 
 	if(stageReaden>_stage) {
@@ -95,19 +96,19 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 		_stageAck = _stage;
 	} else if(stageReaden<=_stageAck) {
 		// already acked
-		if(packet.available()==0)
+		if(reader.available()==0)
 			DEBUG("Acknowledgment ",stageReaden," obsolete on writer ",id);
 	} else
 		_stageAck = stageReaden;
 
 	UInt64 maxStageRecv = stageReaden;
-	UInt32 pos=packet.position();
+	UInt32 pos=reader.position();
 
-	while(packet.available()>0)
-		maxStageRecv += packet.read7BitLongValue()+packet.read7BitLongValue()+2;
-	if(pos != packet.position()) {
+	while(reader.available()>0)
+		maxStageRecv += reader.read7BitLongValue()+reader.read7BitLongValue()+2;
+	if(pos != reader.position()) {
 		// TRACE(stageReaden,"..x"Util::FormatHex(reader.current(),reader.available()));
-		packet.reset(pos);
+		reader.reset(pos);
 	}
 
 	UInt64 lostCount = 0;
@@ -141,10 +142,10 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 			// Read lost informations
 			while(!stop) {
 				if(lostCount==0) {
-					if(packet.available()>0) {
-						lostCount = packet.read7BitLongValue()+1;
+					if(reader.available()>0) {
+						lostCount = reader.read7BitLongValue()+1;
 						lostStage = stageReaden+1;
-						stageReaden = lostStage+lostCount+packet.read7BitLongValue();
+						stageReaden = lostStage+lostCount+reader.read7BitLongValue();
 					} else {
 						stop=true;
 						break;
@@ -217,9 +218,9 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 			// Compute flags
 			UInt8 flags = 0;
 			if(fragment>0)
-				flags |= MESSAGE_WITH_BEFOREPART; // fragmented
+				flags |= RTMFP::MESSAGE_WITH_BEFOREPART; // fragmented
 			if(itFrag!=message.fragments.end()) {
-				flags |= MESSAGE_WITH_AFTERPART;
+				flags |= RTMFP::MESSAGE_WITH_AFTERPART;
 				contentSize = itFrag->first - fragment;
 			}
 
@@ -260,7 +261,7 @@ bool RTMFPWriter::acknowledgment(Exception& ex, PacketReader& packet) {
 	
 	}
 
-	if(lostCount>0 && packet.available()>0)
+	if(lostCount>0 && reader.available()>0)
 		ERROR("Some lost information received have not been yet sent on writer ",id);
 
 
@@ -282,7 +283,7 @@ bool RTMFPWriter::manage(Exception& ex) {
 		}
 		// When the peer/server doesn't send acknowledgment since a while we close the writer
 		else if (ex) {
-			ex.set(Exception::NETWORK, "Congestion issue, writer ", id, " can't deliver its data");
+			ex.set<Ex::Net::Protocol>("Congestion issue, writer ", id, " can't deliver its data");
 			return false;
 		}
 	}
@@ -291,23 +292,23 @@ bool RTMFPWriter::manage(Exception& ex) {
 }
 
 UInt32 RTMFPWriter::headerSize(UInt64 stage) { // max size header = 50
-	UInt32 size= Util::Get7BitValueSize(id);
-	size+= Util::Get7BitValueSize(stage);
+	UInt32 size= Binary::Get7BitValueSize(id);
+	size+= Binary::Get7BitValueSize(stage);
 	if(_stageAck>stage)
 		CRITIC("stageAck ",_stageAck," superior to stage ",stage," on writer ",id);
-	size+= Util::Get7BitValueSize(stage-_stageAck);
-	size+= _stageAck>0 ? 0 : (signature.size()+((flowId==0 || id<=2)?2:(4+Util::Get7BitValueSize(flowId)))); // TODO: check the condition id<=2 (see next TODO below)
+	size+= Binary::Get7BitValueSize(stage-_stageAck);
+	size+= _stageAck>0 ? 0 : (signature.size()+((flowId==0 || id<=2)?2:(4+ Binary::Get7BitValueSize(flowId)))); // TODO: check the condition id<=2 (see next TODO below)
 	return size;
 }
 
 
 void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool header,const RTMFPMessage& message, UInt32 offset, UInt16 size) {
 	if(_stageAck==0 && header)
-		flags |= MESSAGE_HEADER;
+		flags |= RTMFP::MESSAGE_OPTIONS;
 	if(size==0)
-		flags |= MESSAGE_ABANDONMENT;
+		flags |= RTMFP::MESSAGE_ABANDON;
 	if(_state >= NEAR_CLOSED && _messages.size()==1) // On LAST message
-		flags |= MESSAGE_END;
+		flags |= RTMFP::MESSAGE_END;
 
 	// TRACE("RTMFPWriter ",id," stage ",stage);
 
@@ -323,7 +324,7 @@ void RTMFPWriter::packMessage(BinaryWriter& writer,UInt64 stage,UInt8 flags,bool
 			writer.write8((UInt8)signature.size()).write(signature);
 			// Send flowId for a new flow (not for writer 2 => AMS support)
 			if(id>2) {
-				writer.write8(1+Util::Get7BitValueSize(flowId)); // following size
+				writer.write8(1+Binary::Get7BitValueSize(flowId)); // following size
 				writer.write8(0x0a); // Unknown!
 				writer.write7BitLongValue(flowId);
 			}
@@ -385,9 +386,9 @@ void RTMFPWriter::raiseMessage() {
 			// Compute flags
 			UInt8 flags = 0;
 			if(fragment>0)
-				flags |= MESSAGE_WITH_BEFOREPART; // fragmented
+				flags |= RTMFP::MESSAGE_WITH_BEFOREPART; // fragmented
 			if(itFrag!=message.fragments.end()) {
-				flags |= MESSAGE_WITH_AFTERPART;
+				flags |= RTMFP::MESSAGE_WITH_AFTERPART;
 				contentSize = itFrag->first - fragment;
 			}
 
@@ -466,13 +467,13 @@ bool RTMFPWriter::flush(bool full) {
 			// Compute flags
 			UInt8 flags = 0;
 			if(fragments>0)
-				flags |= MESSAGE_WITH_BEFOREPART;
+				flags |= RTMFP::MESSAGE_WITH_BEFOREPART;
 
 			bool head = header;
 			UInt32 availableToWrite(_band.availableToWrite());
 			if(size>availableToWrite) {
 				// the packet will change! The message will be fragmented.
-				flags |= MESSAGE_WITH_AFTERPART;
+				flags |= RTMFP::MESSAGE_WITH_AFTERPART;
 				contentSize = availableToWrite-(size-contentSize);
 				size=availableToWrite;
 				header=true;
@@ -504,101 +505,103 @@ RTMFPMessageBuffered& RTMFPWriter::createMessage() {
 		static RTMFPMessageBuffered MessageNull;
 		return MessageNull;
 	}
-	RTMFPMessageBuffered* pMessage = new RTMFPMessageBuffered(_band.poolBuffers(),reliable);
+	RTMFPMessageBuffered* pMessage = new RTMFPMessageBuffered(reliable);
 	_messages.emplace_back(pMessage);
 	return *pMessage;
 }
 
-AMFWriter& RTMFPWriter::write(AMF::ContentType type,UInt32 time,const UInt8* data, UInt32 size) {
-	if (type < AMF::AUDIO || type > AMF::VIDEO)
+AMFWriter& RTMFPWriter::write(AMF::Type type, const Packet& packet, UInt32 time) {
+	if (type < AMF::TYPE_AUDIO || type > AMF::TYPE_VIDEO)
 		time = 0; // Because it can "dropped" the packet otherwise (like if the Writer was not reliable!)
-	if(data && !reliable && _state==OPENED && !_band.failed()) {
-		_messages.emplace_back(new RTMFPMessageUnbuffered(type,time,data,size));
+	if(packet && !reliable && _state==OPENED && !_band.failed()) {
+		_messages.emplace_back(new RTMFPMessageUnbuffered(type, time, packet));
 		flush(false);
-        return AMFWriter::Null;
+        return AMFWriter::Null();
 	}
-	AMFWriter& amf = createMessage().writer();
-	BinaryWriter& binary(amf.packet);
-	binary.write8(type);
-	if (type == AMF::INVOCATION_AMF3) // Added for Play request in P2P, TODO: see if it is really needed
-		binary.write8(0);
-	binary.write32(time);
-	if(type==AMF::DATA_AMF3)
-		binary.write8(0);
-	if(data)
-		binary.write(data,size);
+	AMFWriter& amf = createMessage().writer;
+	amf->write8(type);
+	if (type == AMF::TYPE_INVOCATION_AMF3) // Added for Play request in P2P, TODO: see if it is really needed
+		amf->write8(0);
+	amf->write32(time);
+	if(type==AMF::TYPE_DATA_AMF3)
+		amf->write8(0);
+	if(packet)
+		amf->write(packet);
 	return amf;
 }
 
 void RTMFPWriter::writeGroupConnect(const string& netGroup) {
-	string tmp(netGroup.c_str()); // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-	createMessage().writer().packet.write8(GroupStream::GROUP_INIT).write16(0x2115).write(Util::UnformatHex(tmp)); // binary string
+	string tmp;
+	BinaryWriter& writer = createMessage().writer->write8(GroupStream::GROUP_INIT).write16(0x2115).write(String::ToHex(netGroup, tmp)); // binary string
 }
 
-void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const char* rawId) {
+void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const Binary& rawId) {
 
-	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
-	writer.write16(0x2101).write(key, Crypto::HMAC::SIZE);
-	writer.write16(0x2303).write(rawId, PEER_ID_SIZE+2); // binary format
+	AMFWriter& writer = createMessage().writer;
+	writer->write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
+	writer->write16(0x2101).write(key, Crypto::SHA256_SIZE);
+	writer->write16(0x2303).write(rawId); // binary format
 }
 
 void RTMFPWriter::writeGroupBegin() {
-	createMessage().writer().packet.write8(AMF::ABORT);
-	createMessage().writer().packet.write8(GroupStream::GROUP_BEGIN);
+	createMessage().writer->write8(AMF::TYPE_ABORT);
+	createMessage().writer->write8(GroupStream::GROUP_BEGIN);
 }
 
 void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size, RTMFPGroupConfig* groupConfig) {
 
-	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_MEDIA_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
-	writer.write(data, size);
-	writer.write("\x01\x02");
+	AMFWriter& writer = createMessage().writer;
+	writer->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
+	writer->write(data, size);
+	writer->write("\x01\x02");
 	if (groupConfig->availabilitySendToAll)
-		writer.write("\x01\x06");
-	writer.write8(1 + Util::Get7BitValueSize(UInt32(groupConfig->windowDuration))).write8('\x03').write7BitLongValue(groupConfig->windowDuration);
-	writer.write("\x04\x04\x92\xA7\x60"); // Object encoding?
-	writer.write8(1 + Util::Get7BitValueSize(groupConfig->availabilityUpdatePeriod)).write8('\x05').write7BitLongValue(groupConfig->availabilityUpdatePeriod);
-	writer.write8(1 + Util::Get7BitValueSize(UInt32(groupConfig->fetchPeriod))).write8('\x07').write7BitLongValue(groupConfig->fetchPeriod);
+		writer->write("\x01\x06");
+	writer->write8(1 + Binary::Get7BitValueSize(UInt32(groupConfig->windowDuration))).write8('\x03').write7BitLongValue(groupConfig->windowDuration);
+	writer->write("\x04\x04\x92\xA7\x60"); // Object encoding?
+	writer->write8(1 + Binary::Get7BitValueSize(groupConfig->availabilityUpdatePeriod)).write8('\x05').write7BitLongValue(groupConfig->availabilityUpdatePeriod);
+	writer->write8(1 + Binary::Get7BitValueSize(UInt32(groupConfig->fetchPeriod))).write8('\x07').write7BitLongValue(groupConfig->fetchPeriod);
 }
 
 void RTMFPWriter::writeGroupPlay(UInt8 mode) {
-	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_PLAY_PUSH).write8(mode);
+	AMFWriter& writer = createMessage().writer;
+	writer->write8(GroupStream::GROUP_PLAY_PUSH).write8(mode);
 }
 
 void RTMFPWriter::writeGroupPull(UInt64 index) {
-	PacketWriter& writer = createMessage().writer().packet;
-	writer.write8(GroupStream::GROUP_PLAY_PULL).write7BitLongValue(index);
+	AMFWriter& writer = createMessage().writer;
+	writer->write8(GroupStream::GROUP_PLAY_PULL).write7BitLongValue(index);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 	if(reliable || _state==OPENING) {
-		createMessage().writer().packet.write(data,size);
+		createMessage().writer->write(data,size);
 		return;
 	}
 	if(_state >= NEAR_CLOSED || _band.failed())
 		return;
-	_messages.emplace_back(new RTMFPMessageUnbuffered(data, size));
+	_messages.emplace_back(new RTMFPMessageUnbuffered(Packet(data, size)));
 	flush(false);
 }
 
-/*
-void RTMFPWriter::sendGroupCloseStream(UInt8 type, UInt64 fragmentCounter, UInt32 time, const string& streamName) {
 
-	AMFWriter& amf = createMessage().writer();
-	BinaryWriter& binary(amf.packet);
-	binary.write8(type);
-	binary.write7BitLongValue(fragmentCounter);
+void RTMFPWriter::writeGroupFragment(const GroupFragment& fragment) {
+	AMFWriter& writer = createMessage().writer;
+
+	// AMF Group marker
+	writer->write8(fragment.marker);
+	// Fragment Id
+	writer->write7BitLongValue(fragment.id);
+	// Splitted sequence number
+	if (fragment.splittedId > 0)
+		writer->write8(fragment.splittedId);
+
+	// Type and time, only for the first fragment
+	if (fragment.marker != GroupStream::GROUP_MEDIA_NEXT && fragment.marker != GroupStream::GROUP_MEDIA_END) {
+		// Media type
+		writer->write8(fragment.type);
+		// Time on 4 bytes
+		writer->write32(fragment.time);
+	}
 	
-	writeAMFStatus(amf, "NetStream.Play.UnpublishNotify", streamName + " is now unpublished");
-	flush(false);
-
-	AMFWriter& amf2 = createMessage().writer();
-	BinaryWriter& binary2(amf2.packet);
-	binary2.write8(type);
-	binary2.write7BitLongValue(fragmentCounter);
-
-	writeInvocation(amf2, "closeStream");
-	flush();
-}*/
+	writer->write(fragment.data(), fragment.size());
+}

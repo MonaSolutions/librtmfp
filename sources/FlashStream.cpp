@@ -19,10 +19,10 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "FlashStream.h"
-#include "ParameterWriter.h"
-#include "Mona/MapParameters.h"
 #include "RTMFP.h"
+#include "FlashStream.h"
+#include "Mona/Parameters.h"
+#include "MapWriter.h"
 
 using namespace std;
 using namespace Mona;
@@ -35,60 +35,49 @@ FlashStream::~FlashStream() {
 	DEBUG("FlashStream ",id," deleted")
 }
 
-bool FlashStream::process(PacketReader& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+bool FlashStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
 
-	UInt32 time(0);
-	AMF::ContentType type = (AMF::ContentType)packet.read8();
-	switch (type) {
-	case AMF::AUDIO:
-	case AMF::VIDEO:
-		time = packet.read32();
-		break;
-	default:
-		packet.next(4);
-		break;
-	}
+	BinaryReader reader(packet.data(), packet.size());
 
-	return process(type, time, packet, flowId, writerId, lostRate);
+	AMF::Type type = (AMF::Type)reader.read8();
+	UInt32 time = reader.read32();
+	return process(type, time, Packet(packet, reader.current(), reader.available()), flowId, writerId, lostRate);
 }
 
-bool FlashStream::process(AMF::ContentType type, UInt32 time, PacketReader& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+bool FlashStream::process(AMF::Type type, UInt32 time, const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
 
 	// if exception, it closes the connection, and print an ERROR message
 	switch(type) {
 
-		case AMF::AUDIO:
+		case AMF::TYPE_AUDIO:
 			return audioHandler(time, packet, lostRate);
-		case AMF::VIDEO:
+		case AMF::TYPE_VIDEO:
 			return videoHandler(time, packet, lostRate);
 
-		case AMF::DATA_AMF3:
-			packet.next();
-		case AMF::DATA: {
-			AMFReader reader(packet);
-			return dataHandler(reader, lostRate);
-		}
+		case AMF::TYPE_DATA_AMF3:
+			return dataHandler(packet + 1, lostRate);
+		case AMF::TYPE_DATA:
+			return dataHandler(packet, lostRate);
 
-		case AMF::EMPTY:
+		case AMF::TYPE_EMPTY:
 			break;
 
-		case AMF::INVOCATION_AMF3:
-			packet.next();
-		case AMF::INVOCATION: {
+		case AMF::TYPE_INVOCATION_AMF3:
+		case AMF::TYPE_INVOCATION: {
 			string name;
-			AMFReader reader(packet);
-			reader.readString(name);
+			AMFReader amfReader(packet.data() + (type & 1), packet.size() - (type & 1));
+			amfReader.readString(name);
 			double number(0);
-			reader.readNumber(number);
-			reader.readNull();
-			return messageHandler(name, reader, flowId, writerId, number);
+			amfReader.readNumber(number);
+			amfReader.readNull();
+			return messageHandler(name, amfReader, flowId, writerId, number);
 		}
 
-		case AMF::RAW:
-			return rawHandler(packet.read16(), packet);
+		case AMF::TYPE_RAW:
+			return rawHandler(BinaryReader(packet.data(), packet.size()).read16(), packet+2);
 
 		default:
-			ERROR("Unpacking type '",Format<UInt8>("%02X",(UInt8)type),"' unknown")
+			ERROR("Unpacking type '", String::Format<int>("%02X", type), "' unknown");
 	}
 
 	return false;
@@ -109,12 +98,12 @@ bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 
 		message.readNull();
 
 		if(message.nextType() != AMFReader::OBJECT) {
-			ERROR("Unexpected onStatus value type : ",message.nextType())
+			ERROR("Unexpected onStatus value type : ", message.nextType())
 			return false;
 		}
 
-		MapParameters params;
-		ParameterWriter paramWriter(params);
+		Parameters params;
+		MapWriter<Parameters> paramWriter(params);
 		message.read(AMFReader::OBJECT, paramWriter);
 
 		string level;
@@ -124,7 +113,7 @@ bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 
 			params.getString("code",code);
 			params.getString("description", description);
 			if (level == "status" || level == "error")
-				return OnStatus::raise<true>(code, description, id, flowId, callbackHandler);
+				return onStatus(code, description, id, flowId, callbackHandler);
 			else {
 				ERROR("Unknown level message type : ", level)
 				return false;
@@ -139,7 +128,7 @@ bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 
 		string publication;
 		message.readString(publication);
 		
-		if (OnPlay::raise<false>(publication, id, flowId, callbackHandler))
+		if (onPlay(publication, id, flowId, callbackHandler))
 			_streamName = publication;
 
 		return true;
@@ -149,9 +138,9 @@ bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 
 	return false;
 }
 
-bool FlashStream::dataHandler(DataReader& data, double lostRate) {
+bool FlashStream::dataHandler(const Packet& packet, double lostRate) {
 	
-	AMFReader reader(data.packet);
+	AMFReader reader(packet.data(), packet.size());
 	string func, params, value;
 	if (reader.nextType() == AMFReader::STRING) {
 		reader.readString(func);
@@ -181,13 +170,14 @@ bool FlashStream::dataHandler(DataReader& data, double lostRate) {
 	return true;
 }
 
-bool FlashStream::rawHandler(UInt16 type, PacketReader& packet) {
+bool FlashStream::rawHandler(UInt16 type, const Packet& packet) {
+	BinaryReader reader(packet.data(), packet.size());
 	switch (type) {
 		case 0x0000:
-			INFO("Stream begin message on NetStream ", id, " (value : ", packet.read32(), ")")
+			INFO("Stream begin message on NetStream ", id, " (value : ", reader.read32(), ")")
 			break;
 		case 0x0001:
-			INFO("Stream stop message on NetStream ", id, " (value : ", packet.read32(), ")")
+			INFO("Stream stop message on NetStream ", id, " (value : ", reader.read32(), ")")
 			break;
 		case 0x001f: // unknown for now
 		case 0x0020: // unknown for now
@@ -196,20 +186,20 @@ bool FlashStream::rawHandler(UInt16 type, PacketReader& packet) {
 			//INFO("Sync ",id," : (syncId=",packet.read32(),", count=",packet.read32(),")")
 			break;
 		default:
-			ERROR("Raw message ", Format<UInt16>("%.4x", type), " unknown on stream ", id);
+			ERROR("Raw message ", String::Format<UInt16>("%.4x", type), " unknown on stream ", id);
 			return false;
 	}
 	return true;
 }
 
-bool FlashStream::audioHandler(UInt32 time,PacketReader& packet, double lostRate) {
+bool FlashStream::audioHandler(UInt32 time, const Packet& packet, double lostRate) {
 
-	OnMedia::raise(_streamName, time, packet, lostRate, true);
+	onMedia(_streamName, time, packet, lostRate, AMF::TYPE_AUDIO);
 	return true;
 }
 
-bool FlashStream::videoHandler(UInt32 time,PacketReader& packet, double lostRate) {
+bool FlashStream::videoHandler(UInt32 time, const Packet& packet, double lostRate) {
 
-	OnMedia::raise(_streamName, time, packet, lostRate, false);
+	onMedia(_streamName, time, packet, lostRate, AMF::TYPE_VIDEO);
 	return true;
 }

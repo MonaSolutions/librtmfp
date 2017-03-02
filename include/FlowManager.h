@@ -21,7 +21,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Publisher.h"
 #include "FlashConnection.h"
 #include "RTMFPHandshaker.h"
 #include "BandWriter.h"
@@ -29,7 +28,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 // Callback typedef definitions
 typedef void(*OnStatusEvent)(const char*, const char*);
-typedef void(*OnMediaEvent)(const char *, const char*, unsigned int, const char*, unsigned int, int);
+typedef void(*OnMediaEvent)(const char *, const char*, unsigned int, const char*, unsigned int, unsigned int);
 typedef void(*OnSocketError)(const char*);
 
 class Invoker;
@@ -62,7 +61,7 @@ public:
 	const std::string&				tag() { return _tag; }
 
 	// Return the url or peerId of the session (for RTMFPConnection)
-	virtual const std::string&		epd() = 0;
+	virtual const Mona::Binary&		epd() = 0;
 
 	// Return the id of the session (p2p or normal)
 	const Mona::UInt32				sessionId() { return _sessionId; }
@@ -70,6 +69,7 @@ public:
 	RTMFP::SessionStatus			status; // Session status (stopped, connecting, connected or failed)
 
 	// Read data asynchronously
+	// TODO: delete mutex, create a thread and do not push packet if congested
 	// peerId : id of the peer if it is a p2p connection, otherwise parameter is ignored
 	// return : false if the connection is not established
 	bool							readAsync(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
@@ -79,9 +79,6 @@ public:
 
 	// Return true if the session has failed (we will not send packets anymore)
 	virtual bool					failed() { return (status == RTMFP::FAILED && _closeTime.isElapsed(19000)) || ((status == RTMFP::NEAR_CLOSED) && _closeTime.isElapsed(90000)); }
-
-	// Return the pool buffers object
-	virtual const Mona::PoolBuffers&	poolBuffers();
 
 	// Called by RTMFPWriter to know if there is already a message in queue
 	virtual bool					canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
@@ -98,11 +95,8 @@ public:
 	// Send the current packet
 	virtual void					flush() { flush(status >= RTMFP::CONNECTED, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B); }
 
-	// Handle receiving packet
-	virtual void					process(const Mona::SocketAddress& address, Mona::PoolBuffer& pBuffer);
-
 	// Called when we received the first handshake 70 to update the address
-	virtual bool					onPeerHandshake70(const Mona::SocketAddress& address, const std::string& farKey, const std::string& cookie);
+	virtual bool					onPeerHandshake70(const Mona::SocketAddress& address, const Mona::Packet& farKey, const std::string& cookie);
 
 	// Called when when sending the handshake 38 to build the peer ID if we are RTMFPSession
 	virtual void					buildPeerID(const Mona::UInt8* data, Mona::UInt32 size) {}
@@ -117,10 +111,10 @@ public:
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake)=0;
 
 	// Return the diffie hellman object (related to main session)
-	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh)=0;
+	virtual Mona::DiffieHellman&	diffieHellman()=0;
 
 	// Return the nonce (generate it if not ready)
-	Mona::Buffer&					getNonce();
+	const Mona::Packet&				getNonce();
 
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt);
@@ -128,16 +122,19 @@ public:
 	// Set the host and peer addresses when receiving redirection request (only for P2P)
 	virtual void					addAddress(const Mona::SocketAddress& address, RTMFP::AddressType type) {}
 
+	// Treat decoded message
+	virtual void				receive(const Mona::SocketAddress& address, const Mona::Packet& packet);
+
 protected:
 
 	// Handle a writer closed (to release shared pointers)
 	virtual void				handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter)=0;
 
 	// Create a new writer
-	const std::shared_ptr<RTMFPWriter>&		createWriter(const std::string& signature, Mona::UInt64 flowId=0);
+	const std::shared_ptr<RTMFPWriter>&		createWriter(const Mona::Packet& signature, Mona::UInt64 flowId=0);
 
 	// Analyze packets received from the server (must be connected)
-	void						receive(Mona::BinaryReader& reader);
+	void						receive(const Mona::Packet& packet);
 
 	// Handle data available or not event (asynchronous read only)
 	virtual void				handleDataAvailable(bool isAvailable) = 0;
@@ -149,7 +146,7 @@ protected:
 	virtual void				handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter) = 0;
 
 	// Handle a P2P address exchange message (Only for RTMFPSession)
-	virtual void				handleP2PAddressExchange(Mona::PacketReader& reader) {}
+	virtual void				handleP2PAddressExchange(Mona::BinaryReader& reader) {}
 
 	// On NetConnection.Connect.Success callback (only for RTMFPSession)
 	virtual void				onNetConnectionSuccess() {}
@@ -169,6 +166,8 @@ protected:
 	// Called when we are connected to the peer/server
 	virtual void				onConnection() = 0;
 
+	std::function<void(const std::string& stream, Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type)>	onMedia; // Takes a packet for writing it to a file (async and sync)
+
 	enum HandshakeType {
 		BASE_HANDSHAKE = 0x0A,
 		P2P_HANDSHAKE = 0x0F
@@ -182,11 +181,6 @@ protected:
 	OnMediaEvent										_pOnMedia;
 	OnSocketError										_pOnSocketError;
 
-	// Events
-	FlashConnection::OnStatus::Type						onStatus;
-	FlashConnection::OnMedia::Type						onMedia;
-	FlashConnection::OnPlay::Type						onPlay;
-
 	// Job Members
 	std::shared_ptr<FlashConnection>					_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)
 	std::map<Mona::UInt64, RTMFPFlow*>					_flows;
@@ -198,9 +192,9 @@ protected:
 	bool												_responder; // is responder?
 	std::shared_ptr<Handshake>							_pHandshake; // Handshake object if not connected
 
-	Mona::Buffer										_sharedSecret; // shared secret for crypted communication
-	Mona::Buffer										_farNonce; // far nonce (saved for p2p group key building)
-	Mona::Buffer										_nonce; // Our Nonce for key exchange, can be of size 0x4C or 0x49 for responder
+	Mona::Packet										_sharedSecret; // shared secret for crypted communication
+	Mona::Packet										_farNonce; // far nonce (saved for p2p group key building)
+	Mona::Packet										_nonce; // Our Nonce for key exchange, can be of size 0x4C or 0x49 for responder
 
 private:
 
@@ -224,9 +218,6 @@ private:
 
 	// Send the close message (0C if normal, 4C if abrupt)
 	void												sendCloseChunk(bool abrupt);
-	
-	// Treat decoded message
-	virtual void										receive(const Mona::SocketAddress& address, Mona::BinaryReader& packet);
 
 	Mona::Time																	_closeTime; // Time since closure
 	Mona::Time																	_lastPing; // Time since last ping sent
@@ -239,17 +230,16 @@ private:
 	Mona::UInt64																_nextRTMFPWriterId; // Writer id to use for the next writer to create
 
 	// Asynchronous read
-	struct RTMFPMediaPacket : public Mona::Object {
+	struct RTMFPMediaPacket : Mona::Packet, virtual Mona::Object {
+		RTMFPMediaPacket(const Mona::Packet& packet, Mona::UInt32 time, AMF::Type type) : time(time), type(type), Packet(std::move(packet)), pos(0) {}
 
-		RTMFPMediaPacket(const Mona::PoolBuffers& poolBuffers, const Mona::UInt8* data, Mona::UInt32 size, Mona::UInt32 time, bool audio);
-
-		Mona::PoolBuffer	pBuffer;
-		Mona::UInt32		pos;
+		Mona::UInt32	time;
+		AMF::Type		type;
+		Mona::UInt32	pos;
 	};
-	std::map<std::string, std::deque<std::shared_ptr<RTMFPMediaPacket>>>		_mediaPackets;
+	std::deque<std::shared_ptr<RTMFPMediaPacket>>								_mediaPackets;
 	std::recursive_mutex														_readMutex;
 	bool																		_firstRead;
-	static const char															_FlvHeader[];
 
 	// Read
 	bool																		_firstMedia;

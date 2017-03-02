@@ -26,8 +26,8 @@ ifeq ($(OS),FreeBSD)
 else
 	CFLAGS+=-std=c++11
 endif
-override INCLUDES+=-I./../MonaServer/MonaBase/include/ -I./include/
-LIBDIRS+=-L./../MonaServer/MonaBase/lib/
+override INCLUDES+=-I./../MonaServer2/MonaBase/include/ -I./include/
+LIBDIRS+=-L./../MonaServer2/MonaBase/lib/
 LIBS+=-Wl,-Bstatic -l:libMonaBase.ar -Wl,-Bdynamic -lcrypto -lssl
 
 INCDIR=/usr/include/librtmfp/

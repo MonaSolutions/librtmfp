@@ -94,7 +94,7 @@ private:
 	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PSession>>::iterator
 
 	// Static function to read group config parameters sent in a Media Subscription message
-	static void					ReadGroupConfig(std::shared_ptr<RTMFPGroupConfig>& parameters, Mona::PacketReader& packet);
+	static void					ReadGroupConfig(std::shared_ptr<RTMFPGroupConfig>& parameters, Mona::BinaryReader& packet);
 
 	// Return the Group Address calculated from a Peer ID
 	static const std::string&	GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
@@ -121,14 +121,14 @@ private:
 	void						manageBestConnections();
 
 	// Read the group report and return true if at least a new peer has been found
-	bool						readGroupReport(Mona::PacketReader& packet);
+	bool						readGroupReport(Mona::BinaryReader& packet);
 
-	P2PEvents::OnPeerGroupBegin::Type						onGroupBegin;
-	P2PEvents::OnPeerGroupReport::Type						onGroupReport;
-	P2PEvents::OnNewMedia::Type								onNewMedia;
-	P2PEvents::OnPeerClose::Type							onPeerClose;
-	P2PEvents::OnPeerGroupAskClose::Type					onGroupAskClose;
-	GroupMediaEvents::OnGroupPacket::Type					onGroupPacket;
+	P2PSession::OnPeerGroupReport							_onGroupReport; // called when receiving a Group Report message from the peer
+	P2PSession::OnNewMedia									_onNewMedia; // called when a new PeerMedia is called (new stream available for the peer)
+	P2PSession::OnPeerGroupBegin							_onGroupBegin; // called when receiving a Group Begin message from the peer
+	P2PSession::OnPeerClose									_onPeerClose; // called when the peer is closing
+	P2PSession::OnPeerGroupAskClose							_onGroupAskClose;
+	GroupMedia::OnGroupPacket								_onGroupPacket; // called by GroupMedia when receiving a packet to distribute it
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 

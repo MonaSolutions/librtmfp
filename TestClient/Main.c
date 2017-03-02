@@ -33,8 +33,8 @@ static unsigned short	terminating = 0;
 static char*			publication = NULL; // publication name
 
 static enum TestOption {
-	SYNC_READ, // default
-	ASYNC_READ,
+	SYNC_READ,
+	ASYNC_READ, // default
 	WRITE,
 	P2P_WRITE
 } _option = ASYNC_READ;
@@ -118,14 +118,16 @@ short initFiles(const char* mediaFile) {
 				return 0;
 
 			printf("Output file %s opened\n", listFileNames[i]);
-			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, listFiles[i]);
+			if (_option == SYNC_READ)
+				fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, listFiles[i]);
 		}
 	}
 	else { // Normal read file
 		if (!openFile(&pOutFile, mediaFile, "wb+"))
 			return 0;
 		printf("Output file %s opened\n", mediaFile);
-		fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pOutFile);
+		if (_option == SYNC_READ)
+			fwrite("\x46\x4c\x56\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00", sizeof(char), 13, pOutFile);
 	}
 	return 1;
 }
@@ -169,12 +171,12 @@ void resizeBuffer(int read) {
 	int ratio = 0;
 
 	if (read == 0) { // nothing read, buffer too short
-		onLog(0, 7, __FILE__, __LINE__, "Buffer too short, increasing...");
+		onLog(7, __FILE__, __LINE__, "Buffer too short, increasing...");
 		cursor += (bufferSize - cursor);
 		bufferSize += MIN_BUFFER_SIZE;
 		if (bufferSize > MAX_BUFFER_SIZE) {
 			endOfWrite = terminating = 1; // Error encountered
-			onLog(0, 3, __FILE__, __LINE__, "The current stream size is too long, exiting...");
+			onLog(3, __FILE__, __LINE__, "The current stream size is too long, exiting...");
 		}
 		return;
 	}
@@ -189,27 +191,27 @@ void resizeBuffer(int read) {
 }
 
 void onSocketError(const char* error) {
-	onLog(0, 7, "Main.cpp", __LINE__, error);
+	onLog(7, "Main.cpp", __LINE__, error);
 }
 
 void onStatusEvent(const char* code,const char* description) {
 	char statusMessage[1024];
 	snprintf(statusMessage, 1024, "Status Event '%s' : %s", code, description);
-	onLog(0, 6, "Main.cpp", __LINE__, statusMessage);
+	onLog(6, "Main.cpp", __LINE__, statusMessage);
 
 	if (strcmp(code, "NetConnection.Connect.Closed") == 0)
 		terminating=1;
 }
 
 // Synchronous read
-void onMedia(const char * peerId,const char* stream, unsigned int time,const char* buf,unsigned int size,int audio) {
+void onMedia(const char * peerId,const char* stream, unsigned int time,const char* buf,unsigned int size, unsigned int type) {
 	FILE* pFile = getFile(peerId);
 	if (!pFile)
 		pFile = pOutFile;
 
 	if (pFile) {
 		unsigned int tmp=0;
-		fprintf(pFile, audio? "\x08" : "\x09");
+		fprintf(pFile, "%d", type);
 		tmp = flip24(size);
 		fwrite(&tmp, 3, 1, pFile);
 		tmp = flip24(time);
@@ -227,14 +229,14 @@ void onManage() {
 	unsigned int i = 0;
 
 	// Asynchronous read
-	if (_option == ASYNC_READ && pOutFile) {
+	if (_option == ASYNC_READ) {
 		if (nbPeers>0) {
 			for (i = 0; i < nbPeers; i++) {
-				if ((read = RTMFP_Read(listPeers[i], context, buf, MIN_BUFFER_SIZE))>0)
+				if (listFiles[i] && (read = RTMFP_Read(listPeers[i], context, buf, MIN_BUFFER_SIZE))>0)
 					fwrite(buf, sizeof(char), read, listFiles[i]);
 			}
 		}
-		else if((read = RTMFP_Read("",context,buf, MIN_BUFFER_SIZE))>0)
+		else if(pOutFile && (read = RTMFP_Read("",context,buf, MIN_BUFFER_SIZE))>0)
 			fwrite(buf, sizeof(char), read, pOutFile);
 	}
 	// Write
@@ -244,11 +246,11 @@ void onManage() {
 		towrite = fread(buf + cursor, sizeof(char), bufferSize - cursor, pInFile) + cursor;
 		if (ferror(pInFile) > 0) {
 			endOfWrite = terminating = 1; // Error encountered
-			onLog(0, 3, __FILE__, __LINE__, "Error while reading the input file, closing...");
+			onLog(3, __FILE__, __LINE__, "Error while reading the input file, closing...");
 			return;
 		}
 		else if (feof(pInFile) > 0) {
-			onLog(0, 5, __FILE__, __LINE__, "End of file reached, we send last data and unpublish");
+			onLog(5, __FILE__, __LINE__, "End of file reached, we send last data and unpublish");
 			endOfWrite = 1;
 			RTMFP_Write(context, buf, towrite);
 			if (_option == WRITE)
@@ -277,19 +279,17 @@ int main(int argc, char* argv[]) {
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
 	// First, init the RTMFP parameters
-	RTMFP_Init(&config, &groupConfig);
+	RTMFP_Init(&config, &groupConfig, 1);
 	config.pOnSocketError = onSocketError;
 	config.pOnStatusEvent = onStatusEvent;
-	config.pOnMedia = onMedia;
 	config.isBlocking = groupConfig.isBlocking = 1;
 
 	for (i; i < argc; i++) {
-		if (stricmp(argv[i], "--syncread") == 0)
+		if (stricmp(argv[i], "--syncread") == 0) {
 			_option = SYNC_READ;
-		else if (stricmp(argv[i], "--asyncread") == 0) {  // default
+			config.pOnMedia = onMedia;
+		} else if (stricmp(argv[i], "--asyncread") == 0)  // default
 			_option = ASYNC_READ;
-			config.pOnMedia = NULL;
-		}
 		else if (stricmp(argv[i], "--write") == 0) {
 			_option = WRITE;
 			groupConfig.isPublisher = 1;
@@ -337,9 +337,9 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
-		onLog(0, 4, __FILE__, __LINE__, "Cannot catch SIGINT\n");
+		onLog(4, __FILE__, __LINE__, "Cannot catch SIGINT\n");
 	if (signal(SIGTERM, ConsoleCtrlHandler) == SIG_ERR)
-		onLog(0, 4, __FILE__, __LINE__, "Cannot catch SIGTERM\n");
+		onLog(4, __FILE__, __LINE__, "Cannot catch SIGTERM\n");
 
 	version = RTMFP_LibVersion();
 	printf("Librtmfp version %u.%u.%u\n", (version >> 24) & 0xFF, (version >> 16) & 0xFF, version & 0xFFFF);
@@ -383,7 +383,7 @@ int main(int argc, char* argv[]) {
 			}
 		}
 
-		onLog(0, 6, __FILE__, __LINE__, "Closing connection...");
+		onLog(6, __FILE__, __LINE__, "Closing connection...");
 		RTMFP_Close(context);
 		closeFiles();
 	}
@@ -392,6 +392,7 @@ int main(int argc, char* argv[]) {
 		fclose(pLogFile);
 		pLogFile = NULL;
 	}
+	RTMFP_Terminate(); // To ensure that invoker is dead
 	printf("End of the program\n");
 }
 

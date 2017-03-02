@@ -38,7 +38,7 @@ static const char*  LevelColors[] = { FATAL_COLOR, CRITIC_COLOR, ERROR_COLOR, WA
 // Log file handle
 static FILE *			pLogFile = NULL;
 
-void onLog(unsigned int threadID, int level, const char* fileName, long line, const char* message) {
+void onLog(unsigned int level, const char* fileName, long line, const char* message) {
 
 	char* logType = "Unkwnown level";
 	switch (level) {

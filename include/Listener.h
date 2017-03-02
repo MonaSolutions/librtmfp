@@ -22,7 +22,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 #include "RTMFPWriter.h"
 
-class Publisher;
+struct Publisher;
 class Listener : public virtual Mona::Object {
 public:
 	Listener(Publisher& publication, const std::string& identifier);
@@ -31,8 +31,8 @@ public:
 	virtual void startPublishing() = 0;
 	virtual void stopPublishing() = 0;
 
-	virtual void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) = 0;
-	virtual void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) = 0;
+	virtual void pushAudio(Mona::UInt32 time, const Mona::Packet& packet) = 0;
+	virtual void pushVideo(Mona::UInt32 time, const Mona::Packet& packet) = 0;
 	//virtual void pushData(DataReader& packet) = 0;
 	//virtual void pushProperties(DataReader& packet) = 0;
 
@@ -41,11 +41,6 @@ public:
 	const Publisher&	publication;
 	const std::string&	identifier;
 
-protected:
-	Mona::PacketReader& publicationNamePacket() { _publicationNamePacket.reset(); return _publicationNamePacket; }
-
-private:
-	Mona::PacketReader		_publicationNamePacket;
 };
 
 class FlashListener : public Listener {
@@ -56,10 +51,8 @@ public:
 	virtual void startPublishing();
 	virtual void stopPublishing();
 
-	virtual void pushAudio(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
-	virtual void pushVideo(Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
-	//virtual void pushData(DataReader& packet);
-	//virtual void pushProperties(DataReader& packet);
+	virtual void pushAudio(Mona::UInt32 time, const Mona::Packet& packet);
+	virtual void pushVideo(Mona::UInt32 time, const Mona::Packet& packet);
 
 	virtual void flush();
 
@@ -68,9 +61,8 @@ public:
 
 private:
 
-	bool writeReliableMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, Mona::PacketReader& packet) { return writeMedia(writer, true, type, time, packet.data(), packet.size()); }
-	bool writeMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size) { return writeMedia(writer, _reliable, type, time, data, size); }
-	bool writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size);
+	bool writeReliableMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::Packet& packet) { return writeMedia(writer, true, type, time, packet); }
+	bool writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::Packet& packet);
 
 	bool	initWriters();
 	bool	firstTime() { return !_pVideoWriter && !_pAudioWriter && !_dataInitialized; }

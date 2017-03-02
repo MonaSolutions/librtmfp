@@ -21,64 +21,18 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "RTMFPFlow.h"
 #include "Mona/Util.h"
-#include "Mona/PoolBuffer.h"
-#include "RTMFPWriter.h"
 
 using namespace std;
 using namespace Mona;
 
-
-class RTMFPPacket : public virtual Object {
-public:
-	RTMFPPacket(const PoolBuffers& poolBuffers,PacketReader& fragment) : fragments(1),_pMessage(NULL),_pBuffer(poolBuffers,fragment.available()) {
-		if(_pBuffer->size()>0)
-			memcpy(_pBuffer->data(),fragment.current(),_pBuffer->size());
-	}
-	~RTMFPPacket() {
-		if(_pMessage)
-			delete _pMessage;
-	}
-
-	void add(PacketReader& fragment) {
-		_pBuffer->append(fragment.current(),fragment.available());
-		++(UInt32&)fragments;
-	}
-
-	PacketReader* release() {
-		if(_pMessage) {
-			ERROR("RTMFPPacket already released!");
-			return _pMessage;
-		}
-		_pMessage = new PacketReader(_pBuffer->size()==0 ? NULL : _pBuffer->data(),_pBuffer->size());
-		return _pMessage;
-	}
-
-	const UInt32	fragments;
-
-private:
-	
-	PoolBuffer		_pBuffer;
-	PacketReader*  _pMessage;
-};
-
-
-class RTMFPFragment : public PoolBuffer, public virtual Object{
-public:
-	RTMFPFragment(const PoolBuffers& poolBuffers,PacketReader& packet,UInt8 flags) : flags(flags),PoolBuffer(poolBuffers,packet.available()) {
-		packet.read((*this)->size(),(*this)->data());
-	}
-	UInt8					flags;
-};
-
-
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const PoolBuffers& poolBuffers, FlowManager& band, const shared_ptr<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
-	_poolBuffers(poolBuffers),_numberLostFragments(0),id(id),_writerRef(idWriterRef),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature, FlowManager& band, const shared_ptr<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
+	_lost(0),id(id),_writerRef(idWriterRef),_stage(0),_stageEnd(0),_band(band) {
 
 	DEBUG("New main flow ", id, " on connection ", _band.name())
 }
 
-RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream,const PoolBuffers& poolBuffers, FlowManager& band, UInt64 idWriterRef) : _pStream(pStream),_poolBuffers(poolBuffers),
-	_numberLostFragments(0),id(id),_writerRef(idWriterRef),_stage(0),_completed(false),_pPacket(NULL),_band(band) {
+RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream, FlowManager& band, UInt64 idWriterRef) : _pStream(pStream),
+	_lost(0),id(id),_writerRef(idWriterRef),_stage(0), _stageEnd(0),_band(band) {
 
 	DEBUG("New flow ", id, " on connection ", _band.name())
 }
@@ -86,32 +40,17 @@ RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStr
 
 RTMFPFlow::~RTMFPFlow() {
 
-	complete();
-}
-
-void RTMFPFlow::complete() {
-	if(_completed)
-		return;
-
-	DEBUG("RTMFPFlow ",id," completed");
+	DEBUG("RTMFPFlow ", id, " consumed");
 
 	// delete fragments
 	_fragments.clear();
 
-	// delete receive buffer
-	if(_pPacket) {
-		delete _pPacket;
-		_pPacket=NULL;
-	}
 
-	_completed=true;
 	_completeTime.update();
 }
 
 void RTMFPFlow::close() {
-	if (_completed)
-		return;
-	BinaryWriter& writer = _band.writeMessage(0x5e, Util::Get7BitValueSize(id) + 1);
+	BinaryWriter& writer = _band.writeMessage(0x5e, Binary::Get7BitValueSize(id) + 1);
 	writer.write7BitLongValue(id);
 	writer.write8(0); // finishing marker
 	_band.flush();
@@ -127,19 +66,19 @@ void RTMFPFlow::commit() {
 	auto it = _fragments.begin();
 	while(it!=_fragments.end()) {
 		current = it->first-current-2;
-		size += Util::Get7BitValueSize(current);
+		size += Binary::Get7BitValueSize(current);
 		losts.emplace_back(current);
 		current = it->first;
 		while(++it!=_fragments.end() && it->first==(++current))
 			++count;
-		size += Util::Get7BitValueSize(count);
+		size += Binary::Get7BitValueSize(count);
 		losts.emplace_back(count);
 		--current;
 		count=0;
 	}
 
-	UInt32 bufferSize = _pPacket ? ((_pPacket->fragments>0x3F00) ? 0 : (0x3F00-_pPacket->fragments)) : 0x7F;
-	BinaryWriter& ack = _band.writeMessage(0x51,Util::Get7BitValueSize(id)+Util::Get7BitValueSize(bufferSize)+Util::Get7BitValueSize(_stage)+size);
+	UInt32 bufferSize = _pBuffer ? ((_fragments.size()>0x3F00) ? 0 : (0x3F00 - _fragments.size())) : 0x7F;
+	BinaryWriter& ack = _band.writeMessage(0x51, Binary::Get7BitValueSize(id)+ Binary::Get7BitValueSize(bufferSize)+ Binary::Get7BitValueSize(_stage)+size);
 
 	ack.write7BitLongValue(id);
 	ack.write7BitValue(bufferSize);
@@ -151,140 +90,82 @@ void RTMFPFlow::commit() {
 	_band.flush();
 }
 
-void RTMFPFlow::receive(UInt64 stage,UInt64 deltaNAck,PacketReader& fragment,UInt8 flags) {
-	if(_completed)
-		return;
-
-	UInt64 nextStage = _stage+1;
-
-	if(stage < nextStage) {
-		DEBUG("Stage ",stage," on flow ",id," has already been received");
-		return;
-	}
-
-	if(deltaNAck>stage) {
-		WARN("DeltaNAck ",deltaNAck," superior to _stage ",stage," on flow ",id);
-		deltaNAck=stage;
-	}
-	
-	if(_stage < (stage-deltaNAck)) {
-		auto it=_fragments.begin();
-		while(it!=_fragments.end()) {
-			if( it->first > stage) 
-				break;
-			// leave all stages <= _stage
-			PacketReader packet(it->second->data(),it->second->size());
-			onFragment(it->first,packet,it->second.flags);
-			if(_completed || it->second.flags&MESSAGE_END) {
-				complete();
-				return; // to prevent a crash bug!! (double fragments deletion)
-			}
-			_fragments.erase(it++);
+void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
+	if (_stageEnd) {
+		if (_fragments.empty()) {
+			// if completed accept anyway to allow ack and avoid repetition
+			_stage = stage;
+			return; // completed!
 		}
-
-		nextStage = stage;
-	}
-	
-	if(stage>nextStage) {
-		// not following _stage, bufferizes the _stage
-		auto it = _fragments.lower_bound(stage);
-		if(it==_fragments.end() || it->first!=stage) {
-			_fragments.emplace_hint(it,piecewise_construct,forward_as_tuple(stage),forward_as_tuple(_poolBuffers,fragment,flags));
-			if(_fragments.size()>100)
-				DEBUG("_fragments.size()=",_fragments.size());
-		} else
-			DEBUG("Stage ",stage," on flow ",id," has already been received");
-	} else {
-		onFragment(nextStage++,fragment,flags);
-		if(flags&MESSAGE_END)
-			complete();
-		auto it=_fragments.begin();
-		while(it!=_fragments.end()) {
-			if( it->first > nextStage)
-				break;
-			PacketReader packet(it->second->data(), it->second->size());
-			onFragment(nextStage++,packet,it->second.flags);
-			if(_completed || it->second.flags&MESSAGE_END) {
-				complete();
-				return; // to prevent a crash bug!! (double fragments deletion)
-			}
-			_fragments.erase(it++);
+		if (stage > _stageEnd) {
+			DEBUG("Stage ", stage, " superior to stage end ", _stageEnd, " on flow ", id);
+			return;
 		}
+	}
+	else if (flags&RTMFP::MESSAGE_END)
+		_stageEnd = stage;
 
+	UInt64 nextStage = _stage + 1;
+	if (stage < nextStage) {
+		DEBUG("Stage ", stage, " on flow ", id, " has already been received");
+		return;
+	}
+	if (stage>nextStage) {
+		// not following stage, bufferizes the stage
+		if (!_fragments.emplace(piecewise_construct, forward_as_tuple(stage), forward_as_tuple(flags, packet)).second)
+			DEBUG("Stage ", stage, " on flow ", id, " has already been received")
+		else if (_fragments.size()>100)
+			DEBUG("_fragments.size()=", _fragments.size());
+	}
+	else {
+		onFragment(nextStage++, flags, packet);
+		auto it = _fragments.begin();
+		while (it != _fragments.end() && it->first <= nextStage) {
+			onFragment(nextStage++, it->second.flags, it->second);
+			it = _fragments.erase(it);
+		}
+		if (_fragments.empty() && _stageEnd)
+			output(id, _lost, Packet::Null()); // end flow!
 	}
 }
 
-void RTMFPFlow::onFragment(UInt64 stage,PacketReader& fragment,UInt8 flags) {
-	if(stage<=_stage) {
-		ERROR("Stage ",stage," not sorted on flow ",id);
-		return;
-	}
-	if(stage>(_stage+1)) {
-		// not following _stage!
-		UInt32 lostCount = (UInt32)(stage-_stage-1);
-		(UInt64&)_stage = stage;
-		if(_pPacket) {
-			delete _pPacket;
-			_pPacket = NULL;
-		}
-		if(flags&MESSAGE_WITH_BEFOREPART) {
-			_numberLostFragments += (lostCount+1);
-			return;
-		}
-		_numberLostFragments += lostCount;
-	} else
-		(UInt64&)_stage = stage;
-
-	// If MESSAGE_ABANDONMENT, content is not the right normal content!
-	if(flags&MESSAGE_ABANDONMENT) {
-		if(_pPacket) {
-			delete _pPacket;
-			_pPacket = NULL;
+void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
+	
+	_stage = stage;
+	// If MESSAGE_ABANDON, abandon the current packet (happen on lost data)
+	if (flags&RTMFP::MESSAGE_ABANDON) {
+		if (_pBuffer) {
+			_lost += packet.size(); // this fragment abandonned
+			_lost += _pBuffer->size(); // the bufferized fragment abandonned
+			DEBUG("Fragments lost on flow ", id);
+			_pBuffer.reset();
 		}
 		return;
 	}
 
-	PacketReader* pMessage(&fragment);
-	double lostRate(1);
-
-	if(flags&MESSAGE_WITH_BEFOREPART){
-		if(!_pPacket) {
-			WARN("A received message tells to have a 'beforepart' and nevertheless partbuffer is empty, certainly some packets were lost");
-			++_numberLostFragments;
-			delete _pPacket;
-			_pPacket = NULL;
+	if (_pBuffer) {
+		_pBuffer->append(packet.data(), packet.size());
+		if (flags&RTMFP::MESSAGE_WITH_AFTERPART)
 			return;
-		}
-		
-		_pPacket->add(fragment);
+		Packet packet(_pBuffer);
+		if (packet)
+			output(id, _lost, packet);
+		return;
 
-		if(flags&MESSAGE_WITH_AFTERPART)
-			return;
-
-		lostRate = _pPacket->fragments;
-		pMessage = _pPacket->release();
-	} else if(flags&MESSAGE_WITH_AFTERPART) {
-		if(_pPacket) {
-			ERROR("A received message tells to have not 'beforepart' and nevertheless partbuffer exists");
-			_numberLostFragments += _pPacket->fragments;
-			delete _pPacket;
-		}
-		_pPacket = new RTMFPPacket(_poolBuffers,fragment);
+	}
+	if (flags&RTMFP::MESSAGE_WITH_AFTERPART) {
+		_pBuffer.reset(new Buffer(packet.size(), packet.data()));
 		return;
 	}
+	if (packet)
+		output(id, _lost, packet);
+}
 
-	lostRate = _numberLostFragments/(lostRate+_numberLostFragments);
+void RTMFPFlow::output(UInt64 flowId, UInt32& lost, const Packet& packet) {
 
-	if (!_pStream || !_pStream->process(*pMessage, id, _writerRef, lostRate)) {
+	if (!_pStream || !_pStream->process(packet, id, _writerRef, lost)) {
 		close(); // first : send an exception
 		//complete(); // do already the delete _pPacket
 		return;
-	}
-
-	_numberLostFragments=0;
-
-	if(_pPacket) {
-		delete _pPacket;
-		_pPacket=NULL;
 	}
 }

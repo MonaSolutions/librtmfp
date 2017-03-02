@@ -53,7 +53,7 @@ UInt16 RTMFPTrigger::raise(Exception& ex) {
 		_time=1;
 		++_cycle;
 		if (_cycle == _cycles) {
-			ex.set(Exception::PROTOCOL, "Repeat RTMFPTrigger failed");
+			ex.set<Ex::Protocol>("Repeat RTMFPTrigger failed");
 			return 0;
 		}
 		return _cycle;

@@ -25,6 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Logs.h"
 #include "Mona/String.h"
 #include "Invoker.h"
+#include "Mona/Util.h"
 
 using namespace Mona;
 using namespace std;
@@ -33,7 +34,7 @@ extern "C" {
 
 static std::shared_ptr<Invoker>		GlobalInvoker; // manage threads, sockets and connection
 
-void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
+void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLogger) {
 	if (!config) {
 		ERROR("config parameter must be not null")
 		return;
@@ -41,7 +42,7 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
 
 	// Init global invoker (+logger)
 	if (!GlobalInvoker) {
-		GlobalInvoker.reset(new Invoker(0));
+		GlobalInvoker.reset(new Invoker(createLogger>0));
 		if (!GlobalInvoker->start()) {
 			GlobalInvoker.reset();
 			return;
@@ -59,6 +60,10 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig) {
 	groupConfig->fetchPeriod = 2500;
 	groupConfig->windowDuration = 8000;
 	groupConfig->pushLimit = 4;
+}
+
+void RTMFP_Terminate() {
+	GlobalInvoker.reset();
 }
 
 int RTMFP_LibVersion() {
@@ -83,7 +88,7 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	shared_ptr<RTMFPSession> pConn(new RTMFPSession(*GlobalInvoker, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
 	unsigned int index = GlobalInvoker->addConnection(pConn);
 	if (!pConn->connect(ex, url, host.c_str())) {
-		ERROR("Error in connect : ", ex.error())
+		ERROR("Error in connect : ", ex)
 		GlobalInvoker->removeConnection(index);
 		return 0;
 	}
@@ -91,6 +96,8 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	if (parameters->isBlocking) {
 		while (!pConn->connectReady) {
 			pConn->connectSignal.wait(200);
+			if (!GlobalInvoker)
+				return 0;
 			if (GlobalInvoker->isInterrupted()) {
 				GlobalInvoker->removeConnection(index);
 				return 0;
@@ -111,7 +118,7 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 	if (blocking) {
 		while (!pConn->p2pPlayReady) {
 			pConn->p2pPlaySignal.wait(200);
-			if (GlobalInvoker->isInterrupted())
+			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
 				return 0;
 		}
 	}
@@ -132,7 +139,7 @@ int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFP
 	if (parameters->isBlocking && parameters->isPublisher) {
 		while (!pConn->publishReady) {
 			pConn->publishSignal.wait(200);
-			if (GlobalInvoker->isInterrupted())
+			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
 				return -1;
 		}
 	}
@@ -164,7 +171,7 @@ int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned sh
 	if (blocking) {
 		while (!pConn->publishReady) {
 			pConn->publishSignal.wait(200);
-			if (GlobalInvoker->isInterrupted())
+			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
 				return -1;
 		}
 	}
@@ -184,7 +191,7 @@ int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned
 	if (blocking) {
 		while (!pConn->p2pPublishReady) {
 			pConn->p2pPublishSignal.wait(200);
-			if (GlobalInvoker->isInterrupted())
+			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
 				return -1;
 		}
 	}
@@ -241,7 +248,7 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 				while (!pConn->dataAvailable) {
 					DEBUG("Nothing available, sleeping...")
 					pConn->readSignal.wait(100);
-					if (GlobalInvoker->isInterrupted())
+					if (!GlobalInvoker || GlobalInvoker->isInterrupted())
 						return -1;
 				}
 			}
@@ -273,7 +280,7 @@ int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId) {
 	if (!GlobalInvoker) {
 		ERROR("Invoker is not ready, you must establish the connection first")
-			return -1;
+		return -1;
 	}
 
 	shared_ptr<RTMFPSession> pConn;
@@ -284,7 +291,7 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 	return pConn->callFunction(function, nbArgs, args, peerId);
 }
 
-void RTMFP_LogSetCallback(void(* onLog)(unsigned int, int, const char*, long, const char*)) {
+void RTMFP_LogSetCallback(void(* onLog)(unsigned int, const char*, long, const char*)) {
 	if (!GlobalInvoker)
 		ERROR("RTMFP_Init() has not been called, please call it first")
 
@@ -329,7 +336,7 @@ void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication) {
 void RTMFP_ActiveDump() {
 	if (!GlobalInvoker)
 		ERROR("RTMFP_Init() has not been called, please call it first")
-	Logs::SetDump("RTMFP");
+	Logs::SetDump("LIBRTMFP");
 }
 
 }

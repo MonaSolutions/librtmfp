@@ -24,6 +24,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "P2PSession.h"
 #include "Mona/HostEntry.h"
 #include "RTMFPHandshaker.h"
+#include "Publisher.h"
 #include <list>
 
 /**************************************************
@@ -41,10 +42,10 @@ public:
 	void closeSession();
 
 	// Return address of the server (cleared if not connected)
-	const Mona::SocketAddress&			address() { return _address; }
+	const Mona::SocketAddress&					address() { return _address; }
 
 	// Return the socket object of the session
-	virtual Mona::UDPSocket&			socket(Mona::IPAddress::Family family) { return (family == Mona::IPAddress::IPv4) ? *_pSocket : *_pSocketIPV6; }
+	virtual const std::shared_ptr<Mona::Socket>&	socket(Mona::IPAddress::Family family) { return ((family == Mona::IPAddress::IPv4) ? _pSocket : _pSocketIPV6)->socket(); }
 
 	// Connect to the specified url, return true if the command succeed
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
@@ -64,24 +65,24 @@ public:
 
 	// Write media (netstream must be published)
 	// return false if the client is not ready to publish, otherwise true
-	bool write(const Mona::UInt8* buf, Mona::UInt32 size, int& pos);
+	bool write(const Mona::UInt8* data, Mona::UInt32 size, int& pos);
 
 	// Call a function of a server, peer or NetGroup
 	// param peerId If set to 0 the call we be done to the server, if set to "all" to all the peers of a NetGroup, and to a peer otherwise
 	// return 1 if the call succeed, 0 otherwise
 	unsigned int callFunction(const char* function, int nbArgs, const char** args, const char* peerId = 0);
 
-	// Called by Invoker every second to manage connection (flush and ping)
-	virtual void manage();
-
 	// Add a command to the main stream (play/publish)
 	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
+
+	// Called by Invoker every 50ms to manage connections (flush and ping)
+	virtual void manage();
 		
 	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
 	template <typename ListenerType, typename... Args>
 	ListenerType* startListening(Mona::Exception& ex, const std::string& streamName, const std::string& peerId, Args... args) {
 		if (!_pPublisher || _pPublisher->name() != streamName) {
-			ex.set(Mona::Exception::APPLICATION, "No publication found with name ", streamName);
+			ex.set<Mona::Ex::Application>("No publication found with name ", streamName);
 			return NULL;
 		}
 
@@ -90,9 +91,8 @@ public:
 	}
 
 	// Push the media packet to write into a file
-	void pushMedia(const std::string& stream, Mona::UInt32 time, const Mona::UInt8* data, Mona::UInt32 size, double lostRate, bool audio) { 
-		Mona::PacketReader reader(data, size);
-		onMedia(stream, time, reader, lostRate, audio); 
+	void pushMedia(const std::string& stream, Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type) { 
+		onMedia(stream, time, packet, lostRate, type);
 	}
 
 	// Remove the listener with peerId
@@ -123,7 +123,7 @@ public:
 	virtual const std::string&		name() { return _host; }
 
 	// Return the raw url of the session (for RTMFPConnection)
-	virtual const std::string&		epd() { return _rawUrl; }
+	virtual const Mona::Binary&		epd() { return _rawUrl; }
 
 	bool							isPublisher() { return (bool)_pPublisher; }
 
@@ -138,11 +138,13 @@ public:
 	// Remove the handshake properly
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
 
-	// Return the diffie hellman object (related to main session)
-	virtual bool					diffieHellman(Mona::DiffieHellman* &pDh) { return _handshaker.diffieHellman(pDh); }
-
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt);
+	
+	// Return the diffie hellman object (related to main session)
+	virtual Mona::DiffieHellman&	diffieHellman() { return _diffieHellman; }
+
+	const RTMFPDecoder::OnDecoded&	getDecodeEvent() { return _onDecoded; }
 
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal					connectSignal; // signal to wait connection
@@ -155,6 +157,15 @@ public:
 	bool							publishReady; // true if the publisher is ready
 	bool							connectReady; // Ready if we have received the NetStream.Connect.Success event
 	bool							dataAvailable; // true if there is asynchronous data available
+
+	// Publishing structures
+	struct MediaPacket : virtual Mona::Object, Mona::Packet {
+		MediaPacket(Mona::UInt32 time, const Mona::Packet& packet) : time(time), Mona::Packet(std::move(packet)) {}
+		const Mona::UInt32 time;
+	};
+	typedef Mona::Event<void(MediaPacket&)> ON(PushAudio);
+	typedef Mona::Event<void(MediaPacket&)> ON(PushVideo);
+	typedef Mona::Event<void()>				ON(FlushPublisher);
 
 protected:
 
@@ -171,7 +182,7 @@ protected:
 	virtual void handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
 
 	// Handle a P2P address exchange message 0x0f from server (a peer is about to contact us)
-	void handleP2PAddressExchange(Mona::PacketReader& reader);
+	void handleP2PAddressExchange(Mona::BinaryReader& reader);
 
 	// On NetConnection.Connect.Success callback
 	virtual void onNetConnectionSuccess();
@@ -209,7 +220,7 @@ private:
 	std::map<std::string, std::shared_ptr<P2PSession>>				_mapPeersById; // P2P connections by Id
 
 	std::string														_url; // RTMFP url of the application (base handshake)
-	std::string														_rawUrl; // Header (420A) + Url to be sent in handshake 30
+	Mona::Buffer													_rawUrl; // Header (size + 0A) + Url to be sent in handshake 30
 	std::string														_rawId; // my peer ID (computed with HMAC-SHA256) in binary format
 	std::string														_peerTxtId; // my peer ID in hex format
 
@@ -221,13 +232,13 @@ private:
 
 	std::map<Mona::UInt32, FlowManager*>							_mapSessions; // map of session ID to Sessions
 
-	std::unique_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
-	std::unique_ptr<Mona::UDPSocket>								_pSocketIPV6; // Sending socket established with server
+	std::shared_ptr<Mona::UDPSocket>								_pSocket; // Sending socket established with server
+	std::shared_ptr<Mona::UDPSocket>								_pSocketIPV6; // Sending socket established with server
 
-	FlashConnection::OnStreamCreated::Type							onStreamCreated; // Received when stream has been created and is waiting for a command
-	FlashConnection::OnNewPeer::Type								onNewPeer; // Received when a we receive the ID of a new peer from the server in a NetGroup
-	Mona::UDPSocket::OnPacket::Type									onPacket; // Main input event, received on each raw packet
-	Mona::UDPSocket::OnError::Type									onError; // Main input event, received on socket error
+	Mona::DiffieHellman												_diffieHellman; // diffie hellman object used for key computing
+
+	RTMFPDecoder::OnDecoded											_onDecoded; // Decoded callback
+	Mona::UInt16													_threadRcv; // Thread used to decode last message
 
 	// Publish/Play commands
 	struct StreamCommand : public Object {
