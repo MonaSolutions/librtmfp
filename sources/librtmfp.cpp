@@ -212,6 +212,8 @@ int RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {
 }
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
+	if (!RTMFPcontext)
+		return;
 	if (!GlobalInvoker) {
 		ERROR("Invoker is not ready, you must establish the connection first")
 		return;
