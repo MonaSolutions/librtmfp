@@ -4,16 +4,20 @@ Installing librtmfp
 ## Simple Installation
 
 - First you must download and compile the MonaBase library,
-- Clone MonaServer :
+- Clone MonaServer2 :
 
-	git clone https://github.com/MonaSolutions/MonaServer.git
+	git clone https://github.com/MonaSolutions/MonaServer2.git
 	
 - Cd into the MonaBase directory,
 - Compile MonaBase using the following command :
 	
 	make
 	
-- Compile librtmfp (must be at the same hierarchy level than the directory MonaServer) :
+- Clone librtmfp into the MonaServer2 directory :
+
+	git clone https://github.com/MonaSolutions/librtmfp.git
+
+- Compile librtmfp :
 
 	make
 	

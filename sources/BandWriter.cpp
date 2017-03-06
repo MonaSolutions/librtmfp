@@ -63,8 +63,10 @@ void BandWriter::flush(bool echoTime, UInt8 marker) {
 		_pSender->farId = _farId;
 		_pSender->address.set(_address); // set the right address for sending
 
-		if (_pSender->buffer().size() > RTMFP_MAX_PACKET_SIZE)
+		if (_pSender->buffer().size() > RTMFP_MAX_PACKET_SIZE) {
 			ERROR("Message exceeds max RTMFP packet size on connection (", _pSender->buffer().size(), ">", RTMFP_MAX_PACKET_SIZE, ")");
+			return;
+		}
 
 		// executed just in debug mode, or in dump mode
 		if (Logs::GetLevel() >= 7)

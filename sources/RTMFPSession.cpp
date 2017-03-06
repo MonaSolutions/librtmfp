@@ -684,8 +684,13 @@ void RTMFPSession::handleP2PAddressExchange(BinaryReader& reader) {
 	RTMFP::AddressType addressType;
 	RTMFP::ReadAddress(reader, address, addressType);
 
+	Exception ex;
 	string tag;
 	reader.read(16, tag);
+	if (address.host().isLoopback() && !_address.host().isLoopback())
+		address.set(ex, _address.host(), address.port());
+	else if (address.host().isLocal() && !_address.host().isLocal())
+		address.set(ex, _address.host(), address.port());
 	DEBUG("A peer will contact us with address : ", address)
 
 	// Send the handshake 70 to the peer

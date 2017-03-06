@@ -97,9 +97,8 @@ void Publisher::pushAudio(UInt32 time, const Packet& packet) {
 
 	_new = true;
 	auto it = _listeners.begin();
-	while (it != _listeners.end()) {
+	while (it != _listeners.end())
 		(it++)->second->pushAudio(time, packet);  // listener can be removed in this call
-	}
 }
 
 void Publisher::pushVideo(UInt32 time, const Packet& packet) {
@@ -119,9 +118,8 @@ void Publisher::pushVideo(UInt32 time, const Packet& packet) {
 
 	_new = true;
 	auto it = _listeners.begin();
-	while (it != _listeners.end()) {
+	while (it != _listeners.end())
 		(it++)->second->pushVideo(time, packet); // listener can be removed in this call
-	}
 }
 
 void Publisher::flush() {

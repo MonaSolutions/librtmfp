@@ -22,7 +22,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "FlowManager.h"
-#include "Mona/StopWatch.h"
 #include "PeerMedia.h"
 #include "RTMFP.h"
 

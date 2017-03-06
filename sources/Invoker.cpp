@@ -136,10 +136,10 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	}
 #if !defined(_DEBUG)
 	catch (exception& ex) {
-		FATAL("Server, ", ex.what());
+		FATAL("Invoker, ", ex.what());
 	}
 	catch (...) {
-		FATAL("Server, unknown error");
+		FATAL("Invoker, unknown error");
 	}
 #endif
 	// Stop onManage (useless now)
@@ -160,7 +160,7 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	threadPool.join();
 
 	// release memory
-	INFO("Server memory release");
+	INFO("Invoker memory release");
 	Buffer::SetAllocator();
 	bufferPool.clear();
 	return true;
