@@ -107,14 +107,14 @@ void FlashListener::stopPublishing() {
 
 
 void FlashListener::pushVideo(UInt32 time, const Packet& packet) {
-	if (!receiveVideo && !RTMFP::IsH264CodecInfos(packet.data(), packet.size()))
+	if (!receiveVideo && !RTMFP::IsVideoCodecInfos(packet.data(), packet.size()))
 		return;
 
 	if (!_codecInfosSent) {
 		if (RTMFP::IsKeyFrame(packet.data(), packet.size())) {
 			_codecInfosSent = true;
-			if (!publication.videoCodecBuffer() && !RTMFP::IsH264CodecInfos(packet.data(), packet.size())) {
-				INFO("H264 codec infos sent to one FlashListener of ", publication.name(), " publication")
+			if (publication.videoCodecBuffer() && !RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
+				INFO("Video codec infos sent to one FlashListener of ", publication.name(), " publication")
 				pushVideo(time, publication.videoCodecBuffer());
 			}
 		}

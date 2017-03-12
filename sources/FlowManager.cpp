@@ -55,7 +55,7 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 	onMedia = _pMainStream->onMedia = [this](const string& stream, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 
 		if (!_codecInfosRead) {
-			if (type == AMF::TYPE_VIDEO && RTMFP::IsH264CodecInfos(packet.data(), packet.size())) {
+			if (type == AMF::TYPE_VIDEO && RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
 				INFO("Video codec infos found, starting to read")
 				_codecInfosRead = true;
 			}

@@ -33,7 +33,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x02000001	// (2.0.1)
+#define RTMFP_LIB_VERSION	0x02000002	// (2.0.2)
 
 #define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -130,7 +130,7 @@ public:
 
 	static bool						IsAACCodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && (*data >> 4) == 0x0A && data[1] == 0; }
 
-	static bool						IsH264CodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && *data == 0x17 && data[1] == 0; }
+	static bool						IsVideoCodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && ((*data|0x0F) == 0x1F) && data[1] == 0; }
 
 	// Read addresses from the buffer reader
 	// return : True if at least an address has been read

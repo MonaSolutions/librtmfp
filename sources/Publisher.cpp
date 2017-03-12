@@ -110,9 +110,9 @@ void Publisher::pushVideo(UInt32 time, const Packet& packet) {
 	//  TRACE("Time Video ",time," => ",Util::FormatHex(packet.current(),16,LOG_BUFFER))
 
 	// save video codec packet for future listeners
-	if (RTMFP::IsH264CodecInfos(packet.data(), packet.size())) {
-		INFO("H264 codec infos received on publication ", _name)
-		// h264 codec && settings codec informations
+	if (RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
+		INFO("Video codec infos received on publication ", _name)
+		// video codec && settings codec informations
 		_videoCodec = move(packet);
 	}
 
