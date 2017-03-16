@@ -37,7 +37,7 @@ using namespace std;
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId("\x21\x0f", PEER_ID_SIZE + 2),
-	_handshaker(invoker, this), _nbCreateStreams(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), _threadRcv(0),
+	_handshaker(this), _nbCreateStreams(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), _threadRcv(0),
 	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _pSocket(new UDPSocket(_invoker.sockets)), _pSocketIPV6(new UDPSocket(_invoker.sockets)) {
 
 	_pSocketIPV6->onPacket = _pSocket->onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
@@ -53,7 +53,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		pBuffer->clip(reader.position());
 
 		Exception ex;
-		shared_ptr<RTMFPEngine> pEngine;
+		shared_ptr<RTMFP::Engine> pEngine;
 		if (!idSession)
 			pEngine = _handshaker.decoder();
 		else {
@@ -94,7 +94,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		else {
 			auto itSession = _mapSessions.find(decoded.idSession);
 			if (itSession == _mapSessions.end()) {
-				WARN("Unknown session ", String::Format<UInt32>("0x%.8x", decoded.idSession), ", possible deleted peer (", decoded.address, ")")
+				WARN("Unknown session ", String::Format<UInt32>("0x%.8x", decoded.idSession), ", possibly deleted (", decoded.address, ")")
 				return;
 			}
 			itSession->second->receive(decoded.address, decoded);
@@ -107,7 +107,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 	if (!_pSocketIPV6->bind(ex, SocketAddress::Wildcard(IPAddress::IPv6)))
 		WARN("Unable to bind [::], ipv6 will not work : ", ex)
 	if (!_pSocket->bind(ex, SocketAddress::Wildcard(IPAddress::IPv4)))
-		WARN("Unable to bind localhost, ipv6 will not work : ", ex)
+		WARN("Unable to bind localhost, ipv4 will not work : ", ex)
 
 	// Add the session ID to the map
 	_mapSessions.emplace(_sessionId, this);
@@ -616,6 +616,7 @@ void RTMFPSession::onNetConnectionSuccess() {
 		address.set(it, (it.family() == IPAddress::IPv4) ? port : portIPv6);
 		amfWriter.writeString(address.c_str(), address.length());
 	}
+	_pMainWriter->flush();
 
 	// We are connected : unlock the possible blocking RTMFP_Connect function
 	connectReady = true;

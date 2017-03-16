@@ -22,20 +22,23 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "Mona/SocketAddress.h"
-#include "Mona/Mona.h"
 #include "Mona/BinaryReader.h"
 #include "Mona/BinaryWriter.h"
 #include "Mona/Time.h"
 #include "Mona/Crypto.h"
 #include "Mona/Util.h"
+#include "Mona/Packet.h"
+#include "Mona/Socket.h"
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 
 #include "Mona/Logs.h"
 
-#define RTMFP_LIB_VERSION	0x02000002	// (2.0.2)
+#include <map>
 
-#define RTMFP_DEFAULT_KEY	(UInt8*)"Adobe Systems 02"
+#define RTMFP_LIB_VERSION	0x02000003	// (2.0.3)
+
+#define RTMFP_DEFAULT_KEY	(Mona::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
 
 #define RTMFP_HEADER_SIZE		11
@@ -48,47 +51,31 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #define PEER_LIST_ADDRESS_TYPE	std::map<Mona::SocketAddress, RTMFP::AddressType>
 
-class RTMFPEngine : public virtual Mona::Object {
-public:
-	enum Direction {
-		DECRYPT=0,
-		ENCRYPT
-	};
-	RTMFPEngine(const Mona::UInt8* key, Direction direction) : _direction(direction) {
-		memcpy(_key, key, RTMFP_KEY_SIZE);
-		EVP_CIPHER_CTX_init(&_context);
-	}
-	virtual ~RTMFPEngine() {
-		EVP_CIPHER_CTX_cleanup(&_context);
-	}
-
-	bool process(Mona::UInt8* data, int size) {
-		int newSize(size);
-		static Mona::UInt8 IV[RTMFP_KEY_SIZE];
-		EVP_CipherInit_ex(&_context, EVP_aes_128_cbc(), NULL, _key, IV,_direction);
-		EVP_CipherUpdate(&_context, data, &newSize, data, size);
-
-		if (_direction == DECRYPT) { // check CRC
-			Mona::BinaryReader reader(data, size);
-			Mona::UInt16 crc(reader.read16());
-			return (Mona::Crypto::ComputeCRC32(reader.current(), reader.available()) == crc);
-		}
-		return true;
-	}
-
-private:
-	Direction				_direction;
-	Mona::UInt8				_key[RTMFP_KEY_SIZE];
-	EVP_CIPHER_CTX			_context;
-};
-
-class RTMFP : virtual Mona::Static {
-public:
+struct RTMFPSender;
+struct RTMFP : virtual Mona::Static {
 	enum AddressType {
 		ADDRESS_UNSPECIFIED=0,
 		ADDRESS_LOCAL=1,
 		ADDRESS_PUBLIC=2,
 		ADDRESS_REDIRECTION=3
+	};
+
+	enum DataType {
+		TYPE_UNKNOWN = 0,
+		TYPE_AMF,
+		TYPE_AMF0,
+		TYPE_JSON,
+		TYPE_XMLRPC,
+		TYPE_QUERY
+	};
+
+	enum { TIMESTAMP_SCALE = 4 };
+	enum { SENDABLE_MAX = 6 }; // Number of packet max to send before receiving an ack
+
+	enum {
+		SIZE_HEADER = 11,
+		SIZE_PACKET = 1192,
+		SIZE_COOKIE = 0x40
 	};
 
 	enum {
@@ -111,17 +98,56 @@ public:
 		FAILED
 	};
 
+	struct Engine : virtual Mona::Object {
+		Engine(const Mona::UInt8* key) { memcpy(_key, key, KEY_SIZE); EVP_CIPHER_CTX_init(&_context); }
+		Engine(const Engine& engine) { memcpy(_key, engine._key, KEY_SIZE); EVP_CIPHER_CTX_init(&_context); }
+		virtual ~Engine() { EVP_CIPHER_CTX_cleanup(&_context); }
+
+		bool							decode(Mona::Exception& ex, Mona::Buffer& buffer, const Mona::SocketAddress& address);
+		std::shared_ptr<Mona::Buffer>&	encode(std::shared_ptr<Mona::Buffer>& pBuffer, Mona::UInt32 farId, const Mona::SocketAddress& address);
+
+		static bool				Decode(Mona::Exception& ex, Mona::Buffer& buffer, const Mona::SocketAddress& address) { return Default().decode(ex, buffer, address); }
+		static std::shared_ptr<Mona::Buffer>&	Encode(std::shared_ptr<Mona::Buffer>& pBuffer, Mona::UInt32 farId, const Mona::SocketAddress& address) { return Default().encode(pBuffer, farId, address); }
+
+	private:
+		static Engine& Default() { thread_local Engine Engine(BIN "Adobe Systems 02"); return Engine; }
+
+		enum { KEY_SIZE = 0x10 };
+		Mona::UInt8						_key[KEY_SIZE];
+		EVP_CIPHER_CTX					_context;
+	};
+
+	struct Message : virtual Mona::Object, Mona::Packet {
+		Message(Mona::UInt64 flowId, Mona::UInt32 lost, const Mona::Packet& packet) : lost(lost), flowId(flowId), Mona::Packet(std::move(packet)) {}
+		const Mona::UInt64 flowId;
+		const Mona::UInt32 lost;
+	};
+	struct Flush : virtual Mona::Object {
+		Flush(Mona::Int32 ping, bool keepalive, bool died, std::map<Mona::UInt64, Mona::Packet>& acks) :
+			ping(ping), acks(std::move(acks)), keepalive(keepalive), died(died) {}
+		const Mona::Int32				ping; // if died, ping takes error
+		const bool						keepalive;
+		const bool						died;
+		const std::map<Mona::UInt64, Mona::Packet>	acks; // ack + fails
+	};
+
+	struct Output : virtual Mona::Object {
+
+		virtual Mona::UInt32	rto() const = 0;
+		virtual void			send(const std::shared_ptr<RTMFPSender>& pSender) = 0;
+		virtual Mona::UInt64	queueing() const = 0;
+	};
+
 	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, AddressType& addressType);
 	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
 	static Mona::UInt32				Unpack(Mona::BinaryReader& reader);
 	static void						Pack(Mona::Buffer& buffer,Mona::UInt32 farId);
 
-	static void						ComputeAsymetricKeys(const Mona::Binary& sharedSecret,
-														const Mona::UInt8* initiatorNonce,Mona::UInt32 initNonceSize,
-														const Mona::UInt8* responderNonce,Mona::UInt32 respNonceSize,
-														 Mona::UInt8* requestKey,
-														 Mona::UInt8* responseKey);
+	static bool						Send(Mona::Socket& socket, const Mona::Packet& packet, const Mona::SocketAddress& address);
+	static Mona::Buffer&			InitBuffer(std::shared_ptr<Mona::Buffer>& pBuffer, Mona::UInt8 marker);
+	static Mona::Buffer&			InitBuffer(std::shared_ptr<Mona::Buffer>& pBuffer, std::atomic<Mona::Int64>& initiatorTime, Mona::UInt8 marker);
+	static void						ComputeAsymetricKeys(const Mona::Binary& sharedSecret, const Mona::UInt8* initiatorNonce,Mona::UInt32 initNonceSize, const Mona::UInt8* responderNonce,Mona::UInt32 respNonceSize, Mona::UInt8* requestKey, Mona::UInt8* responseKey);
 
 	static Mona::UInt16				TimeNow() { return Time(Mona::Time::Now()); }
 	static Mona::UInt16				Time(Mona::Int64 timeVal) { return (timeVal / RTMFP_TIMESTAMP_SCALE)&0xFFFF; }

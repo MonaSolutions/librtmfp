@@ -26,6 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "AMFWriter.h"
 #include "Mona/Packet.h"
 #include "Mona/Parameters.h"
+#include "RTMFP.h"
 
 /*************************************************
 Writer of AMF messages, must be inherited
@@ -51,13 +52,10 @@ public:
 	bool					reliable;
 
 	void					open() { if(_state==OPENING) _state = OPENED;}
-
-	virtual bool			flush() { return false;  } // return true if something has been sent!
 	
 	bool					amf0;
 	
 	virtual void			writeRaw(const Mona::UInt8* data, Mona::UInt32 size) = 0; // TODO: see we need a GroupWriter
-	Mona::BinaryWriter&		writeRaw() { return *write(AMF::TYPE_RAW, Mona::Packet::Null()); }
 	AMFWriter&				writeMessage();
 	AMFWriter&				writeInvocation(const char* name, bool amf3=false) { return writeInvocation(name,0,amf3); }
 
@@ -68,24 +66,19 @@ public:
 
 	AMFWriter&				writeAMFData(const std::string& name);
 
-	void					writePing() { writeRaw().write16(0x0006).write32((Mona::UInt32)Mona::Time::Now()); }
-	void					writePong(Mona::UInt32 pingTime) { writeRaw().write16(0x0007).write32(pingTime); }
-
 	void					setCallbackHandle(double value) { _callbackHandle = value; _callbackHandleOnAbort = 0; }
 	virtual void			clear() { _callbackHandle = _callbackHandleOnAbort; } // must erase the queueing messages (don't change the writer state)
 
-	// Close the writer, if not abrupt is set the writer is kept alive for at least 130s
-	virtual void			close(bool abrupt) = 0;
-
 protected:
-	FlashWriter(State state);
-	FlashWriter(FlashWriter& other);
+	FlashWriter();
 
-	virtual AMFWriter&		write(AMF::Type type, const Mona::Packet& packet, Mona::UInt32 time=0)=0;
+	AMFWriter&				write(AMF::Type type, Mona::UInt32 time = 0) { return write(type, time, RTMFP::TYPE_AMF, Mona::Packet::Null(), reliable); }
+	AMFWriter&				write(AMF::Type type, Mona::UInt32 time, const Mona::Packet& packet, bool reliable) { return write(type, time, RTMFP::TYPE_AMF, packet, reliable); }
+	virtual AMFWriter&		write(AMF::Type type, Mona::UInt32 time, RTMFP::DataType packetType, const Mona::Packet& packet, bool reliable) = 0;
 	AMFWriter&				writeInvocation(const char* name,double callback,bool amf3=false);
 	AMFWriter&				writeAMFState(const char* name,const char* code,const std::string& description,bool withoutClosing=false);
 
-	State							_state;
+	State					_state;
 private:
 	std::string				_onAudio;
 	std::string				_onVideo;

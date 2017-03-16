@@ -99,9 +99,6 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 	// called by a PeerMedia to create the media writer
 	bool							createMediaWriter(std::shared_ptr<RTMFPWriter>& pWriter, Mona::UInt64 flowIdRef);
 
-	// called by PeerMedia to close the media report and the media flows
-	void							closeFlow(Mona::UInt64 id);
-
 	// Ask a peer from the group to disconnect
 	// return : True if the request has been sent
 	bool							askPeer2Disconnect();

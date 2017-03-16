@@ -29,11 +29,7 @@ using namespace std;
 using namespace Mona;
 
 
-FlashWriter::FlashWriter(State state) : _callbackHandleOnAbort(0),_callbackHandle(0),amf0(false),reliable(true),_state(state) {
-}
-
-FlashWriter::FlashWriter(FlashWriter& other) : reliable(other.reliable), _callbackHandle(other._callbackHandle),_callbackHandleOnAbort(0),amf0(other.amf0) {
-	other._callbackHandle = 0;
+FlashWriter::FlashWriter() : _callbackHandleOnAbort(0),_callbackHandle(0),amf0(false),reliable(true),_state(OPENED) {
 }
 
 AMFWriter& FlashWriter::writeMessage() {
@@ -43,7 +39,7 @@ AMFWriter& FlashWriter::writeMessage() {
 }
 
 AMFWriter& FlashWriter::writeInvocation(const char* name, double callback, bool amf3) {
-	AMFWriter& writer(write(amf3 ? AMF::TYPE_INVOCATION_AMF3 : AMF::TYPE_INVOCATION, Packet::Null()));
+	AMFWriter& writer(write(AMF::TYPE_INVOCATION));
 	writer.amf0 = true;
 	writer.writeString(name, strlen(name));
 	writer.writeNumber(callback);
@@ -71,7 +67,7 @@ AMFWriter& FlashWriter::writeAMFState(const char* name,const char* code,const st
 }
 
 AMFWriter& FlashWriter::writeAMFData(const string& name) {
-	AMFWriter& writer(write(AMF::TYPE_DATA, Packet::Null()));
+	AMFWriter& writer(write(AMF::TYPE_DATA));
 	writer.amf0 = true;
 	writer.writeString(name.data(),name.size());
 	writer.amf0 = false;
@@ -90,10 +86,10 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time, const Packet& packet) {
 				writeAMFStatus("NetStream.Play.UnpublishNotify",string(STR data, size) + " is now unpublished");*/
 			break;
 		case AUDIO:
-			write(AMF::TYPE_AUDIO, packet, time);
+			write(AMF::TYPE_AUDIO, time, packet, reliable);
 			break;
 		case VIDEO:
-			write(AMF::TYPE_VIDEO, packet, time);
+			write(AMF::TYPE_VIDEO, time, packet, reliable);
 			break;
 		case DATA: {
 			// convert to AMF ?

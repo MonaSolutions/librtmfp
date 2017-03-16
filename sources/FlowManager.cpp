@@ -33,7 +33,8 @@ using namespace std;
 
 FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 	_pLastWriter(NULL), _firstRead(true), _invoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2), BandWriter(invoker) {
+	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2),
+	_initiatorTime(0), initiatorTime(0), _farId(0), _threadSend(0) {
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
@@ -111,26 +112,6 @@ FlowManager::~FlowManager() {
 	}
 }
 
-BinaryWriter& FlowManager::writeMessage(UInt8 type, UInt16 length, RTMFPWriter* pWriter) {
-
-	_pLastWriter = pWriter;
-
-	UInt16 size = length + 3; // for type and size
-
-	if (size>availableToWrite()) {
-		BandWriter::flush(false, 0x89); // send packet (and without time echo)
-
-		if (size > availableToWrite()) {
-			ERROR("RTMFPMessage truncated because exceeds maximum UDP packet size on connection");
-			size = availableToWrite();
-		}
-	}
-
-	if (!_pSender)
-		_pSender.reset(new RTMFPSender(socket(_address.family()), _pEncoder));
-	return _pSender->write8(type).write16(length);
-}
-
 shared_ptr<RTMFPWriter>& FlowManager::writer(UInt64 id, shared_ptr<RTMFPWriter>& pWriter) {
 	auto it = _flowWriters.find(id);
 	if (it != _flowWriters.end())
@@ -138,15 +119,10 @@ shared_ptr<RTMFPWriter>& FlowManager::writer(UInt64 id, shared_ptr<RTMFPWriter>&
 	return pWriter;
 }
 
-UInt32 FlowManager::availableToWrite() { 
-	return RTMFP_MAX_PACKET_SIZE - (_pSender ? _pSender->size() : RTMFP_HEADER_SIZE); 
-}
-
 const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const Packet& signature, Mona::UInt64 flowId) {
 
-	RTMFPWriter* pWriter = new RTMFPWriter(FlashWriter::OPENED, signature, *this, flowId);
-	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(_nextRTMFPWriterId), forward_as_tuple(pWriter)).first;
-	(UInt64&)pWriter->id = _nextRTMFPWriterId++;
+	RTMFPWriter* pWriter = new RTMFPWriter(0x89 + _responder,_nextRTMFPWriterId, flowId, signature, *this);
+	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(_nextRTMFPWriterId++), forward_as_tuple(pWriter)).first;
 	pWriter->amf0 = false;
 
 	DEBUG("New writer ", pWriter->id, " on connection ", name());
@@ -162,8 +138,7 @@ void FlowManager::clearWriters() {
 void FlowManager::flushWriters() {
 	// Every 25s : ping
 	if (_lastPing.isElapsed(25000) && status == RTMFP::CONNECTED) {
-		writeMessage(0x01, 0);
-		BandWriter::flush(false, 0x89);
+		send(make_shared<RTMFPCmdSender>(0x01, 0x89 + _responder));
 		_lastPing.update();
 	}
 
@@ -176,11 +151,7 @@ void FlowManager::flushWriters() {
 	while (it != _flowWriters.end()) {
 		shared_ptr<RTMFPWriter>& pWriter(it->second);
 		Exception ex;
-		if (!pWriter->manage(ex)) {
-			INFO("Closing session ", name(), " : ", ex)
-			close(false);
-			break;
-		}
+		pWriter->flush();
 		if (pWriter->consumed()) {
 			handleWriterClosed(pWriter);
 			DEBUG("Writer ", pWriter->id, " of Session ", name(), " consumed")
@@ -192,8 +163,7 @@ void FlowManager::flushWriters() {
 }
 
 void FlowManager::sendCloseChunk(bool abrupt) {
-	writeMessage(abrupt ? 0x4C : 0x0C, 0);
-	flush(false, 0x89);
+	send(make_shared<RTMFPCmdSender>(abrupt ? 0x4C : 0x0C, 0x89 + _responder));
 	_lastClose.update();
 }
 
@@ -280,6 +250,7 @@ bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
 void FlowManager::receive(const Packet& packet) {
 
 	// Variables for request (0x10 and 0x11)
+	UInt64 flowId;
 	UInt8 flags;
 	RTMFPFlow* pFlow = NULL;
 	UInt64 stage = 0;
@@ -323,13 +294,14 @@ void FlowManager::receive(const Packet& packet) {
 			return;
 		case 0x01: // KeepAlive
 			if (status == RTMFP::CONNECTED)
-				writeMessage(0x41, 0);
+				send(make_shared<RTMFPCmdSender>(0x41, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B));
 			break;
 		case 0x41:
 			_lastKeepAlive.update();
 			break;
 
-		case 0x5e : {  // P2P closing flow (RTMFPFlow exception, only for p2p)
+		case 0x5e : {
+			// RTMFPWriter exception!
 			UInt64 id = message.read7BitLongValue();
 			shared_ptr<RTMFPWriter> pWriter;
 			if (writer(id, pWriter))
@@ -338,27 +310,51 @@ void FlowManager::receive(const Packet& packet) {
 				WARN("RTMFPWriter ", id, " unfound for failed signal on session ", name());
 			break;
 		}
-			/*case 0x18 :
+		case 0x18:
 			/// This response is sent when we answer with a Acknowledgment negative
-			// It contains the id flow
+			// It contains the id flow (message.read8())
 			// I don't unsertand the usefulness...
-			//pFlow = &flow(message.read8());
-			//stage = pFlow->stageSnd();
-			// For the moment, we considerate it like a exception
-			fail("ack negative from server"); // send fail message immediatly
-			break;*/
-
+			// For the moment, we considerate it like an exception
+			WARN("Ack negative from ", name()); // send fail message immediatly
+			close(true);
+			break;
+		case 0x50:
 		case 0x51: {
 			/// Acknowledgment
 			UInt64 id = message.read7BitLongValue();
+			UInt64 bufferSize = message.read7BitLongValue();
+			if (bufferSize == 0) {
+				// no more place to write, reliability broken
+				WARN("RTMFPWriter ", id, " can't deliver its data, buffer full on session ", name());
+				close(false);
+				return;
+			}
+			UInt64 ackStage(message.read7BitLongValue());
 			shared_ptr<RTMFPWriter> pWriter;
 			if (writer(id, pWriter)) {
-				Exception ex;
-				if (!pWriter->acknowledgment(ex, message))
-					WARN(ex, " on connection ", name())
+				UInt32 lostCount(0);
+				if (message.available()) {
+					++lostCount;
+					if (type == 0x50) {
+						UInt8 i;
+						do {
+							UInt8 bits(message.read8());
+							for (i = 0; i < 8; ++i) {
+								if (bits & 1)
+									break;
+								++lostCount;
+								bits >>= 1;
+							}
+
+						} while (i == 8 && message.available());
+					}
+					else
+						lostCount += UInt32(message.read7BitLongValue());
+				}
+				pWriter->acquit(ackStage, lostCount);
 			}
 			else
-				WARN("RTMFPWriter ", id, " unfound for acknowledgment on session ", name())
+				DEBUG("Writer ", id, " unfound for acknowledgment ", ackStage, " stage on session ", name(), ", certainly an obsolete message (writer closed)");
 			break;
 		}
 		/// Request
@@ -366,14 +362,14 @@ void FlowManager::receive(const Packet& packet) {
 		// 0x11 special request, in repeat case (following stage request)
 		case 0x10: {
 			flags = message.read8();
-			UInt64 idFlow = message.read7BitLongValue();
+			flowId = message.read7BitLongValue();
 			stage = message.read7BitLongValue() - 1;
 			deltaNAck = message.read7BitLongValue() - 1;
 
 			if (status == RTMFP::FAILED)
 				break;
 
-			map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(idFlow);
+			map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(flowId);
 			pFlow = it == _flows.end() ? NULL : it->second;
 
 			// Header part if present
@@ -386,14 +382,14 @@ void FlowManager::receive(const Packet& packet) {
 
 					// Fullduplex header part
 					if (message.read8() != 0x0A)
-						WARN("Unknown fullduplex header part for the flow ", idFlow)
+						WARN("Unknown fullduplex header part for the flow ", flowId)
 					else
 						idWriterRef = message.read7BitLongValue(); // RTMFPWriter ID related to this flow
 
 					// Useless header part 
 					UInt8 length = message.read8();
 					while (length>0 && message.available()) {
-						WARN("Unknown message part on flow ", idFlow);
+						WARN("Unknown message part on flow ", flowId);
 						message.next(length);
 						length = message.read8();
 					}
@@ -404,11 +400,11 @@ void FlowManager::receive(const Packet& packet) {
 				}
 
 				if (!pFlow)
-					pFlow = createFlow(idFlow, signature, idWriterRef);
+					pFlow = createFlow(flowId, signature, idWriterRef);
 			}
 
 			if (!pFlow) {
-				WARN("RTMFPFlow ", idFlow, " unfound for connection ", name());
+				WARN("RTMFPFlow ", flowId, " unfound for connection ", name());
 				break;
 			}
 
@@ -436,13 +432,49 @@ void FlowManager::receive(const Packet& packet) {
 		type = reader.available()>0 ? reader.read8() : 0xFF;
 
 		// Commit RTMFPFlow (pFlow means 0x11 or 0x10 message)
-		if (pFlow && (status != RTMFP::FAILED) && type != 0x11) {
-			pFlow->commit();
-			if (pFlow->consumed())
-				removeFlow(pFlow);
-			pFlow = NULL;
+		if (stage && (status != RTMFP::FAILED) && type != 0x11) {
+			if (pFlow) {
+				vector<UInt64> losts;
+				stage = pFlow->buildAck(losts, size = 0);
+				size += Binary::Get7BitValueSize(pFlow->id) + Binary::Get7BitValueSize(0xFF7Fu) + Binary::Get7BitValueSize(stage);
+				BinaryWriter writer(write(0x51, size));
+				writer.write7BitLongValue(pFlow->id).write7BitValue(0xFF7F).write7BitLongValue(stage);
+				for (UInt64 lost : losts)
+					writer.write7BitLongValue(lost);
+				if (pFlow->consumed())
+					removeFlow(pFlow);
+				pFlow = NULL;
+			}
+			else {
+				// commit everything (flow unknown)
+				BinaryWriter(write(0x51, 1 + Binary::Get7BitValueSize(flowId) + Binary::Get7BitValueSize(stage)))
+					.write7BitLongValue(flowId).write7BitValue(0).write7BitLongValue(stage);
+			}
+			stage = 0;
+			if (_pBuffer) {
+				RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
+				_pBuffer.reset();
+			}
 		}
 	}
+}
+
+void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
+	if (!_pSendSession) {
+		WARN("Sender is not is not initalized, cannot send packet to ", name()) // implementation error
+		return;
+	}
+
+	// continue even on _killing to repeat writers messages to flush it (reliable)
+	pSender->address = _address;
+	pSender->pSession = _pSendSession;
+	Exception ex;
+	AUTO_ERROR(_invoker.threadPool.queue(ex, pSender, _threadSend), name());
+}
+
+Buffer& FlowManager::write(UInt8 type, UInt16 size) {
+	BinaryWriter(RTMFP::InitBuffer(_pBuffer, initiatorTime, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B)).write8(type).write16(size);
+	return *_pBuffer;
 }
 
 RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 idWriterRef) {
@@ -531,8 +563,9 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	Packet& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
 	Packet& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
 	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce.data(), initiatorNonce.size(), BIN responderNonce.data(), responderNonce.size(), requestKey, responseKey);
-	_pDecoder.reset(new RTMFPEngine(_responder ? requestKey : responseKey, RTMFPEngine::DECRYPT));
-	_pEncoder.reset(new RTMFPEngine(_responder ? responseKey : requestKey, RTMFPEngine::ENCRYPT));
+	_pDecoder.reset(new RTMFP::Engine(_responder ? requestKey : responseKey));
+	_pEncoder.reset(new RTMFP::Engine(_responder ? responseKey : requestKey));
+	_pSendSession.reset(new RTMFPSender::Session(farId, _pEncoder, socket(_address.family()))); // important, initialize the sender session
 
 	// Save nonces just in case we are in a NetGroup connection
 	_farNonce = _pHandshake->farNonce;
@@ -544,24 +577,22 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	return true;
 }
 
-void FlowManager::flush(bool echoTime, Mona::UInt8 marker) {
-
-	// Reset last writer pointer before flush
-	_pLastWriter = NULL;
-	BandWriter::flush(echoTime, marker);
-}
-
 void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
-	if (Logs::GetLevel() >= 7)
-		DUMP("LIBRTMFP", packet.data(), packet.size(), "Request from ", address)
-
 	BinaryReader reader(packet.data(), packet.size());
 	UInt8 marker = reader.read8();
-	_timeReceived = reader.read16();
-	_lastReceptionTime.update();
+	UInt16 time = reader.read16();
+
+	if (time != _initiatorTime) { // to avoid to use a repeating packet version
+		_initiatorTime = time;
+		initiatorTime = Time::Now() - (time*RTMFP::TIMESTAMP_SCALE);
+	}
 
 	if (address != _address) {
 		DEBUG("Session ", name(), " has change its address from ", _address, " to ", address)
+
+		// If address family change socket will change
+		if (address.family() != _address.family())
+			_pSendSession.reset(new RTMFPSender::Session(_farId, _pEncoder, socket(_address.family())));
 		_address.set(address);
 	}
 
@@ -686,4 +717,9 @@ const Packet& FlowManager::getNonce() {
 	nonceWriter.writeRandom(64); // nonce 64 random bytes
 	nonceWriter.write(EXPAND("\x03\x1A\x02\x0A\x02\x1E\x02"));
 	return _nonce.set(pBuffer);
+}
+
+void FlowManager::closeFlow(UInt64 flowId) {
+	BinaryWriter(write(0x5e, 1 + Binary::Get7BitValueSize(flowId))).write7BitLongValue(flowId).write8(0);
+	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
 }

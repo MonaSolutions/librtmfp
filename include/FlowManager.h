@@ -25,6 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPHandshaker.h"
 #include "BandWriter.h"
 #include "Mona/DiffieHellman.h"
+#include "RTMFPSender.h"
 
 // Callback typedef definitions
 typedef void(*OnStatusEvent)(const char*, const char*);
@@ -33,15 +34,14 @@ typedef void(*OnSocketError)(const char*);
 
 class Invoker;
 class RTMFPFlow;
-class RTMFPWriter;
+struct RTMFPWriter;
 class FlashListener;
 /**************************************************
 FlowManager is an abstract class used to manage 
 lists of RTMFPFlow and RTMFPWriter
 It is the base class of RTMFPSession and P2PSession
 */
-class FlowManager : public BandWriter {
-public:
+struct FlowManager : RTMFP::Output, BandWriter {
 	FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	virtual ~FlowManager();
@@ -83,18 +83,6 @@ public:
 	// Called by RTMFPWriter to know if there is already a message in queue
 	virtual bool					canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
 
-	virtual Mona::UInt32			availableToWrite();
-
-	// Write a new message with type and length in parameter
-	virtual Mona::BinaryWriter&		writeMessage(Mona::UInt8 type, Mona::UInt16 length, RTMFPWriter* pWriter = NULL);
-
-	// Flush the current packet
-	// marker is : 0B for handshake, 09 for raw request, 89 for AMF request
-	virtual void					flush(bool echoTime, Mona::UInt8 marker);
-
-	// Send the current packet
-	virtual void					flush() { flush(status >= RTMFP::CONNECTED, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B); }
-
 	// Called when we received the first handshake 70 to update the address
 	virtual bool					onPeerHandshake70(const Mona::SocketAddress& address, const Mona::Packet& farKey, const std::string& cookie);
 
@@ -125,7 +113,19 @@ public:
 	// Treat decoded message
 	virtual void				receive(const Mona::SocketAddress& address, const Mona::Packet& packet);
 
+	// Send a flow exception (message 0x5E)
+	void						closeFlow(Mona::UInt64 flowId);
+
+
+	/* Implementation of RTMFPOutput */
+	Mona::UInt32							rto() const { return Mona::Net::RTO_INIT; }
+	// Send function used by RTMFPWriter to send packet with header
+	void									send(const std::shared_ptr<RTMFPSender>& pSender);
+	virtual Mona::UInt64					queueing() const { return 0; }
+
 protected:
+
+	Mona::Buffer&				write(Mona::UInt8 type, Mona::UInt16 size);
 
 	// Handle a writer closed (to release shared pointers)
 	virtual void				handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter)=0;
@@ -223,6 +223,13 @@ private:
 	Mona::Time																	_lastPing; // Time since last ping sent
 	Mona::Time																	_lastClose; // Time since last close chunk
 	Mona::UInt16																_ping; // ping value
+
+	Mona::UInt16																_initiatorTime; // time in msec received from target
+	std::atomic<Mona::Int64>													initiatorTime; // time calculated from reception time - time received
+	std::shared_ptr<Mona::Buffer>												_pBuffer; // buffer for sending packets
+	Mona::UInt32																_farId; // far id of the session
+	std::shared_ptr<RTMFPSender::Session>										_pSendSession; // session for sending packets
+	Mona::UInt16																_threadSend; // Thread used to send last message
 
 	// writers members
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter>>						_flowWriters; // Map of writers identified by id

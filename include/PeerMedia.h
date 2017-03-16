@@ -30,7 +30,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define MAX_FRAGMENT_MAP_SIZE			1024 // TODO: check this
 
 struct P2PSession;
-class RTMFPWriter;
+struct RTMFPWriter;
 struct RTMFPGroupConfig;
 
 // Fragment instance

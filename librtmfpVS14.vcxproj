@@ -196,17 +196,14 @@
     <ClInclude Include="include\RTMFPFlow.h" />
     <ClInclude Include="include\RTMFPHandshaker.h" />
     <ClInclude Include="include\RTMFPLogger.h" />
-    <ClInclude Include="include\RTMFPMessage.h" />
     <ClInclude Include="include\RTMFPSender.h" />
     <ClInclude Include="include\RTMFPSession.h" />
-    <ClInclude Include="include\RTMFPTrigger.h" />
     <ClInclude Include="include\RTMFPWriter.h" />
     <ClInclude Include="include\StringWriter.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="sources\AMFReader.cpp" />
     <ClCompile Include="sources\AMFWriter.cpp" />
-    <ClCompile Include="sources\BandWriter.cpp" />
     <ClCompile Include="sources\DataReader.cpp" />
     <ClCompile Include="sources\FlashConnection.cpp" />
     <ClCompile Include="sources\FlashStream.cpp" />
@@ -224,12 +221,10 @@
     <ClCompile Include="sources\Publisher.cpp" />
     <ClCompile Include="sources\ReferableReader.cpp" />
     <ClCompile Include="sources\RTMFP.cpp" />
-    <ClCompile Include="sources\RTMFPDecoder.cpp" />
     <ClCompile Include="sources\RTMFPFlow.cpp" />
     <ClCompile Include="sources\RTMFPHandshaker.cpp" />
     <ClCompile Include="sources\RTMFPSender.cpp" />
     <ClCompile Include="sources\RTMFPSession.cpp" />
-    <ClCompile Include="sources\RTMFPTrigger.cpp" />
     <ClCompile Include="sources\RTMFPWriter.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

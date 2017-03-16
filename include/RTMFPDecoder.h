@@ -35,12 +35,17 @@ struct RTMFPDecoder : Mona::Runner, virtual Mona::Object{
 	};
 	typedef Mona::Event<void(Decoded& decoded)> ON(Decoded);
 
-	RTMFPDecoder(Mona::UInt32 id, const Mona::SocketAddress& address, const std::shared_ptr<RTMFPEngine>& pDecoder, std::shared_ptr<Mona::Buffer>& pBuffer, const Mona::Handler& handler) : 
+	RTMFPDecoder(Mona::UInt32 id, const Mona::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pDecoder, std::shared_ptr<Mona::Buffer>& pBuffer, const Mona::Handler& handler) :
 		_handler(handler), _idSession(id), _address(address), _pBuffer(std::move(pBuffer)), Mona::Runner("RTMFPDecoder"), _pDecoder(pDecoder) {}
 
 private:
-	bool run(Mona::Exception& ex);
-	std::shared_ptr<RTMFPEngine>	_pDecoder;
+	bool run(Mona::Exception& ex) {
+		bool decoded;
+		if (decoded = _pDecoder->decode(ex, *_pBuffer, _address))
+			_handler.queue(onDecoded, _idSession, _address, _pBuffer);
+		return decoded;
+	}
+	std::shared_ptr<RTMFP::Engine>	_pDecoder;
 	std::shared_ptr<Mona::Buffer>	_pBuffer;
 	Mona::SocketAddress				_address;
 	const Mona::Handler&			_handler;

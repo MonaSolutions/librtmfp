@@ -27,7 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-RTMFPHandshaker::RTMFPHandshaker(Invoker& invoker, RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), BandWriter(invoker) {
+RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker") {
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
@@ -43,14 +43,9 @@ void RTMFPHandshaker::close() {
 void RTMFPHandshaker::receive(const SocketAddress& address, const Packet& packet) {
 
 	_address.set(address); // update address
-
-	if (Logs::GetLevel() >= 7)
-		DUMP("LIBRTMFP", packet.data(), packet.size(), "Request from ", address)
-
 	BinaryReader reader(packet.data(), packet.size());
 	UInt8 marker = reader.read8();
-	_timeReceived = reader.read16();
-	_lastReceptionTime.update();
+	reader.next(2); // time received
 
 	// Handshake
 	if (marker != 0x0B) {
@@ -178,17 +173,17 @@ void RTMFPHandshaker::manage() {
 }
 
 void RTMFPHandshaker::sendHandshake30(const Binary& epd, const string& tag) {
-	// (First packets are encoded with default key)
-	BinaryWriter& writer = packet();
-	writer.next(3); // header + type and size
+	shared<Buffer> pBuffer;
+	RTMFP::InitBuffer(pBuffer, 0x0B);
+	BinaryWriter writer(*pBuffer);
 
+	writer.write8(0x30).next(2); // header type and size
 	writer.write7BitLongValue(epd.size());
 	writer.write(epd.data(), epd.size());
-
 	writer.write(tag);
 
-	BinaryWriter(BIN writer.data(), 3).write8(0x30).write16(writer.size() - 3);
-	flush(0x0B);
+	BinaryWriter(pBuffer->data() + 10, 2).write16(pBuffer->size() - 12);  // write size header
+	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(pBuffer, 0, _address)), _address);
 }
 
 void RTMFPHandshaker::handleHandshake30(BinaryReader& reader) {
@@ -228,12 +223,12 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& 
 	}	
 
 	// Write Response
-	BinaryWriter& writer = packet();
-	writer.next(3); // header + type and size
+	shared<Buffer> pBuffer;
+	RTMFP::InitBuffer(pBuffer, 0x0B);
+	BinaryWriter writer(*pBuffer);
 
-	writer.write8(16);
-	writer.write(tag);
-
+	writer.write8(0x70).next(2); // header type and size
+	writer.write8(16).write(tag);
 	writer.write8(COOKIE_SIZE);
 	writer.write(BIN pHandshake->pCookie->c_str(), COOKIE_SIZE);
 
@@ -244,8 +239,8 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& 
 	writer.write16(0x1D02); // (signature)
 	writer.write(_publicKey);
 
-	BinaryWriter(BIN writer.data(), 3).write8(0x70).write16(writer.size() - 3);
-	flush(0x0B);
+	BinaryWriter(pBuffer->data() + 10, 2).write16(pBuffer->size() - 12);  // write size header
+	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(pBuffer, 0, _address)), _address);
 	pHandshake->status = RTMFP::HANDSHAKE70;
 }
 
@@ -313,11 +308,12 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, const string& cookie) {
 
 	// Write handshake
-	BinaryWriter& writer = packet();
-	writer.next(3); // header + type and size
+	shared<Buffer> pBuffer;
+	RTMFP::InitBuffer(pBuffer, 0x0B);
+	BinaryWriter writer(*pBuffer);
 
+	writer.write8(0x38).next(2); // header type and size
 	writer.write32(pHandshake->pSession->sessionId()); // id
-
 	writer.write7BitLongValue(cookie.size());
 	writer.write(cookie); // Resend cookie
 
@@ -325,7 +321,6 @@ void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, c
 		return;
 
 	writer.write7BitLongValue(_publicKey.size() + 4);
-
 	UInt32 idPos = writer.size();
 	writer.write7BitValue(_publicKey.size() + 2);
 	writer.write16(0x1D02); // (signature)
@@ -339,8 +334,8 @@ void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, c
 	writer.write(nonce);
 	writer.write8(0x58);
 
-	BinaryWriter(BIN writer.data(), 3).write8(0x38).write16(writer.size() - 3);
-	flush(0x0B);
+	BinaryWriter(pBuffer->data() + 10, 2).write16(pBuffer->size() - 12);  // write size header
+	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(pBuffer, 0, _address)), _address);
 }
 
 
@@ -410,9 +405,11 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	FlowManager* pSession = pHandshake->pSession;
 
 	// Write Response
-	BinaryWriter& writer = packet();
-	writer.next(3); // header + type and size
+	shared<Buffer> pBuffer;
+	RTMFP::InitBuffer(pBuffer, 0x0B);
+	BinaryWriter writer(*pBuffer);
 
+	writer.write8(0x78).next(2); // header type and size
 	writer.write32(pSession->sessionId());
 	writer.write8(0x49); // nonce is 73 bytes long
 	const Packet& nonce = pSession->getNonce();
@@ -420,10 +417,8 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	writer.write8(0x58);
 
 	// Important: send this before computing encoder key because we need the default encoder
-	_farId = farId;
-	BinaryWriter(BIN writer.data(), 3).write8(0x78).write16(writer.size() - 3);
-	flush(0x0B);
-	_farId = 0; // reset far Id to default
+	BinaryWriter(pBuffer->data() + 10, 2).write16(pBuffer->size() - 12);  // write size header
+	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(pBuffer, farId, _address)), _address);
 
 	// Compute P2P keys for decryption/encryption if not already computed
 	if (pSession->status < RTMFP::HANDSHAKE78) {
@@ -471,12 +466,6 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 			sendHandshake30(pHandshake->pSession->epd(), tag);
 		}
 	});
-}
-
-void RTMFPHandshaker::flush(UInt8 marker) {
-	if (!_pSender)
-		return;
-	BandWriter::flush(false, marker);
 }
 
 const shared_ptr<Socket>& RTMFPHandshaker::socket(Mona::IPAddress::Family family) { 

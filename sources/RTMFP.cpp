@@ -73,6 +73,82 @@ void RTMFP::Pack(Buffer& buffer,UInt32 farId) {
 }
 
 
+Buffer& RTMFP::InitBuffer(shared_ptr<Buffer>& pBuffer, UInt8 marker) {
+	pBuffer.reset(new Buffer(6));
+	return BinaryWriter(*pBuffer).write8(marker).write16(RTMFP::TimeNow()).buffer();
+}
+
+Buffer& RTMFP::InitBuffer(shared_ptr<Buffer>& pBuffer, atomic<Int64>& initiatorTime, UInt8 marker) {
+	Int64 time = initiatorTime.exchange(0);
+	if (!time)
+		return InitBuffer(pBuffer, marker);
+	time = Time::Now() - time;
+	if (time>262140) // because is not convertible in RTMFP timestamp on 2 bytes, 0xFFFF*RTMFP::TIMESTAMP_SCALE = 262140
+		return InitBuffer(pBuffer, marker);
+	pBuffer.reset(new Buffer(6));
+	return BinaryWriter(*pBuffer).write8(marker + 4).write16(RTMFP::TimeNow()).write16(RTMFP::Time(time)).buffer();
+}
+
+bool RTMFP::Send(Socket& socket, const Packet& packet, const SocketAddress& address) {
+	Exception ex;
+	int sent = socket.write(ex, packet, address);
+	if (sent < 0) {
+		DEBUG(ex);
+		return false;
+	}
+	if (ex)
+		DEBUG(ex);
+	return true;
+}
+
+bool RTMFP::Engine::decode(Exception& ex, Buffer& buffer, const SocketAddress& address) {
+	static UInt8 IV[KEY_SIZE];
+	EVP_CipherInit_ex(&_context, EVP_aes_128_cbc(), NULL, _key, IV, 0);
+	int temp;
+	EVP_CipherUpdate(&_context, buffer.data(), &temp, buffer.data(), buffer.size());
+	// Check CRC
+	BinaryReader reader(buffer.data(), buffer.size());
+	UInt16 crc(reader.read16());
+	if (Crypto::ComputeChecksum(reader) != crc) {
+		ex.set<Ex::Protocol>("Bad RTMFP CRC sum computing");
+		return false;
+	}
+	buffer.clip(2);
+	if (address)
+		DUMP_REQUEST("LIBRTMFP", buffer.data(), buffer.size(), address);
+	return true;
+}
+
+shared<Buffer>& RTMFP::Engine::encode(shared_ptr<Buffer>& pBuffer, UInt32 farId, const SocketAddress& address) {
+	if (address)
+		DUMP_RESPONSE("LIBRTMFP", pBuffer->data() + 6, pBuffer->size() - 6, address);
+
+	int size = pBuffer->size();
+	if (size > RTMFP::SIZE_PACKET)
+		CRITIC("Packet exceeds 1192 RTMFP maximum size, risks to be ignored by client");
+	// paddingBytesLength=(0xffffffff-plainRequestLength+5)&0x0F
+	int temp = (0xFFFFFFFF - size + 5) & 0x0F;
+	// Padd the plain request with paddingBytesLength of value 0xff at the end
+	pBuffer->resize(size + temp);
+	memset(pBuffer->data() + size, 0xFF, temp);
+	size += temp;
+
+	UInt8* data = pBuffer->data();
+
+	// Write CRC (at the beginning of the request)
+	BinaryReader reader(data, size);
+	reader.next(6);
+	BinaryWriter(data + 4, 2).write16(Crypto::ComputeChecksum(reader));
+	// Encrypt the resulted request
+	static UInt8 IV[KEY_SIZE];
+	EVP_CipherInit_ex(&_context, EVP_aes_128_cbc(), NULL, _key, IV, 1);
+	EVP_CipherUpdate(&_context, data + 4, &temp, data + 4, size - 4);
+
+	reader.reset(4);
+	BinaryWriter(data, 4).write32(reader.read32() ^ reader.read32() ^ farId);
+	return pBuffer;
+}
+
 void RTMFP::ComputeAsymetricKeys(const Binary& sharedSecret, const UInt8* initiatorNonce,UInt32 initNonceSize, const UInt8* responderNonce, UInt32 respNonceSize, UInt8* requestKey,UInt8* responseKey) {
 
 	Crypto::HMAC::SHA256(responderNonce, respNonceSize, initiatorNonce, initNonceSize, requestKey);

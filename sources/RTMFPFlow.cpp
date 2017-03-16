@@ -49,45 +49,23 @@ RTMFPFlow::~RTMFPFlow() {
 	_completeTime.update();
 }
 
-void RTMFPFlow::close() {
-	BinaryWriter& writer = _band.writeMessage(0x5e, Binary::Get7BitValueSize(id) + 1);
-	writer.write7BitLongValue(id);
-	writer.write8(0); // finishing marker
-	_band.flush();
-}
-
-void RTMFPFlow::commit() {
-
+UInt64 RTMFPFlow::buildAck(vector<UInt64>& losts, UInt16& size) {
 	// Lost informations!
-	UInt32 size = 0;
-	vector<UInt64> losts;
-	UInt64 current=_stage;
-	UInt32 count=0;
+	UInt64 stage = _stage;
 	auto it = _fragments.begin();
-	while(it!=_fragments.end()) {
-		current = it->first-current-2;
-		size += Binary::Get7BitValueSize(current);
-		losts.emplace_back(current);
-		current = it->first;
-		while(++it!=_fragments.end() && it->first==(++current))
-			++count;
-		size += Binary::Get7BitValueSize(count);
-		losts.emplace_back(count);
-		--current;
-		count=0;
+	while (it != _fragments.end()) {
+		stage = it->first - stage - 2;
+		size += Binary::Get7BitValueSize(stage);
+		losts.emplace_back(stage); // lost count
+		UInt32 buffered(0);
+		stage = it->first;
+		while (++it != _fragments.end() && it->first == (++stage))
+			++buffered;
+		size += Binary::Get7BitValueSize(buffered);
+		losts.emplace_back(buffered);
+		--stage;
 	}
-
-	UInt32 bufferSize = _pBuffer ? ((_fragments.size()>0x3F00) ? 0 : (0x3F00 - _fragments.size())) : 0x7F;
-	BinaryWriter& ack = _band.writeMessage(0x51, Binary::Get7BitValueSize(id)+ Binary::Get7BitValueSize(bufferSize)+ Binary::Get7BitValueSize(_stage)+size);
-
-	ack.write7BitLongValue(id);
-	ack.write7BitValue(bufferSize);
-	ack.write7BitLongValue(_stage);
-
-	for(UInt64 lost : losts)
-		ack.write7BitLongValue(lost);
-
-	_band.flush();
+	return _stage;
 }
 
 void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
@@ -164,8 +142,7 @@ void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
 void RTMFPFlow::output(UInt64 flowId, UInt32& lost, const Packet& packet) {
 
 	if (!_pStream || !_pStream->process(packet, id, _writerRef, lost)) {
-		close(); // first : send an exception
-		//complete(); // do already the delete _pPacket
+		_band.closeFlow(id); // send an exception
 		return;
 	}
 }

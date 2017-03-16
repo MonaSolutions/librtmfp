@@ -42,11 +42,9 @@ public:
 
 	// Handle fragments received
 	void	input(Mona::UInt64 stage, Mona::UInt8 flags, const Mona::Packet& packet);
-	
-	// Send acknowledgment
-	void	commit();
 
-	void	close();
+	// Build acknowledgment
+	Mona::UInt64	buildAck(std::vector<Mona::UInt64>& losts, Mona::UInt16& size);
 
 	bool	consumed() { return _stageEnd && _fragments.empty() && _completeTime.isElapsed(120000); } // Wait 120s before closing the flow definetly
 

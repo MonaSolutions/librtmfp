@@ -24,10 +24,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "BandWriter.h"
 #include "RTMFP.h"
 #include "Mona/DiffieHellman.h"
+#include "Mona/SocketAddress.h"
 
 class Invoker;
 class RTMFPSession;
-class FlowManager;
+struct FlowManager;
 
 // Waiting handshake request
 struct Handshake : public virtual Mona::Object {
@@ -57,10 +58,9 @@ RTMFPHandshaker handle the socket and the map of
 socket addresses to RTMFPConnection
 It is the entry point for all IO
 */
-class RTMFPHandshaker : public BandWriter  {
-public:
+struct RTMFPHandshaker : BandWriter  {
 
-	RTMFPHandshaker(Invoker& invoker, RTMFPSession* pSession);
+	RTMFPHandshaker(RTMFPSession* pSession);
 
 	virtual ~RTMFPHandshaker();
 
@@ -86,9 +86,6 @@ public:
 
 	// Return true if the session has failed
 	virtual bool						failed();
-	
-	// Clear the packet and flush the connection
-	void								flush(Mona::UInt8 marker);
 
 	// Remove the handshake properly
 	void								removeHandshake(std::shared_ptr<Handshake> pHandshake);

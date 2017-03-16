@@ -21,12 +21,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
 #include "RTMFP.h"
-#include "RTMFPTrigger.h"
 #include "FlowManager.h"
-#include "RTMFPMessage.h"
 #include "FlashWriter.h"
+#include "RTMFPSender.h"
 #include "Mona/Logs.h"
 #include <deque>
 
@@ -39,30 +37,35 @@ It does not need an RTMFPFlow to exist but can be
 related to one.
 It manages acknowlegment and lost of packet sent
 */
-class RTMFPWriter : public FlashWriter, public virtual Mona::Object {
-public:
-	RTMFPWriter(State state,const Mona::Packet& signature, FlowManager& band, Mona::UInt64 idFlow=0);
-	RTMFPWriter(State state,const Mona::Packet& signature, FlowManager& band,std::shared_ptr<RTMFPWriter>& pThis, Mona::UInt64 idFlow=0);
-	virtual ~RTMFPWriter();
+struct RTMFPWriter : FlashWriter, virtual Mona::Object {
+	RTMFPWriter(Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt64 flowId, const Mona::Binary& signature, RTMFP::Output& output);
 
+	Mona::UInt64		queueing() const { return _output.queueing(); }
+	void		acquit(Mona::UInt64 stageAck, Mona::UInt32 lostCount);
+	bool		consumed() { return _writers.empty() && closed() && !_pSender && _pQueue.unique() && _pQueue->empty(); }
 
-	const Mona::UInt64	id;
-	const Mona::UInt64	flowId; // ID of the flow associated to
-	const Mona::Packet	signature;
+	template <typename ...Args>
+	void fail(Args&&... args) {
+		if (closed())
+			return;
+		WARN("Writer ", _pQueue->id, " has failed, ", std::forward<Args>(args)...);
+		fail();
+	}
 
-	bool				flush() { return flush(true); }
+	void				clear() { _pSender.reset(); }
+	void				flush();
 
-	bool				acknowledgment(Mona::Exception& ex, Mona::BinaryReader& reader);
-	bool				manage(Mona::Exception& ex);
-	FlashWriter::State	state() { return _state; }
-	void				clear();
-	void				close(bool abrupt);
-	bool				consumed() { return _messages.empty() && _state == CLOSED || (_state == NEAR_CLOSED && _closeTime.isElapsed(130000)); } // Wait 130s before closing the writer definetly
+	/*!
+	Close the writer, override closing(Int32 code) to execute closing code */
+	void				close(Mona::Int32 error = 0, const char* reason = NULL);
+	bool				closed() const { return _closed; }
 
-	Mona::UInt64		stage() { return _stage; }
+	Mona::BinaryWriter&	writeRaw() { return *write(AMF::TYPE_RAW); }
+	void				writePing() { write(AMF::TYPE_RAW)->write16(0x0006).write32((Mona::UInt32)Mona::Time::Now()); }
+	void				writePong(Mona::UInt32 pingTime) { write(AMF::TYPE_RAW)->write16(0x0007).write32(pingTime); }
 
-	virtual void		writeRaw(const Mona::UInt8* data,Mona::UInt32 size);
-
+	// Write raw data
+	virtual void		writeRaw(const Mona::UInt8* data, Mona::UInt32 size);
 	// Ask the server to connect to group, netGroup must be in binary format (32 bytes)
 	virtual void		writeGroupConnect(const std::string& netGroup);
 	// Init the group session with a peer, netGroup must be in hexa format (64 bytes)
@@ -78,29 +81,29 @@ public:
 	// Send a fragment
 	virtual void		writeGroupFragment(const GroupFragment& fragment);
 
-private:
-	RTMFPWriter(RTMFPWriter& writer);
-	
-	Mona::UInt32			headerSize(Mona::UInt64 stage);
-	
-	// Complete the message with the final container (header, flags, body and front) and write it
-	void					packMessage(Mona::BinaryWriter& writer,Mona::UInt64 stage,Mona::UInt8 flags,bool header, const RTMFPMessage& message, Mona::UInt32 offset, Mona::UInt16 size);
-	// Write unbuffered data if not null and flush all messages
-	bool					flush(bool full);
-	// Write again repeatable messages
-	void					raiseMessage();
-	RTMFPMessageBuffered&	createMessage();
-	AMFWriter&				write(AMF::Type type, const Mona::Packet& packet, Mona::UInt32 time=0);
+	const Mona::UInt64	id;
+	const Mona::UInt64	flowId;
+	const Mona::Packet	signature;
 
-	RTMFPTrigger				_trigger; // count the number of sended cycles for managing repeated/lost counts
-	std::deque<RTMFPMessage*>	_messages; // queue of messages to send
-	Mona::UInt64				_stage; // stage (index) of the last message sent
-	std::deque<RTMFPMessage*>	_messagesSent; // queue of messages to send back or consider lost if delay is elapsed
-	Mona::UInt64				_stageAck; // stage of the last message acknowledged by the server
-	Mona::UInt32				_lostCount; // number of lost messages
-	double						_ackCount; // number of acknowleged messages
-	Mona::UInt32				_repeatable; // number of repeatable messages waiting for acknowledgment
-	FlowManager&				_band; // RTMFP session to send messages
-	Mona::Time					_closeTime; // time since writer has been closed
+private:
+
+	void				repeatMessages(Mona::UInt32 lostCount = 0); // fragments=0 means all possible!
+	AMFWriter&			newMessage(bool reliable, const Mona::Packet& packet = Mona::Packet::Null());
+	AMFWriter&			write(AMF::Type type, Mona::UInt32 time = 0, RTMFP::DataType packetType = RTMFP::TYPE_AMF, const Mona::Packet& packet = Mona::Packet::Null(), bool reliable = true);
+
+
+	RTMFP::Output&							_output;
+	std::shared_ptr<RTMFPSender>			_pSender;
+	std::shared_ptr<RTMFPSender::Queue>		_pQueue;
+	Mona::UInt64							_stageAck;
+	Mona::UInt32							_lostCount;
+	Mona::UInt32							_repeatDelay;
+	Mona::Time								_repeatTime;
+	std::set<std::shared_ptr<RTMFPWriter>>	_writers;
+
+private:
+
+	bool						_closed;
+	Mona::UInt8					_marker;
 
 };

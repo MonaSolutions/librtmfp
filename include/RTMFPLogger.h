@@ -23,9 +23,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 class RTMFPLogger: public Mona::Logger {
 public:
-	RTMFPLogger(): _onLog(NULL), _onDump(NULL) {
-
-	}
+	RTMFPLogger(): _onLog(NULL), _onDump(NULL) {}
 
 	virtual void log(Mona::LOG_LEVEL level, const Mona::Path& file, long line, const std::string& message) {
 

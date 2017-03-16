@@ -22,7 +22,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #pragma once
 
 #include "P2PSession.h"
-#include "Mona/HostEntry.h"
+#include "Mona/UDPSocket.h"
+#include "RTMFPDecoder.h"
 #include "RTMFPHandshaker.h"
 #include "Publisher.h"
 #include <list>

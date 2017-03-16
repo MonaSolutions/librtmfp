@@ -283,7 +283,7 @@ bool P2PSession::handlePlay(const string& streamName, UInt16 streamId, UInt64 fl
 
 	// Write the stream play request to other end
 	pDataWriter->setCallbackHandle(cbHandler);
-	((shared_ptr<FlashWriter>)pDataWriter)->writeRaw().write16(0).write32(2000000 + streamId); // stream begin
+	pDataWriter->writeRaw().write16(0).write32(2000000 + streamId); // stream begin
 	pDataWriter->writeAMFStatus("NetStream.Play.Reset", "Playing and resetting " + streamName); // for entire playlist
 	pDataWriter->writeAMFStatus("NetStream.Play.Start", "Started playing " + streamName); // for item
 	AMFWriter& amf(pDataWriter->writeAMFData("|RtmpSampleAccess"));
@@ -411,12 +411,6 @@ bool P2PSession::createMediaWriter(shared_ptr<RTMFPWriter>& pWriter, UInt64 flow
 
 	pWriter = createWriter(Packet(EXPAND("\x00\x47\x52\x12")), flowIdRef);
 	return true;
-}
-
-void P2PSession::closeFlow(UInt64 id) {
-	auto itFlow = _flows.find(id);
-	if (itFlow != _flows.end())
-		itFlow->second->close();
 }
 
 void P2PSession::onConnection() {
