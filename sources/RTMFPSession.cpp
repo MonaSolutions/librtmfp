@@ -580,7 +580,7 @@ void RTMFPSession::createWaitingStreams() {
 			return;
 		}
 		_pMainStream->createStream();
-		AMFWriter& amfWriter = _pMainWriter->writeInvocation("createStream");
+		_pMainWriter->writeInvocation("createStream");
 		_pMainWriter->flush();
 		_nbCreateStreams--;
 	}

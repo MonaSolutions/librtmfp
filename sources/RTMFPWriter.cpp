@@ -140,7 +140,7 @@ AMFWriter& RTMFPWriter::write(AMF::Type type, UInt32 time, RTMFP::DataType packe
 
 void RTMFPWriter::writeGroupConnect(const string& netGroup) {
 	string tmp;
-	BinaryWriter& writer = newMessage(reliable)->write8(GroupStream::GROUP_INIT).write16(0x2115).write(String::ToHex(netGroup, tmp)); // binary string
+	newMessage(reliable)->write8(GroupStream::GROUP_INIT).write16(0x2115).write(String::ToHex(netGroup, tmp)); // binary string
 }
 
 void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const Binary& rawId) {

@@ -93,7 +93,7 @@ double NetGroup::estimatedPeersCount() {
 	TRACE("First peer (N-2) = ", itFirst->first)
 	TRACE("Last peer (N+2) = ", itLast->first)
 
-	UInt64 valFirst = 0, valLast = 0;
+	long long valFirst = 0, valLast = 0;
 	sscanf(itFirst->first.substr(0, 16).c_str(), "%llx", &valFirst);
 	sscanf(itLast->first.substr(0, 16).c_str(), "%llx", &valLast);
 

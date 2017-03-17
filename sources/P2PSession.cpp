@@ -51,7 +51,6 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		}
 
 		string streamName;
-		const UInt8* posStart = packet.current() - 1; // Record the whole packet for sending back
 
 		// Read the name
 		UInt8 sizeName = packet.read8();

@@ -254,11 +254,9 @@ void FlowManager::receive(const Packet& packet) {
 	UInt8 flags;
 	RTMFPFlow* pFlow = NULL;
 	UInt64 stage = 0;
-	UInt64 deltaNAck = 0;
 
 	BinaryReader reader(packet.data(), packet.size());
 	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF;
-	bool answer = false;
 
 	// If it is a p2p responder and it is the first message we call onConnection()
 	if (_responder && status < RTMFP::CONNECTED)
@@ -364,7 +362,7 @@ void FlowManager::receive(const Packet& packet) {
 			flags = message.read8();
 			flowId = message.read7BitLongValue();
 			stage = message.read7BitLongValue() - 1;
-			deltaNAck = message.read7BitLongValue() - 1;
+			message.read7BitLongValue(); //deltaNAck
 
 			if (status == RTMFP::FAILED)
 				break;

@@ -121,7 +121,6 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 #endif
 	{ // Encapsulate sessions!
 
-		UInt32 countClient(0);
 		onManage = ([&](UInt32 count) {
 			manage(); // client manage (script, etc..)
 			return DELAY_CONNECTIONS_MANAGER;

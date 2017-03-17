@@ -41,7 +41,7 @@ struct RTMFPDecoder : Mona::Runner, virtual Mona::Object{
 private:
 	bool run(Mona::Exception& ex) {
 		bool decoded;
-		if (decoded = _pDecoder->decode(ex, *_pBuffer, _address))
+		if ((decoded = _pDecoder->decode(ex, *_pBuffer, _address)))
 			_handler.queue(onDecoded, _idSession, _address, _pBuffer);
 		return decoded;
 	}

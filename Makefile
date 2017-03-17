@@ -21,10 +21,9 @@ OS := $(shell uname -s)
 GPP?=g++
 
 # Variables extendable
+CFLAGS+=-std=c++11 -Wall -Wno-reorder -Wno-terminate -Wno-unknown-pragmas
 ifeq ($(OS),FreeBSD)
-	CFLAGS+=-D_GLIBCXX_USE_C99 -std=c++11
-else
-	CFLAGS+=-std=c++11
+	CFLAGS+=-D_GLIBCXX_USE_C99
 endif
 override INCLUDES+=-I./../MonaBase/include/ -I./include/
 LIBDIRS+=-L./../MonaBase/lib/
