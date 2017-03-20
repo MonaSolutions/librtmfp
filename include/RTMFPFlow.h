@@ -46,7 +46,9 @@ public:
 	// Build acknowledgment
 	Mona::UInt64	buildAck(std::vector<Mona::UInt64>& losts, Mona::UInt16& size);
 
-	bool	consumed() { return _stageEnd && _fragments.empty() && _completeTime.isElapsed(120000); } // Wait 120s before closing the flow definetly
+	bool			consumed() { return _stageEnd && _fragments.empty() && _completeTime.isElapsed(120000); } // Wait 120s before closing the flow definetly
+
+	Mona::UInt32	fragmentation;
 
 private:
 	// Handle on fragment received

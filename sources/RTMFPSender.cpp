@@ -78,7 +78,7 @@ void RTMFPRepeater::run() {
 	UInt64 stage = pQueue->stageAck;
 	UInt8 sendable(RTMFP::SENDABLE_MAX);
 	for (shared<Packet>& pPacket : pQueue->sending) {
-		DEBUG("Stage ", stage + 1, " repeated");
+		DEBUG("Stage ", stage + 1, " repeated (", address, ")");
 		stage += pPacket->fragments;
 		if (pPacket->reliable) {
 			oneReliable = true;

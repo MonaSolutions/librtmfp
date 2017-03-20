@@ -26,13 +26,13 @@ using namespace std;
 using namespace Mona;
 
 RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature, FlowManager& band, const shared_ptr<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
-	_lost(0),id(id),_writerRef(idWriterRef),_stage(0),_stageEnd(0),_band(band) {
+	_lost(0),id(id),_writerRef(idWriterRef),_stage(0),_stageEnd(0),_band(band), fragmentation(0) {
 
 	DEBUG("New main flow ", id, " on connection ", _band.name())
 }
 
 RTMFPFlow::RTMFPFlow(UInt64 id,const string& signature,const shared_ptr<FlashStream>& pStream, FlowManager& band, UInt64 idWriterRef) : _pStream(pStream),
-	_lost(0),id(id),_writerRef(idWriterRef),_stage(0), _stageEnd(0),_band(band) {
+	_lost(0),id(id),_writerRef(idWriterRef),_stage(0), _stageEnd(0),_band(band), fragmentation(0) {
 
 	DEBUG("New flow ", id, " on connection ", _band.name())
 }
@@ -90,16 +90,22 @@ void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
 	}
 	if (stage>nextStage) {
 		// not following stage, bufferizes the stage
-		if (!_fragments.emplace(piecewise_construct, forward_as_tuple(stage), forward_as_tuple(flags, packet)).second)
-			DEBUG("Stage ", stage, " on flow ", id, " has already been received")
-		else if (_fragments.size()>100)
-			DEBUG("_fragments.size()=", _fragments.size());
+		if (_fragments.empty())
+			DEBUG("Wait stage ", nextStage, " lost on flow ", id, " in session ", _band.name());
+		if (_fragments.emplace(piecewise_construct, forward_as_tuple(stage), forward_as_tuple(flags, packet)).second) {
+			fragmentation += packet.size();
+			if (_fragments.size()>100)
+				DEBUG("fragments buffer increasing on flow ", id, " in session ", _band.name(), " : ", _fragments.size());
+		}
+		else
+			DEBUG("Stage ", stage, " on flow ", id, " has already been received in session ", _band.name())
 	}
 	else {
 		onFragment(nextStage++, flags, packet);
 		auto it = _fragments.begin();
 		while (it != _fragments.end() && it->first <= nextStage) {
 			onFragment(nextStage++, it->second.flags, it->second);
+			fragmentation -= it->second.size();
 			it = _fragments.erase(it);
 		}
 		if (_fragments.empty() && _stageEnd)
@@ -115,7 +121,7 @@ void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
 		if (_pBuffer) {
 			_lost += packet.size(); // this fragment abandonned
 			_lost += _pBuffer->size(); // the bufferized fragment abandonned
-			DEBUG("Fragments lost on flow ", id);
+			DEBUG("Fragments lost on flow ", id, " in session ", _band.name());
 			_pBuffer.reset();
 		}
 		return;
@@ -130,6 +136,10 @@ void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
 			output(id, _lost, packet);
 		return;
 
+	}
+	if (flags&RTMFP::MESSAGE_WITH_BEFOREPART) {
+		_lost += packet.size();
+		return; // the beginning of this message is lost, ignore it!
 	}
 	if (flags&RTMFP::MESSAGE_WITH_AFTERPART) {
 		_pBuffer.reset(new Buffer(packet.size(), packet.data()));

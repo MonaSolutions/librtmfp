@@ -608,7 +608,13 @@ void RTMFPSession::onNetConnectionSuccess() {
 	AMFWriter& amfWriter = _pMainWriter->writeInvocation("setPeerInfo", false);
 	amfWriter.amf0 = true; // Cirrus wants amf0
 
-	vector<IPAddress> addresses = IPAddress::Locals();
+	Exception ex;
+	vector<IPAddress> addresses = IPAddress::Locals(ex);
+	if (ex) {
+		WARN("Error occurs while retrieving addresses : ", ex)
+		if (addresses.empty())
+			addresses.push_back(IPAddress::Loopback());
+	}
 	SocketAddress address;
 	for (auto it : addresses) {
 		if (it.isLoopback() || it.isLinkLocal())

@@ -417,7 +417,10 @@ void FlowManager::receive(const Packet& packet) {
 			// Process request
 			if (pFlow && (status != RTMFP::FAILED))
 				pFlow->input(stage, flags, Packet(packet, message.current(), message.available()));
-
+			if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
+				ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested")
+				close(true);
+			}
 			break;
 		}
 		default:
@@ -443,16 +446,13 @@ void FlowManager::receive(const Packet& packet) {
 					removeFlow(pFlow);
 				pFlow = NULL;
 			}
-			else {
-				// commit everything (flow unknown)
-				BinaryWriter(write(0x51, 1 + Binary::Get7BitValueSize(flowId) + Binary::Get7BitValueSize(stage)))
-					.write7BitLongValue(flowId).write7BitValue(0).write7BitLongValue(stage);
-			}
-			stage = 0;
+			else // commit everything (flow unknown)
+				BinaryWriter(write(0x51, 1 + Binary::Get7BitValueSize(flowId) + Binary::Get7BitValueSize(stage))).write7BitLongValue(flowId).write7BitValue(0).write7BitLongValue(stage);
 			if (_pBuffer) {
 				RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
 				_pBuffer.reset();
 			}
+			stage = 0;
 		}
 	}
 }
