@@ -415,12 +415,14 @@ void FlowManager::receive(const Packet& packet) {
 				flags = message.read8();
 
 			// Process request
-			if (pFlow && (status != RTMFP::FAILED))
+			if (pFlow && (status != RTMFP::FAILED)) {
 				pFlow->input(stage, flags, Packet(packet, message.current(), message.available()));
-			if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
-				ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested")
-				close(true);
-				return;
+
+				if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
+					ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested")
+					close(false);
+					return;
+				}
 			}
 			break;
 		}
