@@ -36,7 +36,7 @@ using namespace std;
 
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
-RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId("\x21\x0f", PEER_ID_SIZE + 2),
+RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId(PEER_ID_SIZE + 2, '\0'),
 	_handshaker(this), _nbCreateStreams(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), _threadRcv(0),
 	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _pSocket(new UDPSocket(_invoker.sockets)), _pSocketIPV6(new UDPSocket(_invoker.sockets)) {
 
@@ -140,8 +140,15 @@ void RTMFPSession::closeSession() {
 		close(true);
 	}
 
-	_pSocket.reset();
-	_pSocketIPV6.reset();
+	if (_pSocket) {
+		_pSocket->close();
+		_pSocket.reset();
+	}
+
+	if (_pSocketIPV6) {
+		_pSocketIPV6->close();
+		_pSocketIPV6.reset();
+	}
 }
 
 void RTMFPSession::close(bool abrupt) {
@@ -738,6 +745,8 @@ void RTMFPSession::buildPeerID(const UInt8* data, UInt32 size) {
 		return;
 
 	// Peer ID built, we save it
+	BinaryWriter writer(BIN _rawId.data(), _rawId.size());
+	writer.write("\x21\x0f");
 	EVP_Digest(data, size, BIN(_rawId.data() + 2), NULL, EVP_sha256(), NULL);
 	String::Assign(_peerTxtId, String::Hex(BIN _rawId.data() + 2, PEER_ID_SIZE));
 	INFO("Peer ID : \n", _peerTxtId)

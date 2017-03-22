@@ -36,7 +36,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02000005	// (2.0.5)
+#define RTMFP_LIB_VERSION	0x02000006	// (2.0.6)
 
 #define RTMFP_DEFAULT_KEY	(Mona::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10

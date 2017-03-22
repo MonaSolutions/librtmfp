@@ -44,7 +44,9 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 	switch(type) {
 
 		case GroupStream::GROUP_MEMBER: { // RTMFPSession event (TODO: see if it must be moved in FlashStream)
-			string rawId("\x21\x0F", PEER_ID_SIZE + 2), id;
+			string rawId(PEER_ID_SIZE + 2, '\0'), id;
+			BinaryWriter writer(BIN rawId.data(), rawId.size());
+			writer.write("\x21\x0F");
 			reader.read(PEER_ID_SIZE, STR (rawId.data() + 2));
 			String::Append(id, String::Hex(BIN rawId.data() + 2, PEER_ID_SIZE));
 			onNewPeer(rawId, id);

@@ -111,7 +111,7 @@ bool RTMFP::Engine::decode(Exception& ex, Buffer& buffer, const SocketAddress& a
 	BinaryReader reader(buffer.data(), buffer.size());
 	UInt16 crc(reader.read16());
 	if (Crypto::ComputeChecksum(reader) != crc) {
-		ex.set<Ex::Protocol>("Bad RTMFP CRC sum computing");
+		ex.set<Ex::Protocol>("Bad RTMFP CRC sum computing from ", address);
 		return false;
 	}
 	buffer.clip(2);
