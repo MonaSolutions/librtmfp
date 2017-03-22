@@ -420,6 +420,7 @@ void FlowManager::receive(const Packet& packet) {
 			if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
 				ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested")
 				close(true);
+				return;
 			}
 			break;
 		}

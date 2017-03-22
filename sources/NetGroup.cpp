@@ -31,6 +31,9 @@ using namespace std;
 #if defined(_WIN32)
 	#define sscanf sscanf_s
 #endif
+#if !defined(_INC_MATH) // On Android gnu_shared library does not include math.h
+	#define log2(VARIABLE) (log(VARIABLE) / log(2))
+#endif
 
 // Peer instance in the heard list
 class GroupNode : public virtual Object {
