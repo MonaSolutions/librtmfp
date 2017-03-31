@@ -153,11 +153,11 @@ public:
 	Mona::Signal					p2pPlaySignal; // signal to wait p2p publish
 	Mona::Signal					publishSignal; // signal to wait publication
 	Mona::Signal					readSignal; // signal to wait for asynchronous data
-	bool							p2pPublishReady; // true if the p2p publisher is ready
-	bool							p2pPlayReady; // true if the p2p player is ready
-	bool							publishReady; // true if the publisher is ready
-	bool							connectReady; // Ready if we have received the NetStream.Connect.Success event
-	bool							dataAvailable; // true if there is asynchronous data available
+	std::atomic<bool>				p2pPublishReady; // true if the p2p publisher is ready
+	std::atomic<bool>				p2pPlayReady; // true if the p2p player is ready
+	std::atomic<bool>				publishReady; // true if the publisher is ready
+	std::atomic<bool>				connectReady; // Ready if we have received the NetStream.Connect.Success event
+	std::atomic<bool>				dataAvailable; // true if there is asynchronous data available
 
 	// Publishing structures
 	struct MediaPacket : virtual Mona::Object, Mona::Packet {

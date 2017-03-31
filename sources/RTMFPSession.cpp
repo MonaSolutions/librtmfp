@@ -77,6 +77,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		SocketAddress address;
 		DEBUG("Socket error : ", ex)
 	};
+	//_pSocketIPV6->onFlush = _pSocket->onFlush = [this]() {};
 	_pMainStream->onStreamCreated = [this](UInt16 idStream) {
 		return handleStreamCreated(idStream);
 	};
@@ -227,6 +228,7 @@ void RTMFPSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
 
 bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 
+	lock_guard<mutex> lock(_mutexConnections);
 	_url = url;
 	_host = host;
 
@@ -242,7 +244,6 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 	else
 		port = "1935";
 
-	lock_guard<mutex> lock(_mutexConnections);
 	DEBUG("Trying to resolve the host address...")
 	HostEntry hostEntry;
 	SocketAddress address;
@@ -351,7 +352,10 @@ void RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* param
 
 bool RTMFPSession::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
 	
-	// TODO: protect this
+	lock_guard<mutex> lock(_mutexConnections);
+	if (status >= RTMFP::NEAR_CLOSED)
+		return false; // to stop the parent loop
+
 	bool res(true);
 	auto itPeer = _mapPeersById.find(peerId);
 	if (itPeer != _mapPeersById.end() && (!(res = itPeer->second->readAsync(buf, size, nbRead)) || nbRead > 0))
@@ -363,9 +367,11 @@ bool RTMFPSession::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead
 }
 
 void RTMFPSession::handleDataAvailable(bool isAvailable) {
-	dataAvailable = isAvailable; 
-	if (dataAvailable)
-		readSignal.set(); // notify the client that data is available
+	if (dataAvailable != isAvailable) {
+		dataAvailable = isAvailable;
+		if (dataAvailable)
+			readSignal.set(); // notify the client that data is available
+	}
 }
 
 bool RTMFPSession::write(const UInt8* data, UInt32 size, int& pos) {
@@ -375,7 +381,7 @@ bool RTMFPSession::write(const UInt8* data, UInt32 size, int& pos) {
 			DEBUG("Can't write data because NetStream is not published")
 			return true;
 		}
-		if (status == RTMFP::FAILED) {
+		if (status >= RTMFP::NEAR_CLOSED) {
 			pos = -1;
 			return false; // to stop the parent loop
 		}
@@ -501,9 +507,9 @@ bool RTMFPSession::handleStreamCreated(UInt16 idStream) {
 }
 
 void RTMFPSession::manage() {
+	lock_guard<mutex> lock(_mutexConnections);
 	if (!_pMainStream)
 		return;
-	lock_guard<mutex> lock(_mutexConnections);
 
 	// Release closed P2P connections
 	auto itPeer = _mapPeersById.begin();

@@ -52,7 +52,7 @@ struct GroupMedia : virtual Mona::Object {
 
 	GroupListener::OnMedia						onMedia; // Create a new fragment from a media packet
 
-	Mona::UInt32								id; // id of the GroupMedia (incremental)
+	const Mona::UInt32								id; // id of the GroupMedia (incremental)
 	std::shared_ptr<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream
 	
 private:
@@ -64,7 +64,7 @@ private:
 	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt8 splitedNumber, Mona::UInt8 mediaType, Mona::UInt32 time, const Mona::Packet& packet);
 
 	// Push an arriving fragment to the peers and write it into the output file (recursive function)
-	bool						pushFragment(std::map<Mona::UInt64, GroupFragment>::iterator& itFragment);
+	void						pushFragment(std::map<Mona::UInt64, GroupFragment>::iterator& itFragment);
 
 	// Update the fragment map
 	// Return 0 if there is no fragments, otherwise the last fragment number

@@ -33,7 +33,7 @@ using namespace std;
 
 FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 	_pLastWriter(NULL), _firstRead(true), _invoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2),
+	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2),
 	_initiatorTime(0), initiatorTime(0), _farId(0), _threadSend(0) {
 
 	_pMainStream.reset(new FlashConnection());
@@ -82,14 +82,11 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 			{
 				lock_guard<recursive_mutex> lock(_readMutex); // TODO: use the 'stream' parameter
 				_mediaPackets.emplace_back(new RTMFPMediaPacket(packet, time - _timeStart, type));
+				// TODO: do not emplace if there is too much packets (when the read process is slower than packet reception), memory can explode here!
 			}
 			handleDataAvailable(true);
 		}
 	};
-	/*TODO: onError = [this](const Exception& ex) {
-		string buffer;
-		_pOnSocketError(String::Format(buffer, ex.error(), " on connection ", name()).c_str());
-	};*/
 
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
 }

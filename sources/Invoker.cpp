@@ -30,6 +30,9 @@ using namespace std;
 /** Invoker **/
 
 Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _interruptArg(NULL), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp) {
+	DEBUG("Socket receiving buffer size of ", Net::GetRecvBufferSize(), " bytes");
+	DEBUG("Socket sending buffer size of ", Net::GetSendBufferSize(), " bytes");
+	DEBUG(threadPool.threads(), " threads in server threadPool");
 	if (createLogger) {
 		_logger.reset(new RTMFPLogger());
 		Logs::SetLogger(*_logger);
@@ -41,7 +44,8 @@ Invoker::~Invoker() {
 	TRACE("Closing global invoker...")
 
 	// terminate the tasks
-	stop();
+	if (running())
+		stop();
 }
 
 // Start the socket manager if not started
@@ -115,7 +119,7 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	Buffer::SetAllocator(bufferPool);
 
 	Timer::OnTimer onManage;
-	
+
 #if !defined(_DEBUG)
 	try
 #endif

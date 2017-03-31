@@ -373,9 +373,11 @@ UInt64 GroupMedia::updateFragmentMap() {
 	return lastFragment;
 }
 
-bool GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) {
+void GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) {
 	if (itFragment == _fragments.end() || !_firstPullReceived)
-		return false;
+		return;
+
+	DEBUG("GroupMedia ", id, " - pushFragment ", itFragment->first, " ; marker : ", itFragment->second.marker)
 
 	// Stand alone fragment (special case : sometime Flash send media END without splitted fragments)
 	if (itFragment->second.marker == GroupStream::GROUP_MEDIA_DATA || (itFragment->second.marker == GroupStream::GROUP_MEDIA_END && itFragment->first == _fragmentCounter + 1)) {
@@ -387,66 +389,59 @@ bool GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) 
 			if (itFragment->second.type == AMF::TYPE_AUDIO || itFragment->second.type == AMF::TYPE_VIDEO)
 				onGroupPacket(itFragment->second.time, itFragment->second, 0, itFragment->second.type);
 
-			return pushFragment(++itFragment); // Go to next fragment
+			pushFragment(++itFragment); // Go to next fragment
 		}
+		return;
 	}
-	// Splitted packet
-	else  {
-		if (_fragmentCounter == 0) {
-			// Delete first splitted fragments
-			if (itFragment->second.marker != GroupStream::GROUP_MEDIA_START) {
-				TRACE("GroupMedia ", id, " - Ignoring splitted fragment ", itFragment->first, ", we are waiting for a starting fragment")
-				_fragments.erase(itFragment);
-				return false;
-			}
-			else {
-				TRACE("GroupMedia ", id, " - First fragment is a Start Media Fragment")
-				_fragmentCounter = itFragment->first-1; // -1 to be catched by the next fragment condition 
-			}
+	// else Splitted fragment
+	
+	// First fragment? Search for a start fragment
+	if (_fragmentCounter == 0) {
+		// Delete first splitted fragments
+		if (itFragment->second.marker != GroupStream::GROUP_MEDIA_START) {
+			TRACE("GroupMedia ", id, " - Ignoring splitted fragment ", itFragment->first, ", we are waiting for a starting fragment")
+			_fragments.erase(itFragment);
+			return;
 		}
+		TRACE("GroupMedia ", id, " - First fragment is a Start Media Fragment")
+		_fragmentCounter = itFragment->first-1; // -1 to be catched by the next fragment condition 
+	}
 
-		// Search the start fragment
-		auto itStart = itFragment;
-		while (itStart->second.marker != GroupStream::GROUP_MEDIA_START) {
-			itStart = _fragments.find(itStart->first - 1);
-			if (itStart == _fragments.end())
-				return false; // ignore these fragments if there is a hole
-		}
+	// Search the start fragment
+	auto itStart = itFragment;
+	while (itStart->second.marker != GroupStream::GROUP_MEDIA_START) {
+		itStart = _fragments.find(itStart->first - 1);
+		if (itStart == _fragments.end())
+			return; // ignore these fragments if there is a hole
+	}
 		
-		// Check if all splitted fragments are present
-		UInt8 nbFragments = itStart->second.splittedId+1;
-		UInt32 payloadSize = itStart->second.size();
-		auto itEnd = itStart;
-		for (int i = 1; i < nbFragments; ++i) {
-			itEnd = _fragments.find(itStart->first + i);
-			if (itEnd == _fragments.end())
-				return false; // ignore these fragments if there is a hole
-
-			payloadSize += itEnd->second.size();
-		}
-
-		// Is it the next fragment?
-		if (itStart->first == _fragmentCounter + 1) {
-			_fragmentCounter = itEnd->first;
-
-			// Buffer the fragments and write to file if audio/video
-			if (itStart->second.type == AMF::TYPE_AUDIO || itStart->second.type == AMF::TYPE_VIDEO) {
-				shared_ptr<Buffer>	pPayload(new Buffer(itStart->second.size(), itStart->second.data()));
-				BinaryWriter writer(*pPayload);
-
-				for (auto itCurrent = itStart; itCurrent++ != itEnd;) {
-					writer.write(itCurrent->second.data(), itCurrent->second.size());
-				} 
-
-				TRACE("GroupMedia ", id, " - Pushing splitted packet ", itStart->first, " - ", nbFragments, " fragments for a total size of ", payloadSize)
-				onGroupPacket(itStart->second.time, Packet(pPayload), 0, itStart->second.type);
-			}
-
-			return pushFragment(++itEnd);
-		}
+	// Check if all splitted fragments are present
+	UInt8 nbFragments = itStart->second.splittedId+1;
+	auto itEnd = itStart;
+	for (int i = 1; i < nbFragments; ++i) {
+		itEnd = _fragments.find(itStart->first + i);
+		if (itEnd == _fragments.end())
+			return; // ignore these fragments if there is a hole
 	}
 
-	return false;
+	// Is it the next fragment?
+	if (itStart->first == _fragmentCounter + 1) {
+		_fragmentCounter = itEnd->first;
+
+		// Buffer the fragments and write to file if audio/video
+		if (itStart->second.type == AMF::TYPE_AUDIO || itStart->second.type == AMF::TYPE_VIDEO) {
+			shared_ptr<Buffer>	pPayload(new Buffer(itStart->second.size(), itStart->second.data()));
+			BinaryWriter writer(*pPayload);
+
+			for (auto itCurrent = itStart; itCurrent++ != itEnd; )
+				writer.write(itCurrent->second.data(), itCurrent->second.size());
+
+			TRACE("GroupMedia ", id, " - Pushing splitted packet ", itStart->first, " - ", nbFragments, " fragments for a total size of ", writer.size())
+			onGroupPacket(itStart->second.time, Packet(pPayload), 0, itStart->second.type);
+		}
+
+		pushFragment(++itEnd);
+	}
 }
 
 void GroupMedia::sendPushRequests() {
