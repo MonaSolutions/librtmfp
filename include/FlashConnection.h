@@ -30,7 +30,7 @@ It creates FlashStream (NetStream) and handle messages on the
 connection
 */
 struct FlashConnection : FlashStream, virtual Mona::Object {
-	typedef Mona::Event<bool(Mona::UInt16 idStream)> ON(StreamCreated);
+	typedef Mona::Event<bool(Mona::UInt16 idStream, Mona::UInt16& idMedia)> ON(StreamCreated);
 
 	FlashConnection();
 	virtual ~FlashConnection();
@@ -42,8 +42,6 @@ struct FlashConnection : FlashStream, virtual Mona::Object {
 	FlashStream* addStream(Mona::UInt16 id, std::shared_ptr<FlashStream>& pStream, bool group=false);
 
 	FlashStream* getStream(Mona::UInt16 id, std::shared_ptr<FlashStream>& pStream);
-
-	void flush() {for(auto& it : _streams) it.second->flush(); }
 
 	// Send the stream creation request (before play or publish)
 	void createStream(); // TODO: refactorize the stream creation

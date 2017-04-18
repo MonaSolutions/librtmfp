@@ -30,13 +30,20 @@ GroupMedia is the class that manage a stream
 from a NetGroup connection
 */
 struct GroupMedia : virtual Mona::Object {
-	typedef Mona::Event<void(Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type)> ON(GroupPacket); // called when receiving a new packet
+	typedef Mona::Event<bool(Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type)> ON(GroupPacket); // called when a new packet is ready (complete & ordered)
 	
 	GroupMedia(const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters);
 	virtual ~GroupMedia();
 
+	// Close the Group Media (when receiving onClosedMedia notification)
+	void						close(Mona::UInt64 lastFragment);
+
+	// Close the publisher Group Media (send last end fragments)
+	void						closePublisher();
+
 	// Regularly called to send the fragments maps, the pull requests and the push requests
-	void						manage();
+	// return : False if the GroupMedia must be deleted (no activity since 5min), True otherwise
+	bool						manage();
 
 	// Add the peer to map of peer, return false if the peer is already known
 	void						addPeer(const std::string& peerId, std::shared_ptr<PeerMedia>& pPeer);
@@ -104,17 +111,20 @@ private:
 	Mona::Time													_lastPushUpdate; // last Play Push calculation
 	Mona::Time													_lastPullUpdate; // last Play Pull calculation
 	Mona::Time													_lastFragmentsMap; // last Fragments Map Message calculation
+	Mona::Time													_lastFragment; // last time we received a fragment
+	bool														_pullPaused; // True if no fragments have been received since fetch period
 
 	std::map<Mona::UInt64, GroupFragment>						_fragments;
-	std::map<Mona::UInt32, Mona::UInt64>						_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
+	std::map<Mona::Int64, Mona::UInt64>							_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
 	Mona::UInt64												_fragmentCounter; // Current fragment counter of writed fragments (fragments sent to application)
 
 	Mona::Buffer												_fragmentsMapBuffer; // General buffer for fragments map
 	static Mona::UInt32											GroupMediaCounter; // static counter of GroupMedia for id assignment
 
-	MAP_PEERS_INFO_TYPE											_mapPeers; // map of peers subscribed to this media stream
+	Mona::UInt64												_endFragment; // last fragment number, if > 0 the GroupMedia is closed
 
-	// map of peers iterators
+	// map of peers & iterators
+	MAP_PEERS_INFO_TYPE											_mapPeers; // map of peers subscribed to this media stream
 	MAP_PEERS_INFO_ITERATOR_TYPE								_itFragmentsPeer; // Current peer for fragments map requests
 	MAP_PEERS_INFO_ITERATOR_TYPE								_itPushPeer; // Current peer for push request
 	MAP_PEERS_INFO_ITERATOR_TYPE								_itPullPeer; // Current peer for pull request

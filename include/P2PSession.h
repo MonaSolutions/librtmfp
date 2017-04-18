@@ -35,17 +35,18 @@ with another peer
 struct P2PSession : FlowManager, virtual Mona::Object {
 	typedef Mona::Event<void(P2PSession*, Mona::BinaryReader&, bool)>																		ON(PeerGroupReport); // called when receiving a Group Report message from the peer
 	typedef Mona::Event<bool(const std::string&, std::shared_ptr<PeerMedia>&, const std::string&, const std::string&, Mona::BinaryReader&)> ON(NewMedia); // called when a new PeerMedia is called (new stream available for the peer)
+	typedef Mona::Event<void(const std::string&, Mona::UInt64)>																				ON(ClosedMedia); // called when the peer publisher close the GroupMedia
 	typedef Mona::Event<void(P2PSession*)>																									ON(PeerGroupBegin); // called when receiving a Group Begin message from the peer
 	typedef Mona::Event<void(const std::string&)>																							ON(PeerClose); // called when the peer is closing
 	typedef Mona::Event<bool(const std::string&)>																							ON(PeerGroupAskClose); // called when a peer ask to close its session
 
-	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent,
-		const Mona::SocketAddress& host, bool responder, bool group);
+	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, 
+		const Mona::SocketAddress& host, bool responder, bool group, Mona::UInt16 mediaId=0);
 
 	virtual ~P2PSession();
 
-	// Add a command to the main stream (play/publish/netgroup)
-	virtual void					addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
+	// Set the stream name to send play command when connected
+	void setStreamName(const char* streamName) { _streamName = streamName; }
 
 	// Set the tag used for this connection (responder mode)
 	void							setTag(const std::string& tag) { _tag = tag; }
@@ -136,9 +137,6 @@ protected:
 	// Handle a Writer close message (type 5E)
 	virtual void					handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
 
-	// Handle data available or not event (asynchronous read only)
-	virtual void					handleDataAvailable(bool isAvailable);
-
 	// Called when we are connected to the peer/server
 	virtual void					onConnection();
 
@@ -154,6 +152,7 @@ private:
 	RTMFPSession*											_parent; // RTMFPConnection related to
 	PEER_LIST_ADDRESS_TYPE									_knownAddresses; // list of known addresses of the peer/server
 	std::string												_streamName; // playing stream name
+	Mona::UInt16											_peerMediaId; // playing Id (if P2P direct player)
 
 	// Group members
 	std::shared_ptr<Mona::Buffer>							_groupConnectKey; // Encrypted key used to connect to the peer

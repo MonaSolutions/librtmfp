@@ -145,6 +145,7 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 		FATAL("Invoker, unknown error");
 	}
 #endif
+	Thread::stop(); // to set running() to false (and not more allows to handler to queue Runner)
 	// Stop onManage (useless now)
 	_timer.set(onManage, 0);
 

@@ -37,8 +37,8 @@ using namespace std;
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId(PEER_ID_SIZE + 2, '\0'),
-	_handshaker(this), _nbCreateStreams(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), _threadRcv(0),
-	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent), _pSocket(new UDPSocket(_invoker.sockets)), _pSocketIPV6(new UDPSocket(_invoker.sockets)) {
+	_handshaker(this), _isWaitingStream(false), _mediaCount(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), _threadRcv(0),
+	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pSocket(new UDPSocket(_invoker.sockets)), _pSocketIPV6(new UDPSocket(_invoker.sockets)) {
 
 	_pSocketIPV6->onPacket = _pSocket->onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
 		if (status > RTMFP::NEAR_CLOSED)
@@ -78,11 +78,84 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		DEBUG("Socket error : ", ex)
 	};
 	//_pSocketIPV6->onFlush = _pSocket->onFlush = [this]() {};
-	_pMainStream->onStreamCreated = [this](UInt16 idStream) {
-		return handleStreamCreated(idStream);
+	_pMainStream->onStreamCreated = [this](UInt16 idStream, UInt16& idMedia) {
+		// Get command
+		if (_waitingStreams.empty()) {
+			WARN("Stream created without command")
+			return false;
+		}
+		const StreamCommand& command = _waitingStreams.front();
+		DEBUG("Stream ", idStream, " created for Media ", command.idMedia, ", sending command...")
+
+		// Manage publisher if it is a publish command
+		if (command.publisher && _pPublisher) {
+			ERROR("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
+			_waitingStreams.pop();
+			return false;
+		}
+
+		// Stream created, now we create the writer before sending another request
+		shared_ptr<Buffer> pSignature(new Buffer(4, "\x00\x54\x43\x04"));
+		BinaryWriter(*pSignature).write7BitValue(idStream);
+		shared_ptr<RTMFPWriter> pWriter = createWriter(Packet(pSignature), _mainFlowId);
+
+		// Send command and remove command type from waiting commands
+		if (command.publisher) {
+			AMFWriter& amfWriter = pWriter->writeInvocation("publish", true);
+			amfWriter.writeString(command.value.c_str(), command.value.size());
+			pWriter->flush();
+			// Create the publisher
+			_pPublisher.reset(new Publisher(command.value, _invoker, command.audioReliable, command.videoReliable, false));
+		}
+		else {
+			AMFWriter& amfWriter = pWriter->writeInvocation("play", true);
+			amfWriter.amf0 = true; // Important for p2p unicast play
+			amfWriter.writeString(command.value.c_str(), command.value.size());
+			pWriter->flush();
+		}
+		idMedia = command.idMedia;
+		_waitingStreams.pop();
+		return true;
 	};
 	_pMainStream->onNewPeer = [this](const string& rawId, const string& peerId) {
 		handleNewGroupPeer(rawId, peerId);
+	};
+	onMediaPlay = _pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
+		auto itMedia = _mapPlayers.find(mediaId);
+		if (itMedia == _mapPlayers.end()) {
+			WARN("Unable to find media ", mediaId) // implementation error
+			return;
+		}
+		MediaPlayer& media = itMedia->second;
+
+		if (!media.codecInfosRead) {
+			if (type == AMF::TYPE_VIDEO && RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
+				INFO("Video codec infos found, starting to read")
+				media.codecInfosRead = true;
+			}
+			else {
+				if (type == AMF::TYPE_VIDEO)
+					DEBUG("Video frame dropped to wait first key frame");
+				return;
+			}
+		}
+
+		if (media.firstMedia) {
+			media.firstMedia = false;
+			media.timeStart = time; // to set to 0 the first packets
+		}
+		else if (time < media.timeStart) {
+			DEBUG("Packet ignored because it is older (", time, ") than start time (", media.timeStart, ")")
+			return;
+		}
+
+		if (_pOnMedia) // Synchronous read
+			_pOnMedia(mediaId, time - media.timeStart, STR packet.data(), packet.size(), type);
+		else { // Asynchronous read
+			media.mediaPackets.emplace_back(new MediaPlayer::RTMFPMediaPacket(packet, time - media.timeStart, type));
+			// TODO: do not emplace if there is too much packets (when the read process is slower than packet reception), memory can explode here!
+			handleDataAvailable(true);
+		}
 	};
 	onPushAudio = [this](MediaPacket& packet) { _pPublisher->pushAudio(packet.time, packet); };
 	onPushVideo = [this](MediaPacket& packet) { _pPublisher->pushVideo(packet.time, packet); };
@@ -174,8 +247,11 @@ void RTMFPSession::close(bool abrupt) {
 
 	if (abrupt) {
 		// Close the NetGroup
-		if (_group)
+		if (_group) {
+			_group->onMedia = nullptr;
+			_group->onStatus = nullptr;
 			_group->close();
+		}
 
 		// Close peers
 		for (auto it : _mapPeersById)
@@ -264,44 +340,49 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 	return true;
 }
 
-void RTMFPSession::connect2Peer(const char* peerId, const char* streamName) {
+UInt16 RTMFPSession::connect2Peer(const char* peerId, const char* streamName) {
 	lock_guard<mutex> lock(_mutexConnections);
 	PEER_LIST_ADDRESS_TYPE emptyAddresses;
 	SocketAddress emptyHost; // We don't know the peer's host address
-	connect2Peer(peerId, streamName, emptyAddresses, emptyHost);
+	if (connect2Peer(peerId, streamName, emptyAddresses, emptyHost, _mediaCount + 1)) {
+		_mapPlayers.emplace(piecewise_construct, forward_as_tuple(++_mediaCount), forward_as_tuple());
+		return _mediaCount;
+	}
+	return 0;
 }
 
-void RTMFPSession::connect2Peer(const string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress) {
+bool RTMFPSession::connect2Peer(const string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, UInt16 mediaId) {
 	if (status != RTMFP::CONNECTED) {
 		ERROR("Cannot start a P2P connection before being connected to the server")
-		return;
+		return false;
 	}
 
 	auto itPeer = _mapPeersById.lower_bound(peerId);
 	if (itPeer != _mapPeersById.end() && itPeer->first == peerId) {
 		DEBUG("Unable to create the P2P session to ", peerId, ", we are already connecting/connected to it")
-		return;
+		return false;
 	}
 
 	DEBUG("Connecting to peer ", peerId, "...")
 	itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId), 
-		forward_as_tuple(new P2PSession(this, peerId, _invoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, hostAddress, false, (bool)_group)));
+		forward_as_tuple(new P2PSession(this, peerId, _invoker, _pOnSocketError, _pOnStatusEvent, hostAddress, false, (bool)_group, mediaId)));
 	_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 	shared_ptr<P2PSession> pPeer = itPeer->second;
 	// P2P unicast : add command play to send when connected
 	if (streamName) 
-		pPeer->addCommand(NETSTREAM_PLAY, streamName);
+		pPeer->setStreamName(streamName);
 
 	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress? hostAddress : _address, addresses, (FlowManager*)itPeer->second.get(), false, true);
+	return true;
 }
 
-void RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters) {
+UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters) {
 	INFO("Connecting to group ", parameters->netGroup, "...")
 
 	if (strncmp("G:", parameters->netGroup, 2) != 0) {
 		ERROR("Group ID not well formated, it must begin with 'G:'")
-		return;
+		return 0;
 	}
 
 	string value;
@@ -331,7 +412,7 @@ void RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* param
 	// Keep the meanful part of the group ID (before end marker)
 	if (!endMarker) {
 		ERROR("Group ID not well formated")
-		return;
+		return 0;
 	}
 	string groupTxt(parameters->netGroup, endMarker);
 
@@ -345,24 +426,80 @@ void RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* param
 
 	{
 		lock_guard<mutex> lock(_mutexConnections);
-		_group.reset(new NetGroup(groupHex, groupTxt, streamName, *this, parameters));
+		if (parameters->isPublisher) {
+			if (_pPublisher) {
+				WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
+				return 0;
+			}
+			_pPublisher.reset(new Publisher(streamName, _invoker, true, true, true));
+		} else // Create the player
+			_mapPlayers.emplace(piecewise_construct, forward_as_tuple(_mediaCount+1), forward_as_tuple());
+
+		_group.reset(new NetGroup(++_mediaCount, groupHex, groupTxt, streamName, *this, parameters));
+		_group->onMedia = _pMainStream->onMedia;
+		_group->onStatus = _pMainStream->onStatus;
 		_waitingGroup.push_back(groupHex);
+		return _mediaCount;
 	}
 }
 
-bool RTMFPSession::read(const char* peerId, UInt8* buf, UInt32 size, int& nbRead) {
+bool RTMFPSession::read(UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
 	
 	lock_guard<mutex> lock(_mutexConnections);
-	if (status >= RTMFP::NEAR_CLOSED)
+	if (status != RTMFP::CONNECTED) {
+		WARN("Connection is not established, cannot read data")
 		return false; // to stop the parent loop
+	}
+	if (nbRead != 0) {
+		ERROR("Parameter nbRead must equal zero in readAsync()")
+		return false;
+	}
+	auto itMedia = _mapPlayers.find(mediaId);
+	if (itMedia == _mapPlayers.end()) {
+		ERROR("Unable to find media ", mediaId)
+		return false;
+	}
 
-	bool res(true);
-	auto itPeer = _mapPeersById.find(peerId);
-	if (itPeer != _mapPeersById.end() && (!(res = itPeer->second->readAsync(buf, size, nbRead)) || nbRead > 0))
-		return res; // quit if treated
+	bool available = false;
+	if (!itMedia->second.mediaPackets.empty()) {
+		// First read => send header
+		BinaryWriter writer(buf, size);
+		if (itMedia->second.firstRead && size > 13) {
+			writer.write(EXPAND("FLV\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00"));
+			itMedia->second.firstRead = false;
+		}
 
-	if (!(res = readAsync(buf, size, nbRead)) || nbRead>0)
-		return res; // quit if treated
+		// While media packets are available and buffer is not full
+		while (!itMedia->second.mediaPackets.empty() && (writer.size() < size - 15)) {
+
+			// Read next packet
+			std::shared_ptr<MediaPlayer::RTMFPMediaPacket>& packet = itMedia->second.mediaPackets.front();
+			UInt32 bufferSize = packet->size() - packet->pos;
+			UInt32 toRead = (bufferSize > (size - writer.size() - 15)) ? size - writer.size() - 15 : bufferSize;
+
+			// header
+			if (!packet->pos) {
+				writer.write8(packet->type);
+				writer.write24(packet->size()); // size on 3 bytes
+				writer.write24(packet->time); // time on 3 bytes
+				writer.write32(0); // unknown 4 bytes set to 0
+			}
+			writer.write(packet->data() + packet->pos, toRead); // payload
+
+																// If packet too big : save position and exit, else write footer
+			if (bufferSize > toRead) {
+				packet->pos += toRead;
+				break;
+			}
+			writer.write32(11 + packet->size()); // footer, size on 4 bytes
+			itMedia->second.mediaPackets.pop_front();
+		}
+		// Finally update the nbRead & available
+		nbRead = writer.size();
+		available = !itMedia->second.mediaPackets.empty();
+	}
+	if (!available)
+		handleDataAvailable(false); // change the available status
 	return true;
 }
 
@@ -458,54 +595,6 @@ unsigned int RTMFPSession::callFunction(const char* function, int nbArgs, const 
 	return 0;
 }
 
-bool RTMFPSession::handleStreamCreated(UInt16 idStream) {
-	DEBUG("Stream ", idStream, " created, sending command...")
-
-	// Get command
-	if (_waitingCommands.empty()) {
-		ERROR("created stream without command")
-		return false;
-	}
-	const StreamCommand& command = _waitingCommands.back();
-
-	// Manage publisher if it is a publish command
-	if (command.type == NETSTREAM_PUBLISH) {
-		if (_pPublisher) {
-			ERROR("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
-			_waitingCommands.pop_back();
-			return false;
-		}
-	}
-
-	// Stream created, now we create the writer before sending another request
-	shared_ptr<Buffer> pSignature(new Buffer(4, "\x00\x54\x43\x04"));
-	BinaryWriter(*pSignature).write7BitValue(idStream);
-	shared_ptr<RTMFPWriter> pWriter = createWriter(Packet(pSignature), _mainFlowId);
-
-	// Send createStream command and remove command type from waiting commands
-	switch (command.type) {
-	case NETSTREAM_PLAY: {
-		AMFWriter& amfWriter = pWriter->writeInvocation("play", true);
-		amfWriter.amf0 = true; // Important for p2p unicast play
-		amfWriter.writeString(command.value.c_str(), command.value.size());
-		pWriter->flush();
-		break;
-	}
-	case NETSTREAM_PUBLISH: {
-		AMFWriter& amfWriter = pWriter->writeInvocation("publish", true);
-		amfWriter.writeString(command.value.c_str(), command.value.size());
-		pWriter->flush();
-		_pPublisher.reset(new Publisher(command.value, _invoker, command.audioReliable, command.videoReliable, false));
-		break;
-	}
-	default:
-		ERROR("Unexpected command found on stream creation : ", command.type)
-		return false;
-	}
-	_waitingCommands.pop_back();
-	return true;
-}
-
 void RTMFPSession::manage() {
 	lock_guard<mutex> lock(_mutexConnections);
 	if (!_pMainStream)
@@ -542,61 +631,66 @@ void RTMFPSession::manage() {
 		_group->manage();
 }
 
-// TODO: see if we always need to manage a list of commands
-void RTMFPSession::addCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
+Mona::UInt16 RTMFPSession::addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable) {
+	lock_guard<mutex> lock(_mutexConnections);
+
+	if (publisher && _pPublisher) {
+		WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
+		return 0;
+	}
 		
-	_waitingCommands.emplace_back(command, streamName, audioReliable, videoReliable);
-	if (command != NETSTREAM_CLOSE && command != NETSTREAM_PUBLISH_P2P)
-		_nbCreateStreams++;
+	_waitingStreams.emplace(publisher, streamName, ++_mediaCount, audioReliable, videoReliable);
+	if (!publisher)
+		_mapPlayers.emplace(piecewise_construct, forward_as_tuple(_mediaCount), forward_as_tuple());
+	return _mediaCount;
 }
 
-void RTMFPSession::createWaitingStreams() {
-	//lock_guard<mutex>	lock(_mutexConnections);
-	if (status != RTMFP::CONNECTED || _waitingCommands.empty())
-		return;
 
-	// Manage waiting close and p2p publication commands
-	auto itCommand = _waitingCommands.begin();
-	while(itCommand != _waitingCommands.end()) {
-		
-		if(itCommand->type == NETSTREAM_CLOSE) {
-			INFO("Unpublishing stream ", itCommand->value, "...")
-			if(!_pPublisher)
-				ERROR("Unable to find the publisher")
-			else {
-				_pPublisher->stop();
-				if (_pListener) {
-					_pPublisher->removeListener(name());
-					_pListener = NULL;
-				}
-				if (_group)
-					_group->stopListener();
-			}
-			_waitingCommands.erase(itCommand++);
-		} 
-		else if (itCommand->type == NETSTREAM_PUBLISH_P2P) {
-			INFO("Creating publisher for stream ", itCommand->value, "...")
-			if (_pPublisher)
-				ERROR("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
-			else
-				_pPublisher.reset(new Publisher(itCommand->value, _invoker, itCommand->audioReliable, itCommand->videoReliable, true));
-			_waitingCommands.erase(itCommand++);
-		}
-		else
-			++itCommand;
+bool RTMFPSession::startP2PPublisher(const char* streamName, bool audioReliable, bool videoReliable) {
+	lock_guard<mutex> lock(_mutexConnections);
+
+	INFO("Creating publisher for stream ", streamName, "...")
+	if (_pPublisher) {
+		WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
+		return false;
+	}
+	
+	_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
+	return true;
+}
+
+bool RTMFPSession::closePublication(const char* streamName) {
+	lock_guard<mutex> lock(_mutexConnections);
+
+	INFO("Unpublishing stream ", streamName, "...")
+	if (!_pPublisher && _pPublisher->name() == streamName) {
+		WARN("Unable to find the publisher ", streamName)
+		return false;
+	}
+	
+	_pPublisher->stop();
+	if (_pListener) {
+		_pPublisher->removeListener(name());
+		_pListener = NULL;
+	}
+	if (_group)
+		_group->stopListener();
+	return true;
+}
+
+bool RTMFPSession::createWaitingStreams() {
+	if (status != RTMFP::CONNECTED || _waitingStreams.empty() || _isWaitingStream)
+		return false;
+
+	if (!_pMainWriter) {
+		ERROR("Unable to find the main writer related to the main stream")
+		return false;
 	}
 
-	// Create waiting streams
-	if (_nbCreateStreams) {
-		if (!_pMainWriter) {
-			ERROR("Unable to find the main writer related to the main stream")
-			return;
-		}
-		_pMainStream->createStream();
-		_pMainWriter->writeInvocation("createStream");
-		_pMainWriter->flush();
-		_nbCreateStreams--;
-	}
+	_pMainStream->createStream();
+	_pMainWriter->writeInvocation("createStream");
+	_pMainWriter->flush();
+	return true;
 }
 
 void RTMFPSession::sendConnections() {
@@ -765,7 +859,7 @@ bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshak
 	if (itPeer == _mapPeersById.end() || itPeer->first != peerId) {
 		SocketAddress emptyHost; // We don't know the peer's host address
 		itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId),
-			forward_as_tuple(new P2PSession(this, peerId, _invoker, _pOnSocketError, _pOnStatusEvent, _pOnMedia, emptyHost, true, (bool)_group)));
+			forward_as_tuple(new P2PSession(this, peerId, _invoker, _pOnSocketError, _pOnStatusEvent, emptyHost, true, (bool)_group)));
 		_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 		// associate the handshake & session

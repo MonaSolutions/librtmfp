@@ -30,20 +30,23 @@ using namespace std;
 using namespace Mona;
 
 RTMFPWriter::RTMFPWriter(UInt8 marker, UInt64 id, UInt64 flowId, const Binary& signature, RTMFP::Output& output) :
-	_marker(marker), _repeatDelay(0), _output(output), _stageAck(0), _lostCount(0), id(id), flowId(flowId), signature(signature), _closed(false) {
+	_marker(marker), _repeatDelay(0), _output(output), _stageAck(0), _lostCount(0), id(id), flowId(flowId), signature(signature) {
 	_pQueue.reset(new RTMFPSender::Queue(id, flowId, signature));
 }
 
 void RTMFPWriter::close(Int32 error, const char* reason) {
-	if (_closed)
-		return;
-	if (error < 0) // if impossible to send (code<0, See Session::DEATH_...) clear message queue impossible to send!
-		clear();
-	if (error >= 0 && (_stageAck || _repeatDelay))
-		newMessage(true); // Send a MESSAGE_END just in the case where the receiver has been created
-	if (error >= 0)
-		flush();
-	_closed = true;
+	
+	if (_state < NEAR_CLOSED) {
+		if (error < 0) // if impossible to send (code<0, See Session::DEATH_...) clear message queue impossible to send!
+			clear();
+		if (error >= 0 && (_stageAck || _repeatDelay))
+			newMessage(true); // Send a MESSAGE_END just in the case where the receiver has been created
+		if (error >= 0)
+			flush();
+		_closeTime.update();
+	}
+		
+	_state = (_state>=NEAR_CLOSED) ? CLOSED : NEAR_CLOSED; // before flush to get MESSAGE_END!
 }
 
 void RTMFPWriter::acquit(UInt64 stageAck, UInt32 lostCount) {
@@ -168,6 +171,11 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* da
 	writer->write("\x04\x04\x92\xA7\x60"); // Object encoding?
 	writer->write8(1 + Binary::Get7BitValueSize(groupConfig->availabilityUpdatePeriod)).write8('\x05').write7BitLongValue(groupConfig->availabilityUpdatePeriod);
 	writer->write8(1 + Binary::Get7BitValueSize(UInt32(groupConfig->fetchPeriod))).write8('\x07').write7BitLongValue(groupConfig->fetchPeriod);
+}
+
+void RTMFPWriter::writeGroupEndMedia(UInt64 lastFragment) {
+	newMessage(reliable)->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitLongValue(lastFragment);
+	flush();
 }
 
 void RTMFPWriter::writeGroupPlay(UInt8 mode) {

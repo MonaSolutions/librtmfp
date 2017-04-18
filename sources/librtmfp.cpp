@@ -108,12 +108,17 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 	return index;
 }
 
-int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking) {
+unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return 0;
+	}
 
 	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext, pConn);
-	if (pConn)
-		pConn->connect2Peer(peerId, streamName);
+	if (!GlobalInvoker->getConnection(RTMFPcontext, pConn))
+		return 0;
+
+	UInt16 mediaId = pConn->connect2Peer(peerId, streamName);
 
 	if (blocking) {
 		while (!pConn->p2pPlayReady) {
@@ -123,99 +128,115 @@ int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char
 		}
 	}
 
-	return 1;
+	return mediaId;
 }
 
-int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters) {
+unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return 0;
+	}
 
 	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext, pConn);
-	if (pConn)
-		pConn->connect2Group(streamName, parameters);
-
-	if (parameters->isPublisher > 0)
-		pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PUBLISH_P2P, streamName, true, true);
+	if (!GlobalInvoker->getConnection(RTMFPcontext, pConn))
+		return 0;
+	
+	UInt16 mediaId = pConn->connect2Group(streamName, parameters);
+	if (!mediaId)
+		return 0;
 
 	if (parameters->isBlocking && parameters->isPublisher) {
 		while (!pConn->publishReady) {
 			pConn->publishSignal.wait(200);
 			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-				return -1;
+				return 0;
 		}
 	}
 
-	return 1;
+	return mediaId;
 }
 
-int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
-
-	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if (pConn) {
-		pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PLAY, streamName);
-		return 1;
+unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return 0;
 	}
 
-	return 0;
+	shared_ptr<RTMFPSession> pConn;
+	if (!GlobalInvoker->getConnection(RTMFPcontext,pConn))
+		return 0;
+
+	return pConn->addStream(false, streamName);
 }
 
-int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
+unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return 0;
+	}
 
 	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
 	if (!pConn)
 		return 0;
 	
-	pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PUBLISH, streamName, audioReliable>0, videoReliable>0);
+	UInt16 mediaId = pConn->addStream(true, streamName, audioReliable>0, videoReliable>0);
 
-	if (blocking) {
+	if (mediaId && blocking) {
 		while (!pConn->publishReady) {
 			pConn->publishSignal.wait(200);
 			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-				return -1;
+				return 0;
 		}
 	}
 
-	return 1;
+	return mediaId;
 }
 
-int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
+unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return 0;
+	}
 
 	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext, pConn);
 	if (!pConn)
 		return 0;
 
-	pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_PUBLISH_P2P, streamName, audioReliable > 0, videoReliable > 0);
+	if (!pConn->startP2PPublisher(streamName, audioReliable > 0, videoReliable > 0))
+		return 0;
 
 	if (blocking) {
 		while (!pConn->p2pPublishReady) {
 			pConn->p2pPublishSignal.wait(200);
 			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-				return -1;
+				return 0;
 		}
 	}
 
 	return 1;
 }
 
-int RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {
+unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return 0;
+	}
 
 	shared_ptr<RTMFPSession> pConn;
 	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if(pConn) {
-		pConn->addCommand(RTMFPSession::CommandType::NETSTREAM_CLOSE, streamName);
-		return 1;
-	}
+	if(!pConn || !pConn->closePublication(streamName))
+		return 0;
 
-	return 0;
+	return 1;
 }
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
 	if (!RTMFPcontext)
 		return;
 	if (!GlobalInvoker) {
-		ERROR("Invoker is not ready, you must establish the connection first")
+		ERROR("RTMFP_Init() has not been called, please call it first")
 		return;
 	}
 
@@ -224,9 +245,9 @@ void RTMFP_Close(unsigned int RTMFPcontext) {
 		GlobalInvoker.reset();
 }
 
-int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned int size) {
+int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext,char *buf,unsigned int size) {
 	if (!GlobalInvoker) {
-		ERROR("Invoker is not ready, you must establish the connection first")
+		ERROR("RTMFP_Init() has not been called, please call it first")
 		return -1;
 	}
 
@@ -236,10 +257,9 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 		UInt32 total = 0;
 		int nbRead = 0;
 		while (nbRead==0 && !GlobalInvoker->isInterrupted()) {
-			if (!pConn->read(peerId, (UInt8*)buf, size, nbRead)) {
-				WARN("Connection is not established, cannot read data")
+			if (!pConn->read(streamId, (UInt8*)buf, size, nbRead))
 				return -1;
-			}
+			
 			if (nbRead < 0)
 				return nbRead;
 			else if (nbRead > 0) {
@@ -263,7 +283,7 @@ int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext,char *buf,unsigned 
 
 int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 	if (!GlobalInvoker) {
-		ERROR("Invoker is not ready, you must establish the connection first")
+		ERROR("RTMFP_Init() has not been called, please call it first")
 		return -1;
 	}
 
@@ -281,7 +301,7 @@ int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 
 unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId) {
 	if (!GlobalInvoker) {
-		ERROR("Invoker is not ready, you must establish the connection first")
+		ERROR("RTMFP_Init() has not been called, please call it first")
 		return -1;
 	}
 
@@ -294,8 +314,10 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 }
 
 void RTMFP_LogSetCallback(void(* onLog)(unsigned int, const char*, long, const char*)) {
-	if (!GlobalInvoker)
+	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
+		return;
+	}
 
 	GlobalInvoker->setLogCallback(onLog);
 }
@@ -305,14 +327,20 @@ void RTMFP_LogSetLevel(int level) {
 }
 
 void RTMFP_DumpSetCallback(void(*onDump)(const char*, const void*, unsigned int)) {
-	if (!GlobalInvoker)
+	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
+		return;
+	}
+
 	GlobalInvoker->setDumpCallback(onDump);
 }
 
 void RTMFP_InterruptSetCallback(int(*interruptCb)(void*), void* argument) {
-	if (!GlobalInvoker)
+	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
+		return;
+	}
+
 	GlobalInvoker->setInterruptCallback(interruptCb, argument);
 }
 
@@ -336,8 +364,6 @@ void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication) {
 }
 
 void RTMFP_ActiveDump() {
-	if (!GlobalInvoker)
-		ERROR("RTMFP_Init() has not been called, please call it first")
 	Logs::SetDump("LIBRTMFP");
 }
 

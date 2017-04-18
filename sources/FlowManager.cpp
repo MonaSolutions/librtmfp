@@ -31,10 +31,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-	_pLastWriter(NULL), _firstRead(true), _invoker(invoker), _firstMedia(true), _timeStart(0), _codecInfosRead(false), _pOnStatusEvent(pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2),
-	_initiatorTime(0), initiatorTime(0), _farId(0), _threadSend(0) {
+FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _pLastWriter(NULL), _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
+	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2), _initiatorTime(0), initiatorTime(0), _farId(0), _threadSend(0) {
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
@@ -53,40 +51,6 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 	_pMainStream->onPlay = [this](const string& streamName, UInt16 streamId, UInt64 flowId, double cbHandler) {
 		return handlePlay(streamName, streamId, flowId, cbHandler);
 	};
-	onMedia = _pMainStream->onMedia = [this](const string& stream, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
-
-		if (!_codecInfosRead) {
-			if (type == AMF::TYPE_VIDEO && RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
-				INFO("Video codec infos found, starting to read")
-				_codecInfosRead = true;
-			}
-			else {
-				if (type == AMF::TYPE_VIDEO)
-					DEBUG("Video frame dropped to wait first key frame");
-				return;
-			}
-		}
-
-		if (_firstMedia) {
-			_firstMedia = false;
-			_timeStart = time; // to set to 0 the first packets
-		}
-		else if (time < _timeStart) {
-			DEBUG("Packet ignored because it is older (", time, ") than start time (", _timeStart, ")")
-			return;
-		}
-
-		if (_pOnMedia) // Synchronous read
-			_pOnMedia(name().c_str(), stream.c_str(), time - _timeStart, STR packet.data(), packet.size(), type);
-		else { // Asynchronous read
-			{
-				lock_guard<recursive_mutex> lock(_readMutex); // TODO: use the 'stream' parameter
-				_mediaPackets.emplace_back(new RTMFPMediaPacket(packet, time - _timeStart, type));
-				// TODO: do not emplace if there is too much packets (when the read process is slower than packet reception), memory can explode here!
-			}
-			handleDataAvailable(true);
-		}
-	};
 
 	Util::Random((UInt8*)_tag.data(), 16); // random serie of 16 bytes
 }
@@ -97,10 +61,6 @@ FlowManager::~FlowManager() {
 	for (auto& it : _flows)
 		delete it.second;
 	_flows.clear();
-
-	// delete media packets
-	lock_guard<recursive_mutex> lock(_readMutex);
-	_mediaPackets.clear();
 
 	if (_pMainStream) {
 		_pMainStream->onStatus = nullptr;
@@ -185,63 +145,11 @@ void FlowManager::close(bool abrupt) {
 		_closeTime.update(); // To wait (90s or 19s) before deleting session
 		status = abrupt ? RTMFP::FAILED : RTMFP::NEAR_CLOSED;
 	}
-	// switch from NEARCLOSED to FARCLOSE_LINGER
-	else if (status == RTMFP::NEAR_CLOSED && abrupt) {
+	// switch to FARCLOSE_LINGER
+	else if (status != RTMFP::FAILED && abrupt) {
 		_closeTime.update(); // To wait 19s before deleting session
 		status = RTMFP::FAILED;
 	}
-}
-
-bool FlowManager::readAsync(UInt8* buf, UInt32 size, int& nbRead) {
-	if (nbRead != 0)
-		ERROR("Parameter nbRead must equal zero in readAsync()")
-	else if (status == RTMFP::CONNECTED) {
-
-		bool available = false;
-		lock_guard<recursive_mutex> lock(_readMutex);
-		if (!_mediaPackets.empty()) {
-			// First read => send header
-			BinaryWriter writer(buf, size);
-			if (_firstRead && size > 13) {
-				writer.write(EXPAND("FLV\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00"));
-				_firstRead = false;
-			}
-
-			// While media packets are available and buffer is not full
-			while (!_mediaPackets.empty() && (writer.size() < size - 15)) {
-
-				// Read next packet
-				std::shared_ptr<RTMFPMediaPacket>& packet = _mediaPackets.front();
-				UInt32 bufferSize = packet->size() - packet->pos;
-				UInt32 toRead = (bufferSize > (size - writer.size() - 15)) ? size - writer.size() - 15 : bufferSize;
-
-				// header
-				if (!packet->pos) {
-					writer.write8(packet->type);
-					writer.write24(packet->size()); // size on 3 bytes
-					writer.write24(packet->time); // time on 3 bytes
-					writer.write32(0); // unknown 4 bytes set to 0
-				}
-				writer.write(packet->data() + packet->pos, toRead); // payload
-
-				// If packet too big : save position and exit, else write footer
-				if (bufferSize > toRead) {
-					packet->pos += toRead;
-					break;
-				}
-				writer.write32(11 + packet->size()); // footer, size on 4 bytes
-				_mediaPackets.pop_front();
-			}
-			// Finally update the nbRead & available
-			nbRead = writer.size();
-			available = !_mediaPackets.empty();
-		}
-		if (!available)
-			handleDataAvailable(false); // change the available status
-		return true;
-	} 
-
-	return false;
 }
 
 void FlowManager::receive(const Packet& packet) {
@@ -664,7 +572,7 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 		return;
 	}
 
-	shared_ptr<Buffer> pFarNonce(new Buffer());
+	shared_ptr<Buffer> pFarNonce(new Buffer(nonceSize));
 	reader.read(nonceSize, *pFarNonce);
 	if (memcmp(pFarNonce->data(), "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
 		ERROR("Far nonce received is not well formated : ", String::Hex(pFarNonce->data(), nonceSize))
@@ -718,6 +626,9 @@ const Packet& FlowManager::getNonce() {
 }
 
 void FlowManager::closeFlow(UInt64 flowId) {
+	if (status != RTMFP::CONNECTED)
+		return;
+
 	BinaryWriter(write(0x5e, 1 + Binary::Get7BitValueSize(flowId))).write7BitLongValue(flowId).write8(0);
 	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
 }

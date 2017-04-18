@@ -27,6 +27,7 @@ static unsigned int		cursor = 0; // File reader cursor
 static unsigned int		bufferSize = MIN_BUFFER_SIZE; // Buffer current size used
 static unsigned short	endOfWrite = 0; // If >0 write is finished
 static unsigned int		context = 0;
+static unsigned short	streamId = 0;
 static FILE *			pInFile = NULL; // Input file for publication
 static FILE *			pOutFile = NULL; // Output file for subscription
 static unsigned short	terminating = 0;
@@ -44,6 +45,7 @@ static char*			listPeers[255];
 static char*			listStreams[255];
 static FILE*			listFiles[255];
 static char*			listFileNames[255];
+static unsigned short	listStreamIds[255];
 
 // Open the p2p configuration file for multiple peers
 // Format :
@@ -156,11 +158,11 @@ void closeFiles() {
 }
 
 // Get the file pointer for a p2p stream
-FILE* getFile(const char* peerId) {
+FILE* getFile(unsigned short streamId) {
 	unsigned int i = 0;
 
 	for (i = 0; i < nbPeers; i++) {
-		if (stricmp(listPeers[i], peerId) == 0)
+		if (listStreamIds[i] == streamId)
 			return listFiles[i];
 	}
 	return NULL;
@@ -204,14 +206,14 @@ void onStatusEvent(const char* code,const char* description) {
 }
 
 // Synchronous read
-void onMedia(const char * peerId,const char* stream, unsigned int time,const char* buf,unsigned int size, unsigned int type) {
-	FILE* pFile = getFile(peerId);
+void onMedia(unsigned short streamId, unsigned int time,const char* buf,unsigned int size, unsigned int type) {
+	FILE* pFile = getFile(streamId);
 	if (!pFile)
 		pFile = pOutFile;
 
 	if (pFile) {
 		unsigned int tmp=0;
-		fprintf(pFile, "%d", type);
+		fwrite(&type, 1, 1, pFile);
 		tmp = flip24(size);
 		fwrite(&tmp, 3, 1, pFile);
 		tmp = flip24(time);
@@ -232,11 +234,11 @@ void onManage() {
 	if (_option == ASYNC_READ) {
 		if (nbPeers>0) {
 			for (i = 0; i < nbPeers; i++) {
-				if (listFiles[i] && (read = RTMFP_Read(listPeers[i], context, buf, MIN_BUFFER_SIZE))>0)
+				if (listFiles[i] && listStreamIds[i] && (read = RTMFP_Read(listStreamIds[i], context, buf, MIN_BUFFER_SIZE))>0)
 					fwrite(buf, sizeof(char), read, listFiles[i]);
 			}
 		}
-		else if(pOutFile && (read = RTMFP_Read("",context,buf, MIN_BUFFER_SIZE))>0)
+		else if(pOutFile && streamId && (read = RTMFP_Read(streamId, context, buf, MIN_BUFFER_SIZE))>0)
 			fwrite(buf, sizeof(char), read, pOutFile);
 	}
 	// Write
@@ -359,23 +361,24 @@ int main(int argc, char* argv[]) {
 			listPeers[0] = (char*)peerId;
 			listStreams[0] = publication;
 			listFileNames[0] = (char*)mediaFile;
+			listStreamIds[0] = 0;
 		}
 
 		// Open IO files and start the streaming
 		if (!mediaFile || initFiles(mediaFile)) {
 
 			if (groupConfig.netGroup)
-				RTMFP_Connect2Group(context, publication, &groupConfig);
+				streamId = RTMFP_Connect2Group(context, publication, &groupConfig);
 			else if (_option == WRITE)
 				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
 			else if (_option == P2P_WRITE)
 				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
 			else if (nbPeers > 0) { // P2p Play
 				for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
-					RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer], 1);
+					listStreamIds[indexPeer] = RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer], 1);
 			}
 			else if (_option == SYNC_READ || _option == ASYNC_READ)
-				RTMFP_Play(context, publication);
+				streamId = RTMFP_Play(context, publication);
 
 			while (!IsInterrupted(NULL)) {
 				onManage();

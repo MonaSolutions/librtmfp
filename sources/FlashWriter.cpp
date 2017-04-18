@@ -21,7 +21,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "FlashWriter.h"
 #include "AMF.h"
-//#include "Mona/MIME.h"
 #include "Mona/Util.h"
 #include "Mona/Logs.h"
 
@@ -40,11 +39,7 @@ AMFWriter& FlashWriter::writeMessage() {
 
 AMFWriter& FlashWriter::writeInvocation(const char* name, double callback, bool amf3) {
 	AMFWriter& writer(write(AMF::TYPE_INVOCATION));
-	writer.amf0 = true;
-	writer.writeString(name, strlen(name));
-	writer.writeNumber(callback);
-	if (amf3) // without this condition connect or play doesn't work with AMS
-		writer->write8(AMF::AMF0_NULL);
+	RTMFP::WriteInvocation(writer, name, callback, amf3);
 	writer.amf0 = amf0;
 	return writer;
 }
@@ -52,17 +47,7 @@ AMFWriter& FlashWriter::writeInvocation(const char* name, double callback, bool 
 AMFWriter& FlashWriter::writeAMFState(const char* name,const char* code,const string& description,bool withoutClosing) {
 	AMFWriter& writer = (AMFWriter&)writeInvocation(name,_callbackHandleOnAbort = _callbackHandle);
 	_callbackHandle = 0;
-	writer.amf0=true;
-	writer.beginObject();
-	if(strcmp(name,"_error")==0)
-		writer.writeStringProperty("level","error");
-	else
-		writer.writeStringProperty("level","status");
-	writer.writeStringProperty("code",code);
-	writer.writeStringProperty("description", description);
-	writer.amf0 = amf0;
-	if(!withoutClosing)
-		writer.endObject();
+	RTMFP::WriteAMFState(writer, name, code, description, amf0, withoutClosing);
 	return writer;
 }
 

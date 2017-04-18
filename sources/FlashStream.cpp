@@ -27,32 +27,50 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Mona;
 
-FlashStream::FlashStream(UInt16 id) : id(id), _bufferTime(0) {
-	DEBUG("FlashStream ", id, " created")
+FlashStream::FlashStream(UInt16 id) : FlashHandler(id) {
+	DEBUG("FlashStream ", streamId, " created")
 }
 
 FlashStream::~FlashStream() {
-	DEBUG("FlashStream ",id," deleted")
+	DEBUG("FlashStream ", streamId," deleted")
 }
 
 bool FlashStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+	if (!packet)
+		return true; // Flow is closing
 
 	BinaryReader reader(packet.data(), packet.size());
 
 	AMF::Type type = (AMF::Type)reader.read8();
 	UInt32 time = reader.read32();
-	return process(type, time, Packet(packet, reader.current(), reader.available()), flowId, writerId, lostRate);
+	return FlashHandler::process(type, time, Packet(packet, reader.current(), reader.available()), flowId, writerId, lostRate);
 }
 
-bool FlashStream::process(AMF::Type type, UInt32 time, const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 flowId, UInt64 writerId, double callbackHandler) {
+	/*** P2P Publisher part ***/
+	if (name == "play") {
+
+		string publication;
+		message.readString(publication);
+
+		onPlay(publication, streamId, flowId, callbackHandler);
+		return true;
+	}
+	else
+		return FlashHandler::messageHandler(name, message, flowId, writerId, callbackHandler);
+}
+
+bool FlashHandler::process(AMF::Type type, UInt32 time, const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
 
 	// if exception, it closes the connection, and print an ERROR message
 	switch(type) {
 
 		case AMF::TYPE_AUDIO:
-			return audioHandler(time, packet, lostRate);
+			onMedia(_mediaId, time, packet, lostRate, AMF::TYPE_AUDIO);
+			return true;
 		case AMF::TYPE_VIDEO:
-			return videoHandler(time, packet, lostRate);
+			onMedia(_mediaId, time, packet, lostRate, AMF::TYPE_VIDEO);
+			return true;
 
 		case AMF::TYPE_DATA_AMF3:
 			return dataHandler(packet + 1, lostRate);
@@ -83,21 +101,14 @@ bool FlashStream::process(AMF::Type type, UInt32 time, const Packet& packet, UIn
 	return false;
 }
 
+bool FlashHandler::messageHandler(const string& name, AMFReader& message, UInt64 flowId, UInt64 writerId, double callbackHandler) {
 
-UInt32 FlashStream::bufferTime(UInt32 ms) {
-	_bufferTime = ms;
-	INFO("setBufferTime ", ms, "ms on stream ",id)
-	return _bufferTime;
-}
-
-bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 flowId, UInt64 writerId, double callbackHandler) {
-	
-	if(name == "onStatus") {
+	if (name == "onStatus") {
 		double callback;
 		message.readNumber(callback);
 		message.readNull();
 
-		if(message.nextType() != AMFReader::OBJECT) {
+		if (message.nextType() != AMFReader::OBJECT) {
 			ERROR("Unexpected onStatus value type : ", message.nextType())
 			return false;
 		}
@@ -107,13 +118,13 @@ bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 
 		message.read(AMFReader::OBJECT, paramWriter);
 
 		string level;
-		params.getString("level",level);
-		if(!level.empty()) {
+		params.getString("level", level);
+		if (!level.empty()) {
 			string code, description;
-			params.getString("code",code);
+			params.getString("code", code);
 			params.getString("description", description);
 			if (level == "status" || level == "error")
-				return onStatus(code, description, id, flowId, callbackHandler);
+				return onStatus(code, description, streamId, flowId, callbackHandler);
 			else {
 				ERROR("Unknown level message type : ", level)
 				return false;
@@ -122,23 +133,12 @@ bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 
 		ERROR("Unknown onStatus event, level is not set")
 		return false;
 	}
-	/*** P2P Publisher part ***/
-	else if (name == "play") {
 
-		string publication;
-		message.readString(publication);
-		
-		if (onPlay(publication, id, flowId, callbackHandler))
-			_streamName = publication;
-
-		return true;
-	}
-
-	ERROR("Message '",name,"' unknown on stream ",id);
+	ERROR("Message '", name, "' unknown on stream ", streamId);
 	return false;
 }
 
-bool FlashStream::dataHandler(const Packet& packet, double lostRate) {
+bool FlashHandler::dataHandler(const Packet& packet, double lostRate) {
 	
 	AMFReader reader(packet.data(), packet.size());
 	string func, params, value;
@@ -170,14 +170,14 @@ bool FlashStream::dataHandler(const Packet& packet, double lostRate) {
 	return true;
 }
 
-bool FlashStream::rawHandler(UInt16 type, const Packet& packet) {
+bool FlashHandler::rawHandler(UInt16 type, const Packet& packet) {
 	BinaryReader reader(packet.data(), packet.size());
 	switch (type) {
 		case 0x0000:
-			INFO("Stream begin message on NetStream ", id, " (value : ", reader.read32(), ")")
+			INFO("Stream begin message on NetStream ", streamId, " (value : ", reader.read32(), ")")
 			break;
 		case 0x0001:
-			INFO("Stream stop message on NetStream ", id, " (value : ", reader.read32(), ")")
+			INFO("Stream stop message on NetStream ", streamId, " (value : ", reader.read32(), ")")
 			break;
 		case 0x001f: // unknown for now
 		case 0x0020: // unknown for now
@@ -186,20 +186,8 @@ bool FlashStream::rawHandler(UInt16 type, const Packet& packet) {
 			//INFO("Sync ",id," : (syncId=",packet.read32(),", count=",packet.read32(),")")
 			break;
 		default:
-			ERROR("Raw message ", String::Format<UInt16>("%.4x", type), " unknown on stream ", id);
+			ERROR("Raw message ", String::Format<UInt16>("%.4x", type), " unknown on NetStream ", streamId);
 			return false;
 	}
-	return true;
-}
-
-bool FlashStream::audioHandler(UInt32 time, const Packet& packet, double lostRate) {
-
-	onMedia(_streamName, time, packet, lostRate, AMF::TYPE_AUDIO);
-	return true;
-}
-
-bool FlashStream::videoHandler(UInt32 time, const Packet& packet, double lostRate) {
-
-	onMedia(_streamName, time, packet, lostRate, AMF::TYPE_VIDEO);
 	return true;
 }

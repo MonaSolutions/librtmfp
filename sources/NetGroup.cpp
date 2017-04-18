@@ -35,28 +35,14 @@ using namespace std;
 	#define log2(VARIABLE) (log(VARIABLE) / log(2))
 #endif
 
-// Peer instance in the heard list
-class GroupNode : public virtual Object {
-public:
-	GroupNode(const char* rawPeerId, const string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const SocketAddress& host, UInt64 timeElapsed) :
-		rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((UInt64)Time::Now()) - timeElapsed) {}
-
-	// Return the size of peer addresses for Group Report 
-	UInt32	addressesSize() {
-		UInt32 size = 1; // 1 for 0A header
-		if (hostAddress.host())
-			size += hostAddress.host().size() + 3; // +3 for address type and port
-		for (auto itAddress : addresses)
-			size += itAddress.first.host().size() + 3; // +3 for address type and port
-		return size;
-	}
-
-	string rawId;
-	string groupAddress;
-	PEER_LIST_ADDRESS_TYPE addresses;
-	SocketAddress hostAddress;
-	Int64 lastGroupReport; // Time in msec of last Group report received
-};
+UInt32 NetGroup::GroupNode::addressesSize() {
+	UInt32 size = 1; // 1 for 0A header
+	if (hostAddress.host())
+		size += hostAddress.host().size() + 3; // +3 for address type and port
+	for (auto itAddress : addresses)
+		size += itAddress.first.host().size() + 3; // +3 for address type and port
+	return size;
+}
 
 const string& NetGroup::GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress) {
 	
@@ -115,8 +101,8 @@ UInt32 NetGroup::targetNeighborsCount() {
 	return targetNeighbor;
 }
 
-NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters) : groupParameters(parameters),
-	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()) {
+NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters) : groupParameters(parameters),
+	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), FlashHandler(0, mediaId) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
@@ -148,6 +134,9 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		itGroupMedia->second.addPeer(peerId, pPeerMedia);
 		return true;
 	};
+	_onClosedMedia = [this](const string& streamKey, UInt64 lastFragment) {
+		// TODO: not sure we need to do something here (GroupMedia close message is not received by all peers)
+	};
 	_onGroupReport = [this](P2PSession* pPeer, BinaryReader& packet, bool sendMediaSubscription) {
 		
 		auto itNode = _mapHeardList.find(pPeer->peerId);
@@ -177,7 +166,7 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		else
 			pPeer->groupReportInitiator = false;
 
-		// Send the Group Media Subscription if not already sent
+		// Send the Group Media Subscriptions if not already sent
 		if (sendMediaSubscription && (_bestList.empty() || _bestList.find(pPeer->peerId) != _bestList.end())) {
 			for (auto& itGroupMedia : _mapGroupMedias) {
 				if (itGroupMedia.second.groupParameters->isPublisher || itGroupMedia.second.hasFragments()) {
@@ -198,7 +187,8 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 		_lastReport.update();
 	};
 	_onGroupPacket = [this](UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
-		_conn.pushMedia(stream, time, packet, lostRate, type);
+		// Go back to Flash handler
+		return FlashHandler::process(type, time, packet, 0, 0, lostRate);
 	};
 	_onPeerClose = [this](const string& peerId) {
 		removePeer(peerId);
@@ -227,17 +217,28 @@ NetGroup::NetGroup(const string& groupId, const string& groupTxt, const string& 
 	}
 }
 
-NetGroup::~NetGroup() {
+bool NetGroup::messageHandler(const string& name, AMFReader& message, UInt64 flowId, UInt64 writerId, double callbackHandler) {
+
+	/*** NetGroup Player ***/
+	if (name == "closeStream") {
+		INFO("Stream ", streamId, " is closing...")
+		return false;
+	}
+	return FlashHandler::messageHandler(name, message, flowId, writerId, callbackHandler);
 }
 
 void NetGroup::stopListener() {
-	if (_pListener) {
-		if (_groupMediaPublisher != _mapGroupMedias.end())
-			_groupMediaPublisher->second.onMedia = nullptr;
-		_groupMediaPublisher = _mapGroupMedias.end();
-		_conn.stopListening(idTxt);
-		_pListener = NULL;
+	if (!_pListener)
+		return;
+
+	// Terminate the GroupMedia properly
+	if (_groupMediaPublisher != _mapGroupMedias.end()) {
+		_groupMediaPublisher->second.closePublisher();
+		_groupMediaPublisher->second.onMedia = nullptr;
 	}
+	_groupMediaPublisher = _mapGroupMedias.end();
+	_conn.stopListening(idTxt);
+	_pListener = NULL;
 }
 
 void NetGroup::close() {
@@ -293,6 +294,7 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 	_mapPeers.emplace_hint(it, peerId, pPeer);
 
 	pPeer->onNewMedia = _onNewMedia;
+	pPeer->onClosedMedia = _onClosedMedia;
 	pPeer->onPeerGroupReport = _onGroupReport;
 	pPeer->onPeerGroupBegin = _onGroupBegin;
 	pPeer->onPeerClose = _onPeerClose;
@@ -315,6 +317,7 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 	DEBUG("Deleting peer ", itPeer->first, " from the NetGroup Best List")
 
 	itPeer->second->onNewMedia = nullptr;
+	itPeer->second->onClosedMedia = nullptr;
 	itPeer->second->onPeerGroupReport = nullptr;
 	itPeer->second->onPeerGroupBegin = nullptr;
 	itPeer->second->onPeerClose = nullptr;
@@ -361,8 +364,15 @@ void NetGroup::manage() {
 	}
 
 	// Manage all group medias
-	for (auto& itGroupMedia : _mapGroupMedias)
-		itGroupMedia.second.manage();
+	auto itGroupMedia = _mapGroupMedias.begin();
+	while (itGroupMedia != _mapGroupMedias.end()) {
+		if (!itGroupMedia->second.manage()) {
+			DEBUG("Deletion of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream)
+			_mapGroupMedias.erase(itGroupMedia++);
+		}
+		else
+			++itGroupMedia;
+	}
 }
 
 void NetGroup::updateBestList() {

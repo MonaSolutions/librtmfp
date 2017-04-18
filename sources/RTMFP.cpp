@@ -189,3 +189,26 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 	return !addresses.empty() || hostAddress;
 }
 
+void RTMFP::WriteInvocation(AMFWriter& writer, const char* name, double callback, bool amf3) {
+
+	writer.amf0 = true;
+	writer.writeString(name, strlen(name));
+	writer.writeNumber(callback);
+	if (amf3) // without this condition connect or play doesn't work with AMS
+		writer->write8(AMF::AMF0_NULL);
+}
+
+void RTMFP::WriteAMFState(AMFWriter& writer, const char* name, const char* code, const string& description, bool amf0, bool withoutClosing) {
+
+	writer.amf0 = true;
+	writer.beginObject();
+	if (strcmp(name, "_error") == 0)
+		writer.writeStringProperty("level", "error");
+	else
+		writer.writeStringProperty("level", "status");
+	writer.writeStringProperty("code", code);
+	writer.writeStringProperty("description", description);
+	writer.amf0 = amf0;
+	if (!withoutClosing)
+		writer.endObject();
+}

@@ -26,13 +26,13 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPDecoder.h"
 #include "RTMFPHandshaker.h"
 #include "Publisher.h"
-#include <list>
+#include <queue>
 
 /**************************************************
 RTMFPSession represents a connection to the
 RTMFP Server
 */
-class NetGroup;
+struct NetGroup;
 class RTMFPSession : public FlowManager {
 public:
 	RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
@@ -52,17 +52,23 @@ public:
 	bool connect(Mona::Exception& ex, const char* url, const char* host);
 
 	// Connect to a peer with asking server for the addresses and start playing streamName
-	void connect2Peer(const char* peerId, const char* streamName);
+	// return : the id of the media created
+	Mona::UInt16 connect2Peer(const char* peerId, const char* streamName);
 
 	// Connect to a peer (main function)
-	void connect2Peer(const std::string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Mona::SocketAddress& hostAddress);
+	bool connect2Peer(const std::string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Mona::SocketAddress& hostAddress, Mona::UInt16 mediaId=0);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
-	void connect2Group(const char* streamName, RTMFPGroupConfig* parameters);
+	// return : the id of the media created
+	Mona::UInt16 connect2Group(const char* streamName, RTMFPGroupConfig* parameters);
+
+	// Create a stream (play/publish) in the main stream 
+	// return : the id of the media created
+	Mona::UInt16 addStream(bool publisher, const char* streamName, bool audioReliable = false, bool videoReliable = false);
 
 	// Asynchronous read (buffered)
-	// return : False if the connection is not established, true otherwise
-	bool read(const char* peerId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
+	// return : False if an error occurs, true otherwise
+	bool read(Mona::UInt16 mediaId, Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Write media (netstream must be published)
 	// return false if the client is not ready to publish, otherwise true
@@ -73,8 +79,13 @@ public:
 	// return 1 if the call succeed, 0 otherwise
 	unsigned int callFunction(const char* function, int nbArgs, const char** args, const char* peerId = 0);
 
-	// Add a command to the main stream (play/publish)
-	virtual void addCommand(CommandType command, const char* streamName, bool audioReliable = false, bool videoReliable = false);
+	// Start a P2P publisher with name
+	// return : True if the creation succeed, false otherwise (there is already a publisher)
+	bool startP2PPublisher(const char* streamName, bool audioReliable = false, bool videoReliable = false);
+
+	// Close the publication
+	// return : True if the publication has been closed, false otherwise (publication not found)
+	bool closePublication(const char* streamName);
 
 	// Called by Invoker every 50ms to manage connections (flush and ping)
 	virtual void manage();
@@ -89,11 +100,6 @@ public:
 
 		_pPublisher->start();
 		return _pPublisher->addListener<ListenerType, Args...>(ex, peerId, args...);
-	}
-
-	// Push the media packet to write into a file
-	void pushMedia(const std::string& stream, Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type) { 
-		onMedia(stream, time, packet, lostRate, type);
 	}
 
 	// Remove the listener with peerId
@@ -147,6 +153,8 @@ public:
 
 	const RTMFPDecoder::OnDecoded&	getDecodeEvent() { return _onDecoded; }
 
+	FlashStream::OnMedia			onMediaPlay; // received when a packet from any media stream is ready for reading
+
 	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
 	Mona::Signal					connectSignal; // signal to wait connection
 	Mona::Signal					p2pPublishSignal; // signal to wait p2p publish
@@ -172,12 +180,9 @@ protected:
 
 	// Handle a writer closed (to release shared pointers)
 	virtual void handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter);
-	
-	// Handle stream creation
-	bool handleStreamCreated(Mona::UInt16 idStream);
 
 	// Handle data available or not event
-	virtual void handleDataAvailable(bool isAvailable);
+	void handleDataAvailable(bool isAvailable);
 
 	// Handle a Writer close message (type 5E)
 	virtual void handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
@@ -203,7 +208,8 @@ protected:
 private:
 
 	// If there is at least one request of command : create the stream
-	void createWaitingStreams();
+	// return : True if a stream has been created
+	bool createWaitingStreams();
 
 	// Send waiting Connections (P2P or normal)
 	void sendConnections();
@@ -240,16 +246,40 @@ private:
 
 	RTMFPDecoder::OnDecoded											_onDecoded; // Decoded callback
 	Mona::UInt16													_threadRcv; // Thread used to decode last message
+		
+	OnMediaEvent													_pOnMedia; // External Callback to link with parent
 
 	// Publish/Play commands
 	struct StreamCommand : public Object {
-		StreamCommand(CommandType t, const char* v, bool aReliable, bool vReliable) : type(t), value(v), audioReliable(aReliable), videoReliable(vReliable) {}
+		StreamCommand(bool isPublisher, const char* v, Mona::UInt16 id, bool aReliable, bool vReliable) : publisher(isPublisher), value(v), idMedia(id), audioReliable(aReliable), videoReliable(vReliable) {}
 
-		CommandType		type;
+		bool			publisher;
 		std::string		value;
 		bool			audioReliable;
 		bool			videoReliable;
+		Mona::UInt16	idMedia; // id generated by the session
 	};
-	std::list<StreamCommand>										_waitingCommands;
-	Mona::UInt16													_nbCreateStreams; // Number of streams to create
+	std::queue<StreamCommand>										_waitingStreams;
+	bool															_isWaitingStream; // True if a stream creation is waiting
+	
+	/* Asynchronous Read */
+	struct MediaPlayer : public Object {
+		MediaPlayer() : firstRead(true), firstMedia(true), timeStart(0), codecInfosRead(false) {}
+
+		// Packet structure
+		struct RTMFPMediaPacket : Mona::Packet, virtual Mona::Object {
+			RTMFPMediaPacket(const Mona::Packet& packet, Mona::UInt32 time, AMF::Type type) : time(time), type(type), Packet(std::move(packet)), pos(0) {}
+
+			Mona::UInt32	time;
+			AMF::Type		type;
+			Mona::UInt32	pos;
+		};
+		std::deque<std::shared_ptr<RTMFPMediaPacket>>	mediaPackets;
+		bool											firstRead;
+		bool											firstMedia;
+		Mona::UInt32									timeStart;
+		bool											codecInfosRead; // Player : False until the video codec infos have been read
+	};
+	std::map<Mona::UInt16, MediaPlayer>							_mapPlayers; // Map of media players
+	Mona::UInt16												_mediaCount; // Counter of media streams (publisher/player) id
 };

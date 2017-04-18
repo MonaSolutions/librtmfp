@@ -51,7 +51,4 @@ public:
 
 	// return flase if writer is closed!
 	virtual bool	process(const Mona::Packet& packet, Mona::UInt64 flowId, Mona::UInt64 writerId, double lostRate=0);
-
-protected:
-	virtual bool	messageHandler(const std::string& name, AMFReader& message, Mona::UInt64 flowId, Mona::UInt64 writerId, double callbackHandler);
 };

@@ -86,6 +86,9 @@ struct PeerMedia : public virtual Mona::Object {
 	// Write the Group publication infos
 	void sendGroupMedia(const std::string& stream, const std::string& streamKey, RTMFPGroupConfig* groupConfig);
 
+	// Write the Group publication end message
+	void sendEndMedia(Mona::UInt64 lastFragment);
+
 	// Create the flow if necessary and send media
 	// The fragment is sent if pull is true or if this is a pushable fragment
 	bool sendMedia(const GroupFragment& fragment, bool pull = false);

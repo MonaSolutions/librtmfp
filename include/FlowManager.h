@@ -28,9 +28,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPSender.h"
 
 // Callback typedef definitions
-typedef void(*OnStatusEvent)(const char*, const char*);
-typedef void(*OnMediaEvent)(const char *, const char*, unsigned int, const char*, unsigned int, unsigned int);
-typedef void(*OnSocketError)(const char*);
+typedef void(*OnStatusEvent)(const char* code, const char* description);
+typedef void(*OnMediaEvent)(unsigned short streamId, unsigned int time, const char* data, unsigned int size, unsigned int type);
+typedef void(*OnSocketError)(const char* error);
 
 class Invoker;
 class RTMFPFlow;
@@ -42,20 +42,9 @@ lists of RTMFPFlow and RTMFPWriter
 It is the base class of RTMFPSession and P2PSession
 */
 struct FlowManager : RTMFP::Output, BandWriter {
-	FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
+	FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent);
 
 	virtual ~FlowManager();
-
-	enum CommandType {
-		NETSTREAM_PLAY = 1,
-		NETSTREAM_PUBLISH,
-		NETSTREAM_PUBLISH_P2P,
-		NETSTREAM_GROUP,
-		NETSTREAM_CLOSE
-	};
-
-	// Add a command to the main stream (play/publish)
-	virtual void					addCommand(CommandType command, const char* streamName, bool audioReliable=false, bool videoReliable=false)=0;
 
 	// Return the tag for this session (for RTMFPConnection)
 	const std::string&				tag() { return _tag; }
@@ -67,12 +56,6 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	const Mona::UInt32				sessionId() { return _sessionId; }
 
 	RTMFP::SessionStatus			status; // Session status (stopped, connecting, connected or failed)
-
-	// Read data asynchronously
-	// TODO: delete mutex, create a thread and do not push packet if congested
-	// peerId : id of the peer if it is a p2p connection, otherwise parameter is ignored
-	// return : false if the connection is not established
-	bool							readAsync(Mona::UInt8* buf, Mona::UInt32 size, int& nbRead);
 
 	// Latency (ping / 2)
 	Mona::UInt16					latency() { return _ping >> 1; }
@@ -136,9 +119,6 @@ protected:
 	// Analyze packets received from the server (must be connected)
 	void						receive(const Mona::Packet& packet);
 
-	// Handle data available or not event (asynchronous read only)
-	virtual void				handleDataAvailable(bool isAvailable) = 0;
-
 	// Handle play request (only for P2PSession)
 	virtual bool				handlePlay(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler) { return false; }
 
@@ -166,8 +146,6 @@ protected:
 	// Called when we are connected to the peer/server
 	virtual void				onConnection() = 0;
 
-	std::function<void(const std::string& stream, Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type)>	onMedia; // Takes a packet for writing it to a file (async and sync)
-
 	enum HandshakeType {
 		BASE_HANDSHAKE = 0x0A,
 		P2P_HANDSHAKE = 0x0F
@@ -178,7 +156,6 @@ protected:
 
 	// External Callbacks to link with parent
 	OnStatusEvent										_pOnStatusEvent;
-	OnMediaEvent										_pOnMedia;
 	OnSocketError										_pOnSocketError;
 
 	// Job Members
@@ -235,21 +212,4 @@ private:
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter>>						_flowWriters; // Map of writers identified by id
 	RTMFPWriter*																_pLastWriter; // Write pointer used to check if it is possible to write
 	Mona::UInt64																_nextRTMFPWriterId; // Writer id to use for the next writer to create
-
-	// Asynchronous read
-	struct RTMFPMediaPacket : Mona::Packet, virtual Mona::Object {
-		RTMFPMediaPacket(const Mona::Packet& packet, Mona::UInt32 time, AMF::Type type) : time(time), type(type), Packet(std::move(packet)), pos(0) {}
-
-		Mona::UInt32	time;
-		AMF::Type		type;
-		Mona::UInt32	pos;
-	};
-	std::deque<std::shared_ptr<RTMFPMediaPacket>>								_mediaPackets;
-	std::recursive_mutex														_readMutex;
-	bool																		_firstRead;
-
-	// Read
-	bool																		_firstMedia;
-	Mona::UInt32																_timeStart;
-	bool																		_codecInfosRead; // Player : False until the video codec infos have been read
 };

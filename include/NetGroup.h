@@ -34,17 +34,17 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_REPORT_DELAY			10000	// delay between each NetGroup Report (in msec)
 #define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
 #define NETGROUP_PULL_DELAY				100		// delay between each pull request (in msec)
-#define NETGROUP_PEER_TIMEOUT			300000	// number of seconds since the last report known before we delete a peer from the heard list
+#define NETGROUP_PEER_TIMEOUT			300000	// number of msec since the last report known before we delete a peer from the heard list
 #define NETGROUP_DISCONNECT_DELAY		90000	// delay between each try to disconnect from a peer
+#define NETGROUP_MEDIA_TIMEOUT			300000	// number of msec before we delete a GroupMedia after being closed
 
-class GroupNode;
 /**************************************
 NetGroup is the class that manage
 a NetGroup connection related to an
 RTMFPSession.
 It is composed of GroupMedia objects
 */
-class NetGroup : public virtual Mona::Object {
+struct NetGroup : FlashHandler, virtual Mona::Object {
 public:
 	enum MULTICAST_PARAMETERS {
 		UNKNWON_PARAMETER = 2,
@@ -55,10 +55,10 @@ public:
 		FETCH_PERIOD = 7
 	};
 
-	NetGroup(const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters);
+	NetGroup(Mona::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters);
+	virtual ~NetGroup() {}
 
-	virtual ~NetGroup();
-
+	// Close the NetGroup
 	void			close();
 
 	// Add a peer to the Heard List
@@ -88,6 +88,10 @@ public:
 	const std::string					idTxt;	// Group ID in plain text (without final zeroes)
 	const std::string					stream;	// Stream name
 	RTMFPGroupConfig*					groupParameters; // NetGroup parameters
+
+protected:
+	// FlashHandler messageHandler implementation
+	virtual bool	messageHandler(const std::string& name, AMFReader& message, Mona::UInt64 flowId, Mona::UInt64 writerId, double callbackHandler);
 
 private:
 	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PSession>>
@@ -125,6 +129,7 @@ private:
 
 	P2PSession::OnPeerGroupReport							_onGroupReport; // called when receiving a Group Report message from the peer
 	P2PSession::OnNewMedia									_onNewMedia; // called when a new PeerMedia is called (new stream available for the peer)
+	P2PSession::OnClosedMedia								_onClosedMedia; // called when the peer publisher close a Group Media
 	P2PSession::OnPeerGroupBegin							_onGroupBegin; // called when receiving a Group Begin message from the peer
 	P2PSession::OnPeerClose									_onPeerClose; // called when the peer is closing
 	P2PSession::OnPeerGroupAskClose							_onGroupAskClose;
@@ -132,7 +137,22 @@ private:
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 
+	// Peer instance in the heard list
+	struct GroupNode : virtual Mona::Object {
+		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& host, Mona::UInt64 timeElapsed) :
+			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Mona::UInt64)Mona::Time::Now()) - timeElapsed) {}
+
+		// Return the size of peer addresses for Group Report 
+		Mona::UInt32	addressesSize();
+
+		std::string rawId;
+		std::string groupAddress;
+		PEER_LIST_ADDRESS_TYPE addresses;
+		Mona::SocketAddress hostAddress;
+		Mona::Int64 lastGroupReport; // Time in msec of last Group report received
+	};
 	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
+
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID (same as heard list)
 	std::set<std::string>									_bestList; // Last best list calculated
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections

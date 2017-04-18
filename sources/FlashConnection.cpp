@@ -100,11 +100,12 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 					params.getString("code", code);
 					params.getString("description", description);
 
-					return onStatus(code, description, id, flowId, callbackHandler);
+					return onStatus(code, description, streamId, flowId, callbackHandler);
 				} // TODO: else
 			}
 			else if (type == AMFReader::NUMBER && _creatingStream) {
 				double idStream(0);
+				UInt16 idMedia(0);
 				if (!message.readNumber(idStream)) {
 					ERROR("Unable to read id stream")
 					return false;
@@ -112,7 +113,11 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 				_creatingStream = false;
 				shared_ptr<FlashStream> pStream;
 				addStream((UInt16)idStream, pStream);
-				return onStreamCreated((UInt16)idStream);
+				if (onStreamCreated((UInt16)idStream, idMedia)) {
+					pStream->setIdMedia(idMedia);
+					return true;
+				}
+				return false;
 			}
 		}
 		else if (name == "_error") {
@@ -127,7 +132,7 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 					string code, description;
 					params.getString("code", code);
 					params.getString("description", description);
-					return onStatus(code, description, id, flowId, callbackHandler);
+					return onStatus(code, description, streamId, flowId, callbackHandler);
 				}
 			}
 		}
@@ -146,13 +151,13 @@ bool FlashConnection::rawHandler(UInt16 type, const Packet& packet) {
 	BinaryReader reader(packet.data(), packet.size());
 	switch (type) {
 		case 0x0022: // TODO Here we receive RTMFP flow sync signal, useless to support it?
-			INFO("Sync ", id, " : (syncId=", reader.read32(), ", count=", reader.read32(), ")")
+			INFO("Sync ", streamId, " : (syncId=", reader.read32(), ", count=", reader.read32(), ")")
 			break;
 		case 0x0029:
 			INFO("Set Keepalive timer : server period=", reader.read32(), "ms - peer period=", reader.read32(), "ms")
 			break;
 		default:
-			ERROR("Raw message ", String::Format<UInt16>("%.4x", type), " unknown on main stream ", id);
+			ERROR("Raw message ", String::Format<UInt16>("%.4x", type), " unknown on main stream ", streamId);
 			break;
 	}
 	return true;

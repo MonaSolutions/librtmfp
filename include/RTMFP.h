@@ -31,12 +31,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Socket.h"
 #include <openssl/evp.h>
 #include <openssl/sha.h>
-
+#include "AMFWriter.h"
 #include "Mona/Logs.h"
-
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02000009	// (2.0.9)
+#define RTMFP_LIB_VERSION	0x02010000	// (2.1.0)
 
 #define RTMFP_DEFAULT_KEY	(Mona::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -161,6 +160,10 @@ struct RTMFP : virtual Mona::Static {
 	// Read addresses from the buffer reader
 	// return : True if at least an address has been read
 	static bool	ReadAddresses(Mona::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Mona::SocketAddress& hostAddress, std::function<void(const Mona::SocketAddress&, AddressType)> onNewAddress);
+
+	/* AMF Utility functions */
+	static void WriteInvocation(AMFWriter& writer, const char* name, double callback, bool amf3);
+	static void WriteAMFState(AMFWriter& writer, const char* name, const char* code, const std::string& description, bool amf0, bool withoutClosing = false);
 
 	// Return a random iterator which respect the isAllowed condition
 	template<class ContainerType, typename Iterator>

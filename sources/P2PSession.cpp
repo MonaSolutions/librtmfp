@@ -35,9 +35,12 @@ using namespace std;
 UInt32 P2PSession::P2PSessionCounter = 0x03000000; // Notice that Flash uses incremental values from 3 and do a left align
 
 
-P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent, 
-		const Mona::SocketAddress& host, bool responder, bool group) : peerId(id), hostAddress(host), _parent(parent), _groupBeginSent(false), 
-		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnSocketError, pOnStatusEvent, pOnMediaEvent) {
+P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, 
+		const Mona::SocketAddress& host, bool responder, bool group, UInt16 mediaId) : peerId(id), hostAddress(host), _parent(parent), _groupBeginSent(false), _peerMediaId(mediaId),
+		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnSocketError, pOnStatusEvent) {
+	_pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
+		return _parent->onMediaPlay(_peerMediaId, time, packet, lostRate, type);
+	};
 	_pMainStream->onGroupHandshake = [this](const string& groupId, const string& key, const string& peerId) {
 		return handleGroupHandshake(groupId, key, peerId);
 	};
@@ -46,7 +49,10 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 
 		if (packet.available() < 0x24) {
 			UInt64 lastFragment = packet.read7BitLongValue();
-			DEBUG("Group Media is closing, ignoring the request (last fragment : ", lastFragment,")")
+			DEBUG("Group Media is closing (last fragment : ", lastFragment, ")")
+			auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
+			if (itPeerMedia != _mapFlow2PeerMedia.end())
+				onClosedMedia(*itPeerMedia->second->pStreamKey, lastFragment);
 			return true;
 		}
 
@@ -146,6 +152,7 @@ P2PSession::~P2PSession() {
 	DEBUG("Deletion of P2PSession ", peerId)
 	close(true);
 
+	_pMainStream->onMedia = nullptr;
 	_pMainStream->onGroupMedia = nullptr;
 	_pMainStream->onGroupReport = nullptr;
 	_pMainStream->onGroupPlayPush = nullptr;
@@ -180,8 +187,6 @@ void P2PSession::closeGroup(bool abrupt) {
 	// Full close : we also close the NetGroup Report writer
 	if (abrupt) {
 		_groupConnectSent = _groupBeginSent = groupFirstReportSent = false;
-		/*if (_pReportWriter)
-		_pReportWriter->close();*/ // Do not send the close message, we are closing session
 		_pReportWriter.reset();
 	}
 
@@ -253,11 +258,6 @@ unsigned int P2PSession::callFunction(const char* function, int nbArgs, const ch
 	}
 	_pNetStreamWriter->flush();
 	return 0;
-}
-
-void P2PSession::addCommand(CommandType command, const char* streamName, bool audioReliable, bool videoReliable) {
-
-	_streamName = streamName;
 }
 
 // Only in responder mode
@@ -434,11 +434,6 @@ void P2PSession::onConnection() {
 		_pNetStreamWriter->flush();
 		_parent->setP2PPlayReady();
 	}
-}
-
-void P2PSession::handleDataAvailable(bool isAvailable) { 
-
-	_parent->setDataAvailable(isAvailable); // only for P2P direct play
 }
 
 bool P2PSession::askPeer2Disconnect() {

@@ -42,7 +42,7 @@ struct RTMFPWriter : FlashWriter, virtual Mona::Object {
 
 	Mona::UInt64		queueing() const { return _output.queueing(); }
 	void		acquit(Mona::UInt64 stageAck, Mona::UInt32 lostCount);
-	bool		consumed() { return _writers.empty() && closed() && !_pSender && _pQueue.unique() && _pQueue->empty(); }
+	bool		consumed() { return _writers.empty() && closed() && !_pSender && _pQueue.unique() && _pQueue->empty() && _closeTime.isElapsed(130000); } // Wait 130s before closing the writer definetly
 
 	template <typename ...Args>
 	void fail(Args&&... args) {
@@ -58,7 +58,7 @@ struct RTMFPWriter : FlashWriter, virtual Mona::Object {
 	/*!
 	Close the writer, override closing(Int32 code) to execute closing code */
 	void				close(Mona::Int32 error = 0, const char* reason = NULL);
-	bool				closed() const { return _closed; }
+	bool				closed() const { return _state >= NEAR_CLOSED; }
 
 	Mona::BinaryWriter&	writeRaw() { return *write(AMF::TYPE_RAW); }
 	void				writePing() { write(AMF::TYPE_RAW)->write16(0x0006).write32((Mona::UInt32)Mona::Time::Now()); }
@@ -72,8 +72,10 @@ struct RTMFPWriter : FlashWriter, virtual Mona::Object {
 	virtual void		writePeerGroup(const std::string& netGroup, const Mona::UInt8* key, const Mona::Binary& rawId);
 	// Send the Group begin message (02 + 0E)
 	virtual void		writeGroupBegin();
-	// Play the stream in argument
+	// Send the Group Media subscription
 	virtual void		writeGroupMedia(const std::string& streamName, const Mona::UInt8* data, Mona::UInt32 size, RTMFPGroupConfig* groupConfig);
+	// Send the Group Media end
+	virtual void		writeGroupEndMedia(Mona::UInt64 lastFragment);
 	// Start to play the group stream
 	virtual void		writeGroupPlay(Mona::UInt8 mode);
 	// Send a pull request to a peer (message 2B)
@@ -103,7 +105,7 @@ private:
 
 private:
 
-	bool						_closed;
+	Mona::Time					_closeTime; // Time when the writer has been closed
 	Mona::UInt8					_marker;
 
 };

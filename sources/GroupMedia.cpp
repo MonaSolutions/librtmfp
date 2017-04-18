@@ -32,7 +32,7 @@ UInt32	GroupMedia::GroupMediaCounter = 0;
 
 GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters) : _fragmentCounter(0), _firstPushMode(true), _currentPushMask(0), 
 	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false),
-	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter) {
+	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false) {
 
 	_onPeerClose = [this](const string& peerId, UInt8 mask) {
 		// unset push masks
@@ -62,10 +62,16 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		if (groupParameters->isPublisher)
 			return false; // ignore the request
 
-		// Record the idenfier for future pull requests
+		// Record the identifier for future pull requests
 		if (_lastFragmentMapId < counter) {
 			_mapPullTime2Fragment.emplace(Time::Now(), counter);
 			_lastFragmentMapId = counter;
+
+			// If the state was in pause, we restart the pull requests
+			if (_pullPaused) {
+				DEBUG("GroupMedia ", id, " - Fragments map received, we restart the pull")
+				_pullPaused = false;
+			}
 		}
 
 		// Start push mode if not started
@@ -93,6 +99,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 
 	};
 	_onFragment = [this](PeerMedia* pPeer, const string& peerId, UInt8 marker, UInt64 fragmentId, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet, double lostRate) {
+		_lastFragment.update(); // save the last fragment reception time for timeout calculation
 
 		// Pull fragment?
 		auto itWaiting = _mapWaitingFragments.find(fragmentId);
@@ -160,14 +167,45 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 }
 
 GroupMedia::~GroupMedia() {
-	TRACE("Closing the GroupMedia ", id)
 
+	DEBUG("Destruction of the GroupMedia ", id)
 	MAP_PEERS_INFO_ITERATOR_TYPE itPeer = _mapPeers.begin();
 	while (itPeer != _mapPeers.end())
-		removePeer(itPeer++);
+		(itPeer++)->second->close(false); // Close the writers and remove the peer
+}
 
-	_fragments.clear();
-	_mapTime2Fragment.clear();
+void GroupMedia::close(UInt64 lastFragment) {
+	
+	DEBUG("Closing the GroupMedia ", id, " (last fragment : ", lastFragment, ")")
+	_endFragment = lastFragment;
+}
+
+void GroupMedia::closePublisher() {
+	if (_endFragment) // already closed
+		return;
+
+	UInt32 currentTime = (_fragments.empty()) ? 0 : _fragments.rbegin()->second.time;
+	string tmp;
+	shared_ptr<Buffer> pBuffer(new Buffer());
+	AMFWriter writer(*pBuffer);
+
+	// UnpublishNotify event
+	RTMFP::WriteInvocation(writer, "onStatus", 0, true);
+	RTMFP::WriteAMFState(writer, "onStatus", "NetStream.Play.UnpublishNotify", String::Append(tmp, _stream, " is now unpublished"), false);
+	onMedia(true, AMF::TYPE_INVOCATION_AMF3, currentTime, Packet(pBuffer));
+
+	// closeStream event
+	pBuffer.reset(new Buffer());
+	AMFWriter writerClose(*pBuffer);
+	RTMFP::WriteInvocation(writerClose, "closeStream", 0, true);
+	onMedia(true, AMF::TYPE_INVOCATION_AMF3, currentTime, Packet(pBuffer));
+
+	// Send GroupMedia end message
+	++_fragmentCounter;
+	for (auto itPeer : _mapPeers)
+		itPeer.second->sendEndMedia(_fragmentCounter);
+
+	close(_fragmentCounter);
 }
 
 void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet) {
@@ -182,13 +220,16 @@ void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPee
 		}
 	}
 
-	if ((marker == GroupStream::GROUP_MEDIA_DATA || marker == GroupStream::GROUP_MEDIA_START) && (_mapTime2Fragment.empty() || time > _mapTime2Fragment.rbegin()->first))
-		_mapTime2Fragment[time] = id;
+	if ((marker == GroupStream::GROUP_MEDIA_DATA || marker == GroupStream::GROUP_MEDIA_START) && (_mapTime2Fragment.empty() || id > _mapTime2Fragment.rbegin()->second))
+		_mapTime2Fragment[Time::Now()] = id;
 }
 
-void GroupMedia::manage() {
+bool GroupMedia::manage() {
+	if (_lastFragment.isElapsed(NETGROUP_MEDIA_TIMEOUT)) // to delete the GroupMedia after 5min
+		return false;
+
 	if (_mapPeers.empty())
-		return;
+		return true;
 
 	// Send the Fragments Map message
 	UInt64 lastFragment(0);
@@ -218,6 +259,7 @@ void GroupMedia::manage() {
 		sendPullRequests();
 		_lastPullUpdate.update();
 	}
+	return true;
 }
 
 void GroupMedia::addPeer(const string& peerId, shared_ptr<PeerMedia>& pPeer) {
@@ -242,7 +284,7 @@ void GroupMedia::sendGroupMedia(shared_ptr<PeerMedia>& pPeer) {
 
 	pPeer->sendGroupMedia(_stream, _streamKey, groupParameters.get());
 	UInt64 lastFragment = updateFragmentMap();
-	if (!pPeer->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size()))
+	if (!lastFragment || !pPeer->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size()))
 		pPeer->flushReportWriter();
 }
 
@@ -277,36 +319,32 @@ bool GroupMedia::getNextPeer(MAP_PEERS_INFO_ITERATOR_TYPE& itPeer, bool ascendin
 }
 
 void GroupMedia::eraseOldFragments() {
-	if (_fragments.empty())
+	if (_fragments.empty() || _mapTime2Fragment.empty())
 		return;
 
-	UInt32 end = _fragments.rbegin()->second.time;
-	UInt32 time2Keep = end - (groupParameters->windowDuration + groupParameters->relayMargin);
+	Int64 timeNow = Time::Now();
+	Int64 time2Keep = timeNow - (groupParameters->windowDuration + groupParameters->relayMargin);
 	auto itTime = _mapTime2Fragment.lower_bound(time2Keep);
 
 	// To not delete more than the window duration
 	if (itTime != _mapTime2Fragment.end() && time2Keep > itTime->first)
 		--itTime;
-		
+
 	// Ignore if no fragment found or if it is the first reference
 	if (itTime == _mapTime2Fragment.end() || itTime == _mapTime2Fragment.begin())
 		return;
 
-	auto itFragment = _fragments.find(itTime->second);
-	if (itFragment == _fragments.end()) {
-		ERROR("GroupMedia ", id, " - Unable to find the fragment ", itTime->second, " for cleaning buffer") // implementation error
-		return;
-	}
-
 	// Get the first fragment before the itTime reference
-	--itFragment;
-	if (_fragmentCounter < itFragment->first) {
+	auto itFragment = _fragments.find(itTime->second);
+	if (itFragment != _fragments.begin())
+		--itFragment;
+
+	if (itFragment != _fragments.end() && _fragmentCounter < itFragment->first) {
 		WARN("GroupMedia ", id, " - Deleting unread fragments to keep the window duration... (", itFragment->first - _fragmentCounter, " fragments ignored)")
 		_fragmentCounter = itFragment->first;
 	}
 
-	DEBUG("GroupMedia ", id, " - Deletion of fragments ", _fragments.begin()->first, " (~", _mapTime2Fragment.begin()->first, ") to ",
-		itFragment->first, " (~", itTime->first, ") - current time : ", end)
+	DEBUG("GroupMedia ", id, " - Deletion of fragments ", _fragments.begin()->first, " to ", itFragment->first, " - current time : ", timeNow)
 	_fragments.erase(_fragments.begin(), itFragment);
 	_mapTime2Fragment.erase(_mapTime2Fragment.begin(), itTime);
 
@@ -324,23 +362,26 @@ void GroupMedia::eraseOldFragments() {
 	if (itLast != _fragments.end())
 		pushFragment(itLast);
 
-	// TODO: also clean _mapPullTime2Fragment
+	// Finally clean the map of groupfragments map references
+	auto firstFragmentMap = _mapPullTime2Fragment.lower_bound(time2Keep);
+	if (firstFragmentMap != _mapPullTime2Fragment.begin() && firstFragmentMap != _mapPullTime2Fragment.end())
+		_mapPullTime2Fragment.erase(_mapPullTime2Fragment.begin(), firstFragmentMap);
 }
 
 UInt64 GroupMedia::updateFragmentMap() {
-	if (_fragments.empty())
+	if (_fragments.empty() && !_endFragment)
 		return 0;
 
 	// First we erase old fragments
 	eraseOldFragments();
 
 	// Generate the report message
-	UInt64 firstFragment = _fragments.begin()->first;
-	UInt64 lastFragment = _fragments.rbegin()->first;
+	UInt64 firstFragment = _fragments.empty() ? _endFragment : _fragments.begin()->first;
+	UInt64 lastFragment = _fragments.empty() ? _endFragment : _fragments.rbegin()->first;
 	UInt64 nbFragments = lastFragment - firstFragment; // number of fragments - the first one
 	_fragmentsMapBuffer.resize((UInt32)((nbFragments / 8) + ((nbFragments % 8) > 0)) + Binary::Get7BitValueSize(lastFragment) + 1, false);
 	BinaryWriter writer(BIN _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
-	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(lastFragment);
+	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(_endFragment? _endFragment : lastFragment);
 
 	// If there is only one fragment we just write its counter
 	if (!nbFragments)
@@ -374,7 +415,7 @@ UInt64 GroupMedia::updateFragmentMap() {
 }
 
 void GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) {
-	if (itFragment == _fragments.end() || !_firstPullReceived)
+	if (itFragment == _fragments.end() || (!_pullPaused && !_firstPullReceived))
 		return;
 
 	DEBUG("GroupMedia ", id, " - pushFragment ", itFragment->first, " ; marker : ", itFragment->second.marker)
@@ -386,9 +427,10 @@ void GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) 
 			_fragmentCounter = itFragment->first;
 
 			TRACE("GroupMedia ", id, " - Pushing Media Fragment ", itFragment->first)
-			if (itFragment->second.type == AMF::TYPE_AUDIO || itFragment->second.type == AMF::TYPE_VIDEO)
-				onGroupPacket(itFragment->second.time, itFragment->second, 0, itFragment->second.type);
-
+			if (!onGroupPacket(itFragment->second.time, itFragment->second, 0, itFragment->second.type)) {
+				close(itFragment->first + 1); // if last fragment receive we record it
+				return;
+			}
 			pushFragment(++itFragment); // Go to next fragment
 		}
 		return;
@@ -428,18 +470,18 @@ void GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) 
 	if (itStart->first == _fragmentCounter + 1) {
 		_fragmentCounter = itEnd->first;
 
-		// Buffer the fragments and write to file if audio/video
-		if (itStart->second.type == AMF::TYPE_AUDIO || itStart->second.type == AMF::TYPE_VIDEO) {
-			shared_ptr<Buffer>	pPayload(new Buffer(itStart->second.size(), itStart->second.data()));
-			BinaryWriter writer(*pPayload);
+		// Buffer the fragments and forward the whole packet
+		shared_ptr<Buffer>	pPayload(new Buffer(itStart->second.size(), itStart->second.data()));
+		BinaryWriter writer(*pPayload);
 
-			for (auto itCurrent = itStart; itCurrent++ != itEnd; )
-				writer.write(itCurrent->second.data(), itCurrent->second.size());
+		for (auto itCurrent = itStart; itCurrent++ != itEnd; )
+			writer.write(itCurrent->second.data(), itCurrent->second.size());
 
-			TRACE("GroupMedia ", id, " - Pushing splitted packet ", itStart->first, " - ", nbFragments, " fragments for a total size of ", writer.size())
-			onGroupPacket(itStart->second.time, Packet(pPayload), 0, itStart->second.type);
+		TRACE("GroupMedia ", id, " - Pushing splitted packet ", itStart->first, " - ", nbFragments, " fragments for a total size of ", writer.size())
+		if (!onGroupPacket(itStart->second.time, Packet(pPayload), 0, itStart->second.type)) {
+			close(itFragment->first + 1); // if last fragment receive we record it
+			return;
 		}
-
 		pushFragment(++itEnd);
 	}
 }
@@ -463,15 +505,17 @@ void GroupMedia::sendPushRequests() {
 }
 
 void GroupMedia::sendPullRequests() {
-	if (_mapPullTime2Fragment.empty()) // not started yet
+	if (_mapPullTime2Fragment.empty() || _pullPaused) // not started yet
 		return;
 
 	Int64 timeNow(Time::Now());
 	Int64 timeMax = timeNow - groupParameters->fetchPeriod;
 	auto maxFragment = _mapPullTime2Fragment.lower_bound(timeMax);
 	if (maxFragment == _mapPullTime2Fragment.begin() || maxFragment == _mapPullTime2Fragment.end()) {
-		if ((timeNow - _mapPullTime2Fragment.begin()->first) > groupParameters->fetchPeriod)
-			DEBUG("GroupMedia ", id, " - sendPullRequests - No Fragments map received since Fectch period (", groupParameters->fetchPeriod, "ms), possible network issue")
+		if ((timeNow - _mapPullTime2Fragment.begin()->first) > groupParameters->fetchPeriod) {
+			DEBUG("GroupMedia ", id, " - sendPullRequests - No Fragments map received since Fectch period (", groupParameters->fetchPeriod, "ms), pull paused")
+			_pullPaused = true;
+		}
 		// else we are waiting for fetch period before starting pull requests
 		return;
 	}

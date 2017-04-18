@@ -68,6 +68,14 @@ void PeerMedia::sendGroupMedia(const string& stream, const std::string& streamKe
 	groupMediaSent = true;
 }
 
+void PeerMedia::sendEndMedia(UInt64 lastFragment) {
+	if (!_pMediaReportWriter || !groupMediaSent)
+		return;
+
+	TRACE("Sending the Media Subscription end to peer ", _pParent->peerId)
+	_pMediaReportWriter->writeGroupEndMedia(lastFragment);
+}
+
 bool PeerMedia::sendMedia(const GroupFragment& fragment, bool pull) {
 	if ((!pull && !isPushable((UInt8)fragment.id%8)))
 		return false;

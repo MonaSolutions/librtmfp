@@ -27,14 +27,16 @@ using namespace std;
 using namespace Mona;
 
 GroupStream::GroupStream(UInt16 id) : FlashStream(id) {
-	DEBUG("GroupStream ", id, " created")
+	DEBUG("GroupStream ", streamId, " created")
 }
 
 GroupStream::~GroupStream() {
-	DEBUG("GroupStream ",id," deleted")
+	DEBUG("GroupStream ", streamId," deleted")
 }
 
 bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+	if (!packet)
+		return true; // Flow is closing
 
 	UInt32 time(0);
 	BinaryReader reader(packet.data(), packet.size());
@@ -53,7 +55,7 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 			return true;
 		}
 		case GroupStream::GROUP_INIT: {
-			DEBUG("GroupStream ", id, " - NetGroup Peer Connection (type 01)")
+			DEBUG("GroupStream ", streamId, " - NetGroup Peer Connection (type 01)")
 			if (reader.read16() != 0x4100) {
 				ERROR("Unexpected format for NetGroup ID header")
 				break;
@@ -78,30 +80,30 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 				UInt16 size = reader.read16();
 				reader.read(size, value);
 			}
-			DEBUG("GroupStream ", id, " - NetGroup data message type : ", value)
+			DEBUG("GroupStream ", streamId, " - NetGroup data message type : ", value)
 			return true;
 		}
 		case GroupStream::GROUP_ASK_CLOSE:
-			return onGroupAskClose(id, flowId, writerId);
+			return onGroupAskClose(streamId, flowId, writerId);
 		case GroupStream::GROUP_BEGIN_NEAREST:
-			onGroupBegin(id, flowId, writerId);
+			onGroupBegin(streamId, flowId, writerId);
 			return true;
 		case GroupStream::GROUP_BEGIN:
-			onGroupBegin(id, flowId, writerId); 
+			onGroupBegin(streamId, flowId, writerId);
 			return true;
 		case GroupStream::GROUP_REPORT:
-			onGroupReport(reader, id, flowId, writerId); 
+			onGroupReport(reader, streamId, flowId, writerId);
 			return true;
 		case GroupStream::GROUP_PLAY_PUSH:
-			onGroupPlayPush(reader, id, flowId, writerId); 
+			onGroupPlayPush(reader, streamId, flowId, writerId);
 			return true;
 		case GroupStream::GROUP_PLAY_PULL:
-			onGroupPlayPull(reader, id, flowId, writerId);
+			onGroupPlayPull(reader, streamId, flowId, writerId);
 			return true;
 		case GroupStream::GROUP_MEDIA_INFOS:
-			return onGroupMedia(reader, id, flowId, writerId); 
+			return onGroupMedia(reader, streamId, flowId, writerId);
 		case GroupStream::GROUP_FRAGMENTS_MAP:
-			onFragmentsMap(reader, id, flowId, writerId);
+			onFragmentsMap(reader, streamId, flowId, writerId);
 			return true;
 		case GroupStream::GROUP_MEDIA_DATA: {
 
@@ -109,10 +111,8 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 			
 			UInt8 mediaType = reader.read8();
 			time = reader.read32();
-			DEBUG("GroupStream ", id, " - Group media normal : counter=", counter, ", time=", time, ", type=", (mediaType == AMF::TYPE_AUDIO ? "Audio" : (mediaType == AMF::TYPE_VIDEO ? "Video" : "Unknown")))
-			onFragment(type, counter, 0, mediaType, time, Packet(packet, reader.current(), reader.available()), lostRate, id, flowId, writerId);
-			if (mediaType != AMF::TYPE_AUDIO && mediaType != AMF::TYPE_VIDEO)
-				return FlashStream::process((AMF::Type)mediaType, time, reader, id, writerId, lostRate); // recursive call, can be invocation, data etc.. (TODO: manage fragmented data)
+			DEBUG("GroupStream ", streamId, " - Group media normal : counter=", counter, ", time=", time, ", type=", (mediaType == AMF::TYPE_AUDIO ? "Audio" : (mediaType == AMF::TYPE_VIDEO ? "Video" : "Unknown")))
+			onFragment(type, counter, 0, mediaType, time, Packet(packet, reader.current(), reader.available()), lostRate, streamId, flowId, writerId);
 			return true;
 		} case GroupStream::GROUP_MEDIA_START: { // Start a splitted media sequence
 
@@ -123,45 +123,29 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 				mediaType = reader.read8();
 			time = reader.read32();
 
-			DEBUG("GroupStream ", id, " - Group media start : counter=", counter, ", time=", time, ", splitNumber=", splitNumber, ", type=", (mediaType == AMF::TYPE_AUDIO ? "Audio" : (mediaType == AMF::TYPE_VIDEO ? "Video" : "Unknown")))
-			if (mediaType == AMF::TYPE_AUDIO || mediaType == AMF::TYPE_VIDEO)
-				onFragment(type, counter, splitNumber, mediaType, time, Packet(packet, reader.current(), reader.available()), lostRate, id, flowId, writerId);
-			else // TODO: Support other types (functions) with splitted fragments
-				ERROR("Media type ", String::Format<UInt8>("%02X", mediaType), " not supported (or data decoding error)")
+			DEBUG("GroupStream ", streamId, " - Group media start : counter=", counter, ", time=", time, ", splitNumber=", splitNumber, ", type=", (mediaType == AMF::TYPE_AUDIO ? "Audio" : (mediaType == AMF::TYPE_VIDEO ? "Video" : "Unknown")))
+			onFragment(type, counter, splitNumber, mediaType, time, Packet(packet, reader.current(), reader.available()), lostRate, streamId, flowId, writerId);
 			return true;
 		}
 		case GroupStream::GROUP_MEDIA_NEXT: { // Continue a splitted media sequence
 
 			UInt64 counter = reader.read7BitLongValue();
 			UInt8 splitNumber = reader.read8(); // counter of the splitted sequence
-			DEBUG("GroupStream ", id, " - Group media next : counter=", counter, ", splitNumber=", splitNumber)
-			onFragment(type, counter, splitNumber, 0, 0, Packet(packet, reader.current(), reader.available()), lostRate, id, flowId, writerId);
+			DEBUG("GroupStream ", streamId, " - Group media next : counter=", counter, ", splitNumber=", splitNumber)
+			onFragment(type, counter, splitNumber, 0, 0, Packet(packet, reader.current(), reader.available()), lostRate, streamId, flowId, writerId);
 			return true;
 		}
 		case GroupStream::GROUP_MEDIA_END: { // End of a splitted media sequence
 
 			UInt64 counter = reader.read7BitLongValue();
-			DEBUG("GroupStream ", id, " - Group media end : counter=", counter)
-			onFragment(type, counter, 0, 0, 0, Packet(packet, reader.current(), reader.available()), lostRate, id, flowId, writerId);
+			DEBUG("GroupStream ", streamId, " - Group media end : counter=", counter)
+			onFragment(type, counter, 0, 0, 0, Packet(packet, reader.current(), reader.available()), lostRate, streamId, flowId, writerId);
 			return true;
 		}
 
 		default:
-			ERROR("GroupStream ", id, ", Unpacking type '", String::Format<UInt8>("%02X",(UInt8)type), "' unknown")
+			ERROR("GroupStream ", streamId, ", Unpacking type '", String::Format<UInt8>("%02X",(UInt8)type), "' unknown")
 	}
 
 	return false;
 }
-
-
-bool GroupStream::messageHandler(const string& name, AMFReader& message, UInt64 flowid, UInt64 writerId, double callbackHandler) {
-	/*** Player ***/
-	if (name == "closeStream") {
-		INFO("Stream ", id, " is closing...")
-		// TODO: implement close method
-		return false;
-	}
-	
-	return FlashStream::messageHandler(name, message, id, writerId, callbackHandler);
-}
-

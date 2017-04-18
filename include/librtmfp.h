@@ -48,9 +48,9 @@ LIBRTMFP_API typedef struct RTMFPGroupConfig {
 
 LIBRTMFP_API typedef struct RTMFPConfig {
 	short	isBlocking; // False by default, if True the function will return only when we are connected
-	void	(*pOnSocketError)(const char*); // Socket Error callback
-	void	(*pOnStatusEvent)(const char*, const char*); // RTMFP Status Event callback
-	void	(*pOnMedia)(const char *, const char*, unsigned int, const char*, unsigned int, unsigned int); // In synchronous read mode this callback is called when receiving data
+	void	(*pOnSocketError)(const char* error); // Socket Error callback
+	void	(*pOnStatusEvent)(const char* code, const char* description); // RTMFP Status Event callback
+	void	(*pOnMedia)(unsigned short streamId, unsigned int time, const char* data, unsigned int size, unsigned int type); // In synchronous read mode this callback is called when receiving data
 } RTMFPConfig;
 
 // This function MUST be called before any other
@@ -74,34 +74,37 @@ LIBRTMFP_API int RTMFP_LibVersion();
 LIBRTMFP_API unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters);
 
 // Connect to a peer via RTMFP P2P Connection (must be connected) and start playing streamName
-LIBRTMFP_API  int RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking);
+// return the id of the stream (to call with RTMFP_Read) or 0 if an error occurs 
+LIBRTMFP_API unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking);
 
 // Connect to a NetGroup (in the G:... form)
-LIBRTMFP_API int RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters);
+// return the id of the stream (to call with RTMFP_Read) or 0 if an error occurs 
+LIBRTMFP_API unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters);
 
 // RTMFP NetStream Play function
-// return : 1 if the request succeed, 0 otherwise
-LIBRTMFP_API int RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
+// return the id of the stream (to call with RTMFP_Read) or 0 if an error occurs 
+LIBRTMFP_API unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 
 // RTMFP NetStream Publish function
-// return : 1 if the request succeed, 0 otherwise
-LIBRTMFP_API int RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
+// return the id of the stream or 0 if an error occurs 
+LIBRTMFP_API unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
 
 // RTMFP P2P NetStream Publish function (equivalent of NetStream.DIRECT_CONNECTIONS)
 // return : 1 if the request succeed, 0 otherwise
-LIBRTMFP_API int RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
+LIBRTMFP_API unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
 
 // RTMFP NetStream Unpublish function
 // return : 1 if the request succeed, 0 otherwise
-LIBRTMFP_API int RTMFP_ClosePublication(unsigned int RTMFPcontext, const char* streamName);
+LIBRTMFP_API unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext, const char* streamName);
 
 // Close the RTMFP connection
 LIBRTMFP_API void RTMFP_Close(unsigned int RTMFPcontext);
 
 // Read size bytes of flv data from the current connexion (Asynchronous read, to be called by ffmpeg)
 // peerId : the id of the peer or an empty string
+// streamId : the id of the stream to read
 // return : the number of bytes read (always less or equal than size) or -1 if an error occurs
-LIBRTMFP_API int RTMFP_Read(const char* peerId, unsigned int RTMFPcontext, char *buf, unsigned int size);
+LIBRTMFP_API int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext, char *buf, unsigned int size);
 
 // Write size bytes of data into the current connexion
 // return the number of bytes used
