@@ -146,6 +146,8 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		}
 		else if (time < media.timeStart) {
 			DEBUG("Packet ignored because it is older (", time, ") than start time (", media.timeStart, ")")
+			if (time == 0)
+				WARN("Time reset is not handled for now, next packet will be ignored (start time = ", media.timeStart, ")") //TODO: don't know if it is possible
 			return;
 		}
 
@@ -292,14 +294,6 @@ RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const strin
 		ex.set<Ex::Protocol>("Unhandled signature type : ",  String::Hex(BIN signature.data(), signature.size()), " , cannot create RTMFPFlow");
 	}
 	return NULL;
-}
-
-void RTMFPSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
-	// We reset the pointers before closure
-	if (pWriter == _pGroupWriter)
-		_pGroupWriter.reset();
-	else if (pWriter == _pMainWriter)
-		_pMainWriter.reset();
 }
 
 bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {

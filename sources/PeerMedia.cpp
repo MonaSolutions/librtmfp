@@ -27,23 +27,29 @@ using namespace Mona;
 using namespace std;
 
 PeerMedia::PeerMedia(P2PSession* pSession, shared_ptr<RTMFPWriter>& pMediaReportWriter) : _pMediaReportWriter(pMediaReportWriter), _pParent(pSession), _idFragmentsMapIn(0), _idFragmentsMapOut(0), 
-	idFlow(0), idFlowMedia(0), pStreamKey(NULL), _pushOutMode(0), pushInMode(0), groupMediaSent(false), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE) {
-
+	idFlow(0), idFlowMedia(0), pStreamKey(NULL), _pushOutMode(0), pushInMode(0), groupMediaSent(false), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), id(pMediaReportWriter->id), _closed(false) {
+	TRACE("Creation of PeerMedia ", id, " from ", _pParent->name())
 }
 
 PeerMedia::~PeerMedia() {
 
+	TRACE("Destruction of PeerMedia ", id, " from ", _pParent->name())
 	close(true);
 	_pParent = NULL;
 }
 
 void PeerMedia::close(bool abrupt) {
+	if (_closed)
+		return;
+
+	TRACE("Closing PeerMedia ", id, " from ", _pParent->name())
 	closeMediaWriter(abrupt);
 	if (idFlow && !abrupt)
 		_pParent->closeFlow(idFlow);
 	_pMediaReportWriter.reset();
 
 	onPeerClose(_pParent->peerId, pushInMode); // notify GroupMedia to reset push masks and remove pointer
+	_closed = true;
 }
 
 void PeerMedia::closeMediaWriter(bool abrupt) {

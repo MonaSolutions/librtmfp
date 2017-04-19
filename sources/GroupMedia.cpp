@@ -170,8 +170,11 @@ GroupMedia::~GroupMedia() {
 
 	DEBUG("Destruction of the GroupMedia ", id)
 	MAP_PEERS_INFO_ITERATOR_TYPE itPeer = _mapPeers.begin();
-	while (itPeer != _mapPeers.end())
-		(itPeer++)->second->close(false); // Close the writers and remove the peer
+	while (itPeer != _mapPeers.end()) {
+		itPeer->second->onPeerClose = nullptr; // to avoid callback
+		itPeer->second->close(false); // Close the writers
+		removePeer(itPeer++);
+	}
 }
 
 void GroupMedia::close(UInt64 lastFragment) {
@@ -272,7 +275,7 @@ void GroupMedia::addPeer(const string& peerId, shared_ptr<PeerMedia>& pPeer) {
 	pPeer->onPlayPull = _onPlayPull;
 	pPeer->onFragmentsMap = _onFragmentsMap;
 	pPeer->onFragment = _onFragment;
-	DEBUG("GroupMedia ", id, " - Adding peer ", peerId, " (", _mapPeers.size(), " peers)")
+	DEBUG("GroupMedia ", id, " - Adding peer ", pPeer->id, " from ", peerId, " (", _mapPeers.size(), " peers)")
 
 	// Send the group media & fragments map if not already sent
 	sendGroupMedia(pPeer);
@@ -607,7 +610,7 @@ void GroupMedia::removePeer(const string& peerId) {
 
 void GroupMedia::removePeer(MAP_PEERS_INFO_ITERATOR_TYPE itPeer) {
 
-	DEBUG("GroupMedia ", id, " - Removing peer ", itPeer->first, " (", _mapPeers.size()," peers)")
+	DEBUG("GroupMedia ", id, " - Removing peer ", itPeer->second->id, " from ", itPeer->first, " (", _mapPeers.size()," peers)")
 	itPeer->second->onPeerClose = nullptr;
 	itPeer->second->onPlayPull = nullptr;
 	itPeer->second->onFragmentsMap = nullptr;

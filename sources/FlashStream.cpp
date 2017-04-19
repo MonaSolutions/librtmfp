@@ -142,10 +142,10 @@ bool FlashHandler::dataHandler(const Packet& packet, double lostRate) {
 	
 	AMFReader reader(packet.data(), packet.size());
 	string func, params, value;
-	if (reader.nextType() == AMFReader::STRING) {
+	UInt8 type = reader.nextType();
+	if (type == AMFReader::STRING) {
 		reader.readString(func);
 
-		UInt8 type(AMFReader::END);
 		double number(0);
 		bool first = true, boolean;
 		while ((type = reader.nextType()) != AMFReader::END) {
@@ -164,9 +164,10 @@ bool FlashHandler::dataHandler(const Packet& packet, double lostRate) {
 			}
 			first = false;
 		}
-		TRACE("Function ", func, " received with parameters : ", params)
+		DEBUG("Function ", func, " received with parameters : ", params)
 		// TODO: make a callback function
-	}
+	} else
+		DEBUG("Data with type ", type, " received but not handled, type : ")
 	return true;
 }
 

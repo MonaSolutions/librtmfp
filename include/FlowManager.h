@@ -63,9 +63,6 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	// Return true if the session has failed (we will not send packets anymore)
 	virtual bool					failed() { return (status == RTMFP::FAILED && _closeTime.isElapsed(19000)) || ((status == RTMFP::NEAR_CLOSED) && _closeTime.isElapsed(90000)); }
 
-	// Called by RTMFPWriter to know if there is already a message in queue
-	virtual bool					canWriteFollowing(RTMFPWriter& writer) { return _pLastWriter == &writer; }
-
 	// Called when we received the first handshake 70 to update the address
 	virtual bool					onPeerHandshake70(const Mona::SocketAddress& address, const Mona::Packet& farKey, const std::string& cookie);
 
@@ -109,9 +106,6 @@ struct FlowManager : RTMFP::Output, BandWriter {
 protected:
 
 	Mona::Buffer&				write(Mona::UInt8 type, Mona::UInt16 size);
-
-	// Handle a writer closed (to release shared pointers)
-	virtual void				handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter)=0;
 
 	// Create a new writer
 	const std::shared_ptr<RTMFPWriter>&		createWriter(const Mona::Packet& signature, Mona::UInt64 flowId=0);
@@ -210,6 +204,5 @@ private:
 
 	// writers members
 	std::map<Mona::UInt64, std::shared_ptr<RTMFPWriter>>						_flowWriters; // Map of writers identified by id
-	RTMFPWriter*																_pLastWriter; // Write pointer used to check if it is possible to write
 	Mona::UInt64																_nextRTMFPWriterId; // Writer id to use for the next writer to create
 };

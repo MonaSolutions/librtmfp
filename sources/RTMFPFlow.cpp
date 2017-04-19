@@ -44,9 +44,6 @@ RTMFPFlow::~RTMFPFlow() {
 
 	// delete fragments
 	_fragments.clear();
-
-
-	_completeTime.update();
 }
 
 UInt64 RTMFPFlow::buildAck(vector<UInt64>& losts, UInt16& size) {
@@ -65,6 +62,7 @@ UInt64 RTMFPFlow::buildAck(vector<UInt64>& losts, UInt16& size) {
 		losts.emplace_back(buffered);
 		--stage;
 	}
+	_completeTime.update(); // update the complete time to wait at least 120s before destruction of the flow
 	return _stage;
 }
 

@@ -178,9 +178,6 @@ public:
 
 protected:
 
-	// Handle a writer closed (to release shared pointers)
-	virtual void handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter);
-
 	// Handle data available or not event
 	void handleDataAvailable(bool isAvailable);
 

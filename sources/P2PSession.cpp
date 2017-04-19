@@ -45,16 +45,16 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		return handleGroupHandshake(groupId, key, peerId);
 	};
 	_pMainStream->onGroupMedia = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
-		DEBUG("Group Media Subscription message received from ", peerId)
 
 		if (packet.available() < 0x24) {
 			UInt64 lastFragment = packet.read7BitLongValue();
-			DEBUG("Group Media is closing (last fragment : ", lastFragment, ")")
+			DEBUG("GroupMedia Closure message received from ", peerId)
 			auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
 			if (itPeerMedia != _mapFlow2PeerMedia.end())
 				onClosedMedia(*itPeerMedia->second->pStreamKey, lastFragment);
 			return true;
 		}
+		DEBUG("GroupMedia Subscription message received from ", peerId)
 
 		string streamName;
 
@@ -166,26 +166,14 @@ P2PSession::~P2PSession() {
 }
 
 void P2PSession::close(bool abrupt) {
-	if (status == RTMFP::FAILED)
+	if ((abrupt && (status == RTMFP::FAILED)) || (!abrupt && (status == RTMFP::NEAR_CLOSED)))
 		return;
 
-	_pLastWriter.reset();
+	TRACE("Closing P2PSession ", peerId, " (abrupt=",abrupt,")")
 
-	closeGroup(abrupt);
-
-	if (_pListener) {
-		_parent->stopListening(peerId);
-		_pListener = NULL;
-	}
-
-	FlowManager::close(abrupt);
-}
-
-
-void P2PSession::closeGroup(bool abrupt) {
-
-	// Full close : we also close the NetGroup Report writer
+	// NetGroup 
 	if (abrupt) {
+		// Full close : we also close the NetGroup Report writer
 		_groupConnectSent = _groupBeginSent = groupFirstReportSent = false;
 		_pReportWriter.reset();
 	}
@@ -196,6 +184,13 @@ void P2PSession::closeGroup(bool abrupt) {
 	_mapWriter2PeerMedia.clear();
 	_mapFlow2PeerMedia.clear();
 	onPeerClose(peerId);
+
+	if (_pListener) {
+		_parent->stopListening(peerId);
+		_pListener = NULL;
+	}
+
+	FlowManager::close(abrupt);
 }
 
 RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
@@ -222,28 +217,6 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 	}
 	ex.set<Ex::Protocol>("Unhandled signature type : ", String::Hex((const UInt8*)signature.data(), signature.size()), " , cannot create RTMFPFlow");
 	return NULL;
-}
-
-
-void P2PSession::handleWriterClosed(shared_ptr<RTMFPWriter>& pWriter) {
-	// We reset the pointers before closure
-	if (pWriter == _pReportWriter)
-		_pReportWriter.reset();
-	else if (pWriter == _pNetStreamWriter)
-		_pNetStreamWriter.reset();
-	else if (pWriter->signature.size() > 3 && memcmp(pWriter->signature.data(), "\x00\x47\x52\x11", 4) == 0) {
-		auto itWriter = _mapWriter2PeerMedia.find(pWriter->id);
-		if (itWriter != _mapWriter2PeerMedia.end()) {
-			FATAL_CHECK(itWriter->second->pStreamKey) // implementation error
-			auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
-			if (itStream != _mapStream2PeerMedia.end()) {
-				if (itStream->second->idFlow)
-					_mapFlow2PeerMedia.erase(itStream->second->idFlow);
-				_mapStream2PeerMedia.erase(itStream);
-			}
-			_mapWriter2PeerMedia.erase(itWriter);
-		}
-	}
 }
 
 unsigned int P2PSession::callFunction(const char* function, int nbArgs, const char** args) {
@@ -333,7 +306,17 @@ void P2PSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 		auto itWriter = _mapWriter2PeerMedia.find(pWriter->id);
 		if (itWriter != _mapWriter2PeerMedia.end()) {
 			DEBUG(peerId, " want to close the subscription media report writer ", pWriter->id)
+
+			// Close the PeerMedia before deletion
 			itWriter->second->close(false);
+
+			FATAL_CHECK(itWriter->second->pStreamKey) // implementation error
+			auto itStream = _mapStream2PeerMedia.find(*itWriter->second->pStreamKey);
+			FATAL_CHECK(itStream != _mapStream2PeerMedia.end())
+			if (itStream->second->idFlow)
+				_mapFlow2PeerMedia.erase(itStream->second->idFlow);
+			_mapStream2PeerMedia.erase(itStream);
+			_mapWriter2PeerMedia.erase(itWriter);
 		}
 	}
 	else if (pWriter->signature.size() > 3 && memcmp(pWriter->signature.data(), "\x00\x47\x52\x12", 4) == 0) {

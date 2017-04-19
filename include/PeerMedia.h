@@ -113,6 +113,7 @@ struct PeerMedia : public virtual Mona::Object {
 	// Add a fragment to the blacklist of pull to avoid a new pull request for this peer
 	void addPullBlacklist(Mona::UInt64 idFragment);
 
+	Mona::UInt64					id; // id of the PeerMedia, it is also the id of the report writer
 	Mona::UInt64					idFlow; // id of the Media Report RTMFPFlow linked to, used to create the Media Writer
 	Mona::UInt64					idFlowMedia; // id of the Media RTMFPFlow (the one who send fragments)
 	const std::string*				pStreamKey; // pointer to the streamKey index in the map P2PSession::_mapStream2PeerMedia
@@ -124,6 +125,7 @@ private:
 	bool							isPushable(Mona::UInt8 rest);
 
 	P2PSession*						_pParent; // P2P session related to
+	bool							_closed; // closed state
 
 	Mona::UInt8						_pushOutMode; // Group Publish Push mode
 	Mona::Buffer					_fragmentsMap; // Last Fragments Map received

@@ -61,9 +61,6 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 	// Close the group writers but keep the connection open if full is false
 	virtual void					close(bool abrupt);
 
-	// Close the Group connection to peer
-	void							closeGroup(bool abrupt);
-
 	// Return the name of the session
 	virtual const std::string&		name() { return peerId; }
 
@@ -128,9 +125,6 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 
 protected:
 
-	// Handle a writer closed (to release shared pointers)
-	virtual void					handleWriterClosed(std::shared_ptr<RTMFPWriter>& pWriter);
-
 	// Handle play request (only for P2PSession)
 	virtual bool					handlePlay(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler);
 
@@ -164,7 +158,6 @@ private:
 
 	std::shared_ptr<RTMFPWriter>							_pReportWriter; // Writer for report messages
 	std::shared_ptr<RTMFPWriter>							_pNetStreamWriter; // Writer for NetStream P2P direct messages
-	std::shared_ptr<RTMFPWriter>							_pLastWriter; // Last created writer
 
 	std::map<Mona::UInt64, std::shared_ptr<PeerMedia>>		_mapWriter2PeerMedia; // map of writer id to peer media
 	std::map<std::string, std::shared_ptr<PeerMedia>>		_mapStream2PeerMedia; // map of stream key to peer media

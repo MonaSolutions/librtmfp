@@ -31,7 +31,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Mona;
 using namespace std;
 
-FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _pLastWriter(NULL), _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
+FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
 	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2), _initiatorTime(0), initiatorTime(0), _farId(0), _threadSend(0) {
 
 	_pMainStream.reset(new FlashConnection());
@@ -110,7 +110,6 @@ void FlowManager::flushWriters() {
 		Exception ex;
 		pWriter->flush();
 		if (pWriter->consumed()) {
-			handleWriterClosed(pWriter);
 			DEBUG("Writer ", pWriter->id, " of Session ", name(), " consumed")
 			_flowWriters.erase(it++);
 			continue;
