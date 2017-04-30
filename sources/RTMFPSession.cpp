@@ -140,23 +140,12 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 			}
 		}
 
-		if (media.firstMedia) {
-			media.firstMedia = false;
-			media.timeStart = time; // to set to 0 the first packets
-		}
-		else if (time < media.timeStart) {
-			DEBUG("Packet ignored because it is older (", time, ") than start time (", media.timeStart, ")")
-			if (time == 0)
-				WARN("Time reset is not handled for now, next packet will be ignored (start time = ", media.timeStart, ")") //TODO: don't know if it is possible
-			return;
-		}
-
 		if (_pOnMedia) // Synchronous read
-			_pOnMedia(mediaId, time - media.timeStart, STR packet.data(), packet.size(), type);
+			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
 		else { // Asynchronous read
-			media.mediaPackets.emplace_back(new MediaPlayer::RTMFPMediaPacket(packet, time - media.timeStart, type));
-			// TODO: do not emplace if there is too much packets (when the read process is slower than packet reception), memory can explode here!
-			handleDataAvailable(true);
+			media.mediaPackets.emplace_back(new MediaPlayer::RTMFPMediaPacket(packet, time, type));
+			if (!dataAvailable)
+				dataAvailable = true;
 		}
 	};
 	onPushAudio = [this](MediaPacket& packet) { _pPublisher->pushAudio(packet.time, packet); };
@@ -430,7 +419,7 @@ UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* par
 			_mapPlayers.emplace(piecewise_construct, forward_as_tuple(_mediaCount+1), forward_as_tuple());
 
 		_group.reset(new NetGroup(++_mediaCount, groupHex, groupTxt, streamName, *this, parameters));
-		_group->onMedia = _pMainStream->onMedia;
+		_group->onMedia = onMediaPlay;
 		_group->onStatus = _pMainStream->onStatus;
 		_waitingGroup.push_back(groupHex);
 		return _mediaCount;
@@ -492,17 +481,9 @@ bool RTMFPSession::read(UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
 		nbRead = writer.size();
 		available = !itMedia->second.mediaPackets.empty();
 	}
-	if (!available)
-		handleDataAvailable(false); // change the available status
+	if (!available && dataAvailable)
+		dataAvailable = false;
 	return true;
-}
-
-void RTMFPSession::handleDataAvailable(bool isAvailable) {
-	if (dataAvailable != isAvailable) {
-		dataAvailable = isAvailable;
-		if (dataAvailable)
-			readSignal.set(); // notify the client that data is available
-	}
 }
 
 bool RTMFPSession::write(const UInt8* data, UInt32 size, int& pos) {
@@ -623,6 +604,10 @@ void RTMFPSession::manage() {
 	// Manage NetGroup
 	if (_group)
 		_group->manage();
+
+	// notify the client that data is available to flush
+	if (dataAvailable)
+		readSignal.set();
 }
 
 Mona::UInt16 RTMFPSession::addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable) {

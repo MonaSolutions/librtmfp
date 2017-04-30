@@ -134,8 +134,6 @@ public:
 
 	bool							isPublisher() { return (bool)_pPublisher; }
 
-	void							setDataAvailable(bool isAvailable) { handleDataAvailable(isAvailable); }
-
 	// Called when when sending the handshake 38 to build the peer ID if we are RTMFPSession
 	virtual void					buildPeerID(const Mona::UInt8* data, Mona::UInt32 size);
 
@@ -177,9 +175,6 @@ public:
 	typedef Mona::Event<void()>				ON(FlushPublisher);
 
 protected:
-
-	// Handle data available or not event
-	void handleDataAvailable(bool isAvailable);
 
 	// Handle a Writer close message (type 5E)
 	virtual void handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
@@ -261,7 +256,7 @@ private:
 	
 	/* Asynchronous Read */
 	struct MediaPlayer : public Object {
-		MediaPlayer() : firstRead(true), firstMedia(true), timeStart(0), codecInfosRead(false) {}
+		MediaPlayer() : firstRead(true), codecInfosRead(false) {}
 
 		// Packet structure
 		struct RTMFPMediaPacket : Mona::Packet, virtual Mona::Object {
@@ -273,8 +268,6 @@ private:
 		};
 		std::deque<std::shared_ptr<RTMFPMediaPacket>>	mediaPackets;
 		bool											firstRead;
-		bool											firstMedia;
-		Mona::UInt32									timeStart;
 		bool											codecInfosRead; // Player : False until the video codec infos have been read
 	};
 	std::map<Mona::UInt16, MediaPlayer>							_mapPlayers; // Map of media players

@@ -107,13 +107,9 @@ void GroupListener::pushAudio(UInt32 time, const Packet& packet) {
 }
 
 bool GroupListener::pushAudioInfos(UInt32 time) {
-	if (publication.audioCodecBuffer())
+	if (!publication.audioCodecBuffer())
 		return false;
 	INFO("AAC codec infos sent to one listener of ", publication.name(), " publication")
 	pushAudio(time, publication.audioCodecBuffer());
 	return true;
-}
-
-void GroupListener::flush() {
-
 }

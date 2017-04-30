@@ -119,7 +119,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		if (itGroupMedia == _mapGroupMedias.end() || itGroupMedia->first != streamKey) {
 			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters));
 			itGroupMedia->second.onGroupPacket = _onGroupPacket;
-			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id," for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
+			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
 
 			// Send the group media infos to each other peers
 			for (auto itPeer : _mapPeers) {
@@ -136,6 +136,9 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 	};
 	_onClosedMedia = [this](const string& streamKey, UInt64 lastFragment) {
 		// TODO: not sure we need to do something here (GroupMedia close message is not received by all peers)
+		auto itGroupMedia = _mapGroupMedias.find(streamKey);
+		if (itGroupMedia != _mapGroupMedias.end())
+			DEBUG("GroupMedia ", itGroupMedia->second.id, " is closing (last fragment : ", lastFragment, ")")
 	};
 	_onGroupReport = [this](P2PSession* pPeer, BinaryReader& packet, bool sendMediaSubscription) {
 		
@@ -237,6 +240,7 @@ void NetGroup::stopListener() {
 		_groupMediaPublisher->second.onMedia = nullptr;
 	}
 	_groupMediaPublisher = _mapGroupMedias.end();
+	_pListener->onMedia = nullptr;
 	_conn.stopListening(idTxt);
 	_pListener = NULL;
 }

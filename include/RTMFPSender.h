@@ -44,9 +44,9 @@ struct RTMFPSender : Mona::Runner, virtual Mona::Object {
 		Mona::UInt32		_sizeSent;
 	};
 	struct Session : virtual Mona::Object {
-		Session(Mona::UInt32 farId, const std::shared_ptr<RTMFP::Engine>& pEncoder, const std::shared_ptr<Mona::Socket>& pSocket) :
-			sendable(RTMFP::SENDABLE_MAX), socket(*pSocket), pEncoder(new RTMFP::Engine(*pEncoder)), farId(farId),
-			queueing(0), _pSocket(pSocket), sendLostRate(sendByteRate), sendTime(0), initiatorTime(0) {}
+		Session(Mona::UInt32 farId, const std::shared_ptr<RTMFP::Engine>& pEncoder, const std::shared_ptr<Mona::Socket>& pSocket, Mona::Int64 time) :
+			sendable(RTMFP::SENDABLE_MAX), socket(*pSocket), pEncoder(new RTMFP::Engine(*pEncoder)), farId(farId), initiatorTime(time),
+			queueing(0), _pSocket(pSocket), sendLostRate(sendByteRate), sendTime(0) {}
 		Mona::UInt32					farId;
 		std::atomic<Mona::Int64>		initiatorTime;
 		std::shared_ptr<RTMFP::Engine>	pEncoder;

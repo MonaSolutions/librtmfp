@@ -32,7 +32,7 @@ using namespace Mona;
 using namespace std;
 
 FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _responder(responder), _nextRTMFPWriterId(2), _initiatorTime(0), initiatorTime(0), _farId(0), _threadSend(0) {
+	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0) {
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
@@ -323,8 +323,10 @@ void FlowManager::receive(const Packet& packet) {
 				pFlow->input(stage, flags, Packet(packet, message.current(), message.available()));
 
 				if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
-					ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested")
-					close(false);
+					if (status < RTMFP::NEAR_CLOSED) {
+						ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested")
+						close(false);
+					}
 					return;
 				}
 			}
@@ -378,7 +380,10 @@ void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
 }
 
 Buffer& FlowManager::write(UInt8 type, UInt16 size) {
-	BinaryWriter(RTMFP::InitBuffer(_pBuffer, initiatorTime, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B)).write8(type).write16(size);
+	if (!_pSendSession) 
+		BinaryWriter(RTMFP::InitBuffer(_pBuffer, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B)).write8(type).write16(size);
+	else
+		BinaryWriter(RTMFP::InitBuffer(_pBuffer, _pSendSession->initiatorTime, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B)).write8(type).write16(size);
 	return *_pBuffer;
 }
 
@@ -470,7 +475,7 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce.data(), initiatorNonce.size(), BIN responderNonce.data(), responderNonce.size(), requestKey, responseKey);
 	_pDecoder.reset(new RTMFP::Engine(_responder ? requestKey : responseKey));
 	_pEncoder.reset(new RTMFP::Engine(_responder ? responseKey : requestKey));
-	_pSendSession.reset(new RTMFPSender::Session(farId, _pEncoder, socket(_address.family()))); // important, initialize the sender session
+	_pSendSession.reset(new RTMFPSender::Session(farId, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0)); // important, initialize the sender session
 
 	// Save nonces just in case we are in a NetGroup connection
 	_farNonce = _pHandshake->farNonce;
@@ -487,18 +492,19 @@ void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
 	UInt8 marker = reader.read8();
 	UInt16 time = reader.read16();
 
-	if (time != _initiatorTime) { // to avoid to use a repeating packet version
-		_initiatorTime = time;
-		initiatorTime = Time::Now() - (time*RTMFP::TIMESTAMP_SCALE);
-	}
-
 	if (address != _address) {
 		DEBUG("Session ", name(), " has change its address from ", _address, " to ", address)
 
 		// If address family change socket will change
 		if (address.family() != _address.family())
-			_pSendSession.reset(new RTMFPSender::Session(_farId, _pEncoder, socket(_address.family())));
+			_pSendSession.reset(new RTMFPSender::Session(_farId, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0));
 		_address.set(address);
+	}
+
+	if (time != _initiatorTime) { // to avoid to use a repeating packet version
+		_initiatorTime = time;
+		if (_pSendSession)
+			_pSendSession->initiatorTime = Time::Now() - (time*RTMFP::TIMESTAMP_SCALE);
 	}
 
 	// Handshake
@@ -553,7 +559,7 @@ void FlowManager::setPing(UInt16 time, UInt16 timeEcho) {
 			time += 0xFFFF - timeEcho;
 		timeEcho = 0;
 	}
-	UInt16 value = (time - timeEcho) * RTMFP_TIMESTAMP_SCALE;
+	UInt16 value = (time - timeEcho) * RTMFP::TIMESTAMP_SCALE;
 	_ping = (value == 0 ? 1 : value);
 }
 
@@ -600,8 +606,9 @@ bool FlowManager::onPeerHandshake70(const SocketAddress& address, const Packet& 
 		return false;
 	}
 
-	// update address
+	// update address & generate the session
 	_address.set(address);
+	_pSendSession.reset(new RTMFPSender::Session(0, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0));
 	return true;
 };
 

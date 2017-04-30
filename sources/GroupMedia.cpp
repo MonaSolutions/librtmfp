@@ -48,7 +48,6 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		removePeer(peerId);
 	};
 	_onPlayPull = [this](PeerMedia* pPeer, UInt64 index) {
-
 		auto itFragment = _fragments.find(index);
 		if (itFragment == _fragments.end()) {
 			DEBUG("GroupMedia ", id, " - Peer is asking for an unknown Fragment (", index, "), possibly deleted")
@@ -423,7 +422,7 @@ void GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) 
 
 	DEBUG("GroupMedia ", id, " - pushFragment ", itFragment->first, " ; marker : ", itFragment->second.marker)
 
-	// Stand alone fragment (special case : sometime Flash send media END without splitted fragments)
+	// Stand alone fragment (special case : sometimes Flash send media END without splitted fragments)
 	if (itFragment->second.marker == GroupStream::GROUP_MEDIA_DATA || (itFragment->second.marker == GroupStream::GROUP_MEDIA_END && itFragment->first == _fragmentCounter + 1)) {
 		// Is it the next fragment?
 		if (_fragmentCounter == 0 || itFragment->first == _fragmentCounter + 1) {

@@ -34,7 +34,7 @@ struct GroupListener : Listener {
 	virtual void pushAudio(Mona::UInt32 time, const Mona::Packet& packet);
 	virtual void pushVideo(Mona::UInt32 time, const Mona::Packet& packet);
 
-	virtual void flush();
+	virtual void flush() {}
 
 private:
 

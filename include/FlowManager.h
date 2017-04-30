@@ -195,8 +195,7 @@ private:
 	Mona::Time																	_lastClose; // Time since last close chunk
 	Mona::UInt16																_ping; // ping value
 
-	Mona::UInt16																_initiatorTime; // time in msec received from target
-	std::atomic<Mona::Int64>													initiatorTime; // time calculated from reception time - time received
+	Mona::UInt32																_initiatorTime; // time in msec received from target
 	std::shared_ptr<Mona::Buffer>												_pBuffer; // buffer for sending packets
 	Mona::UInt32																_farId; // far id of the session
 	std::shared_ptr<RTMFPSender::Session>										_pSendSession; // session for sending packets

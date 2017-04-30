@@ -79,15 +79,14 @@ Buffer& RTMFP::InitBuffer(shared_ptr<Buffer>& pBuffer, UInt8 marker) {
 }
 
 Buffer& RTMFP::InitBuffer(shared_ptr<Buffer>& pBuffer, atomic<Int64>& initiatorTime, UInt8 marker) {
-	// Commented, this is avoiding messages to be repeated by peers
-	/*Int64 time = initiatorTime.exchange(0);
+	Int64 time = initiatorTime.exchange(0);
 	if (!time)
 		return InitBuffer(pBuffer, marker);
 	time = Time::Now() - time;
 	if ((time > 262140)) // because is not convertible in RTMFP timestamp on 2 bytes, 0xFFFF*RTMFP::TIMESTAMP_SCALE = 262140
-		return InitBuffer(pBuffer, marker);*/
+		return InitBuffer(pBuffer, marker);
 	pBuffer.reset(new Buffer(6));
-	return BinaryWriter(*pBuffer).write8(marker + 4).write16(RTMFP::TimeNow()).write16(RTMFP::Time(initiatorTime)).buffer();
+	return BinaryWriter(*pBuffer).write8(marker + 4).write16(RTMFP::TimeNow()).write16(RTMFP::Time(time)).buffer();
 }
 
 bool RTMFP::Send(Socket& socket, const Packet& packet, const SocketAddress& address) {

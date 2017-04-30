@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Mona/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02010001	// (2.1.1)
+#define RTMFP_LIB_VERSION	0x02010002	// (2.1.2)
 
 #define RTMFP_DEFAULT_KEY	(Mona::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -43,7 +43,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define RTMFP_HEADER_SIZE		11
 #define RTMFP_MIN_PACKET_SIZE	(RTMFP_HEADER_SIZE+1)
 #define RTMFP_MAX_PACKET_SIZE	1192
-#define RTMFP_TIMESTAMP_SCALE	4
 
 #define PEER_ID_SIZE			0x20
 #define COOKIE_SIZE				0x40
@@ -149,7 +148,7 @@ struct RTMFP : virtual Mona::Static {
 	static void						ComputeAsymetricKeys(const Mona::Binary& sharedSecret, const Mona::UInt8* initiatorNonce,Mona::UInt32 initNonceSize, const Mona::UInt8* responderNonce,Mona::UInt32 respNonceSize, Mona::UInt8* requestKey, Mona::UInt8* responseKey);
 
 	static Mona::UInt16				TimeNow() { return Time(Mona::Time::Now()); }
-	static Mona::UInt16				Time(Mona::Int64 timeVal) { return (timeVal / RTMFP_TIMESTAMP_SCALE)&0xFFFF; }
+	static Mona::UInt16				Time(Mona::Int64 timeVal) { return (timeVal / RTMFP::TIMESTAMP_SCALE)&0xFFFF; }
 
 	static bool						IsKeyFrame(const Mona::UInt8* data, Mona::UInt32 size) { return size>0 && (*data & 0xF0) == 0x10; }
 
