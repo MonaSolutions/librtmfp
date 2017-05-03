@@ -110,9 +110,6 @@ struct PeerMedia : public virtual Mona::Object {
 	// Handle a pull request
 	void handlePlayPull(Mona::UInt64 index);
 
-	// Add a fragment to the blacklist of pull to avoid a new pull request for this peer
-	void addPullBlacklist(Mona::UInt64 idFragment);
-
 	Mona::UInt64					id; // id of the PeerMedia, it is also the id of the report writer
 	Mona::UInt64					idFlow; // id of the Media Report RTMFPFlow linked to, used to create the Media Writer
 	Mona::UInt64					idFlowMedia; // id of the Media RTMFPFlow (the one who send fragments)
@@ -131,7 +128,6 @@ private:
 	Mona::Buffer					_fragmentsMap; // Last Fragments Map received
 	Mona::UInt64					_idFragmentsMapIn; // Last ID received from the Fragments Map
 	Mona::UInt64					_idFragmentsMapOut; // Last ID sent in the Fragments map
-	std::set<Mona::UInt64>			_blacklistPull; // set of fragments blacklisted for pull requests to this peer
 	std::shared_ptr<RTMFPWriter>	_pMediaReportWriter; // Media Report writer used to send report messages from the current media
 	std::shared_ptr<RTMFPWriter>	_pMediaWriter; // Writer for media packets
 };

@@ -532,7 +532,7 @@ void GroupMedia::sendPullRequests() {
 			TRACE("GroupMedia ", id, " - sendPullRequests - first fragment found : ", _currentPullFragment)
 			if (_fragments.find(_currentPullFragment) == _fragments.end()) { // ignoring if already received
 				itRandom1->second->sendPull(_currentPullFragment);
-				_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment), forward_as_tuple(itRandom1->first.c_str()));
+				_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment), forward_as_tuple());
 			}
 			else
 				_firstPullReceived = true;
@@ -542,7 +542,7 @@ void GroupMedia::sendPullRequests() {
 			TRACE("GroupMedia ", id, " - sendPullRequests - second fragment found : ", _currentPullFragment + 1)
 			if (_fragments.find(++_currentPullFragment) == _fragments.end()) { // ignoring if already received
 				_itPullPeer->second->sendPull(_currentPullFragment);
-				_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment), forward_as_tuple(_itPullPeer->first.c_str()));
+				_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment), forward_as_tuple());
 			}
 			else
 				_firstPullReceived = true;
@@ -561,17 +561,11 @@ void GroupMedia::sendPullRequests() {
 		for (auto itPull = _mapWaitingFragments.begin(); itPull != _mapWaitingFragments.end() && itPull->first <= lastOldFragment; itPull++) {
 
 			// Fetch period elapsed? => blacklist the peer and send back the request to another peer
-			if (itPull->second.time.isElapsed(groupParameters->fetchPeriod)) {
-
-				DEBUG("GroupMedia ", id, " - sendPullRequests - ", groupParameters->fetchPeriod, "ms without receiving fragment ", itPull->first, ", blacklisting peer ", itPull->second.peerId)
-				auto itPeer = _mapPeers.find(itPull->second.peerId);
-				if (itPeer != _mapPeers.end())
-					itPeer->second->addPullBlacklist(itPull->first);
+			if (itPull->second.isElapsed(groupParameters->fetchPeriod)) {
+				DEBUG("GroupMedia ", id, " - sendPullRequests - ", groupParameters->fetchPeriod, "ms without receiving fragment ", itPull->first, " retrying...")
 				
-				if (sendPullToNextPeer(itPull->first)) {
-					itPull->second.peerId = _itPullPeer->first.c_str();
-					itPull->second.time.update();
-				}
+				if (sendPullToNextPeer(itPull->first))
+					itPull->second.update();
 			}
 		}
 	}
@@ -594,7 +588,7 @@ bool GroupMedia::sendPullToNextPeer(UInt64 idFragment) {
 	}
 	
 	_itPullPeer->second->sendPull(idFragment);
-	_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(idFragment), forward_as_tuple(_itPullPeer->first.c_str()));
+	_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(idFragment), forward_as_tuple());
 	return true;
 }
 

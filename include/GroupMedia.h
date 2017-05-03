@@ -134,14 +134,7 @@ private:
 	Mona::UInt8													_currentPushMask; // current mask analyzed
 	std::map<Mona::UInt8, std::pair<std::string, Mona::UInt64>>	_mapPushMasks; // Map of push mask to a pair of peerId/fragmentId
 
-	 // Pull calculation TODO: convert PullRequest to a pair<peerId, time>
-	struct PullRequest : public Object {
-		PullRequest(std::string id) : peerId(id) {}
-
-		std::string peerId; // Id of the peer to which we have send the pull request
-		Mona::Time time; // Time when the request have been done
-	};
-	std::map<Mona::UInt64, PullRequest>							_mapWaitingFragments; // Map of waiting fragments in Pull requests to peer Id
+	std::map<Mona::UInt64, Mona::Time>							_mapWaitingFragments; // Map of waiting fragments in Pull requests to the time of the request
 	std::map<Mona::Int64, Mona::UInt64>							_mapPullTime2Fragment; // Map of reception time to fragments map id (used for pull requests)
 	Mona::UInt64												_lastFragmentMapId; // Last Fragments map Id received (used for pull requests)
 	Mona::UInt64												_currentPullFragment; // Current pull fragment index

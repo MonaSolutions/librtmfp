@@ -181,11 +181,7 @@ bool PeerMedia::hasFragment(UInt64 index) {
 	}
 	else if (_idFragmentsMapIn == index) {
 		TRACE("Searching ", index, " OK into ", _pParent->peerId, ", current id : ", _idFragmentsMapIn)
-		return true; // Fragment is the last one or peer has all fragments
-	}
-	else if (_blacklistPull.find(index) != _blacklistPull.end()) {
-		TRACE("Searching ", index, " impossible into ", _pParent->peerId, " a request has already failed")
-		return false;
+		return true; // Fragment is the last one
 	}
 
 	UInt32 offset = (UInt32)((_idFragmentsMapIn - index - 1) / 8);
@@ -212,9 +208,4 @@ void PeerMedia::sendPull(UInt64 index) {
 
 	TRACE("Sending pull request for fragment ", index, " to peer ", _pParent->peerId);
 	_pMediaReportWriter->writeGroupPull(index);
-}
-
-void PeerMedia::addPullBlacklist(UInt64 idFragment) {
-	// TODO: delete old blacklisted fragments
-	_blacklistPull.emplace(idFragment);
 }
