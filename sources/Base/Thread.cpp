@@ -1,0 +1,202 @@
+/*
+This file is a part of MonaSolutions Copyright 2017
+mathieu.poux[a]gmail.com
+jammetthomas[a]gmail.com
+
+This program is free software: you can redistribute it and/or
+modify it under the terms of the the Mozilla Public License v2.0.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+Mozilla Public License v. 2.0 received along this program for more
+details (or else see http://mozilla.org/MPL/2.0/).
+
+*/
+
+
+#include "Base/Thread.h"
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#if defined(__APPLE__)
+#include <pthread.h>
+#include <AvailabilityMacros.h>
+#ifndef MAC_OS_X_VERSION_10_12
+	#define MAC_OS_X_VERSION_10_12 101200
+#endif
+#elif defined(_BSD)
+#include <pthread_np.h>
+#else
+#include <sys/prctl.h> // for thread name
+#endif
+#include <sys/syscall.h>
+#endif
+#include "Base/Logs.h"
+
+
+
+using namespace std;
+
+namespace Base {
+
+const UInt32					Thread::MainId(Thread::CurrentId());
+//thread_local std::string		Thread::_Name("Main");
+thread_local Thread*			Thread::_Me(NULL);
+
+void Thread::SetSystemName(const char* name) {
+#if defined(_DEBUG)
+#if defined(_WIN32)
+	typedef struct tagTHREADNAME_INFO {
+		DWORD dwType; // Must be 0x1000.
+		LPCSTR szName; // Pointer to name (in user addr space).
+		DWORD dwThreadID; // Thread ID (-1=caller thread).
+		DWORD dwFlags; // Reserved for future use, must be zero.
+	} THREADNAME_INFO;
+
+	THREADNAME_INFO info;
+	info.dwType = 0x1000;
+	info.szName = name /*.c_str()*/;
+	info.dwThreadID = GetCurrentThreadId();
+	info.dwFlags = 0;
+
+	__try {
+		RaiseException(0x406D1388, 0, sizeof(info) / sizeof(ULONG_PTR), (ULONG_PTR*)&info);
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
+	}
+#else
+	// 15 size restriction!
+	/*const char* threadName;
+	if (strlen(name) > 15) {
+		string Name;
+		Name.assign(name, 7) += '~';
+		Name.append(name[0] + 7, 7);
+		threadName = Name.c_str();
+	} else
+		threadName = name.c_str();*/
+#if defined(__APPLE__)
+    pthread_setname_np(name);
+#elif defined(_BSD)
+	pthread_set_name_np(pthread_self(), name);
+#else
+	prctl(PR_SET_NAME, name, 0, 0, 0);
+#endif
+#endif
+#endif
+}
+
+
+UInt32 Thread::CurrentId() {
+#ifdef _WIN32
+	return (UInt32)GetCurrentThreadId();
+#elif defined(__APPLE__)
+	#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12
+		uint64_t tid64;
+		pthread_threadid_np(NULL, &tid64);
+		return (UInt32)tid64;
+	#else
+		return (UInt32)syscall(SYS_thread_selfid);
+	#endif
+#elif defined(SYS_gettid)
+	return (UInt32)syscall(SYS_gettid);
+#elif defined(__NR_gettid)
+	return (UInt32)syscall(__NR_gettid);
+#else
+	return (UInt32)pthread_self(); // in despite of finding the real thread id as displaid in thread list view, use pthread_self...
+#endif
+}
+
+Thread::Thread(const char* name) : _priority(PRIORITY_NORMAL), _stop(true), _name(name) {
+}
+
+Thread::~Thread() {
+	if (!_stop)
+		CRITIC("Thread ",_name," deleting without be stopped before by child class");
+	if (_thread.joinable())
+		_thread.join();
+}
+
+void Thread::process() {
+	_Me = this;
+	SetSystemName(/*_Name =*/ _name);
+
+#if !defined(_DEBUG)
+	try {
+#endif
+
+	// set priority
+#if defined(_WIN32)
+		static int Priorities[] = { THREAD_PRIORITY_LOWEST, THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_NORMAL, THREAD_PRIORITY_ABOVE_NORMAL, THREAD_PRIORITY_HIGHEST };
+		if (_priority != PRIORITY_NORMAL && SetThreadPriority(GetCurrentThread(), Priorities[_priority]) == 0)
+			WARN("Impossible to change ", _name, " thread priority to ", Priorities[_priority]);
+#else
+		static int Min = sched_get_priority_min(SCHED_OTHER);
+		if(Min==-1) {
+			WARN("Impossible to compute minimum ", _name, " thread priority, ",strerror(errno));
+		} else {
+			static int Max = sched_get_priority_max(SCHED_OTHER);
+			if(Max==-1) {
+				WARN("Impossible to compute maximum ", _name, " thread priority, ",strerror(errno));
+			} else {
+				static int Priorities[] = {Min,Min + (Max - Min) / 4,Min + (Max - Min) / 2,Min + (Max - Min) / 4,Max};
+
+				struct sched_param params;
+				params.sched_priority = Priorities[_priority];
+				int result;
+				if ((result=pthread_setschedparam(pthread_self(), SCHED_OTHER , &params)))
+					WARN("Impossible to change ", _name, " thread priority to ", Priorities[_priority]," ",strerror(result));
+			}
+		}
+#endif
+
+		Exception ex;
+		AUTO_ERROR(run(ex, _stopping), _name);
+#if !defined(_DEBUG)
+	} catch (exception& ex) {
+		CRITIC(_name, ", ", ex.what());
+	} catch (...) {
+		CRITIC(_name, ", error unknown");
+	}
+#endif
+
+	_Me = NULL;
+	_stop = true;
+}
+
+
+bool Thread::start(Exception& ex, Priority priority) {
+	if (!_stop || _Me==this)
+		return true;
+	std::lock_guard<std::mutex> lock(_mutex);
+	if (_thread.joinable())
+		_thread.join();
+	try {
+		_priority = priority;
+		wakeUp.reset();
+		_stop = false;
+		_stopping = false;
+		_thread = thread(&Thread::process, this); // start the thread
+	} catch (exception& exc) {
+		_stop = true;
+		ex.set<Ex::System::Thread>("Impossible to start ", _name, " thread, ", exc.what());
+		return false;
+	}
+	return true;
+}
+
+void Thread::stop() {
+	_stopping = true; // advise thread (intern)
+	wakeUp.set(); // wakeUp a sleeping thread
+	if (_Me == this) {
+		// In the unique case were the caller is the thread itself, set _stop to true to allow to an extern caller to restart it!
+		_stop = true;
+		return;
+	}
+	std::lock_guard<std::mutex> lock(_mutex);
+	if (_thread.joinable())
+		_thread.join();
+}
+
+
+} // namespace Base

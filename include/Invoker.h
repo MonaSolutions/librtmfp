@@ -21,14 +21,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/IOSocket.h"
-#include "Mona/Timer.h"
+#include "Base/IOSocket.h"
+#include "Base/Timer.h"
 
 #define DELAY_CONNECTIONS_MANAGER	50 // Delay between each onManage (in msec)
 
 class RTMFPSession;
 class RTMFPLogger;
-class Invoker : private Mona::Thread {
+class Invoker : private Base::Thread {
 public:
 
 	// Create the Invoker
@@ -56,17 +56,17 @@ public:
 
 	void			setInterruptCallback(int(*interruptCb)(void*), void* argument);
 
-	Mona::ThreadPool					threadPool;
-	Mona::IOSocket						sockets;
-	const Mona::Timer&					timer; 
-	const Mona::Handler&				handler;
+	Base::ThreadPool					threadPool;
+	Base::IOSocket						sockets;
+	const Base::Timer&					timer; 
+	const Base::Handler&				handler;
 private:
 	virtual void		manage();
-	bool				run(Mona::Exception& exc, const volatile bool& stopping);
+	bool				run(Base::Exception& exc, const volatile bool& stopping);
 
 	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it);
-	Mona::Timer										_timer;
-	Mona::Handler									_handler;
+	Base::Timer										_timer;
+	Base::Handler									_handler;
 	int												_lastIndex; // last index of connection
 	std::mutex										_mutexConnections;
 	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;

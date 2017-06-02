@@ -20,10 +20,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "DataReader.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 DataWriter& DataWriter::Null() {
 	static struct DataWriterNull : DataWriter, virtual Object {

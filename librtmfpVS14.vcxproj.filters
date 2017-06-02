@@ -1,0 +1,441 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="sources\FlashConnection.cpp" />
+    <ClCompile Include="sources\FlashStream.cpp" />
+    <ClCompile Include="sources\FlashWriter.cpp" />
+    <ClCompile Include="sources\FlowManager.cpp" />
+    <ClCompile Include="sources\Invoker.cpp" />
+    <ClCompile Include="sources\librtmfp.cpp" />
+    <ClCompile Include="sources\Listener.cpp" />
+    <ClCompile Include="sources\P2PSession.cpp" />
+    <ClCompile Include="sources\Publisher.cpp" />
+    <ClCompile Include="sources\RTMFPFlow.cpp" />
+    <ClCompile Include="sources\RTMFPSender.cpp" />
+    <ClCompile Include="sources\RTMFPSession.cpp" />
+    <ClCompile Include="sources\RTMFPWriter.cpp" />
+    <ClCompile Include="sources\AMFReader.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\AMFWriter.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\DataReader.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\ReferableReader.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\RTMFP.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\GroupStream.cpp">
+      <Filter>NetGroup</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\NetGroup.cpp">
+      <Filter>NetGroup</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\GroupListener.cpp">
+      <Filter>NetGroup</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\GroupMedia.cpp">
+      <Filter>NetGroup</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\PeerMedia.cpp">
+      <Filter>NetGroup</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\RTMFPHandshaker.cpp" />
+    <ClCompile Include="sources\Base\BinaryWriter.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Buffer.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\BufferPool.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Cache.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Congestion.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Crypto.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Date.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\DiffieHellman.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\DNS.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\File.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\FileSystem.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\FileWatcher.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Handler.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\HelpFormatter.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\HostEntry.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\IOFile.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\IOSocket.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\IPAddress.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Logger.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Logs.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Mona.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Net.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Option.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Options.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Packet.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Parameters.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Path.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\PersistentData.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Process.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Proxy.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Signal.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Socket.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\SocketAddress.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\String.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\TCPClient.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\TCPServer.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\TerminateSignal.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Thread.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\ThreadQueue.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Timer.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Timezone.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\TLS.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\UDPSocket.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\Util.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\XMLParser.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\BinaryReader.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="include\BandWriter.h" />
+    <ClInclude Include="include\FlashConnection.h" />
+    <ClInclude Include="include\FlashStream.h" />
+    <ClInclude Include="include\FlashWriter.h" />
+    <ClInclude Include="include\FlowManager.h" />
+    <ClInclude Include="include\Invoker.h" />
+    <ClInclude Include="include\librtmfp.h" />
+    <ClInclude Include="include\Listener.h" />
+    <ClInclude Include="include\P2PSession.h" />
+    <ClInclude Include="include\Publisher.h" />
+    <ClInclude Include="include\RTMFPFlow.h" />
+    <ClInclude Include="include\RTMFPSender.h" />
+    <ClInclude Include="include\RTMFPSession.h" />
+    <ClInclude Include="include\RTMFPWriter.h" />
+    <ClInclude Include="include\AMF.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\AMFReader.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\AMFWriter.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\DataWriter.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\DataReader.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ReferableReader.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\StringWriter.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\RTMFP.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\RTMFPLogger.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GroupStream.h">
+      <Filter>NetGroup</Filter>
+    </ClInclude>
+    <ClInclude Include="include\NetGroup.h">
+      <Filter>NetGroup</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GroupListener.h">
+      <Filter>NetGroup</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GroupMedia.h">
+      <Filter>NetGroup</Filter>
+    </ClInclude>
+    <ClInclude Include="include\PeerMedia.h">
+      <Filter>NetGroup</Filter>
+    </ClInclude>
+    <ClInclude Include="include\RTMFPHandshaker.h" />
+    <ClInclude Include="include\RTMFPDecoder.h" />
+    <ClInclude Include="include\MapWriter.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\FileWriter.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Handler.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\HelpFormatter.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\HostEntry.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\IOFile.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\IOSocket.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\IPAddress.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Logger.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Logs.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\LostRate.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Mona.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Net.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Option.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Options.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Packet.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Parameters.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Path.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\PersistentData.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Process.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Proxy.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Runner.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Signal.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Socket.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\SocketAddress.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Stopwatch.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\StreamData.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\String.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\TCPClient.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\TCPServer.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\TerminateSignal.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Thread.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\ThreadPool.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\ThreadQueue.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Time.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Timer.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Timezone.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\TLS.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\UDPSocket.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Util.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\XMLParser.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Allocator.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Binary.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\BinaryReader.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\BinaryWriter.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Buffer.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\BufferPool.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Byte.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\ByteRate.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Cache.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Congestion.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Crypto.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Date.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\DiffieHellman.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\DNS.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Event.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Exceptions.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\File.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\FileReader.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\FileSystem.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\FileWatcher.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="NetGroup">
+      <UniqueIdentifier>{3f9167af-482d-4bd8-b59c-a64631dc1225}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Util">
+      <UniqueIdentifier>{e08f4b61-6567-41e0-9cda-39d8c8c8020e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Base">
+      <UniqueIdentifier>{4a1d2d46-82af-47df-804c-e3585a804760}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

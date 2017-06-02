@@ -21,10 +21,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "GroupStream.h"
 #include "RTMFP.h"
-#include "Mona/Util.h"
+#include "Base/Util.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 GroupStream::GroupStream(UInt16 id) : FlashStream(id) {
 	DEBUG("GroupStream ", streamId, " created")

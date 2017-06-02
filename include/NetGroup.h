@@ -21,7 +21,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "FlashStream.h"
 #include "RTMFPSession.h"
 #include "GroupListener.h"
@@ -37,6 +37,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_PEER_TIMEOUT			300000	// number of msec since the last report known before we delete a peer from the heard list
 #define NETGROUP_DISCONNECT_DELAY		90000	// delay between each try to disconnect from a peer
 #define NETGROUP_MEDIA_TIMEOUT			300000	// number of msec before we delete a GroupMedia after being closed
+#define NETGROUP_PROCESS_FGMT_TIMEOUT	100		// number of msec before exiting the processFragments function
 
 /**************************************
 NetGroup is the class that manage
@@ -44,7 +45,7 @@ a NetGroup connection related to an
 RTMFPSession.
 It is composed of GroupMedia objects
 */
-struct NetGroup : FlashHandler, virtual Mona::Object {
+struct NetGroup : FlashHandler, virtual Base::Object {
 public:
 	enum MULTICAST_PARAMETERS {
 		UNKNWON_PARAMETER = 2,
@@ -55,7 +56,7 @@ public:
 		FETCH_PERIOD = 7
 	};
 
-	NetGroup(Mona::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters);
+	NetGroup(Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters);
 	virtual ~NetGroup() {}
 
 	// Close the NetGroup
@@ -63,7 +64,7 @@ public:
 
 	// Add a peer to the Heard List
 	// param update : if set to True we will recalculate the best list after
-	void			addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& hostAddress, Mona::UInt64 timeElapsed=0);
+	void			addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& hostAddress, Base::UInt64 timeElapsed=0);
 
 	// Add a peer to the NetGroup map
 	bool			addPeer(const std::string& peerId, std::shared_ptr<P2PSession> pPeer);
@@ -91,14 +92,14 @@ public:
 
 protected:
 	// FlashHandler messageHandler implementation
-	virtual bool	messageHandler(const std::string& name, AMFReader& message, Mona::UInt64 flowId, Mona::UInt64 writerId, double callbackHandler);
+	virtual bool	messageHandler(const std::string& name, AMFReader& message, Base::UInt64 flowId, Base::UInt64 writerId, double callbackHandler);
 
 private:
 	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PSession>>
 	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PSession>>::iterator
 
 	// Static function to read group config parameters sent in a Media Subscription message
-	static void					ReadGroupConfig(std::shared_ptr<RTMFPGroupConfig>& parameters, Mona::BinaryReader& packet);
+	static void					ReadGroupConfig(std::shared_ptr<RTMFPGroupConfig>& parameters, Base::BinaryReader& packet);
 
 	// Return the Group Address calculated from a Peer ID
 	static const std::string&	GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
@@ -107,7 +108,7 @@ private:
 	double						estimatedPeersCount();
 
 	// Calculate the number of neighbors we must connect to (2*log2(N)+13)
-	Mona::UInt32				targetNeighborsCount();
+	Base::UInt32				targetNeighborsCount();
 
 	void						removePeer(MAP_PEERS_ITERATOR_TYPE itPeer);
 
@@ -125,7 +126,7 @@ private:
 	void						manageBestConnections();
 
 	// Read the group report and return true if at least a new peer has been found
-	bool						readGroupReport(Mona::BinaryReader& packet);
+	bool						readGroupReport(Base::BinaryReader& packet);
 
 	P2PSession::OnPeerGroupReport							_onGroupReport; // called when receiving a Group Report message from the peer
 	P2PSession::OnNewMedia									_onNewMedia; // called when a new PeerMedia is called (new stream available for the peer)
@@ -138,18 +139,18 @@ private:
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 
 	// Peer instance in the heard list
-	struct GroupNode : virtual Mona::Object {
-		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Mona::SocketAddress& host, Mona::UInt64 timeElapsed) :
-			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Mona::UInt64)Mona::Time::Now()) - timeElapsed) {}
+	struct GroupNode : virtual Base::Object {
+		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& host, Base::UInt64 timeElapsed) :
+			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - timeElapsed) {}
 
 		// Return the size of peer addresses for Group Report 
-		Mona::UInt32	addressesSize();
+		Base::UInt32	addressesSize();
 
 		std::string rawId;
 		std::string groupAddress;
 		PEER_LIST_ADDRESS_TYPE addresses;
-		Mona::SocketAddress hostAddress;
-		Mona::Int64 lastGroupReport; // Time in msec of last Group report received
+		Base::SocketAddress hostAddress;
+		Base::Int64 lastGroupReport; // Time in msec of last Group report received
 	};
 	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
 
@@ -158,9 +159,9 @@ private:
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPSession&											_conn; // RTMFPSession related to
-	Mona::Time												_lastBestCalculation; // last Best list calculation
-	Mona::Time												_lastReport; // last Report Message calculation
-	Mona::Buffer											_reportBuffer; // Buffer for reporting messages
+	Base::Time												_lastBestCalculation; // last Best list calculation
+	Base::Time												_lastReport; // last Report Message calculation
+	Base::Buffer											_reportBuffer; // Buffer for reporting messages
 
 	std::map<std::string, GroupMedia>						_mapGroupMedias; // map of stream key to GroupMedia
 	std::map<std::string, GroupMedia>::iterator				_groupMediaPublisher; // iterator to the GroupMedia publisher

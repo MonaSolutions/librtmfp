@@ -23,17 +23,17 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "BandWriter.h"
 #include "RTMFP.h"
-#include "Mona/DiffieHellman.h"
-#include "Mona/SocketAddress.h"
+#include "Base/DiffieHellman.h"
+#include "Base/SocketAddress.h"
 
 class Invoker;
 class RTMFPSession;
 struct FlowManager;
 
 // Waiting handshake request
-struct Handshake : public virtual Mona::Object {
+struct Handshake : public virtual Base::Object {
 
-	Handshake(FlowManager* session, const Mona::SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses, bool p2p) :
+	Handshake(FlowManager* session, const Base::SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses, bool p2p) :
 		status(RTMFP::STOPPED), pCookie(NULL), pTag(NULL), attempt(0), hostAddress(host), pSession(session), listAddresses(addresses), isP2P(p2p) {}
 
 	bool					isP2P; // True if it is a p2p handshake
@@ -41,16 +41,16 @@ struct Handshake : public virtual Mona::Object {
 	const std::string*		pTag; // pointer to the tag
 	std::string				cookieReceived; // Value of the far peer cookie (initiator)
 	FlowManager*			pSession; // Session related to (it can be null if we are in a handshake of a responder)
-	Mona::UInt8				attempt; // Counter of connection attempts to the server
-	Mona::Time				lastAttempt; // Last attempt to connect to the server
-	Mona::Time				cookieCreation; // Time when the cookie has been created
-	Mona::SocketAddress		hostAddress; // Address of the host server (if cleared : it is a direct connection)
+	Base::UInt8				attempt; // Counter of connection attempts to the server
+	Base::Time				lastAttempt; // Last attempt to connect to the server
+	Base::Time				cookieCreation; // Time when the cookie has been created
+	Base::SocketAddress		hostAddress; // Address of the host server (if cleared : it is a direct connection)
 	RTMFP::SessionStatus	status; // Status of the handshake
 	PEER_LIST_ADDRESS_TYPE	listAddresses; // List of direct addresses (server or p2p addresses)
 
 	// Coding keys
-	Mona::Packet							farKey; // Far public key
-	Mona::Packet							farNonce; // Far nonce
+	Base::Packet							farKey; // Far public key
+	Base::Packet							farNonce; // Far nonce
 };
 
 /**************************************************
@@ -69,11 +69,11 @@ struct RTMFPHandshaker : BandWriter  {
 
 	// Start a new Handshake if possible and add it to the map of tags
 	// return True if the connection is created
-	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Mona::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool responder, bool p2p);
-	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Mona::SocketAddress& address, FlowManager* pSession, bool responder, bool p2p);
+	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool responder, bool p2p);
+	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Base::SocketAddress& address, FlowManager* pSession, bool responder, bool p2p);
 
 	// Create the handshake object if needed and send a handshake 70 to address
-	void								sendHandshake70(const std::string& tag, const Mona::SocketAddress& address, const Mona::SocketAddress& host);
+	void								sendHandshake70(const std::string& tag, const Base::SocketAddress& address, const Base::SocketAddress& host);
 
 	// Called by Invoker every second to manage connection (flush and ping)
 	void								manage();
@@ -82,7 +82,7 @@ struct RTMFPHandshaker : BandWriter  {
 	void								close();
 
 	// Return the socket object
-	virtual const std::shared_ptr<Mona::Socket>&	socket(Mona::IPAddress::Family family);
+	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family);
 
 	// Return true if the session has failed
 	virtual bool						failed();
@@ -91,24 +91,24 @@ struct RTMFPHandshaker : BandWriter  {
 	void								removeHandshake(std::shared_ptr<Handshake> pHandshake);
 
 	// Treat decoded message
-	virtual void						receive(const Mona::SocketAddress& address, const Mona::Packet& packet);
+	virtual void						receive(const Base::SocketAddress& address, const Base::Packet& packet);
 
 private:
 
 	// Send the first handshake message (with rtmfp url/peerId + tag)
-	void								sendHandshake30(const Mona::Binary& epd, const std::string& tag);
+	void								sendHandshake30(const Base::Binary& epd, const std::string& tag);
 
 	// Handle the handshake 30 (p2p concurrent connection)
-	void								handleHandshake30(Mona::BinaryReader& reader);
+	void								handleHandshake30(Base::BinaryReader& reader);
 
 	// Handle a server redirection message or a p2p address exchange
-	void								handleRedirection(Mona::BinaryReader& reader);
+	void								handleRedirection(Base::BinaryReader& reader);
 
 	// Send the 2nd handshake response (only in P2P mode)
-	void								sendHandshake78(Mona::BinaryReader& reader);
+	void								sendHandshake78(Base::BinaryReader& reader);
 
 	// Handle the handshake 70 (from peer or server)
-	void								handleHandshake70(Mona::BinaryReader& reader);
+	void								handleHandshake70(Base::BinaryReader& reader);
 
 	// Send the 2nd handshake request
 	void								sendHandshake38(const std::shared_ptr<Handshake>& pHandshake, const std::string& cookie);
@@ -124,5 +124,5 @@ private:
 
 	RTMFPSession*						_pSession; // Pointer to the main RTMFP session for assocation with new connections
 	const std::string					_name; // name of the session (handshaker)
-	Mona::Packet						_publicKey; // Our public key (fixed for the session) TODO: see if we move it into RTMFPSession
+	Base::Packet						_publicKey; // Our public key (fixed for the session) TODO: see if we move it into RTMFPSession
 };

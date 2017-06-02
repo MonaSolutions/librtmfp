@@ -19,13 +19,13 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Mona/Logger.h"
+#include "Base/Logger.h"
 
-class RTMFPLogger: public Mona::Logger {
+class RTMFPLogger: public Base::Logger {
 public:
 	RTMFPLogger(): _onLog(NULL), _onDump(NULL) {}
 
-	virtual void log(Mona::LOG_LEVEL level, const Mona::Path& file, long line, const std::string& message) {
+	virtual void log(Base::LOG_LEVEL level, const Base::Path& file, long line, const std::string& message) {
 
 		if (_onLog)
 			_onLog(level, file.name().c_str(), line, message.c_str());
@@ -33,7 +33,7 @@ public:
 			Logger::log(level, file, line, message);
 	}
 
-	virtual void dump(const std::string& header, const Mona::UInt8* data, Mona::UInt32 size) {
+	virtual void dump(const std::string& header, const Base::UInt8* data, Base::UInt32 size) {
 
 		if (_onDump)
 			_onDump(header.c_str(), data, size);

@@ -20,7 +20,7 @@
 #endif
 
 // Global variables declaration
-#define MAX_BUFFER_SIZE			20480
+#define MAX_BUFFER_SIZE			81920
 #define MIN_BUFFER_SIZE			1536
 static char				buf[MAX_BUFFER_SIZE];
 static unsigned int		cursor = 0; // File reader cursor
@@ -227,18 +227,18 @@ void onMedia(unsigned short streamId, unsigned int time,const char* buf,unsigned
 
 // Call each second to read/write asynchronously
 void onManage() {
-	int read = 0, towrite = MIN_BUFFER_SIZE;
+	int read = 0, towrite = MAX_BUFFER_SIZE;
 	unsigned int i = 0;
 
 	// Asynchronous read
 	if (_option == ASYNC_READ) {
 		if (nbPeers>0) {
 			for (i = 0; i < nbPeers; i++) {
-				if (listFiles[i] && listStreamIds[i] && (read = RTMFP_Read(listStreamIds[i], context, buf, MIN_BUFFER_SIZE))>0)
+				if (listFiles[i] && listStreamIds[i] && (read = RTMFP_Read(listStreamIds[i], context, buf, MAX_BUFFER_SIZE))>0)
 					fwrite(buf, sizeof(char), read, listFiles[i]);
 			}
 		}
-		else if(pOutFile && streamId && (read = RTMFP_Read(streamId, context, buf, MIN_BUFFER_SIZE))>0)
+		else if(pOutFile && streamId && (read = RTMFP_Read(streamId, context, buf, MAX_BUFFER_SIZE))>0)
 			fwrite(buf, sizeof(char), read, pOutFile);
 	}
 	// Write
@@ -347,10 +347,9 @@ int main(int argc, char* argv[]) {
 	printf("Librtmfp version %u.%u.%u\n", (version >> 24) & 0xFF, (version >> 16) & 0xFF, version & 0xFFFF);
 
 	// Open log file
-	if (logFile) {
+	if (logFile)
 		openFile(&pLogFile, logFile, "w");
-		RTMFP_LogSetCallback(onLog);
-	}
+	RTMFP_LogSetCallback(onLog);
 	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
 	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 

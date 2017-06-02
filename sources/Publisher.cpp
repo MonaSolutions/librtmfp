@@ -22,11 +22,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Publisher.h"
 #include "RTMFP.h"
 #include "RTMFPWriter.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 #include "GroupListener.h"
 #include "Invoker.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 Publisher::Publisher(const string& name, Invoker& invoker, bool audioReliable, bool videoReliable, bool p2p) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),

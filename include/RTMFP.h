@@ -21,23 +21,23 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/SocketAddress.h"
-#include "Mona/BinaryReader.h"
-#include "Mona/BinaryWriter.h"
-#include "Mona/Time.h"
-#include "Mona/Crypto.h"
-#include "Mona/Util.h"
-#include "Mona/Packet.h"
-#include "Mona/Socket.h"
+#include "Base/SocketAddress.h"
+#include "Base/BinaryReader.h"
+#include "Base/BinaryWriter.h"
+#include "Base/Time.h"
+#include "Base/Crypto.h"
+#include "Base/Util.h"
+#include "Base/Packet.h"
+#include "Base/Socket.h"
 #include <openssl/evp.h>
 #include <openssl/sha.h>
 #include "AMFWriter.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 #include <map>
 
 #define RTMFP_LIB_VERSION	0x02010003	// (2.1.3)
 
-#define RTMFP_DEFAULT_KEY	(Mona::UInt8*)"Adobe Systems 02"
+#define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
 
 #define RTMFP_HEADER_SIZE		11
@@ -47,10 +47,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define PEER_ID_SIZE			0x20
 #define COOKIE_SIZE				0x40
 
-#define PEER_LIST_ADDRESS_TYPE	std::map<Mona::SocketAddress, RTMFP::AddressType>
+#define PEER_LIST_ADDRESS_TYPE	std::map<Base::SocketAddress, RTMFP::AddressType>
 
 struct RTMFPSender;
-struct RTMFP : virtual Mona::Static {
+struct RTMFP : virtual Base::Static {
 	enum AddressType {
 		ADDRESS_UNSPECIFIED=0,
 		ADDRESS_LOCAL=1,
@@ -96,69 +96,69 @@ struct RTMFP : virtual Mona::Static {
 		FAILED
 	};
 
-	struct Engine : virtual Mona::Object {
-		Engine(const Mona::UInt8* key) { memcpy(_key, key, KEY_SIZE); EVP_CIPHER_CTX_init(&_context); }
+	struct Engine : virtual Base::Object {
+		Engine(const Base::UInt8* key) { memcpy(_key, key, KEY_SIZE); EVP_CIPHER_CTX_init(&_context); }
 		Engine(const Engine& engine) { memcpy(_key, engine._key, KEY_SIZE); EVP_CIPHER_CTX_init(&_context); }
 		virtual ~Engine() { EVP_CIPHER_CTX_cleanup(&_context); }
 
-		bool							decode(Mona::Exception& ex, Mona::Buffer& buffer, const Mona::SocketAddress& address);
-		std::shared_ptr<Mona::Buffer>&	encode(std::shared_ptr<Mona::Buffer>& pBuffer, Mona::UInt32 farId, const Mona::SocketAddress& address);
+		bool							decode(Base::Exception& ex, Base::Buffer& buffer, const Base::SocketAddress& address);
+		std::shared_ptr<Base::Buffer>&	encode(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt32 farId, const Base::SocketAddress& address);
 
-		static bool				Decode(Mona::Exception& ex, Mona::Buffer& buffer, const Mona::SocketAddress& address) { return Default().decode(ex, buffer, address); }
-		static std::shared_ptr<Mona::Buffer>&	Encode(std::shared_ptr<Mona::Buffer>& pBuffer, Mona::UInt32 farId, const Mona::SocketAddress& address) { return Default().encode(pBuffer, farId, address); }
+		static bool				Decode(Base::Exception& ex, Base::Buffer& buffer, const Base::SocketAddress& address) { return Default().decode(ex, buffer, address); }
+		static std::shared_ptr<Base::Buffer>&	Encode(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt32 farId, const Base::SocketAddress& address) { return Default().encode(pBuffer, farId, address); }
 
 	private:
 		static Engine& Default() { thread_local Engine Engine(BIN "Adobe Systems 02"); return Engine; }
 
 		enum { KEY_SIZE = 0x10 };
-		Mona::UInt8						_key[KEY_SIZE];
+		Base::UInt8						_key[KEY_SIZE];
 		EVP_CIPHER_CTX					_context;
 	};
 
-	struct Message : virtual Mona::Object, Mona::Packet {
-		Message(Mona::UInt64 flowId, Mona::UInt32 lost, const Mona::Packet& packet) : lost(lost), flowId(flowId), Mona::Packet(std::move(packet)) {}
-		const Mona::UInt64 flowId;
-		const Mona::UInt32 lost;
+	struct Message : virtual Base::Object, Base::Packet {
+		Message(Base::UInt64 flowId, Base::UInt32 lost, const Base::Packet& packet) : lost(lost), flowId(flowId), Base::Packet(std::move(packet)) {}
+		const Base::UInt64 flowId;
+		const Base::UInt32 lost;
 	};
-	struct Flush : virtual Mona::Object {
-		Flush(Mona::Int32 ping, bool keepalive, bool died, std::map<Mona::UInt64, Mona::Packet>& acks) :
+	struct Flush : virtual Base::Object {
+		Flush(Base::Int32 ping, bool keepalive, bool died, std::map<Base::UInt64, Base::Packet>& acks) :
 			ping(ping), acks(std::move(acks)), keepalive(keepalive), died(died) {}
-		const Mona::Int32				ping; // if died, ping takes error
+		const Base::Int32				ping; // if died, ping takes error
 		const bool						keepalive;
 		const bool						died;
-		const std::map<Mona::UInt64, Mona::Packet>	acks; // ack + fails
+		const std::map<Base::UInt64, Base::Packet>	acks; // ack + fails
 	};
 
-	struct Output : virtual Mona::Object {
+	struct Output : virtual Base::Object {
 
-		virtual Mona::UInt32	rto() const = 0;
+		virtual Base::UInt32	rto() const = 0;
 		virtual void			send(const std::shared_ptr<RTMFPSender>& pSender) = 0;
-		virtual Mona::UInt64	queueing() const = 0;
+		virtual Base::UInt64	queueing() const = 0;
 	};
 
-	static bool						ReadAddress(Mona::BinaryReader& reader, Mona::SocketAddress& address, AddressType& addressType);
-	static Mona::BinaryWriter&		WriteAddress(Mona::BinaryWriter& writer, const Mona::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
+	static bool						ReadAddress(Base::BinaryReader& reader, Base::SocketAddress& address, AddressType& addressType);
+	static Base::BinaryWriter&		WriteAddress(Base::BinaryWriter& writer, const Base::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
-	static Mona::UInt32				Unpack(Mona::BinaryReader& reader);
-	static void						Pack(Mona::Buffer& buffer,Mona::UInt32 farId);
+	static Base::UInt32				Unpack(Base::BinaryReader& reader);
+	static void						Pack(Base::Buffer& buffer,Base::UInt32 farId);
 
-	static bool						Send(Mona::Socket& socket, const Mona::Packet& packet, const Mona::SocketAddress& address);
-	static Mona::Buffer&			InitBuffer(std::shared_ptr<Mona::Buffer>& pBuffer, Mona::UInt8 marker);
-	static Mona::Buffer&			InitBuffer(std::shared_ptr<Mona::Buffer>& pBuffer, std::atomic<Mona::Int64>& initiatorTime, Mona::UInt8 marker);
-	static void						ComputeAsymetricKeys(const Mona::Binary& sharedSecret, const Mona::UInt8* initiatorNonce,Mona::UInt32 initNonceSize, const Mona::UInt8* responderNonce,Mona::UInt32 respNonceSize, Mona::UInt8* requestKey, Mona::UInt8* responseKey);
+	static bool						Send(Base::Socket& socket, const Base::Packet& packet, const Base::SocketAddress& address);
+	static Base::Buffer&			InitBuffer(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt8 marker);
+	static Base::Buffer&			InitBuffer(std::shared_ptr<Base::Buffer>& pBuffer, std::atomic<Base::Int64>& initiatorTime, Base::UInt8 marker);
+	static void						ComputeAsymetricKeys(const Base::Binary& sharedSecret, const Base::UInt8* initiatorNonce,Base::UInt32 initNonceSize, const Base::UInt8* responderNonce,Base::UInt32 respNonceSize, Base::UInt8* requestKey, Base::UInt8* responseKey);
 
-	static Mona::UInt16				TimeNow() { return Time(Mona::Time::Now()); }
-	static Mona::UInt16				Time(Mona::Int64 timeVal) { return (timeVal / RTMFP::TIMESTAMP_SCALE)&0xFFFF; }
+	static Base::UInt16				TimeNow() { return Time(Base::Time::Now()); }
+	static Base::UInt16				Time(Base::Int64 timeVal) { return (timeVal / RTMFP::TIMESTAMP_SCALE)&0xFFFF; }
 
-	static bool						IsKeyFrame(const Mona::UInt8* data, Mona::UInt32 size) { return size>0 && (*data & 0xF0) == 0x10; }
+	static bool						IsKeyFrame(const Base::UInt8* data, Base::UInt32 size) { return size>0 && (*data & 0xF0) == 0x10; }
 
-	static bool						IsAACCodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && (*data >> 4) == 0x0A && data[1] == 0; }
+	static bool						IsAACCodecInfos(const Base::UInt8* data, Base::UInt32 size) { return size>1 && (*data >> 4) == 0x0A && data[1] == 0; }
 
-	static bool						IsVideoCodecInfos(const Mona::UInt8* data, Mona::UInt32 size) { return size>1 && ((*data|0x0F) == 0x1F) && data[1] == 0; }
+	static bool						IsVideoCodecInfos(const Base::UInt8* data, Base::UInt32 size) { return size>1 && ((*data|0x0F) == 0x1F) && data[1] == 0; }
 
 	// Read addresses from the buffer reader
 	// return : True if at least an address has been read
-	static bool	ReadAddresses(Mona::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Mona::SocketAddress& hostAddress, std::function<void(const Mona::SocketAddress&, AddressType)> onNewAddress);
+	static bool	ReadAddresses(Base::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Base::SocketAddress& hostAddress, std::function<void(const Base::SocketAddress&, AddressType)> onNewAddress);
 
 	/* AMF Utility functions */
 	static void WriteInvocation(AMFWriter& writer, const char* name, double callback, bool amf3);
@@ -166,12 +166,12 @@ struct RTMFP : virtual Mona::Static {
 
 	// Return a random iterator which respect the isAllowed condition
 	template<class ContainerType, typename Iterator>
-	static bool getRandomIt(ContainerType& container, Iterator& itResult, std::function<bool(const Iterator&)> isAllowed) {
+	static bool GetRandomIt(ContainerType& container, Iterator& itResult, std::function<bool(const Iterator&)> isAllowed) {
 		if (container.empty())
 			return false;
 
 		auto itRandom = container.begin();
-		advance(itRandom, Mona::Util::Random<Mona::UInt32>() % container.size());
+		advance(itRandom, Base::Util::Random<Base::UInt32>() % container.size());
 
 		itResult = itRandom;
 		while (!isAllowed(itResult)) {
@@ -182,6 +182,25 @@ struct RTMFP : virtual Mona::Static {
 				return false;
 		}
 		return true;
+	}
+
+	// Return the previous iterator in an ordered container, if the iterator is begin() return the last iterator
+	template<class ContainerType, typename Iterator>
+	static Iterator& GetPreviousIt(ContainerType& container, Iterator& it) {
+		if (it == container.begin())
+			it = --(container.end());
+		else
+			--it;
+		return it;
+	}
+
+	// Return the previous iterator in an ordered container, if the next iterator is end() return the first iterator
+	template<class ContainerType, typename Iterator>
+	static Iterator& GetNextIt(ContainerType& container, Iterator& it) {
+		if (it == container.end() || ++it == container.end())
+			it = container.begin();
+
+		return it;
 	}
 };
 

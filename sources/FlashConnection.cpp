@@ -19,14 +19,14 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Mona/IPAddress.h"
+#include "Base/IPAddress.h"
 #include "FlashConnection.h"
 #include "GroupStream.h"
 #include "MapWriter.h"
-#include "Mona/Parameters.h"
+#include "Base/Parameters.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 FlashConnection::FlashConnection() : FlashStream(0), _creatingStream(0) {
 	
@@ -84,7 +84,7 @@ FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStr
 	return pStream.get();
 }
 
-bool FlashConnection::messageHandler(const string& name, AMFReader& message, UInt64 flowId, Mona::UInt64 writerId, double callbackHandler) {
+bool FlashConnection::messageHandler(const string& name, AMFReader& message, UInt64 flowId, Base::UInt64 writerId, double callbackHandler) {
 	UInt8 type = message.nextType();
 	while (type != AMFReader::END) {
 		if (name == "_result") {

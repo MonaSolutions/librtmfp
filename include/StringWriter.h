@@ -21,33 +21,33 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "DataWriter.h"
 
-class StringWriter : public DataWriter, public virtual Mona::Object {
+class StringWriter : public DataWriter, public virtual Base::Object {
 public:
 
-	StringWriter(Mona::Buffer& buffer) : _pString(NULL), DataWriter(buffer) {}
+	StringWriter(Base::Buffer& buffer) : _pString(NULL), DataWriter(buffer) {}
 	StringWriter(std::string& buffer) : _pString(&buffer) {}
 
-	Mona::UInt64 beginObject(const char* type = NULL) { return 0; }
+	Base::UInt64 beginObject(const char* type = NULL) { return 0; }
 	void   endObject() {}
 
 	void   writePropertyName(const char* name) { append(name); }
 
-	Mona::UInt64 beginArray(Mona::UInt32 size) { return 0; }
+	Base::UInt64 beginArray(Base::UInt32 size) { return 0; }
 	void   endArray() {}
 
 	void   writeNumber(double value) { append(value); }
-	void   writeString(const char* value, Mona::UInt32 size) { append(value, size); }
+	void   writeString(const char* value, Base::UInt32 size) { append(value, size); }
 	void   writeBoolean(bool value) { append(value ? "true" : "false"); }
 	void   writeNull() { writer.write("null", 4); }
-	Mona::UInt64 writeDate(const Mona::Date& date) { std::string buffer; append(Mona::String::Date(date, Mona::Date::FORMAT_SORTABLE)); return 0; }
-	Mona::UInt64 writeBytes(const Mona::UInt8* data, Mona::UInt32 size) { append(data, size); return 0; }
+	Base::UInt64 writeDate(const Base::Date& date) { std::string buffer; append(Base::String::Date(date, Base::Date::FORMAT_SORTABLE)); return 0; }
+	Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size) { append(data, size); return 0; }
 
 	void   clear() { if (_pString) _pString->clear(); else writer.clear(); }
 private:
-	void append(const void* value, Mona::UInt32 size) {
+	void append(const void* value, Base::UInt32 size) {
 		if (_pString)
 			_pString->append(STR value, size);
 		else
@@ -57,9 +57,9 @@ private:
 	template<typename ValueType>
 	void append(const ValueType& value) {
 		if (_pString)
-			Mona::String::Append(*_pString, value);
+			Base::String::Append(*_pString, value);
 		else
-			Mona::String::Append(writer, value);
+			Base::String::Append(writer, value);
 	}
 
 	std::string* _pString;

@@ -21,11 +21,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "FlashWriter.h"
 #include "AMF.h"
-#include "Mona/Util.h"
-#include "Mona/Logs.h"
+#include "Base/Util.h"
+#include "Base/Logs.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 
 FlashWriter::FlashWriter() : _callbackHandleOnAbort(0),_callbackHandle(0),amf0(false),reliable(true),_state(OPENED) {

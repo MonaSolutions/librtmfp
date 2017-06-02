@@ -46,9 +46,9 @@ public:
 		GROUP_MEDIA_START	= 0x30, // Beginning of a NetGroup splitted media data
 	};
 
-	GroupStream(Mona::UInt16 id);
+	GroupStream(Base::UInt16 id);
 	virtual ~GroupStream();
 
 	// return flase if writer is closed!
-	virtual bool	process(const Mona::Packet& packet, Mona::UInt64 flowId, Mona::UInt64 writerId, double lostRate=0);
+	virtual bool	process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate=0);
 };

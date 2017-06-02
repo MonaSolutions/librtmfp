@@ -21,43 +21,43 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
-#include "Mona/BinaryWriter.h"
-#include "Mona/Date.h"
-#include "Mona/Exceptions.h"
+#include "Base/Mona.h"
+#include "Base/BinaryWriter.h"
+#include "Base/Date.h"
+#include "Base/Exceptions.h"
 
-struct DataWriter : virtual Mona::NullableObject {
+struct DataWriter : virtual Base::NullableObject {
 	////  TO DEFINE ////
-	virtual Mona::UInt64 beginObject(const char* type = NULL) = 0;
+	virtual Base::UInt64 beginObject(const char* type = NULL) = 0;
 	virtual void   writePropertyName(const char* value) = 0;
 	virtual void   endObject() = 0;
 
-	virtual Mona::UInt64 beginArray(Mona::UInt32 size) = 0;
+	virtual Base::UInt64 beginArray(Base::UInt32 size) = 0;
 	virtual void   endArray() = 0;
 
 	virtual void   writeNumber(double value) = 0;
-	virtual void   writeString(const char* value, Mona::UInt32 size) = 0;
+	virtual void   writeString(const char* value, Base::UInt32 size) = 0;
 	virtual void   writeBoolean(bool value) = 0;
 	virtual void   writeNull() = 0;
-	virtual Mona::UInt64 writeDate(const Mona::Date& date) = 0;
-	virtual Mona::UInt64 writeBytes(const Mona::UInt8* data, Mona::UInt32 size) = 0;
+	virtual Base::UInt64 writeDate(const Base::Date& date) = 0;
+	virtual Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size) = 0;
 	////////////////////
 
 
 	////  OPTIONAL DEFINE ////
 	// if serializer don't support a mixed object, set the object as the first element of the array
-	virtual Mona::UInt64 beginObjectArray(Mona::UInt32 size) { Mona::UInt64 ref(beginArray(size + 1)); beginObject(); return ref; }
+	virtual Base::UInt64 beginObjectArray(Base::UInt32 size) { Base::UInt64 ref(beginArray(size + 1)); beginObject(); return ref; }
 
-	virtual Mona::UInt64 beginMap(Mona::Exception& ex, Mona::UInt32 size, bool weakKeys = false) { ex.set<Mona::Ex::Format>(typeof(*this), " doesn't support map type, a object will be written rather");  return beginObject(); }
+	virtual Base::UInt64 beginMap(Base::Exception& ex, Base::UInt32 size, bool weakKeys = false) { ex.set<Base::Ex::Format>(typeof(*this), " doesn't support map type, a object will be written rather");  return beginObject(); }
 	virtual void   endMap() { endObject(); }
 
 	virtual void   clear() { writer.clear(); }
-	virtual bool   repeat(Mona::UInt64 reference) { return false; }
+	virtual bool   repeat(Base::UInt64 reference) { return false; }
 
 	////////////////////
 
 	void		   writeNullProperty(const char* name) { writePropertyName(name); writeNull(); }
-	void		   writeDateProperty(const char* name, const Mona::Date& date) { writePropertyName(name); writeDate(date); }
+	void		   writeDateProperty(const char* name, const Base::Date& date) { writePropertyName(name); writeDate(date); }
 	void		   writeNumberProperty(const char* name, double value) { writePropertyName(name); writeNumber(value); }
 	void		   writeBooleanProperty(const char* name, bool value) { writePropertyName(name); writeBoolean(value); }
 	void		   writeStringProperty(const char* name, const char* value, std::size_t size = std::string::npos) { writePropertyName(name); writeString(value, size == std::string::npos ? strlen(value) : size); }
@@ -65,15 +65,15 @@ struct DataWriter : virtual Mona::NullableObject {
 
 	operator bool() const { return writer.operator bool(); }
 
-	Mona::BinaryWriter*		operator->() { return &writer; }
-	const Mona::BinaryWriter*	operator->() const { return &writer; }
-	Mona::BinaryWriter&		operator*() { return writer; }
-	const Mona::BinaryWriter&	operator*() const { return writer; }
+	Base::BinaryWriter*		operator->() { return &writer; }
+	const Base::BinaryWriter*	operator->() const { return &writer; }
+	Base::BinaryWriter&		operator*() { return writer; }
+	const Base::BinaryWriter&	operator*() const { return writer; }
 
 	static DataWriter& Null();
 protected:
-	DataWriter(Mona::Buffer& buffer) : writer(buffer, Mona::Byte::ORDER_NETWORK) {}
-	DataWriter() : writer(Mona::Buffer::Null()) {}
+	DataWriter(Base::Buffer& buffer) : writer(buffer, Base::Byte::ORDER_NETWORK) {}
+	DataWriter() : writer(Base::Buffer::Null()) {}
 
-	Mona::BinaryWriter   writer;
+	Base::BinaryWriter   writer;
 };

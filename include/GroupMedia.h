@@ -21,7 +21,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "P2PSession.h"
 #include "GroupListener.h"
 
@@ -29,14 +29,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 GroupMedia is the class that manage a stream
 from a NetGroup connection
 */
-struct GroupMedia : virtual Mona::Object {
-	typedef Mona::Event<bool(Mona::UInt32 time, const Mona::Packet& packet, double lostRate, AMF::Type type)> ON(GroupPacket); // called when a new packet is ready (complete & ordered)
+struct GroupMedia : virtual Base::Object {
+	typedef Base::Event<bool(Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type)> ON(GroupPacket); // called when a new packet is ready (complete & ordered)
 	
 	GroupMedia(const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters);
 	virtual ~GroupMedia();
 
 	// Close the Group Media (when receiving onClosedMedia notification)
-	void						close(Mona::UInt64 lastFragment);
+	void						close(Base::UInt64 lastFragment);
 
 	// Close the publisher Group Media (send last end fragments)
 	void						closePublisher();
@@ -59,23 +59,27 @@ struct GroupMedia : virtual Mona::Object {
 
 	GroupListener::OnMedia						onMedia; // Create a new fragment from a media packet
 
-	const Mona::UInt32								id; // id of the GroupMedia (incremental)
+	const Base::UInt32								id; // id of the GroupMedia (incremental)
 	std::shared_ptr<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream
 	
 private:
 	#define MAP_PEERS_INFO_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>
 	#define MAP_PEERS_INFO_ITERATOR_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>::iterator
-	#define MAP_FRAGMENTS_ITERATOR std::map<Mona::UInt64, GroupFragment>::iterator
+	#define MAP_FRAGMENTS_ITERATOR std::map<Base::UInt64, std::unique_ptr<GroupFragment>>::iterator
 
 	// Add a new fragment to the map _fragments
-	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt8 splitedNumber, Mona::UInt8 mediaType, Mona::UInt32 time, const Mona::Packet& packet);
+	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, Base::UInt8 marker, Base::UInt64 id, Base::UInt8 splitedNumber, Base::UInt8 mediaType, Base::UInt32 time, const Base::Packet& packet);
 
-	// Push an arriving fragment to the peers and write it into the output file (recursive function)
-	void						pushFragment(std::map<Mona::UInt64, GroupFragment>::iterator& itFragment);
+	// Try to push a fragment (to the parent) and following fragments until finding a hole or reaching timeout
+	void						processFragments(MAP_FRAGMENTS_ITERATOR& itFragment);
+
+	// Try to push the fragment to the parent
+	// return true if the fragment has been processed, otherwise false
+	bool						processFragment(MAP_FRAGMENTS_ITERATOR& itFragment);
 
 	// Update the fragment map
 	// Return 0 if there is no fragments, otherwise the last fragment number
-	Mona::UInt64				updateFragmentMap();
+	Base::UInt64				updateFragmentMap();
 
 	// Erase old fragments (called before generating the fragments map)
 	void						eraseOldFragments();
@@ -89,10 +93,10 @@ private:
 	// Go to the next peer for pull or push
 	// idFragment : if > 0 it will test the availability of the fragment
 	// ascending : order of the research
-	bool						getNextPeer(MAP_PEERS_INFO_ITERATOR_TYPE& itPeer, bool ascending, Mona::UInt64 idFragment, Mona::UInt8 mask);
+	bool						getNextPeer(MAP_PEERS_INFO_ITERATOR_TYPE& itPeer, bool ascending, Base::UInt64 idFragment, Base::UInt8 mask);
 
 	// Send the fragment pull request to the next available peer
-	bool						sendPullToNextPeer(Mona::UInt64 idFragment);
+	bool						sendPullToNextPeer(Base::UInt64 idFragment);
 
 	// Remove the peer from the map
 	void						removePeer(const std::string& peerId);
@@ -108,20 +112,23 @@ private:
 	const std::string&											_stream; // stream name
 	const std::string											_streamKey; // stream key
 
-	Mona::Time													_lastPushUpdate; // last Play Push calculation
-	Mona::Time													_lastPullUpdate; // last Play Pull calculation
-	Mona::Time													_lastFragmentsMap; // last Fragments Map Message calculation
-	Mona::Time													_lastFragment; // last time we received a fragment
+	Base::Time													_lastPushUpdate; // last Play Push calculation
+	Base::Time													_lastPullUpdate; // last Play Pull calculation
+	Base::Time													_lastFragmentsMap; // last Fragments Map Message calculation
+	Base::Time													_lastFragment; // last time we received a fragment
+	Base::Time													_lastProcessFragment; // last time we have tried to process fragments
 	bool														_pullPaused; // True if no fragments have been received since fetch period
 
-	std::map<Mona::UInt64, GroupFragment>						_fragments;
-	std::map<Mona::Int64, Mona::UInt64>							_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
-	Mona::UInt64												_fragmentCounter; // Current fragment counter of writed fragments (fragments sent to application)
+	std::map<Base::UInt64, std::unique_ptr<GroupFragment>>		_fragments;
+	std::map<Base::Int64, Base::UInt64>							_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
+	Base::UInt64												_fragmentCounter; // Current fragment counter of writed fragments (fragments sent to application)
 
-	Mona::Buffer												_fragmentsMapBuffer; // General buffer for fragments map
-	static Mona::UInt32											GroupMediaCounter; // static counter of GroupMedia for id assignment
+	Base::Buffer												_fragmentsMapBuffer; // General buffer for fragments map
+	static Base::UInt32											GroupMediaCounter; // static counter of GroupMedia for id assignment
 
-	Mona::UInt64												_endFragment; // last fragment number, if > 0 the GroupMedia is closed
+	Base::UInt64												_endFragment; // last fragment number, if > 0 the GroupMedia is closed
+
+	Base::Buffer												_internalBuffer; // temporary buffer used to concatenate splitted fragments
 
 	// map of peers & iterators
 	MAP_PEERS_INFO_TYPE											_mapPeers; // map of peers subscribed to this media stream
@@ -131,12 +138,12 @@ private:
 
 	// Pushers calculation
 	bool														_firstPushMode; // True if no play push mode have been send for now
-	Mona::UInt8													_currentPushMask; // current mask analyzed
-	std::map<Mona::UInt8, std::pair<std::string, Mona::UInt64>>	_mapPushMasks; // Map of push mask to a pair of peerId/fragmentId
+	Base::UInt8													_currentPushMask; // current mask analyzed
+	std::map<Base::UInt8, std::pair<std::string, Base::UInt64>>	_mapPushMasks; // Map of push mask to a pair of peerId/fragmentId
 
-	std::map<Mona::UInt64, Mona::Time>							_mapWaitingFragments; // Map of waiting fragments in Pull requests to the time of the request
-	std::map<Mona::Int64, Mona::UInt64>							_mapPullTime2Fragment; // Map of reception time to fragments map id (used for pull requests)
-	Mona::UInt64												_lastFragmentMapId; // Last Fragments map Id received (used for pull requests)
-	Mona::UInt64												_currentPullFragment; // Current pull fragment index
+	std::map<Base::UInt64, Base::Time>							_mapWaitingFragments; // Map of waiting fragments in Pull requests to the time of the request
+	std::map<Base::Int64, Base::UInt64>							_mapPullTime2Fragment; // Map of reception time to fragments map id (used for pull requests)
+	Base::UInt64												_lastFragmentMapId; // Last Fragments map Id received (used for pull requests)
+	Base::UInt64												_currentPullFragment; // Current pull fragment index
 	bool														_firstPullReceived; // True if we have received the first pull fragment => we can start writing
 };

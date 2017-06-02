@@ -19,7 +19,7 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Mona/Util.h"
+#include "Base/Util.h"
 #include "FlowManager.h"
 #include "AMFReader.h"
 #include "Invoker.h"
@@ -28,11 +28,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPFlow.h"
 #include "RTMFPSender.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0) {
+	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0), _ping(0) {
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
@@ -76,7 +76,7 @@ shared_ptr<RTMFPWriter>& FlowManager::writer(UInt64 id, shared_ptr<RTMFPWriter>&
 	return pWriter;
 }
 
-const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const Packet& signature, Mona::UInt64 flowId) {
+const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const Packet& signature, Base::UInt64 flowId) {
 
 	RTMFPWriter* pWriter = new RTMFPWriter(0x89 + _responder,_nextRTMFPWriterId, flowId, signature, *this);
 	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(_nextRTMFPWriterId++), forward_as_tuple(pWriter)).first;

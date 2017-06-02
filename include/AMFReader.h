@@ -21,13 +21,13 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "AMF.h"
 #include "ReferableReader.h"
 #include <vector>
 
-struct AMFReader : ReferableReader, virtual Mona::Object {
-	AMFReader(const Mona::UInt8* data, Mona::UInt32 size);
+struct AMFReader : ReferableReader, virtual Base::Object {
+	AMFReader(const Base::UInt8* data, Base::UInt32 size);
 
 	enum {
 		OBJECT = OTHER,
@@ -44,19 +44,19 @@ struct AMFReader : ReferableReader, virtual Mona::Object {
 
 private:
 
-	Mona::UInt8		followingType();
+	Base::UInt8		followingType();
 
-	bool			readOne(Mona::UInt8 type, DataWriter& writer);
-	bool			writeOne(Mona::UInt8 type, DataWriter& writer);
+	bool			readOne(Base::UInt8 type, DataWriter& writer);
+	bool			writeOne(Base::UInt8 type, DataWriter& writer);
 
-	const char*		readText(Mona::UInt32& size);
+	const char*		readText(Base::UInt32& size);
 
-	std::vector<Mona::UInt32>		_stringReferences;
-	std::vector<Mona::UInt32>		_classDefReferences;
-	std::vector<Mona::UInt32>		_references;
-	std::vector<Mona::UInt32>		_amf0References;
+	std::vector<Base::UInt32>		_stringReferences;
+	std::vector<Base::UInt32>		_classDefReferences;
+	std::vector<Base::UInt32>		_references;
+	std::vector<Base::UInt32>		_amf0References;
 
-	Mona::UInt8				_amf3;
+	Base::UInt8				_amf3;
 	bool					_referencing;
 	std::string				_buffer;
 };

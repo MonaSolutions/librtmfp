@@ -20,14 +20,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "librtmfp.h"
-#include "Mona/Exceptions.h"
+#include "Base/Exceptions.h"
 #include "RTMFPSession.h"
-#include "Mona/Logs.h"
-#include "Mona/String.h"
+#include "Base/Logs.h"
+#include "Base/String.h"
 #include "Invoker.h"
-#include "Mona/Util.h"
+#include "Base/Util.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 extern "C" {
@@ -233,12 +233,13 @@ unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* stre
 }
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
-	if (!RTMFPcontext)
-		return;
 	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
 		return;
 	}
+	DEBUG("RTMFP_Close called, trying to close connection ", RTMFPcontext)
+	if (!RTMFPcontext)
+		return;
 
 	GlobalInvoker->removeConnection(RTMFPcontext);
 	if (GlobalInvoker->empty()) // delete if no more connections
@@ -251,34 +252,24 @@ int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext,char *buf,unsi
 		return -1;
 	}
 
+	int nbRead = 0, ret = 0;
 	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if (pConn) {
-		UInt32 total = 0;
-		int nbRead = 0;
-		while (nbRead==0 && !GlobalInvoker->isInterrupted()) {
-			if (!pConn->read(streamId, (UInt8*)buf, size, nbRead))
-				return -1;
+	// Loop while the connection is available and no data is available
+	while (GlobalInvoker->getConnection(RTMFPcontext, pConn) && nbRead == 0) {
+		if (!(ret = pConn->read(streamId, (UInt8*)buf, size, nbRead)))
+			return ret;
 			
-			if (nbRead < 0)
-				return nbRead;
-			else if (nbRead > 0) {
-				size -= nbRead;
-				total += nbRead;
-			}
-			else { // Nothing read, wait for data
-				while (!pConn->dataAvailable) {
-					DEBUG("Nothing available, sleeping...")
-					pConn->readSignal.wait(100);
-					if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-						return -1;
-				}
-			}
-		}
-		return total;
+		if (nbRead != 0)
+			return nbRead;
+
+		// Nothing read, wait for data
+		DEBUG("Nothing available, sleeping...")
+		pConn->readSignal.wait(100);
+		if (!GlobalInvoker || GlobalInvoker->isInterrupted())
+			break;
 	}
-	
-	return -1;
+
+	return 0;
 }
 
 int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {

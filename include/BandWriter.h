@@ -28,8 +28,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 BandWriter class is used to write messages
 It is implemented by FlowManager & RTMFPHandshaker
 */
-struct BandWriter : virtual Mona::Object {
-	BandWriter() :	_pEncoder(new RTMFP::Engine((const Mona::UInt8*)RTMFP_DEFAULT_KEY)), _pDecoder(new RTMFP::Engine((const Mona::UInt8*)RTMFP_DEFAULT_KEY)) {}
+struct BandWriter : virtual Base::Object {
+	BandWriter() :	_pEncoder(new RTMFP::Engine((const Base::UInt8*)RTMFP_DEFAULT_KEY)), _pDecoder(new RTMFP::Engine((const Base::UInt8*)RTMFP_DEFAULT_KEY)) {}
 	virtual ~BandWriter() {}
 
 	// Return the name of the session
@@ -39,7 +39,7 @@ struct BandWriter : virtual Mona::Object {
 	virtual bool							failed()=0;
 
 	// Return the socket object
-	virtual const std::shared_ptr<Mona::Socket>&		socket(Mona::IPAddress::Family family)=0;
+	virtual const std::shared_ptr<Base::Socket>&		socket(Base::IPAddress::Family family)=0;
 
 	// Return the decoder to start the decoding process
 	std::shared_ptr<RTMFP::Engine>&			decoder() { return _pDecoder; }
@@ -49,5 +49,5 @@ protected:
 	// Encryption/Decryption
 	std::shared_ptr<RTMFP::Engine>			_pDecoder;
 	std::shared_ptr<RTMFP::Engine>			_pEncoder;
-	Mona::SocketAddress						_address;
+	Base::SocketAddress						_address;
 };

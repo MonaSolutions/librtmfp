@@ -20,10 +20,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "RTMFPSender.h"
-#include "Mona/BinaryWriter.h"
-#include "Mona/Logs.h"
+#include "Base/BinaryWriter.h"
+#include "Base/Logs.h"
 
-using namespace Mona;
+using namespace Base;
 
 bool RTMFPSender::run(Exception&) {
 	run();
@@ -54,7 +54,7 @@ void RTMFPCmdSender::run() {
 	// COMMAND
 	shared<Buffer> pBuffer;
 	BinaryWriter(RTMFP::InitBuffer(pBuffer, pSession->initiatorTime, _marker)).write24(UInt32(_cmd << 16));
-	RTMFP::Send(pSession->socket, Mona::Packet(pSession->pEncoder->encode(pBuffer, pSession->farId, address)), address);
+	RTMFP::Send(pSession->socket, Base::Packet(pSession->pEncoder->encode(pBuffer, pSession->farId, address)), address);
 }
 
 void RTMFPAcquiter::run() {
@@ -112,7 +112,7 @@ void RTMFPRepeater::sendAbandon(UInt64 stage) {
 	BinaryWriter writer(RTMFP::InitBuffer(pBuffer, pSession->initiatorTime, _marker));
 	writer.write8(0x10).write16(2 + Binary::Get7BitValueSize(pQueue->id) + Binary::Get7BitValueSize(stage));
 	writer.write8(RTMFP::MESSAGE_ABANDON).write7BitLongValue(pQueue->id).write7BitLongValue(stage).write8(0);
-	RTMFP::Send(pSession->socket, Mona::Packet(pSession->pEncoder->encode(pBuffer, pSession->farId, address)), address);
+	RTMFP::Send(pSession->socket, Base::Packet(pSession->pEncoder->encode(pBuffer, pSession->farId, address)), address);
 }
 
 

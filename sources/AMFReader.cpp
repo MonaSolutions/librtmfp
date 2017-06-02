@@ -21,11 +21,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "AMFReader.h"
 #include "StringWriter.h"
-#include "Mona/Logs.h"
-#include "Mona/Exceptions.h"
+#include "Base/Logs.h"
+#include "Base/Exceptions.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 AMFReader::AMFReader(const UInt8* data, UInt32 size) : ReferableReader(data, size), _amf3(0), _referencing(true) {
 

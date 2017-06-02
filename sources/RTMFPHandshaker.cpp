@@ -22,9 +22,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPHandshaker.h"
 #include "RTMFPSession.h"
 #include "RTMFPSender.h"
-#include "Mona/Util.h"
+#include "Base/Util.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker") {
@@ -468,7 +468,7 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 	});
 }
 
-const shared_ptr<Socket>& RTMFPHandshaker::socket(Mona::IPAddress::Family family) { 
+const shared_ptr<Socket>& RTMFPHandshaker::socket(Base::IPAddress::Family family) { 
 	return _pSession->socket(family); 
 }
 

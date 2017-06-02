@@ -23,7 +23,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPWriter.h"
 #include "P2PSession.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 PeerMedia::PeerMedia(P2PSession* pSession, shared_ptr<RTMFPWriter>& pMediaReportWriter) : _pMediaReportWriter(pMediaReportWriter), _pParent(pSession), _idFragmentsMapIn(0), _idFragmentsMapOut(0), 

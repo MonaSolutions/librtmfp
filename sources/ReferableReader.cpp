@@ -20,10 +20,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "ReferableReader.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 UInt32 ReferableReader::read(DataWriter& writer, UInt32 count) {
 	if (_recursive)

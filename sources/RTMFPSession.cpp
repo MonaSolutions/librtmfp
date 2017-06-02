@@ -26,12 +26,12 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPFlow.h"
 #include "Listener.h"
 #include "NetGroup.h"
-#include "Mona/DNS.h"
-#include "Mona/Logs.h"
+#include "Base/DNS.h"
+#include "Base/Logs.h"
 #include "librtmfp.h"
-#include "Mona/Util.h"
+#include "Base/Util.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
@@ -77,7 +77,6 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		SocketAddress address;
 		DEBUG("Socket error : ", ex)
 	};
-	//_pSocketIPV6->onFlush = _pSocket->onFlush = [this]() {};
 	_pMainStream->onStreamCreated = [this](UInt16 idStream, UInt16& idMedia) {
 		// Get command
 		if (_waitingStreams.empty()) {
@@ -140,6 +139,14 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 			}
 		}
 
+		// AAC (correct the issue with ffmpeg aac decoder!)
+		if (type == AMF::TYPE_AUDIO && !media.AACsequenceHeaderRead && (packet.size()>1 && (*packet.data() >> 4) == 0x0A)) {
+			if (!RTMFP::IsAACCodecInfos(packet.data(), packet.size()))
+				return; // ignore until finding the AAC sequence header
+			INFO("AAC codec infos found, starting to read audio part")
+			media.AACsequenceHeaderRead = true;
+		}
+
 		if (_pOnMedia) // Synchronous read
 			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
 		else { // Asynchronous read
@@ -181,11 +188,11 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 RTMFPSession::~RTMFPSession() {
 	DEBUG("Deletion of RTMFPSession ", name())
 
+	_onDecoded = nullptr;
 	closeSession();
 	onPushAudio = nullptr;
 	onPushVideo = nullptr;
 	onFlushPublisher = nullptr;
-	_onDecoded = nullptr;
 }
 
 void RTMFPSession::closeSession() {
@@ -426,21 +433,21 @@ UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* par
 	}
 }
 
-bool RTMFPSession::read(UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
+int RTMFPSession::read(UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
 	
 	lock_guard<mutex> lock(_mutexConnections);
 	if (status != RTMFP::CONNECTED) {
 		WARN("Connection is not established, cannot read data")
-		return false; // to stop the parent loop
+		return 0; // to stop the parent loop
 	}
 	if (nbRead != 0) {
 		ERROR("Parameter nbRead must equal zero in readAsync()")
-		return false;
+		return -1;
 	}
 	auto itMedia = _mapPlayers.find(mediaId);
 	if (itMedia == _mapPlayers.end()) {
-		ERROR("Unable to find media ", mediaId)
-		return false;
+		WARN("Unable to find media ", mediaId, ", it can be closed")
+		return 0;
 	}
 
 	bool available = false;
@@ -462,14 +469,14 @@ bool RTMFPSession::read(UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
 
 			// header
 			if (!packet->pos) {
-				writer.write8(packet->type);
-				writer.write24(packet->size()); // size on 3 bytes
-				writer.write24(packet->time); // time on 3 bytes
-				writer.write32(0); // unknown 4 bytes set to 0
+			writer.write8(packet->type);
+			writer.write24(packet->size()); // size on 3 bytes
+			writer.write24(packet->time); // time on 3 bytes
+			writer.write32(0); // unknown 4 bytes set to 0
 			}
 			writer.write(packet->data() + packet->pos, toRead); // payload
 
-																// If packet too big : save position and exit, else write footer
+			// If packet too big : save position and exit, else write footer
 			if (bufferSize > toRead) {
 				packet->pos += toRead;
 				break;
@@ -483,7 +490,7 @@ bool RTMFPSession::read(UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
 	}
 	if (!available && dataAvailable)
 		dataAvailable = false;
-	return true;
+	return 1;
 }
 
 bool RTMFPSession::write(const UInt8* data, UInt32 size, int& pos) {
@@ -580,7 +587,9 @@ void RTMFPSession::manage() {
 	while (itPeer != _mapPeersById.end()) {
 		if (itPeer->second->failed()) {
 			DEBUG("RTMFPSession management - Deleting closed P2P session to ", itPeer->first)
-			_mapSessions.erase(itPeer->second->sessionId());
+			auto nbRemoved = _mapSessions.erase(itPeer->second->sessionId());
+			if (nbRemoved != 1)
+				WARN("RTMFPSession management - Error to remove P2P session ", itPeer->first, " (", itPeer->second->sessionId(),") : ", nbRemoved)
 			_mapPeersById.erase(itPeer++);
 		}
 		else {
@@ -610,7 +619,7 @@ void RTMFPSession::manage() {
 		readSignal.set();
 }
 
-Mona::UInt16 RTMFPSession::addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable) {
+Base::UInt16 RTMFPSession::addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable) {
 	lock_guard<mutex> lock(_mutexConnections);
 
 	if (publisher && _pPublisher) {

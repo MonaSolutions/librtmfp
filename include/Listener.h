@@ -23,7 +23,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPWriter.h"
 
 struct Publisher;
-class Listener : public virtual Mona::Object {
+class Listener : public virtual Base::Object {
 public:
 	Listener(Publisher& publication, const std::string& identifier);
 	virtual ~Listener() {}
@@ -31,8 +31,8 @@ public:
 	virtual void startPublishing() = 0;
 	virtual void stopPublishing() = 0;
 
-	virtual void pushAudio(Mona::UInt32 time, const Mona::Packet& packet) = 0;
-	virtual void pushVideo(Mona::UInt32 time, const Mona::Packet& packet) = 0;
+	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet) = 0;
+	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet) = 0;
 	//virtual void pushData(DataReader& packet) = 0;
 	//virtual void pushProperties(DataReader& packet) = 0;
 
@@ -51,8 +51,8 @@ public:
 	virtual void startPublishing();
 	virtual void stopPublishing();
 
-	virtual void pushAudio(Mona::UInt32 time, const Mona::Packet& packet);
-	virtual void pushVideo(Mona::UInt32 time, const Mona::Packet& packet);
+	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet);
+	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet);
 
 	virtual void flush();
 
@@ -61,19 +61,19 @@ public:
 
 private:
 
-	bool writeReliableMedia(FlashWriter& writer, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::Packet& packet) { return writeMedia(writer, true, type, time, packet); }
-	bool writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, Mona::UInt32 time, const Mona::Packet& packet);
+	bool writeReliableMedia(FlashWriter& writer, FlashWriter::MediaType type, Base::UInt32 time, const Base::Packet& packet) { return writeMedia(writer, true, type, time, packet); }
+	bool writeMedia(FlashWriter& writer, bool reliable, FlashWriter::MediaType type, Base::UInt32 time, const Base::Packet& packet);
 
 	bool	initWriters();
 	bool	firstTime() { return !_pVideoWriter && !_pAudioWriter && !_dataInitialized; }
 	void	closeWriters();
 
-	bool	pushAudioInfos(Mona::UInt32 time);
+	bool	pushAudioInfos(Base::UInt32 time);
 
-	Mona::UInt32 					_startTime;
-	Mona::UInt32					_lastTime;
+	Base::UInt32 					_startTime;
+	Base::UInt32					_lastTime;
 	bool							_firstTime;
-	Mona::UInt32					_seekTime;
+	Base::UInt32					_seekTime;
 	bool							_codecInfosSent;
 
 	std::shared_ptr<RTMFPWriter>	_pDataWriter;

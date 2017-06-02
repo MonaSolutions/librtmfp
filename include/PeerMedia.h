@@ -21,9 +21,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
-#include "Mona/Event.h"
-#include "Mona/Packet.h"
+#include "Base/Mona.h"
+#include "Base/Event.h"
+#include "Base/Packet.h"
 #include "AMF.h"
 #include <set>
 
@@ -34,15 +34,15 @@ struct RTMFPWriter;
 struct RTMFPGroupConfig;
 
 // Fragment instance
-struct GroupFragment : Mona::Packet, virtual Mona::Object {
-	GroupFragment(const Mona::Packet& packet, Mona::UInt32 time, AMF::Type mediaType, Mona::UInt64 fragmentId, Mona::UInt8 groupMarker, Mona::UInt8 splitId) :
+struct GroupFragment : Base::Packet, virtual Base::Object {
+	GroupFragment(const Base::Packet& packet, Base::UInt32 time, AMF::Type mediaType, Base::UInt64 fragmentId, Base::UInt8 groupMarker, Base::UInt8 splitId) :
 		id(fragmentId), splittedId(splitId), type(mediaType), marker(groupMarker), time(time), Packet(std::move(packet)) {}
 
-	Mona::UInt32		time;
+	Base::UInt32		time;
 	AMF::Type			type;
-	Mona::UInt8			marker;
-	Mona::UInt64		id;
-	Mona::UInt8			splittedId;
+	Base::UInt8			marker;
+	Base::UInt64		id;
+	Base::UInt8			splittedId;
 };
 
 /***************************************************
@@ -50,11 +50,11 @@ Class used to save group media infos for
 a peer in a NetGroup stream and send media and report
 media messages to the peer
 */
-struct PeerMedia : public virtual Mona::Object {
-	typedef Mona::Event<void(const std::string& peerId, Mona::UInt8 mask)>	ON(PeerClose); // notify parent that the peer is closing (update the NetGroup push flags)
-	typedef Mona::Event<void(PeerMedia*, Mona::UInt64)>						ON(PlayPull); // called when we receive a pull request
-	typedef Mona::Event<bool(Mona::UInt64)>									ON(FragmentsMap); // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
-	typedef Mona::Event<void(PeerMedia*, const std::string&, Mona::UInt8, Mona::UInt64, Mona::UInt8, Mona::UInt8, Mona::UInt32, const Mona::Packet&, double)> ON(Fragment); // called when receiving a fragment
+struct PeerMedia : public virtual Base::Object {
+	typedef Base::Event<void(const std::string& peerId, Base::UInt8 mask)>	ON(PeerClose); // notify parent that the peer is closing (update the NetGroup push flags)
+	typedef Base::Event<void(PeerMedia*, Base::UInt64)>						ON(PlayPull); // called when we receive a pull request
+	typedef Base::Event<bool(Base::UInt64)>									ON(FragmentsMap); // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
+	typedef Base::Event<void(PeerMedia*, const std::string&, Base::UInt8, Base::UInt64, Base::UInt8, Base::UInt8, Base::UInt32, const Base::Packet&, double)> ON(Fragment); // called when receiving a fragment
 
 	PeerMedia(P2PSession* pSession, std::shared_ptr<RTMFPWriter>& pMediaReportWriter);
 	virtual ~PeerMedia();
@@ -72,22 +72,22 @@ struct PeerMedia : public virtual Mona::Object {
 	void flushReportWriter();
 
 	// Called by P2PSession when receiving a fragments map
-	void handleFragmentsMap(Mona::UInt64 id, const Mona::UInt8* data, Mona::UInt32 size);
+	void handleFragmentsMap(Base::UInt64 id, const Base::UInt8* data, Base::UInt32 size);
 
 	// Called by P2PSession when receiving a fragment
-	void handleFragment(Mona::UInt8 marker, Mona::UInt64 id, Mona::UInt8 splitedNumber, Mona::UInt8 mediaType, Mona::UInt32 time, const Mona::Packet& packet, double lostRate);
+	void handleFragment(Base::UInt8 marker, Base::UInt64 id, Base::UInt8 splitedNumber, Base::UInt8 mediaType, Base::UInt32 time, const Base::Packet& packet, double lostRate);
 
 	// Return True if bit number is available in the fragments map (for push out mode)
-	bool checkMask(Mona::UInt8 bitNumber);
+	bool checkMask(Base::UInt8 bitNumber);
 
 	// Return True if the fragment is available
-	bool hasFragment(Mona::UInt64 index);
+	bool hasFragment(Base::UInt64 index);
 
 	// Write the Group publication infos
 	void sendGroupMedia(const std::string& stream, const std::string& streamKey, RTMFPGroupConfig* groupConfig);
 
 	// Write the Group publication end message
-	void sendEndMedia(Mona::UInt64 lastFragment);
+	void sendEndMedia(Base::UInt64 lastFragment);
 
 	// Create the flow if necessary and send media
 	// The fragment is sent if pull is true or if this is a pushable fragment
@@ -96,38 +96,38 @@ struct PeerMedia : public virtual Mona::Object {
 	// Send the Fragments map message
 	// param lastFragment : latest fragment in the message
 	// return : true if the fragments map has been sent
-	bool sendFragmentsMap(Mona::UInt64 lastFragment, const Mona::UInt8* data, Mona::UInt32 size);
+	bool sendFragmentsMap(Base::UInt64 lastFragment, const Base::UInt8* data, Base::UInt32 size);
 
 	// Set the Group Publish Push mode (after a message 23)
-	void setPushMode(Mona::UInt8 mode);
+	void setPushMode(Base::UInt8 mode);
 
 	// Update the Group Play Push mode
-	void sendPushMode(Mona::UInt8 mode);
+	void sendPushMode(Base::UInt8 mode);
 
 	// Send a pull request (2B)
-	void sendPull(Mona::UInt64 index);
+	void sendPull(Base::UInt64 index);
 
 	// Handle a pull request
-	void handlePlayPull(Mona::UInt64 index);
+	void handlePlayPull(Base::UInt64 index);
 
-	Mona::UInt64					id; // id of the PeerMedia, it is also the id of the report writer
-	Mona::UInt64					idFlow; // id of the Media Report RTMFPFlow linked to, used to create the Media Writer
-	Mona::UInt64					idFlowMedia; // id of the Media RTMFPFlow (the one who send fragments)
+	Base::UInt64					id; // id of the PeerMedia, it is also the id of the report writer
+	Base::UInt64					idFlow; // id of the Media Report RTMFPFlow linked to, used to create the Media Writer
+	Base::UInt64					idFlowMedia; // id of the Media RTMFPFlow (the one who send fragments)
 	const std::string*				pStreamKey; // pointer to the streamKey index in the map P2PSession::_mapStream2PeerMedia
-	Mona::UInt8						pushInMode; // Group Play Push mode
+	Base::UInt8						pushInMode; // Group Play Push mode
 	bool							groupMediaSent; // True if the Group Media infos have been sent
 
 private:
 	// Return true if the new fragment is pushable (according to the Group push mode)
-	bool							isPushable(Mona::UInt8 rest);
+	bool							isPushable(Base::UInt8 rest);
 
 	P2PSession*						_pParent; // P2P session related to
 	bool							_closed; // closed state
 
-	Mona::UInt8						_pushOutMode; // Group Publish Push mode
-	Mona::Buffer					_fragmentsMap; // Last Fragments Map received
-	Mona::UInt64					_idFragmentsMapIn; // Last ID received from the Fragments Map
-	Mona::UInt64					_idFragmentsMapOut; // Last ID sent in the Fragments map
+	Base::UInt8						_pushOutMode; // Group Publish Push mode
+	Base::Buffer					_fragmentsMap; // Last Fragments Map received
+	Base::UInt64					_idFragmentsMapIn; // Last ID received from the Fragments Map
+	Base::UInt64					_idFragmentsMapOut; // Last ID sent in the Fragments map
 	std::shared_ptr<RTMFPWriter>	_pMediaReportWriter; // Media Report writer used to send report messages from the current media
 	std::shared_ptr<RTMFPWriter>	_pMediaWriter; // Writer for media packets
 };

@@ -32,16 +32,16 @@ struct RTMFPGroupConfig;
 P2PSession represents a direct P2P connection 
 with another peer
 */
-struct P2PSession : FlowManager, virtual Mona::Object {
-	typedef Mona::Event<void(P2PSession*, Mona::BinaryReader&, bool)>																		ON(PeerGroupReport); // called when receiving a Group Report message from the peer
-	typedef Mona::Event<bool(const std::string&, std::shared_ptr<PeerMedia>&, const std::string&, const std::string&, Mona::BinaryReader&)> ON(NewMedia); // called when a new PeerMedia is called (new stream available for the peer)
-	typedef Mona::Event<void(const std::string&, Mona::UInt64)>																				ON(ClosedMedia); // called when the peer publisher close the GroupMedia
-	typedef Mona::Event<void(P2PSession*)>																									ON(PeerGroupBegin); // called when receiving a Group Begin message from the peer
-	typedef Mona::Event<void(const std::string&)>																							ON(PeerClose); // called when the peer is closing
-	typedef Mona::Event<bool(const std::string&)>																							ON(PeerGroupAskClose); // called when a peer ask to close its session
+struct P2PSession : FlowManager, virtual Base::Object {
+	typedef Base::Event<void(P2PSession*, Base::BinaryReader&, bool)>																		ON(PeerGroupReport); // called when receiving a Group Report message from the peer
+	typedef Base::Event<bool(const std::string&, std::shared_ptr<PeerMedia>&, const std::string&, const std::string&, Base::BinaryReader&)> ON(NewMedia); // called when a new PeerMedia is called (new stream available for the peer)
+	typedef Base::Event<void(const std::string&, Base::UInt64)>																				ON(ClosedMedia); // called when the peer publisher close the GroupMedia
+	typedef Base::Event<void(P2PSession*)>																									ON(PeerGroupBegin); // called when receiving a Group Begin message from the peer
+	typedef Base::Event<void(const std::string&)>																							ON(PeerClose); // called when the peer is closing
+	typedef Base::Event<bool(const std::string&)>																							ON(PeerGroupAskClose); // called when a peer ask to close its session
 
 	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, 
-		const Mona::SocketAddress& host, bool responder, bool group, Mona::UInt16 mediaId=0);
+		const Base::SocketAddress& host, bool responder, bool group, Base::UInt16 mediaId=0);
 
 	virtual ~P2PSession();
 
@@ -56,7 +56,7 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 	unsigned int					callFunction(const char* function, int nbArgs, const char** args);
 
 	// Create a flow for special signatures (NetGroup)
-	virtual RTMFPFlow*				createSpecialFlow(Mona::Exception& ex, Mona::UInt64 id, const std::string& signature, Mona::UInt64 idWriterRef);
+	virtual RTMFPFlow*				createSpecialFlow(Base::Exception& ex, Base::UInt64 id, const std::string& signature, Base::UInt64 idWriterRef);
 
 	// Close the group writers but keep the connection open if full is false
 	virtual void					close(bool abrupt);
@@ -65,20 +65,20 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 	virtual const std::string&		name() { return peerId; }
 
 	// Return the raw peerId of the session (for RTMFPConnection)
-	virtual const Mona::Binary&		epd() { return rawId; }
+	virtual const Base::Binary&		epd() { return rawId; }
 
 	// Return the known addresses of the peer (for RTMFPSession)
 	const PEER_LIST_ADDRESS_TYPE&	addresses() { return _knownAddresses; }
 	
 	// Return the socket object of the session
-	virtual const std::shared_ptr<Mona::Socket>&		socket(Mona::IPAddress::Family family);
+	virtual const std::shared_ptr<Base::Socket>&		socket(Base::IPAddress::Family family);
 
 	std::shared_ptr<Handshake>&		handshake() { return _pHandshake; }
 
-	void							setAddress(const Mona::SocketAddress& address) { _address = address; }
+	void							setAddress(const Base::SocketAddress& address) { _address = address; }
 
 	// Called when receiving handshake 38 to decide if answering
-	bool							onHandshake38(const Mona::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake);
+	bool							onHandshake38(const Base::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake);
 
 	/*** NetGroup functions ***/
 
@@ -86,7 +86,7 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 	std::shared_ptr<PeerMedia>&		getPeerMedia(const std::string& streamKey);
 
 	// Send the group report (message 0A)
-	void							sendGroupReport(const Mona::UInt8* data, Mona::UInt32 size);
+	void							sendGroupReport(const Base::UInt8* data, Base::UInt32 size);
 
 	// Send the group begin message (02 + 0E messages), return true if the message has been sent
 	bool							sendGroupBegin();
@@ -95,7 +95,7 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 	void							sendGroupPeerConnect();
 
 	// called by a PeerMedia to create the media writer
-	bool							createMediaWriter(std::shared_ptr<RTMFPWriter>& pWriter, Mona::UInt64 flowIdRef);
+	bool							createMediaWriter(std::shared_ptr<RTMFPWriter>& pWriter, Base::UInt64 flowIdRef);
 
 	// Ask a peer from the group to disconnect
 	// return : True if the request has been sent
@@ -108,16 +108,16 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
 
 	// Return the diffie hellman object (related to main session)
-	virtual Mona::DiffieHellman&	diffieHellman();
+	virtual Base::DiffieHellman&	diffieHellman();
 	
 	// Set the host and peer addresses when receiving redirection request (only for P2P)
-	virtual void					addAddress(const Mona::SocketAddress& address, RTMFP::AddressType type);
+	virtual void					addAddress(const Base::SocketAddress& address, RTMFP::AddressType type);
 
 	/*** Public members ***/
 
-	Mona::Buffer					rawId; // Peer Id in binary format + header (210f)
+	Base::Buffer					rawId; // Peer Id in binary format + header (210f)
 	std::string						peerId; // Peer Id of the peer connected
-	Mona::SocketAddress				hostAddress; // Host address (server address)
+	Base::SocketAddress				hostAddress; // Host address (server address)
 
 	// NetGroup members
 	bool							groupFirstReportSent; // True if the first group report has been sent
@@ -126,7 +126,7 @@ struct P2PSession : FlowManager, virtual Mona::Object {
 protected:
 
 	// Handle play request (only for P2PSession)
-	virtual bool					handlePlay(const std::string& streamName, Mona::UInt16 streamId, Mona::UInt64 flowId, double cbHandler);
+	virtual bool					handlePlay(const std::string& streamName, Base::UInt16 streamId, Base::UInt64 flowId, double cbHandler);
 
 	// Handle a Writer close message (type 5E)
 	virtual void					handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
@@ -142,24 +142,24 @@ private:
 	// Build the group connection key (after connection suceed)
 	void							buildGroupKey();
 
-	static Mona::UInt32										P2PSessionCounter; // Global counter for generating incremental P2P sessions id
+	static Base::UInt32										P2PSessionCounter; // Global counter for generating incremental P2P sessions id
 	RTMFPSession*											_parent; // RTMFPConnection related to
 	PEER_LIST_ADDRESS_TYPE									_knownAddresses; // list of known addresses of the peer/server
 	std::string												_streamName; // playing stream name
-	Mona::UInt16											_peerMediaId; // playing Id (if P2P direct player)
+	Base::UInt16											_peerMediaId; // playing Id (if P2P direct player)
 
 	// Group members
-	std::shared_ptr<Mona::Buffer>							_groupConnectKey; // Encrypted key used to connect to the peer
-	std::shared_ptr<Mona::Buffer>							_groupExpectedKey; // Encrypted key expected from far peer
+	std::shared_ptr<Base::Buffer>							_groupConnectKey; // Encrypted key used to connect to the peer
+	std::shared_ptr<Base::Buffer>							_groupExpectedKey; // Encrypted key expected from far peer
 	bool													_groupConnectSent; // True if group connection request has been sent to peer
 	bool													_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	bool													_isGroup; // True if this peer connection it part of a NetGroup
-	Mona::Time												_lastTryDisconnect; // Last time we ask peer to disconnect
+	Base::Time												_lastTryDisconnect; // Last time we ask peer to disconnect
 
 	std::shared_ptr<RTMFPWriter>							_pReportWriter; // Writer for report messages
 	std::shared_ptr<RTMFPWriter>							_pNetStreamWriter; // Writer for NetStream P2P direct messages
 
-	std::map<Mona::UInt64, std::shared_ptr<PeerMedia>>		_mapWriter2PeerMedia; // map of writer id to peer media
+	std::map<Base::UInt64, std::shared_ptr<PeerMedia>>		_mapWriter2PeerMedia; // map of writer id to peer media
 	std::map<std::string, std::shared_ptr<PeerMedia>>		_mapStream2PeerMedia; // map of stream key to peer media
-	std::map<Mona::UInt64, std::shared_ptr<PeerMedia>>		_mapFlow2PeerMedia; // map of flow id to peer media
+	std::map<Base::UInt64, std::shared_ptr<PeerMedia>>		_mapFlow2PeerMedia; // map of flow id to peer media
 };

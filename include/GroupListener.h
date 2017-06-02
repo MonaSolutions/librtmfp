@@ -24,15 +24,15 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Listener.h"
 
 struct GroupListener : Listener {
-	typedef Mona::Event<void(bool reliable, AMF::Type type, Mona::UInt32 time, const Mona::Packet& packet)> ON(Media);
+	typedef Base::Event<void(bool reliable, AMF::Type type, Base::UInt32 time, const Base::Packet& packet)> ON(Media);
 	GroupListener(Publisher& publication, const std::string& identifier);
 	virtual ~GroupListener();
 
 	virtual void startPublishing();
 	virtual void stopPublishing();
 
-	virtual void pushAudio(Mona::UInt32 time, const Mona::Packet& packet);
-	virtual void pushVideo(Mona::UInt32 time, const Mona::Packet& packet);
+	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet);
+	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet);
 
 	virtual void flush() {}
 
@@ -40,15 +40,15 @@ private:
 
 	bool	firstTime() { return !_dataInitialized; }
 
-	bool	pushVideoInfos(Mona::UInt32 time, const Mona::Packet& packet);
-	bool	pushAudioInfos(Mona::UInt32 time);
+	bool	pushVideoInfos(Base::UInt32 time, const Base::Packet& packet);
+	bool	pushAudioInfos(Base::UInt32 time);
 
-	Mona::UInt32 			_startTime;
-	Mona::UInt32			_lastTime;
+	Base::UInt32 			_startTime;
+	Base::UInt32			_lastTime;
 	bool					_firstTime;
-	Mona::UInt32			_seekTime;
+	Base::UInt32			_seekTime;
 	bool					_codecInfosSent;
-	Mona::Time				_lastCodecsTime; // last time codecs have been sent
+	Base::Time				_lastCodecsTime; // last time codecs have been sent
 
 	bool					_dataInitialized;
 	bool					_reliable;

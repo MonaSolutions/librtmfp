@@ -20,11 +20,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "RTMFP.h"
-#include "Mona/Util.h"
+#include "Base/Util.h"
 #include "AMF.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, AddressType& addressType) {
 	string data;

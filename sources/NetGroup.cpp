@@ -23,9 +23,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "P2PSession.h"
 #include "GroupStream.h"
 #include "librtmfp.h"
-#include "Mona/Util.h"
+#include "Base/Util.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 #if defined(_WIN32)
@@ -67,16 +67,13 @@ double NetGroup::estimatedPeersCount() {
 	}
 	else {
 
-		if (itFirst->first > _myGroupAddress) {  // Current == N+1?
-			if (--itFirst == _mapGroupAddress.end())
-				itFirst = --(_mapGroupAddress.end());
-		} else if (++itLast == _mapGroupAddress.end())  // Current == N-1
-			itLast = _mapGroupAddress.begin();
+		if (itFirst->first > _myGroupAddress)  // Current == N+1?
+			RTMFP::GetPreviousIt(_mapGroupAddress, itFirst);
+		else
+			RTMFP::GetNextIt(_mapGroupAddress, itLast); // Current == N-1
 
-		if (--itFirst == _mapGroupAddress.end())
-			itFirst = --(_mapGroupAddress.end());
-		if (++itLast == _mapGroupAddress.end()) 
-			itLast = _mapGroupAddress.begin();
+		RTMFP::GetPreviousIt(_mapGroupAddress, itFirst);
+		RTMFP::GetNextIt(_mapGroupAddress, itLast);
 	}
 	
 	TRACE("First peer (N-2) = ", itFirst->first)
@@ -269,7 +266,7 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 	}
 
 	string groupAddress;
-	_mapGroupAddress.emplace(GetGroupAddressFromPeerId(rawId, groupAddress), peerId);
+	_mapGroupAddress.emplace(piecewise_construct, forward_as_tuple(GetGroupAddressFromPeerId(rawId, groupAddress).c_str()), forward_as_tuple(peerId.c_str()));
 	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(rawId, groupAddress, listAddresses, hostAddress, timeElapsed));
 	DEBUG("Peer ", it->first, " added to heard list")
 }
@@ -344,7 +341,7 @@ void NetGroup::manage() {
 	if (_lastReport.isElapsed(NETGROUP_REPORT_DELAY)) {
 
 		auto itRandom = _mapPeers.begin();
-		if (RTMFP::getRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { return it->second->status == RTMFP::CONNECTED; }))
+		if (RTMFP::GetRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { return it->second->status == RTMFP::CONNECTED; }))
 			sendGroupReport(itRandom->second.get(), true);
 
 		// Clean the Heard List from old peers
@@ -397,24 +394,22 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 	else { // More than 6 peers
 
 		// First we search the first of the 6 peers
-		map<string, string>::iterator itFirst = _mapGroupAddress.lower_bound(groupAddress);
+		auto itFirst = _mapGroupAddress.lower_bound(groupAddress);
 		if (itFirst == _mapGroupAddress.end())
 			itFirst = --(_mapGroupAddress.end());
-		for (int i = 0; i < 2; i++) {
-			if (--itFirst == _mapGroupAddress.end()) // if we reach the first peer we restart from the end
-				itFirst = --(_mapGroupAddress.end());
-		}
+		for (int i = 0; i < 2; i++)
+			RTMFP::GetPreviousIt(_mapGroupAddress, itFirst);
 
+		// Then we add the 6 peers
 		for (int j = 0; j < 6; j++) {
 			bestList.emplace(itFirst->second);
-
-			if (++itFirst == _mapGroupAddress.end()) // if we reach the end we restart from the beginning
-				itFirst = _mapGroupAddress.begin();
+			RTMFP::GetNextIt(_mapGroupAddress, itFirst);
 		}
 	}
 
-	// Find the 6 lowest latency
 	if (_mapGroupAddress.size() > 6) {
+
+		// Find the 6 lowest latency
 		deque<shared_ptr<P2PSession>> queueLatency;
 		if (!_mapPeers.empty()) {
 			for (auto it : _mapPeers) { // First, order the peers by latency
@@ -436,7 +431,7 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 		if (_mapGroupAddress.size() > bestList.size()) {
 
 			auto itRandom = _mapGroupAddress.begin();
-			if (RTMFP::getRandomIt<map<string, string>, map<string, string>::iterator>(_mapGroupAddress, itRandom, [bestList](const map<string, string>::iterator& it) { return bestList.find(it->second) != bestList.end(); }))
+			if (RTMFP::GetRandomIt<map<string, string>, map<string, string>::iterator>(_mapGroupAddress, itRandom, [bestList](const map<string, string>::iterator& it) { return bestList.find(it->second) != bestList.end(); }))
 				bestList.emplace(itRandom->second);
 		}
 
@@ -487,9 +482,9 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 		if (itNode != _mapHeardList.end())
 			sizeTotal += itNode->second.addressesSize() + PEER_ID_SIZE + 5 + ((itNode->second.lastGroupReport > 0) ? Binary::Get7BitValueSize((UInt32)((timeNow - itNode->second.lastGroupReport) / 1000)) : 1);
 	}
-	_reportBuffer.resize(sizeTotal);
+	_reportBuffer.resize(sizeTotal, false);
 
-	BinaryWriter writer(BIN _reportBuffer.data(), _reportBuffer.size());
+	BinaryWriter writer(_reportBuffer.data(), _reportBuffer.size());
 	writer.write8(0x0A);
 	writer.write8(pPeer->address().host().size() + 4);
 	writer.write8(0x0D);

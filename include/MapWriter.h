@@ -21,44 +21,44 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "DataWriter.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 
 template<typename MapType>
-struct MapWriter : DataWriter, virtual Mona::Object {
+struct MapWriter : DataWriter, virtual Base::Object {
 
 	MapWriter(MapType& map) : _layers({ { 0,0 } }), _map(map), _isProperty(false) {}
 
-	Mona::UInt64 beginObject(const char* type = NULL) { return beginComplex(); }
+	Base::UInt64 beginObject(const char* type = NULL) { return beginComplex(); }
 	void   writePropertyName(const char* value) { _property.append(value); _isProperty = true; }
 	void   endObject() { endComplex(); }
 
 	void  clear() { _isProperty = false; _property.clear(); _key.clear(); _layers.assign({ { 0,0 } }); _map.clear(); }
 
-	Mona::UInt64 beginArray(Mona::UInt32 size) { return beginComplex(); }
+	Base::UInt64 beginArray(Base::UInt32 size) { return beginComplex(); }
 	void   endArray() { endComplex(); }
 
-	Mona::UInt64 beginObjectArray(Mona::UInt32 size) { beginComplex(); beginComplex(true); return 0; }
+	Base::UInt64 beginObjectArray(Base::UInt32 size) { beginComplex(); beginComplex(true); return 0; }
 
-	void writeString(const char* value, Mona::UInt32 size) { set(value, size); }
-	void writeNumber(double value) { set(Mona::String(value)); }
+	void writeString(const char* value, Base::UInt32 size) { set(value, size); }
+	void writeNumber(double value) { set(Base::String(value)); }
 	void writeBoolean(bool value) { set(value ? "true" : "false"); }
 	void writeNull() { set(EXPAND("null")); }
-	Mona::UInt64 writeDate(const Mona::Date& date) { set(Mona::String(date)); return 0; }
-	Mona::UInt64 writeBytes(const Mona::UInt8* data, Mona::UInt32 size) { set(STR data, size); return 0; }
+	Base::UInt64 writeDate(const Base::Date& date) { set(Base::String(date)); return 0; }
+	Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size) { set(STR data, size); return 0; }
 
 private:
-	Mona::UInt64 beginComplex(bool ignore = false) {
+	Base::UInt64 beginComplex(bool ignore = false) {
 		_layers.emplace_back(_key.size(), 0);
 		if (ignore || _layers.size()<3)
 			return 0;
 		if (_isProperty) {
-			Mona::String::Append(_key, _property, '.');
+			Base::String::Append(_key, _property, '.');
 			_isProperty = false;
 		}
 		else
-			Mona::String::Append(_key, (++_layers.rbegin())->second++, '.');
+			Base::String::Append(_key, (++_layers.rbegin())->second++, '.');
 		_property = _key;
 		return 0;
 	}
@@ -76,7 +76,7 @@ private:
 	template <typename ...Args>
 	void set(Args&&... args) {
 		if (!_isProperty)
-			Mona::String::Append(_property, _layers.back().second++);
+			Base::String::Append(_property, _layers.back().second++);
 		_map.emplace(std::piecewise_construct, std::forward_as_tuple(_property), std::forward_as_tuple(std::forward<Args>(args)...));
 		_isProperty = false;
 		_property = _key;
@@ -85,6 +85,6 @@ private:
 	MapType&											_map;
 	std::string											_property;
 	bool												_isProperty;
-	std::vector<std::pair<Mona::UInt16, Mona::UInt16>>	_layers; // keySize + index
+	std::vector<std::pair<Base::UInt16, Base::UInt16>>	_layers; // keySize + index
 	std::string											_key;
 };

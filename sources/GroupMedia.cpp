@@ -23,9 +23,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "NetGroup.h"
 #include "GroupStream.h"
 #include "librtmfp.h"
-#include "Mona/Util.h"
+#include "Base/Util.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 UInt32	GroupMedia::GroupMediaCounter = 0;
@@ -55,7 +55,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 
 		// Send fragment to peer (pull mode)
-		pPeer->sendMedia(itFragment->second, true);
+		pPeer->sendMedia(*itFragment->second, true);
 	};
 	_onFragmentsMap = [this](UInt64 counter) {
 		if (groupParameters->isPublisher)
@@ -161,7 +161,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		addFragment(itFragment, pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet);
 
 		// Push the fragment to the output file (if ordered)
-		pushFragment(itFragment);
+		processFragments(itFragment);
 	};
 }
 
@@ -186,7 +186,7 @@ void GroupMedia::closePublisher() {
 	if (_endFragment) // already closed
 		return;
 
-	UInt32 currentTime = (_fragments.empty()) ? 0 : _fragments.rbegin()->second.time;
+	UInt32 currentTime = (_fragments.empty()) ? 0 : _fragments.rbegin()->second->time; // get time from last fragment
 	string tmp;
 	shared_ptr<Buffer> pBuffer(new Buffer());
 	AMFWriter writer(*pBuffer);
@@ -211,12 +211,12 @@ void GroupMedia::closePublisher() {
 }
 
 void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet) {
-	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(id), forward_as_tuple(packet, time, (AMF::Type)mediaType, id, marker, splitedNumber));
+	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(id), forward_as_tuple(new GroupFragment(packet, time, (AMF::Type)mediaType, id, marker, splitedNumber)));
 
 	// Send fragment to peers (push mode)
 	UInt8 nbPush = groupParameters->pushLimit + 1;
 	for (auto it : _mapPeers) {
-		if (it.second.get() != pPeer && it.second->sendMedia(itFragment->second) && (--nbPush == 0)) {
+		if (it.second.get() != pPeer && it.second->sendMedia(*itFragment->second) && (--nbPush == 0)) {
 			TRACE("GroupMedia ", id, " - Push limit (", groupParameters->pushLimit + 1, ") reached for fragment ", id, " (mask=", String::Format<UInt8>("%.2x", 1 << (id % 8)), ")")
 			break;
 		}
@@ -244,7 +244,7 @@ bool GroupMedia::manage() {
 			}
 		} // Or just one peer at random
 		else {	
-			if ((_itFragmentsPeer == _mapPeers.end() && RTMFP::getRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itFragmentsPeer, [](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return true; })) 
+			if ((_itFragmentsPeer == _mapPeers.end() && RTMFP::GetRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itFragmentsPeer, [](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return true; })) 
 					|| getNextPeer(_itFragmentsPeer, false, 0, 0))
 				_itFragmentsPeer->second->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
 		}
@@ -261,6 +261,15 @@ bool GroupMedia::manage() {
 		sendPullRequests();
 		_lastPullUpdate.update();
 	}
+
+	// Try to process again the last fragments
+	if (!groupParameters->isPublisher && _lastProcessFragment.isElapsed(NETGROUP_PROCESS_FGMT_TIMEOUT)) {
+		auto itLast = _fragments.find(_fragmentCounter + 1);
+		if (itLast != _fragments.end())
+			processFragments(itLast);
+		_lastProcessFragment.update();
+	}
+
 	return true;
 }
 
@@ -304,12 +313,12 @@ bool GroupMedia::getNextPeer(MAP_PEERS_INFO_ITERATOR_TYPE& itPeer, bool ascendin
 			auto itBegin = itPeer;
 			do {
 				if (ascending)
-					(itPeer == _mapPeers.end()) ? itPeer = _mapPeers.begin() : ++itPeer;
+					RTMFP::GetNextIt(_mapPeers, itPeer);
 				else // descending
-					(itPeer == _mapPeers.begin()) ? itPeer = _mapPeers.end() : --itPeer;
+					RTMFP::GetPreviousIt(_mapPeers, itPeer);
 
 				// Peer match? Exiting
-				if (itPeer != _mapPeers.end() && (!idFragment || itPeer->second->hasFragment(idFragment)) && (!mask || !(itPeer->second->pushInMode & mask)))
+				if ((!idFragment || itPeer->second->hasFragment(idFragment)) && (!mask || !(itPeer->second->pushInMode & mask)))
 					return true;
 			}
 			// loop until finding a peer available
@@ -329,7 +338,7 @@ void GroupMedia::eraseOldFragments() {
 	auto itTime = _mapTime2Fragment.lower_bound(time2Keep);
 
 	// To not delete more than the window duration
-	if (itTime != _mapTime2Fragment.end() && time2Keep > itTime->first)
+	if (itTime != _mapTime2Fragment.end() && itTime != _mapTime2Fragment.begin() && time2Keep > itTime->first)
 		--itTime;
 
 	// Ignore if no fragment found or if it is the first reference
@@ -341,11 +350,12 @@ void GroupMedia::eraseOldFragments() {
 	if (itFragment != _fragments.begin())
 		--itFragment;
 
-	if (itFragment != _fragments.end() && _fragmentCounter < itFragment->first) {
-		WARN("GroupMedia ", id, " - Deleting unread fragments to keep the window duration... (", itFragment->first - _fragmentCounter, " fragments ignored)")
-		_fragmentCounter = itFragment->first;
+	if (itFragment == _fragments.end()) {
+		FATAL_ERROR("Unable to find the reference fragment with time ", itTime->second)
+		return;
 	}
 
+	// Delete the old fragments and the old fragments references
 	DEBUG("GroupMedia ", id, " - Deletion of fragments ", _fragments.begin()->first, " to ", itFragment->first, " - current time : ", timeNow)
 	_fragments.erase(_fragments.begin(), itFragment);
 	_mapTime2Fragment.erase(_mapTime2Fragment.begin(), itTime);
@@ -359,15 +369,21 @@ void GroupMedia::eraseOldFragments() {
 	if (_currentPullFragment < itFragment->first)
 		_currentPullFragment = itFragment->first; // move the current pull fragment to the 1st fragment
 
-	// Try to push again the last fragments
-	auto itLast = _fragments.find(_fragmentCounter + 1);
-	if (itLast != _fragments.end())
-		pushFragment(itLast);
-
-	// Finally clean the map of groupfragments map references
+	// Delete the old fragments map references
 	auto firstFragmentMap = _mapPullTime2Fragment.lower_bound(time2Keep);
 	if (firstFragmentMap != _mapPullTime2Fragment.begin() && firstFragmentMap != _mapPullTime2Fragment.end())
 		_mapPullTime2Fragment.erase(_mapPullTime2Fragment.begin(), firstFragmentMap);
+
+	// Update the current fragment id if needed
+	if (_fragmentCounter < itFragment->first) {
+		WARN("GroupMedia ", id, " - Deleting unread fragments to keep the window duration... (", itFragment->first - _fragmentCounter, " fragments ignored)")
+		_fragmentCounter = itFragment->first;
+
+		// Try to push again the last fragments
+		auto itLast = _fragments.find(_fragmentCounter + 1);
+		if (itLast != _fragments.end())
+			processFragments(itLast);
+	}
 }
 
 UInt64 GroupMedia::updateFragmentMap() {
@@ -416,36 +432,41 @@ UInt64 GroupMedia::updateFragmentMap() {
 	return lastFragment;
 }
 
-void GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) {
-	if (itFragment == _fragments.end() || (!_pullPaused && !_firstPullReceived))
-		return;
+void GroupMedia::processFragments(MAP_FRAGMENTS_ITERATOR& itFragment) {
+	Time now;
+	while (processFragment(itFragment) && !now.isElapsed(NETGROUP_PROCESS_FGMT_TIMEOUT))
+		++itFragment;
+}
 
-	DEBUG("GroupMedia ", id, " - pushFragment ", itFragment->first, " ; marker : ", itFragment->second.marker)
+bool GroupMedia::processFragment(MAP_FRAGMENTS_ITERATOR& itFragment) {
+	if (itFragment == _fragments.end() || (!_pullPaused && !_firstPullReceived))
+		return false;
+
+	DEBUG("GroupMedia ", id, " - processFragment ", itFragment->first, " ; marker : ", itFragment->second->marker)
 
 	// Stand alone fragment (special case : sometimes Flash send media END without splitted fragments)
-	if (itFragment->second.marker == GroupStream::GROUP_MEDIA_DATA || (itFragment->second.marker == GroupStream::GROUP_MEDIA_END && itFragment->first == _fragmentCounter + 1)) {
+	if (itFragment->second->marker == GroupStream::GROUP_MEDIA_DATA || (itFragment->second->marker == GroupStream::GROUP_MEDIA_END && itFragment->first == _fragmentCounter + 1)) {
 		// Is it the next fragment?
 		if (_fragmentCounter == 0 || itFragment->first == _fragmentCounter + 1) {
 			_fragmentCounter = itFragment->first;
 
-			TRACE("GroupMedia ", id, " - Pushing Media Fragment ", itFragment->first)
-			if (!onGroupPacket(itFragment->second.time, itFragment->second, 0, itFragment->second.type)) {
+			DEBUG("GroupMedia ", id, " - Pushing Media Fragment ", itFragment->first)
+			if (!onGroupPacket(itFragment->second->time, *itFragment->second, 0, itFragment->second->type)) {
 				close(itFragment->first + 1); // if last fragment receive we record it
-				return;
+				return false;
 			}
-			pushFragment(++itFragment); // Go to next fragment
+			return true;
 		}
-		return;
 	}
 	// else Splitted fragment
 	
 	// First fragment? Search for a start fragment
 	if (_fragmentCounter == 0) {
 		// Delete first splitted fragments
-		if (itFragment->second.marker != GroupStream::GROUP_MEDIA_START) {
+		if (itFragment->second->marker != GroupStream::GROUP_MEDIA_START) {
 			TRACE("GroupMedia ", id, " - Ignoring splitted fragment ", itFragment->first, ", we are waiting for a starting fragment")
 			_fragments.erase(itFragment);
-			return;
+			return false;
 		}
 		TRACE("GroupMedia ", id, " - First fragment is a Start Media Fragment")
 		_fragmentCounter = itFragment->first-1; // -1 to be catched by the next fragment condition 
@@ -453,39 +474,46 @@ void GroupMedia::pushFragment(map<UInt64, GroupFragment>::iterator& itFragment) 
 
 	// Search the start fragment
 	auto itStart = itFragment;
-	while (itStart->second.marker != GroupStream::GROUP_MEDIA_START) {
+	while (itStart->second->marker != GroupStream::GROUP_MEDIA_START) {
 		itStart = _fragments.find(itStart->first - 1);
 		if (itStart == _fragments.end())
-			return; // ignore these fragments if there is a hole
-	}
-		
-	// Check if all splitted fragments are present
-	UInt8 nbFragments = itStart->second.splittedId+1;
-	auto itEnd = itStart;
-	for (int i = 1; i < nbFragments; ++i) {
-		itEnd = _fragments.find(itStart->first + i);
-		if (itEnd == _fragments.end())
-			return; // ignore these fragments if there is a hole
+			return false; // ignore these fragments if there is a hole
 	}
 
 	// Is it the next fragment?
 	if (itStart->first == _fragmentCounter + 1) {
+
+		// Check if all splitted fragments are present
+		UInt8 nbFragments = itStart->second->splittedId + 1;
+		UInt32 totalSize = itStart->second->size();
+		auto itEnd = itStart;
+		for (int i = 1; i < nbFragments; ++i) {
+			if (++itEnd == _fragments.end() || itEnd->first != (itStart->first + i))
+				return false; // wait fulfil if there is a hole
+			totalSize += itEnd->second->size();
+		}
+
+		// update the current fragment
 		_fragmentCounter = itEnd->first;
+		itFragment = itEnd;
 
 		// Buffer the fragments and forward the whole packet
-		shared_ptr<Buffer>	pPayload(new Buffer(itStart->second.size(), itStart->second.data()));
-		BinaryWriter writer(*pPayload);
+		_internalBuffer.resize(totalSize, false);
+		BinaryWriter writer(_internalBuffer.data(), _internalBuffer.size());
+		auto itCurrent = itStart;
+		do {
+			writer.write(itCurrent->second->data(), itCurrent->second->size());
+		} while (itCurrent++ != itEnd);
 
-		for (auto itCurrent = itStart; itCurrent++ != itEnd; )
-			writer.write(itCurrent->second.data(), itCurrent->second.size());
-
-		TRACE("GroupMedia ", id, " - Pushing splitted packet ", itStart->first, " - ", nbFragments, " fragments for a total size of ", writer.size())
-		if (!onGroupPacket(itStart->second.time, Packet(pPayload), 0, itStart->second.type)) {
+		DEBUG("GroupMedia ", id, " - Pushing splitted packet ", itStart->first, " - ", nbFragments, " fragments for a total size of ", writer.size())
+		Packet packet(_internalBuffer);
+		if (!onGroupPacket(itStart->second->time, packet, 0, itStart->second->type)) {
 			close(itFragment->first + 1); // if last fragment receive we record it
-			return;
+			return false;
 		}
-		pushFragment(++itEnd);
+		return true;
 	}
+	return false;
 }
 
 void GroupMedia::sendPushRequests() {
@@ -493,14 +521,14 @@ void GroupMedia::sendPushRequests() {
 
 		// First bit mask is random, next are incremental
 		_currentPushMask = (!_currentPushMask) ? 1 << (Util::Random<UInt8>() % 8) : ((_currentPushMask == 0x80) ? 1 : _currentPushMask << 1);
-		TRACE("GroupMedia ", id, " - Push In - Current mask is ", String::Format<UInt8>("%.2x", _currentPushMask))
+		DEBUG("GroupMedia ", id, " - Push In - Current mask is ", String::Format<UInt8>("%.2x", _currentPushMask))
 
 		// Get the next peer & send the push request
-		if ((_itPushPeer == _mapPeers.end() && RTMFP::getRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itPushPeer, [this](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return !(it->second->pushInMode & _currentPushMask); }))
+		if ((_itPushPeer == _mapPeers.end() && RTMFP::GetRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itPushPeer, [this](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return !(it->second->pushInMode & _currentPushMask); }))
 				|| getNextPeer(_itPushPeer, false, 0, _currentPushMask))
 			_itPushPeer->second->sendPushMode(_itPushPeer->second->pushInMode | _currentPushMask);
 		else
-			TRACE("GroupMedia ", id, " - Push In - No new peer available for mask ", String::Format<UInt8>("%.2x", _currentPushMask))
+			DEBUG("GroupMedia ", id, " - Push In - No new peer available for mask ", String::Format<UInt8>("%.2x", _currentPushMask))
 	}
 
 	_lastPushUpdate.update();
@@ -528,7 +556,7 @@ void GroupMedia::sendPullRequests() {
 		_currentPullFragment = (lastFragment > 1)? lastFragment - 1 : 1;
 		auto itRandom1 = _mapPeers.begin();
 		_itPullPeer = _mapPeers.begin();
-		if (RTMFP::getRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, itRandom1, [this](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return it->second->hasFragment(_currentPullFragment); })) {
+		if (RTMFP::GetRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, itRandom1, [this](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return it->second->hasFragment(_currentPullFragment); })) {
 			TRACE("GroupMedia ", id, " - sendPullRequests - first fragment found : ", _currentPullFragment)
 			if (_fragments.find(_currentPullFragment) == _fragments.end()) { // ignoring if already received
 				itRandom1->second->sendPull(_currentPullFragment);
@@ -538,7 +566,7 @@ void GroupMedia::sendPullRequests() {
 				_firstPullReceived = true;
 		} else
 			TRACE("GroupMedia ", id, " - sendPullRequests - Unable to find the first fragment (", _currentPullFragment, ")")
-		if (RTMFP::getRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itPullPeer, [this](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return it->second->hasFragment(_currentPullFragment + 1); })) {
+		if (RTMFP::GetRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itPullPeer, [this](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return it->second->hasFragment(_currentPullFragment + 1); })) {
 			TRACE("GroupMedia ", id, " - sendPullRequests - second fragment found : ", _currentPullFragment + 1)
 			if (_fragments.find(++_currentPullFragment) == _fragments.end()) { // ignoring if already received
 				_itPullPeer->second->sendPull(_currentPullFragment);
@@ -633,7 +661,7 @@ void GroupMedia::callFunction(const char* function, int nbArgs, const char** arg
 			writer.writeString(args[i], strlen(args[i]));
 	}
 
-	UInt32 currentTime = (_fragments.empty())? 0 : _fragments.rbegin()->second.time;
+	UInt32 currentTime = (_fragments.empty())? 0 : _fragments.rbegin()->second->time;
 
 	// Create and send the fragment
 	TRACE("Creating fragment for function ", function, "...")

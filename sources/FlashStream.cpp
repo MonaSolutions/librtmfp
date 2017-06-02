@@ -21,11 +21,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "RTMFP.h"
 #include "FlashStream.h"
-#include "Mona/Parameters.h"
+#include "Base/Parameters.h"
 #include "MapWriter.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 FlashStream::FlashStream(UInt16 id) : FlashHandler(id) {
 	DEBUG("FlashStream ", streamId, " created")

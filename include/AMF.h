@@ -21,9 +21,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 
-class AMF : virtual Mona::Static {
+class AMF : virtual Base::Static {
 public:
 	enum Type {
 		TYPE_EMPTY = 0x00,

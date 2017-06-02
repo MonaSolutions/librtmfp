@@ -21,7 +21,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "FlashStream.h"
 
 /**************************************************************
@@ -29,8 +29,8 @@ FlashConnection is linked to an as3 NetConnection
 It creates FlashStream (NetStream) and handle messages on the
 connection
 */
-struct FlashConnection : FlashStream, virtual Mona::Object {
-	typedef Mona::Event<bool(Mona::UInt16 idStream, Mona::UInt16& idMedia)> ON(StreamCreated);
+struct FlashConnection : FlashStream, virtual Base::Object {
+	typedef Base::Event<bool(Base::UInt16 idStream, Base::UInt16& idMedia)> ON(StreamCreated);
 
 	FlashConnection();
 	virtual ~FlashConnection();
@@ -39,18 +39,18 @@ struct FlashConnection : FlashStream, virtual Mona::Object {
 	FlashStream* addStream(std::shared_ptr<FlashStream>& pStream, bool group=false);
 
 	// Add a new stream to the Main stream
-	FlashStream* addStream(Mona::UInt16 id, std::shared_ptr<FlashStream>& pStream, bool group=false);
+	FlashStream* addStream(Base::UInt16 id, std::shared_ptr<FlashStream>& pStream, bool group=false);
 
-	FlashStream* getStream(Mona::UInt16 id, std::shared_ptr<FlashStream>& pStream);
+	FlashStream* getStream(Base::UInt16 id, std::shared_ptr<FlashStream>& pStream);
 
 	// Send the stream creation request (before play or publish)
 	void createStream(); // TODO: refactorize the stream creation
 	
 private:
-	virtual bool	messageHandler(const std::string& name, AMFReader& message, Mona::UInt64 flowId, Mona::UInt64 writerId, double callbackHandler);
-	virtual bool	rawHandler(Mona::UInt16 type, const Mona::Packet& packet);
+	virtual bool	messageHandler(const std::string& name, AMFReader& message, Base::UInt64 flowId, Base::UInt64 writerId, double callbackHandler);
+	virtual bool	rawHandler(Base::UInt16 type, const Base::Packet& packet);
 
-	std::map<Mona::UInt16,std::shared_ptr<FlashStream>>	_streams;
+	std::map<Base::UInt16,std::shared_ptr<FlashStream>>	_streams;
 	std::string											_buffer;
 
 	bool			_creatingStream; // If we are waiting for a stream to be created

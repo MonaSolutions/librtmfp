@@ -21,9 +21,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "FlashConnection.h"
-#include "Mona/Buffer.h"
+#include "Base/Buffer.h"
 #include "FlowManager.h"
 
 /**************************************************************
@@ -32,42 +32,42 @@ connection, it is associated to an RTMFPWriter for
 sending RTMFP answers
 It manages acknowledgments and lost count of messages received
 */
-class RTMFPFlow : public virtual Mona::Object {
+class RTMFPFlow : public virtual Base::Object {
 public:
-	RTMFPFlow(Mona::UInt64 id,const std::string& signature, FlowManager& band, const std::shared_ptr<FlashConnection>& pMainStream, Mona::UInt64 idWriterRef);
-	RTMFPFlow(Mona::UInt64 id,const std::string& signature,const std::shared_ptr<FlashStream>& pStream, FlowManager& band, Mona::UInt64 idWriterRef);
+	RTMFPFlow(Base::UInt64 id,const std::string& signature, FlowManager& band, const std::shared_ptr<FlashConnection>& pMainStream, Base::UInt64 idWriterRef);
+	RTMFPFlow(Base::UInt64 id,const std::string& signature,const std::shared_ptr<FlashStream>& pStream, FlowManager& band, Base::UInt64 idWriterRef);
 	virtual ~RTMFPFlow();
 
-	const Mona::UInt64		id;
+	const Base::UInt64		id;
 
 	// Handle fragments received
-	void	input(Mona::UInt64 stage, Mona::UInt8 flags, const Mona::Packet& packet);
+	void	input(Base::UInt64 stage, Base::UInt8 flags, const Base::Packet& packet);
 
 	// Build acknowledgment
-	Mona::UInt64	buildAck(std::vector<Mona::UInt64>& losts, Mona::UInt16& size);
+	Base::UInt64	buildAck(std::vector<Base::UInt64>& losts, Base::UInt16& size);
 
 	bool			consumed() { return _stageEnd && _fragments.empty() && _completeTime.isElapsed(120000); } // Wait 120s before closing the flow definetly
 
-	Mona::UInt32	fragmentation;
+	Base::UInt32	fragmentation;
 
 private:
 	// Handle on fragment received
-	void	onFragment(Mona::UInt64 stage, Mona::UInt8 flags, const Mona::Packet& packet);
+	void	onFragment(Base::UInt64 stage, Base::UInt8 flags, const Base::Packet& packet);
 
-	void	output(Mona::UInt64 flowId, Mona::UInt32& lost, const Mona::Packet& packet);
+	void	output(Base::UInt64 flowId, Base::UInt32& lost, const Base::Packet& packet);
 
-	struct Fragment : Mona::Packet, virtual Mona::Object {
-		Fragment(Mona::UInt8 flags, const Mona::Packet& packet) : flags(flags), Mona::Packet(std::move(packet)) {}
-		const Mona::UInt8 flags;
+	struct Fragment : Base::Packet, virtual Base::Object {
+		Fragment(Base::UInt8 flags, const Base::Packet& packet) : flags(flags), Base::Packet(std::move(packet)) {}
+		const Base::UInt8 flags;
 	};
 
-	Mona::UInt64						_stageEnd; // If not 0 it is completed
-	Mona::Time							_completeTime; // Time before closing definetly the flow
+	Base::UInt64						_stageEnd; // If not 0 it is completed
+	Base::Time							_completeTime; // Time before closing definetly the flow
 	FlowManager&						_band; // RTMFP session to send messages
-	Mona::UInt64						_stage; // Current stage (index) of messages received
+	Base::UInt64						_stage; // Current stage (index) of messages received
 	std::shared_ptr<FlashStream>		_pStream; // NetStream handler of the flow
-	Mona::UInt64						_writerRef; // Id of the writer linked to (read into fullduplex header part)
-	std::shared_ptr<Mona::Buffer>		_pBuffer;
-	Mona::UInt32						_lost;
-	std::map<Mona::UInt64, Fragment>	_fragments; // map of all fragments received and not handled for now
+	Base::UInt64						_writerRef; // Id of the writer linked to (read into fullduplex header part)
+	std::shared_ptr<Base::Buffer>		_pBuffer;
+	Base::UInt32						_lost;
+	std::map<Base::UInt64, Fragment>	_fragments; // map of all fragments received and not handled for now
 };

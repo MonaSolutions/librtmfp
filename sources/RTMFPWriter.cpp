@@ -20,14 +20,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "RTMFPWriter.h"
-#include "Mona/Util.h"
-#include "Mona/Logs.h"
+#include "Base/Util.h"
+#include "Base/Logs.h"
 #include "GroupStream.h"
 #include "librtmfp.h"
 #include "PeerMedia.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 RTMFPWriter::RTMFPWriter(UInt8 marker, UInt64 id, UInt64 flowId, const Binary& signature, RTMFP::Output& output) :
 	_marker(marker), _repeatDelay(0), _output(output), _stageAck(0), _lostCount(0), id(id), flowId(flowId), signature(signature) {
@@ -39,8 +39,10 @@ void RTMFPWriter::close(Int32 error, const char* reason) {
 	if (_state < NEAR_CLOSED) {
 		if (error < 0) // if impossible to send (code<0, See Session::DEATH_...) clear message queue impossible to send!
 			clear();
-		if (error >= 0 && (_stageAck || _repeatDelay))
-			newMessage(true); // Send a MESSAGE_END just in the case where the receiver has been created
+		if (error >= 0 && (_stageAck || _repeatDelay)) {
+			Packet emptyPacket;
+			newMessage(true, emptyPacket); // Send a MESSAGE_END just in the case where the receiver has been created
+		}
 		if (error >= 0)
 			flush();
 		_closeTime.update();
@@ -143,25 +145,29 @@ AMFWriter& RTMFPWriter::write(AMF::Type type, UInt32 time, RTMFP::DataType packe
 
 void RTMFPWriter::writeGroupConnect(const string& netGroup) {
 	string tmp;
-	newMessage(reliable)->write8(GroupStream::GROUP_INIT).write16(0x2115).write(String::ToHex(netGroup, tmp)); // binary string
+	Packet emptyPacket;
+	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_INIT).write16(0x2115).write(String::ToHex(netGroup, tmp)); // binary string
 }
 
 void RTMFPWriter::writePeerGroup(const string& netGroup, const UInt8* key, const Binary& rawId) {
 
-	AMFWriter& writer = newMessage(reliable);
+	Packet emptyPacket;
+	AMFWriter& writer = newMessage(reliable, emptyPacket);
 	writer->write8(GroupStream::GROUP_INIT).write16(0x4100).write(netGroup); // hexa format
 	writer->write16(0x2101).write(key, Crypto::SHA256_SIZE);
 	writer->write16(0x2303).write(rawId); // binary format
 }
 
 void RTMFPWriter::writeGroupBegin() {
-	newMessage(reliable)->write8(AMF::TYPE_ABORT);
-	newMessage(reliable)->write8(GroupStream::GROUP_BEGIN);
+	Packet emptyPacket;
+	newMessage(reliable, emptyPacket)->write8(AMF::TYPE_ABORT);
+	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_BEGIN);
 }
 
 void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* data, UInt32 size, RTMFPGroupConfig* groupConfig) {
 
-	AMFWriter& writer = newMessage(reliable);
+	Packet emptyPacket;
+	AMFWriter& writer = newMessage(reliable, emptyPacket);
 	writer->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
 	writer->write(data, size);
 	writer->write("\x01\x02");
@@ -174,26 +180,30 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* da
 }
 
 void RTMFPWriter::writeGroupEndMedia(UInt64 lastFragment) {
-	newMessage(reliable)->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitLongValue(lastFragment);
+	Packet emptyPacket;
+	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitLongValue(lastFragment);
 	flush();
 }
 
 void RTMFPWriter::writeGroupPlay(UInt8 mode) {
-	newMessage(reliable)->write8(GroupStream::GROUP_PLAY_PUSH).write8(mode);
+	Packet emptyPacket;
+	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_PLAY_PUSH).write8(mode);
 }
 
 void RTMFPWriter::writeGroupPull(UInt64 index) {
-	newMessage(reliable)->write8(GroupStream::GROUP_PLAY_PULL).write7BitLongValue(index);
+	Packet emptyPacket;
+	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_PLAY_PULL).write7BitLongValue(index);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
-
-	newMessage(reliable)->write(data, size);
+	Packet emptyPacket;
+	newMessage(reliable, emptyPacket)->write(data, size);
 	flush();
 }
 
 void RTMFPWriter::writeGroupFragment(const GroupFragment& fragment) {
-	AMFWriter& writer = newMessage(reliable);
+	Packet emptyPacket;
+	AMFWriter& writer = newMessage(reliable, emptyPacket);
 
 	// AMF Group marker
 	writer->write8(fragment.marker);

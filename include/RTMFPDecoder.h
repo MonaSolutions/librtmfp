@@ -21,33 +21,33 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Runner.h"
-#include "Mona/Event.h"
-#include "Mona/Handler.h"
-#include "Mona/Packet.h"
+#include "Base/Runner.h"
+#include "Base/Event.h"
+#include "Base/Handler.h"
+#include "Base/Packet.h"
 #include "RTMFP.h"
 
-struct RTMFPDecoder : Mona::Runner, virtual Mona::Object{
-	struct Decoded : Mona::Packet {
-		Decoded(Mona::UInt32 id, const Mona::SocketAddress& address, std::shared_ptr<Mona::Buffer>& pBuffer) : address(address), Packet(pBuffer), idSession(id) {}
-		const Mona::SocketAddress		address;
-		Mona::UInt32					idSession;
+struct RTMFPDecoder : Base::Runner, virtual Base::Object{
+	struct Decoded : Base::Packet {
+		Decoded(Base::UInt32 id, const Base::SocketAddress& address, std::shared_ptr<Base::Buffer>& pBuffer) : address(address), Packet(pBuffer), idSession(id) {}
+		const Base::SocketAddress		address;
+		Base::UInt32					idSession;
 	};
-	typedef Mona::Event<void(Decoded& decoded)> ON(Decoded);
+	typedef Base::Event<void(Decoded& decoded)> ON(Decoded);
 
-	RTMFPDecoder(Mona::UInt32 id, const Mona::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pDecoder, std::shared_ptr<Mona::Buffer>& pBuffer, const Mona::Handler& handler) :
-		_handler(handler), _idSession(id), _address(address), _pBuffer(std::move(pBuffer)), Mona::Runner("RTMFPDecoder"), _pDecoder(pDecoder) {}
+	RTMFPDecoder(Base::UInt32 id, const Base::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pDecoder, std::shared_ptr<Base::Buffer>& pBuffer, const Base::Handler& handler) :
+		_handler(handler), _idSession(id), _address(address), _pBuffer(std::move(pBuffer)), Base::Runner("RTMFPDecoder"), _pDecoder(pDecoder) {}
 
 private:
-	bool run(Mona::Exception& ex) {
+	bool run(Base::Exception& ex) {
 		bool decoded;
 		if ((decoded = _pDecoder->decode(ex, *_pBuffer, _address)))
 			_handler.queue(onDecoded, _idSession, _address, _pBuffer);
 		return decoded;
 	}
 	std::shared_ptr<RTMFP::Engine>	_pDecoder;
-	std::shared_ptr<Mona::Buffer>	_pBuffer;
-	Mona::SocketAddress				_address;
-	const Mona::Handler&			_handler;
-	Mona::UInt32					_idSession;
+	std::shared_ptr<Base::Buffer>	_pBuffer;
+	Base::SocketAddress				_address;
+	const Base::Handler&			_handler;
+	Base::UInt32					_idSession;
 };

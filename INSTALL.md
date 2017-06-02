@@ -1,19 +1,9 @@
 Installing librtmfp
 ===================
 
-## Simple Installation
+## Linux Installation
 
-- First you must download and compile the MonaBase library,
-- Clone MonaServer2 :
-
-	git clone https://github.com/MonaSolutions/MonaServer2.git
-	
-- Cd into the MonaBase directory,
-- Compile MonaBase using the following command :
-	
-	make
-	
-- Clone librtmfp into the MonaServer2 directory :
+- Clone librtmfp :
 
 	git clone https://github.com/MonaSolutions/librtmfp.git
 
@@ -21,11 +11,21 @@ Installing librtmfp
 
 	make
 	
-- And then install it using the same command as the sudoer :
+- [Optional] And then install it using the same command as the sudoer :
 
 	make install
 
 **Note:** You need g++ to compile librtmfp.
+
+## Windows Installation
+
+- First, install Visual Studio Express 2015 (or newer) for Windows Desktop,
+- Clone librtmfp :
+
+	git clone https://github.com/MonaSolutions/librtmfp.git
+
+- Open the *librtmfp.sln* project file, and start to build the project,
+- The project *TestClient* is a sample of client using librtmfp for test purpose.
 
 ## Integration in FFmpeg
 

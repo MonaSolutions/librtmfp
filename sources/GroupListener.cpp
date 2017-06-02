@@ -22,10 +22,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "GroupListener.h"
 #include "Publisher.h"
 #include "RTMFP.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 GroupListener::GroupListener(Publisher& publication, const string& identifier) : Listener(publication, identifier), _firstTime(true),
 _seekTime(0), _dataInitialized(false), _reliable(true), _startTime(0), _lastTime(0), _codecInfosSent(false) {

@@ -22,10 +22,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Listener.h"
 #include "Publisher.h"
 #include "RTMFP.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 Listener::Listener(Publisher& publication, const string& identifier) : publication(publication), identifier(identifier) {
 

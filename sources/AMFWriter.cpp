@@ -20,10 +20,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "AMFWriter.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 
 using namespace std;
-using namespace Mona;
+using namespace Base;
 
 AMFWriter::AMFWriter(Buffer& buffer, bool amf0) : _amf0References(0), _amf3(false), amf0(amf0), DataWriter(buffer) {
 
@@ -136,7 +136,7 @@ UInt64 AMFWriter::writeDate(const Date& date) {
 }
 
 void AMFWriter::writeNumber(double value) {
-	if (!amf0 && round(value) == value && Mona::abs(value) <= 0xFFFFFFF) {
+	if (!amf0 && round(value) == value && Base::abs(value) <= 0xFFFFFFF) {
 		// writeInteger
 		if (!_amf3)
 			writer.write8(AMF::AMF0_AMF3_OBJECT);

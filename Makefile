@@ -21,13 +21,12 @@ OS := $(shell uname -s)
 GPP?=g++
 
 # Variables extendable
-CFLAGS+=-std=c++11 -Wall -Wno-reorder -Wno-terminate -Wno-unknown-pragmas
+CFLAGS+=-std=c++11 -Wall -Wno-reorder -Wno-terminate -Wno-unknown-pragmas -Wno-unknown-warning-option
 ifeq ($(OS),FreeBSD)
 	CFLAGS+=-D_GLIBCXX_USE_C99
 endif
-override INCLUDES+=-I./../MonaBase/include/ -I./include/
-LIBDIRS+=-L./../MonaBase/lib/
-LIBS+=-Wl,-Bstatic -l:libMonaBase.ar -Wl,-Bdynamic -lcrypto -lssl
+override INCLUDES+=-I./include/
+LIBS+=-Wl,-Bdynamic -lcrypto -lssl
 
 INCDIR=/usr/include/librtmfp/
 
@@ -41,21 +40,21 @@ else
 endif
 
 # Variables fixed
-SOURCES = $(wildcard */*.cpp)
+SOURCES = $(wildcard sources/*.cpp sources/Base/*.cpp)
 OBJECT = $(SOURCES:sources/%.cpp=tmp/Release/%.o)
 OBJECTD = $(SOURCES:sources/%.cpp=tmp/Debug/%.o)
 
 .PHONY: debug release
 
 release:
-	mkdir -p tmp/Release
+	mkdir -p tmp/Release/Base
 	mkdir -p lib
 	@$(MAKE) -k $(OBJECT)
 	@echo creating dynamic lib $(LIB)
 	@$(GPP) $(CFLAGS) $(LIBDIRS) -fPIC $(SHARED) -o $(LIB) $(OBJECT) $(LIBS)
 
 debug:
-	mkdir -p tmp/Debug
+	mkdir -p tmp/Debug/Base
 	mkdir -p lib
 	@$(MAKE) -k $(OBJECTD)
 	@echo creating dynamic debug lib $(LIB)

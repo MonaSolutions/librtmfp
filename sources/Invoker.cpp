@@ -22,21 +22,21 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Invoker.h"
 #include "RTMFPLogger.h"
 #include "RTMFPSession.h"
-#include "Mona/BufferPool.h"
+#include "Base/BufferPool.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 /** Invoker **/
 
 Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _interruptArg(NULL), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp) {
-	DEBUG("Socket receiving buffer size of ", Net::GetRecvBufferSize(), " bytes");
-	DEBUG("Socket sending buffer size of ", Net::GetSendBufferSize(), " bytes");
-	DEBUG(threadPool.threads(), " threads in server threadPool");
 	if (createLogger) {
 		_logger.reset(new RTMFPLogger());
 		Logs::SetLogger(*_logger);
 	}
+	DEBUG("Socket receiving buffer size of ", Net::GetRecvBufferSize(), " bytes");
+	DEBUG("Socket sending buffer size of ", Net::GetSendBufferSize(), " bytes");
+	DEBUG(threadPool.threads(), " threads in server threadPool");
 }
 
 Invoker::~Invoker() {
@@ -153,7 +153,7 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	{
 		lock_guard<mutex>	lock(_mutexConnections);
 		if (_logger)
-			Logs::SetDump(""); // we must set Dump to null because static dump object can be destroyed
+			Logs::SetDump(NULL); // we must set Dump to null because static dump object can be destroyed
 
 		auto it = _mapConnections.begin();
 		while (it != _mapConnections.end())
@@ -163,10 +163,18 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	// stop socket sending (it waits the end of sending last session messages)
 	threadPool.join();
 
+	// empty handler!
+	_handler.flush();
+
 	// release memory
 	INFO("Invoker memory release");
 	Buffer::SetAllocator();
 	bufferPool.clear();
+	NOTE("Invoker stopped")
+	if (_logger) {
+		Logs::SetLogger(Logs::DefaultLogger()); // we must reset Logger to default to avoid crash if someone call Logs::Log() after Logger destruction
+		_logger.reset();
+	}
 	return true;
 }
 

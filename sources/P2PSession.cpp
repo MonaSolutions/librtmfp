@@ -23,12 +23,12 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Invoker.h"
 #include "RTMFPFlow.h"
 #include "NetGroup.h"
-#include "Mona/Logs.h"
+#include "Base/Logs.h"
 #include "Listener.h"
 #include "RTMFPSession.h"
 #include "RTMFPWriter.h"
 
-using namespace Mona;
+using namespace Base;
 using namespace std;
 
 // P2P Session first counter, this number is considered sufficient to never been reached by RTMFPSession ID
@@ -36,7 +36,7 @@ UInt32 P2PSession::P2PSessionCounter = 0x03000000; // Notice that Flash uses inc
 
 
 P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, 
-		const Mona::SocketAddress& host, bool responder, bool group, UInt16 mediaId) : peerId(id), hostAddress(host), _parent(parent), _groupBeginSent(false), _peerMediaId(mediaId),
+		const Base::SocketAddress& host, bool responder, bool group, UInt16 mediaId) : peerId(id), hostAddress(host), _parent(parent), _groupBeginSent(false), _peerMediaId(mediaId),
 		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnSocketError, pOnStatusEvent) {
 	_pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 		return _parent->onMediaPlay(_peerMediaId, time, packet, lostRate, type);
@@ -169,7 +169,7 @@ void P2PSession::close(bool abrupt) {
 	if ((abrupt && (status == RTMFP::FAILED)) || (!abrupt && (status == RTMFP::NEAR_CLOSED)))
 		return;
 
-	TRACE("Closing P2PSession ", peerId, " (abrupt=",abrupt,")")
+	DEBUG("Closing P2PSession ", peerId, " (abrupt=",abrupt,")")
 
 	// NetGroup 
 	if (abrupt) {

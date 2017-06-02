@@ -21,34 +21,34 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #pragma once
 
-#include "Mona/Mona.h"
+#include "Base/Mona.h"
 #include "AMF.h"
 #include "DataWriter.h"
 
-struct AMFWriter : DataWriter, virtual Mona::Object {
-	AMFWriter(Mona::Buffer& buffer, bool amf0 = false);
+struct AMFWriter : DataWriter, virtual Base::Object {
+	AMFWriter(Base::Buffer& buffer, bool amf0 = false);
 
-	bool repeat(Mona::UInt64 reference);
+	bool repeat(Base::UInt64 reference);
 	void clear();
 
-	Mona::UInt64 beginObject(const char* type = NULL);
+	Base::UInt64 beginObject(const char* type = NULL);
 	void   writePropertyName(const char* value);
 	void   endObject() { endComplex(true); }
 
-	Mona::UInt64 beginArray(Mona::UInt32 size);
+	Base::UInt64 beginArray(Base::UInt32 size);
 	void   endArray() { endComplex(false); }
 
-	Mona::UInt64 beginObjectArray(Mona::UInt32 size);
+	Base::UInt64 beginObjectArray(Base::UInt32 size);
 
-	Mona::UInt64 beginMap(Mona::Exception& ex, Mona::UInt32 size, bool weakKeys = false);
+	Base::UInt64 beginMap(Base::Exception& ex, Base::UInt32 size, bool weakKeys = false);
 	void   endMap() { endComplex(false); }
 
 	void   writeNumber(double value);
-	void   writeString(const char* value, Mona::UInt32 size);
+	void   writeString(const char* value, Base::UInt32 size);
 	void   writeBoolean(bool value);
 	void   writeNull();
-	Mona::UInt64 writeDate(const Mona::Date& date);
-	Mona::UInt64 writeBytes(const Mona::UInt8* data, Mona::UInt32 size);
+	Base::UInt64 writeDate(const Base::Date& date);
+	Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size);
 
 	bool				amf0;
 
@@ -59,11 +59,11 @@ private:
 
 	AMFWriter() : _amf3(false), amf0(false) {} // null version
 
-	void writeText(const char* value, Mona::UInt32 size);
+	void writeText(const char* value, Base::UInt32 size);
 
-	std::map<std::string, Mona::UInt32>	_stringReferences;
-	std::vector<Mona::UInt8>			_references;
-	Mona::UInt32						_amf0References;
+	std::map<std::string, Base::UInt32>	_stringReferences;
+	std::vector<Base::UInt8>			_references;
+	Base::UInt32						_amf0References;
 	bool								_amf3;
 	std::vector<bool>					_levels; // true if amf3
 };
