@@ -54,12 +54,6 @@
     <ClCompile Include="sources\Base\BufferPool.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\Cache.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\Congestion.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\Crypto.cpp">
       <Filter>Base</Filter>
     </ClCompile>
@@ -78,19 +72,10 @@
     <ClCompile Include="sources\Base\FileSystem.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\FileWatcher.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\Handler.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\HelpFormatter.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\HostEntry.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\IOFile.cpp">
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\IOSocket.cpp">
@@ -111,12 +96,6 @@
     <ClCompile Include="sources\Base\Net.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\Option.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\Options.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\Packet.cpp">
       <Filter>Base</Filter>
     </ClCompile>
@@ -126,13 +105,7 @@
     <ClCompile Include="sources\Base\Path.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\PersistentData.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\Process.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\Proxy.cpp">
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\Signal.cpp">
@@ -151,9 +124,6 @@
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\TCPServer.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\TerminateSignal.cpp">
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\Thread.cpp">
@@ -175,9 +145,6 @@
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\Util.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\XMLParser.cpp">
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\BinaryReader.cpp">
@@ -246,19 +213,10 @@
     <ClInclude Include="include\MapWriter.h">
       <Filter>Util</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\FileWriter.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\Handler.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\HelpFormatter.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\HostEntry.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\IOFile.h">
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\IOSocket.h">
@@ -282,12 +240,6 @@
     <ClInclude Include="include\Base\Net.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\Option.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\Options.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\Packet.h">
       <Filter>Base</Filter>
     </ClInclude>
@@ -297,13 +249,7 @@
     <ClInclude Include="include\Base\Path.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\PersistentData.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\Process.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\Proxy.h">
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\Runner.h">
@@ -318,9 +264,6 @@
     <ClInclude Include="include\Base\SocketAddress.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\Stopwatch.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\StreamData.h">
       <Filter>Base</Filter>
     </ClInclude>
@@ -331,9 +274,6 @@
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\TCPServer.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\TerminateSignal.h">
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\Thread.h">
@@ -363,9 +303,6 @@
     <ClInclude Include="include\Base\Util.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\XMLParser.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\Allocator.h">
       <Filter>Base</Filter>
     </ClInclude>
@@ -390,12 +327,6 @@
     <ClInclude Include="include\Base\ByteRate.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\Cache.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\Congestion.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\Crypto.h">
       <Filter>Base</Filter>
     </ClInclude>
@@ -417,13 +348,7 @@
     <ClInclude Include="include\Base\File.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\FileReader.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\FileSystem.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\FileWatcher.h">
       <Filter>Base</Filter>
     </ClInclude>
   </ItemGroup>
