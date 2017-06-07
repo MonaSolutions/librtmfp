@@ -84,7 +84,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 			return false;
 		}
 		const StreamCommand& command = _waitingStreams.front();
-		DEBUG("Stream ", idStream, " created for Media ", command.idMedia, ", sending command...")
+		DEBUG("Stream ", idStream, " created for Media ", command.idMedia, ", sending command ", command.publisher? "publish" : "play", " for stream ", command.value)
 
 		// Manage publisher if it is a publish command
 		if (command.publisher && _pPublisher) {
@@ -630,6 +630,7 @@ Base::UInt16 RTMFPSession::addStream(bool publisher, const char* streamName, boo
 	_waitingStreams.emplace(publisher, streamName, ++_mediaCount, audioReliable, videoReliable);
 	if (!publisher)
 		_mapPlayers.emplace(piecewise_construct, forward_as_tuple(_mediaCount), forward_as_tuple());
+	INFO("Creation of the ", publisher? "publisher" : "player", " stream ", _mediaCount)
 	return _mediaCount;
 }
 

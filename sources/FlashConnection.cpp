@@ -85,8 +85,9 @@ FlashStream* FlashConnection::addStream(UInt16 id, shared_ptr<FlashStream>& pStr
 }
 
 bool FlashConnection::messageHandler(const string& name, AMFReader& message, UInt64 flowId, Base::UInt64 writerId, double callbackHandler) {
-	UInt8 type = message.nextType();
-	while (type != AMFReader::END) {
+	UInt8 type(AMFReader::END);
+	bool result = true;
+	while ((type = message.nextType()) != AMFReader::END) {
 		if (name == "_result") {
 			if (type == AMFReader::OBJECT || type == AMFReader::MAP) {
 				Parameters params;
@@ -100,8 +101,9 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 					params.getString("code", code);
 					params.getString("description", description);
 
-					return onStatus(code, description, streamId, flowId, callbackHandler);
+					result |= onStatus(code, description, streamId, flowId, callbackHandler);
 				} // TODO: else
+				continue;
 			}
 			else if (type == AMFReader::NUMBER && _creatingStream) {
 				double idStream(0);
@@ -113,38 +115,34 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 				_creatingStream = false;
 				shared_ptr<FlashStream> pStream;
 				addStream((UInt16)idStream, pStream);
-				if (onStreamCreated((UInt16)idStream, idMedia)) {
-					pStream->setIdMedia(idMedia);
-					return true;
-				}
-				return false;
+				if (!onStreamCreated((UInt16)idStream, idMedia)) {
+					pStream->setIdMedia(idMedia); // set the media Id to retrieve the player/publisher
+					continue;
+				} else
+					return false;
 			}
 		}
-		else if (name == "_error") {
-			if (type == AMFReader::OBJECT) {
-				Parameters params;
-				MapWriter<Parameters> paramWriter(params);
-				message.read(AMFReader::OBJECT, paramWriter);
+		else if (name == "_error" && (type == AMFReader::OBJECT)) {
+			Parameters params;
+			MapWriter<Parameters> paramWriter(params);
+			message.read(AMFReader::OBJECT, paramWriter);
 
-				string level;
-				params.getString("level", level);
-				if (level == "error") {
-					string code, description;
-					params.getString("code", code);
-					params.getString("description", description);
-					return onStatus(code, description, streamId, flowId, callbackHandler);
-				}
+			string level;
+			params.getString("level", level);
+			if (level == "error") {
+				string code, description;
+				params.getString("code", code);
+				params.getString("description", description);
+				result |= onStatus(code, description, streamId, flowId, callbackHandler);
 			}
-		}
-		else {
-			message.next();
-			ERROR("Unhandled message ", name, " (type : ", type, ")")
-			return false;
+			continue;
 		}
 
-		type = message.nextType();
+		message.next();
+		WARN("Unhandled message ", name, " (type : ", type, ")")
+		return false;
 	}
-	return true;
+	return result;
 }
 
 bool FlashConnection::rawHandler(UInt16 type, const Packet& packet) {

@@ -120,12 +120,6 @@
     <ClCompile Include="sources\Base\String.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\TCPClient.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\TCPServer.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\Thread.cpp">
       <Filter>Base</Filter>
     </ClCompile>
@@ -136,9 +130,6 @@
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\Timezone.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
-    <ClCompile Include="sources\Base\TLS.cpp">
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\UDPSocket.cpp">
@@ -264,16 +255,7 @@
     <ClInclude Include="include\Base\SocketAddress.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\StreamData.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\Base\String.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\TCPClient.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\TCPServer.h">
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\Thread.h">
@@ -292,9 +274,6 @@
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\Timezone.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\TLS.h">
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\UDPSocket.h">

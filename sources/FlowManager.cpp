@@ -36,6 +36,7 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
+		DEBUG("onStatus (stream: ", streamId, ") : ", code, " - ", description)
 		_pOnStatusEvent(code.c_str(), description.c_str());
 
 		if (code == "NetConnection.Connect.Success")
