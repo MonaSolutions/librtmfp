@@ -24,15 +24,14 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPSession.h"
 #include "Base/Logs.h"
 #include "Base/String.h"
-#include "Invoker.h"
 #include "Base/Util.h"
 
 using namespace Base;
 using namespace std;
 
-extern "C" {
+Invoker* GlobalInvoker = NULL;
 
-static std::shared_ptr<Invoker>		GlobalInvoker; // manage threads, sockets and connection
+extern "C" {
 
 void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLogger) {
 	if (!config) {
@@ -42,9 +41,9 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLo
 
 	// Init global invoker (+logger)
 	if (!GlobalInvoker) {
-		GlobalInvoker.reset(new Invoker(createLogger>0));
+		GlobalInvoker = new Invoker(createLogger>0);
 		if (!GlobalInvoker->start()) {
-			GlobalInvoker.reset();
+			RTMFP_Terminate();
 			return;
 		}
 	}
@@ -63,7 +62,8 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLo
 }
 
 void RTMFP_Terminate() {
-	GlobalInvoker.reset();
+	delete GlobalInvoker;
+	GlobalInvoker = NULL;
 }
 
 int RTMFP_LibVersion() {
@@ -242,8 +242,8 @@ void RTMFP_Close(unsigned int RTMFPcontext) {
 		return;
 
 	GlobalInvoker->removeConnection(RTMFPcontext);
-	if (GlobalInvoker->empty()) // delete if no more connections
-		GlobalInvoker.reset();
+	if (GlobalInvoker->empty()) // delete if no more connections (shortcut to avoid calling RTMFP_Terminate() after RTMFP_Close())
+		RTMFP_Terminate();
 }
 
 int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext,char *buf,unsigned int size) {
@@ -255,7 +255,7 @@ int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext,char *buf,unsi
 	int nbRead = 0, ret = 0;
 	shared_ptr<RTMFPSession> pConn;
 	// Loop while the connection is available and no data is available
-	while (GlobalInvoker->getConnection(RTMFPcontext, pConn) && nbRead == 0) {
+	while (GlobalInvoker && !GlobalInvoker->isInterrupted() && GlobalInvoker->getConnection(RTMFPcontext, pConn) && nbRead == 0) {
 		if (!(ret = pConn->read(streamId, (UInt8*)buf, size, nbRead)))
 			return ret;
 			
@@ -265,8 +265,6 @@ int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext,char *buf,unsi
 		// Nothing read, wait for data
 		DEBUG("Nothing available, sleeping...")
 		pConn->readSignal.wait(100);
-		if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-			break;
 	}
 
 	return 0;

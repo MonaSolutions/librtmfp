@@ -28,8 +28,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 class RTMFPSession;
 class RTMFPLogger;
-class Invoker : private Base::Thread {
-public:
+struct Invoker : private Base::Thread {
 
 	// Create the Invoker
 	// createLogger : if True it will associate a logger instance to the static log class, otherwise it will let the default logger

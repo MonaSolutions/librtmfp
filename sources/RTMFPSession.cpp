@@ -127,22 +127,20 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		}
 		MediaPlayer& media = itMedia->second;
 
-		if (!media.codecInfosRead) {
-			if (type == AMF::TYPE_VIDEO && RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
-				INFO("Video codec infos found, starting to read")
-				media.codecInfosRead = true;
-			}
-			else {
-				if (type == AMF::TYPE_VIDEO)
-					DEBUG("Video frame dropped to wait first key frame");
+		if (!media.codecInfosRead && type == AMF::TYPE_VIDEO) {
+			if (!RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
+				DEBUG("Video frame dropped to wait first key frame");
 				return;
 			}
+			INFO("Video codec infos found, starting to read")
+			media.codecInfosRead = true;
 		}
-
-		// AAC (correct the issue with ffmpeg aac decoder!)
-		if (type == AMF::TYPE_AUDIO && !media.AACsequenceHeaderRead && (packet.size()>1 && (*packet.data() >> 4) == 0x0A)) {
-			if (!RTMFP::IsAACCodecInfos(packet.data(), packet.size()))
-				return; // ignore until finding the AAC sequence header
+		// AAC : we wait for the sequence header packet
+		else if (!media.AACsequenceHeaderRead && type == AMF::TYPE_AUDIO && (packet.size() > 1 && (*packet.data() >> 4) == 0x0A)) {
+			if (!RTMFP::IsAACCodecInfos(packet.data(), packet.size())) {
+				DEBUG("AAC frame dropped to wait first key frame (sequence header)");
+				return;
+			}
 			INFO("AAC codec infos found, starting to read audio part")
 			media.AACsequenceHeaderRead = true;
 		}

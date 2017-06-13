@@ -26,7 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/DiffieHellman.h"
 #include "Base/SocketAddress.h"
 
-class Invoker;
+struct Invoker;
 class RTMFPSession;
 struct FlowManager;
 

@@ -369,6 +369,8 @@ void NetGroup::manage() {
 	while (itGroupMedia != _mapGroupMedias.end()) {
 		if (!itGroupMedia->second.manage()) {
 			DEBUG("Deletion of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream)
+			if (_groupMediaPublisher == itGroupMedia)
+				_groupMediaPublisher = _mapGroupMedias.end();
 			_mapGroupMedias.erase(itGroupMedia++);
 		}
 		else

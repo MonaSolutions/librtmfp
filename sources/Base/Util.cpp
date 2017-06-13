@@ -16,7 +16,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 #include "Base/Util.h"
 #include "Base/Timezone.h"
-#include "Base/File.h"
 #include <fstream>
 #if defined(_WIN32)
 	#include <windows.h>

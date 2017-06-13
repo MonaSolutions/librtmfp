@@ -107,7 +107,7 @@ LIBRTMFP_API void RTMFP_Close(unsigned int RTMFPcontext);
 LIBRTMFP_API int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext, char *buf, unsigned int size);
 
 // Write size bytes of data into the current connexion
-// return the number of bytes used
+// return the number of bytes used or -1 if an error occurs
 LIBRTMFP_API int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int size);
 
 // Call a function of a server, peer or NetGroup

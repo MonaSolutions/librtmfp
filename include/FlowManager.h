@@ -32,7 +32,6 @@ typedef void(*OnStatusEvent)(const char* code, const char* description);
 typedef void(*OnMediaEvent)(unsigned short streamId, unsigned int time, const char* data, unsigned int size, unsigned int type);
 typedef void(*OnSocketError)(const char* error);
 
-class Invoker;
 class RTMFPFlow;
 struct RTMFPWriter;
 class FlashListener;

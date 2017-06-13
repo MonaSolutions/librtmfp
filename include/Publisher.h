@@ -27,7 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Packet.h"
 #include <deque>
 
-class Invoker;
+struct Invoker;
 class Listener;
 struct Publisher : virtual Base::Object {
 

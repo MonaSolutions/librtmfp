@@ -66,9 +66,6 @@
     <ClCompile Include="sources\Base\DNS.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\File.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\FileSystem.cpp">
       <Filter>Base</Filter>
     </ClCompile>
@@ -322,9 +319,6 @@
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\Exceptions.h">
-      <Filter>Base</Filter>
-    </ClInclude>
-    <ClInclude Include="include\Base\File.h">
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\FileSystem.h">
