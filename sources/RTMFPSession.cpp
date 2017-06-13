@@ -136,7 +136,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 			media.codecInfosRead = true;
 		}
 		// AAC : we wait for the sequence header packet
-		else if (!media.AACsequenceHeaderRead && type == AMF::TYPE_AUDIO && (packet.size() > 1 && (*packet.data() >> 4) == 0x0A)) {
+		else if (!media.AACsequenceHeaderRead && type == AMF::TYPE_AUDIO && (packet.size() > 1 && (*packet.data() >> 4) == 0x0A)) { // TODO: save the codec type
 			if (!RTMFP::IsAACCodecInfos(packet.data(), packet.size())) {
 				DEBUG("AAC frame dropped to wait first key frame (sequence header)");
 				return;

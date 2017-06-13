@@ -48,7 +48,8 @@ private:
 	bool					_firstTime;
 	Base::UInt32			_seekTime;
 	bool					_codecInfosSent;
-	Base::Time				_lastCodecsTime; // last time codecs have been sent
+	Base::Time				_lastVideoCodecs; // last time video codecs have been sent
+	Base::Time				_lastAACCodecs; // last time AAC audio codecs have been sent
 
 	bool					_dataInitialized;
 	bool					_reliable;

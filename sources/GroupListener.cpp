@@ -60,11 +60,9 @@ void GroupListener::pushVideo(UInt32 time, const Packet& packet) {
 			return;
 		}
 	}
-	// Send codec infos periodically (ffmpeg issue)
-	else if (_lastCodecsTime.isElapsed(5000) && pushVideoInfos(time, packet)) {
-		// TODO: make the time configurable
-		_lastCodecsTime.update();
-	}
+	// Send codec infos periodically
+	else if (_lastVideoCodecs.isElapsed(5000))  // TODO: make the time configurable
+		pushVideoInfos(time, packet);
 
 	if (_firstTime) {
 		_startTime = time;
@@ -75,7 +73,6 @@ void GroupListener::pushVideo(UInt32 time, const Packet& packet) {
 			pushAudio(time, Packet::Null()); // push a empty audio packet to avoid a video which waits audio tracks!
 	}
 	time -= _startTime;
-	//TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, "), size : ", size);
 
 	onMedia(RTMFP::IsKeyFrame(packet.data(), packet.size()) || _reliable, AMF::TYPE_VIDEO, _lastTime = (time + _seekTime), packet);
 }
@@ -83,8 +80,9 @@ void GroupListener::pushVideo(UInt32 time, const Packet& packet) {
 bool GroupListener::pushVideoInfos(UInt32 time, const Packet& packet) {
 	if (RTMFP::IsKeyFrame(packet.data(), packet.size())) {
 		_codecInfosSent = true;
+		_lastVideoCodecs.update();
 		INFO("Video codec infos sent to one listener of ", publication.name(), " publication")
-		if (publication.videoCodecBuffer() && !RTMFP::IsVideoCodecInfos(packet.data(), packet.size()))
+		if (publication.videoCodecBuffer() && !RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) 
 			pushVideo(time, publication.videoCodecBuffer());
 		return true;
 	}
@@ -93,6 +91,10 @@ bool GroupListener::pushVideoInfos(UInt32 time, const Packet& packet) {
 
 
 void GroupListener::pushAudio(UInt32 time, const Packet& packet) {
+	
+	// Send AAC codec infos periodically (TODO: save the codec type)
+	if ((packet.size() > 1 && (*packet.data() >> 4) == 0x0A) && _lastAACCodecs.isElapsed(5000)) // TODO: make the time configurable
+		pushAudioInfos(time);
 
 	if (_firstTime) {
 		_firstTime = false;
@@ -100,7 +102,6 @@ void GroupListener::pushAudio(UInt32 time, const Packet& packet) {
 		pushAudioInfos(time);
 	}
 	time -= _startTime;
-	//TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");
 
 	onMedia(RTMFP::IsAACCodecInfos(packet.data(), packet.size()) || _reliable, AMF::TYPE_AUDIO, _lastTime = (time + _seekTime), packet);
 }
@@ -108,6 +109,7 @@ void GroupListener::pushAudio(UInt32 time, const Packet& packet) {
 bool GroupListener::pushAudioInfos(UInt32 time) {
 	if (!publication.audioCodecBuffer())
 		return false;
+	_lastAACCodecs.update();
 	INFO("AAC codec infos sent to one listener of ", publication.name(), " publication")
 	pushAudio(time, publication.audioCodecBuffer());
 	return true;
