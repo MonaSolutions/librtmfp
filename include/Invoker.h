@@ -55,7 +55,10 @@ struct Invoker : private Base::Thread {
 
 	void			setInterruptCallback(int(*interruptCb)(void*), void* argument);
 
-	Base::ThreadPool					threadPool;
+private:
+	Base::Handler						_handler; // keep in first (must be build before sockets)
+public:
+	Base::ThreadPool					threadPool; // keep in first (must be build before sockets)
 	Base::IOSocket						sockets;
 	const Base::Timer&					timer; 
 	const Base::Handler&				handler;
@@ -65,7 +68,6 @@ private:
 
 	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it);
 	Base::Timer										_timer;
-	Base::Handler									_handler;
 	int												_lastIndex; // last index of connection
 	std::mutex										_mutexConnections;
 	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;

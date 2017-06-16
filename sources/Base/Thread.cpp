@@ -42,10 +42,10 @@ using namespace std;
 namespace Base {
 
 const UInt32					Thread::MainId(Thread::CurrentId());
-//thread_local std::string		Thread::_Name("Main");
+thread_local std::string		Thread::_Name("Main");
 thread_local Thread*			Thread::_Me(NULL);
 
-void Thread::SetSystemName(const char* name) {
+void Thread::SetSystemName(const string& name) {
 #if defined(_DEBUG)
 #if defined(_WIN32)
 	typedef struct tagTHREADNAME_INFO {
@@ -57,7 +57,7 @@ void Thread::SetSystemName(const char* name) {
 
 	THREADNAME_INFO info;
 	info.dwType = 0x1000;
-	info.szName = name /*.c_str()*/;
+	info.szName = name.c_str();
 	info.dwThreadID = GetCurrentThreadId();
 	info.dwFlags = 0;
 
@@ -67,20 +67,20 @@ void Thread::SetSystemName(const char* name) {
 	}
 #else
 	// 15 size restriction!
-	/*const char* threadName;
-	if (strlen(name) > 15) {
-		string Name;
-		Name.assign(name, 7) += '~';
-		Name.append(name[0] + 7, 7);
+	const char* threadName;
+	if (name.size() > 15) {
+		thread_local string Name;
+		Name.assign(name.data(), 7) += '~';
+		Name.append(name.data()+ name.size() - 7, 7);
 		threadName = Name.c_str();
 	} else
-		threadName = name.c_str();*/
+		threadName = name.c_str();
 #if defined(__APPLE__)
-    pthread_setname_np(name);
+    pthread_setname_np(threadName);
 #elif defined(_BSD)
-	pthread_set_name_np(pthread_self(), name);
+	pthread_set_name_np(pthread_self(), threadName);
 #else
-	prctl(PR_SET_NAME, name, 0, 0, 0);
+	prctl(PR_SET_NAME, threadName, 0, 0, 0);
 #endif
 #endif
 #endif
@@ -119,7 +119,7 @@ Thread::~Thread() {
 
 void Thread::process() {
 	_Me = this;
-	SetSystemName(/*_Name =*/ _name);
+	SetSystemName(_Name = _name);
 
 #if !defined(_DEBUG)
 	try {

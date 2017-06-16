@@ -213,7 +213,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
 			_mainFlowId = id;
-		return new RTMFPFlow(id, signature, pStream, *this, idWriterRef);
+		return new RTMFPFlow(id, signature, pStream, *this,  idWriterRef);
 	}
 	ex.set<Ex::Protocol>("Unhandled signature type : ", String::Hex((const UInt8*)signature.data(), signature.size()), " , cannot create RTMFPFlow");
 	return NULL;
@@ -380,7 +380,7 @@ void P2PSession::sendGroupReport(const UInt8* data, UInt32 size) {
 
 void P2PSession::sendGroupPeerConnect() {
 	if (!_pReportWriter)
-		_pReportWriter = createWriter(Packet(EXPAND("\x00\x47\x52\x1C")), _mainFlowId);
+		_pReportWriter = createWriter(Packet(EXPAND("\x00\x47\x52\x1C")), 0);
 
 	DEBUG("Sending group connection request to peer ", peerId)
 	_pReportWriter->writePeerGroup(_parent->groupIdHex(), _groupConnectKey->data(), rawId);

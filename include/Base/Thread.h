@@ -41,34 +41,33 @@ struct Thread : virtual Object {
 	template<typename DurationType>
 	static void					Sleep(DurationType duration) { std::this_thread::sleep_for(std::chrono::milliseconds(duration)); }
 
-	//static const std::string&	CurrentName() { return _Name; }
+	static const std::string&	CurrentName() { return _Name; }
 	static UInt32				CurrentId();
 	static const UInt32			MainId;
 
 	virtual ~Thread();
 
 	struct ChangeName : virtual Object {
-		//template <typename ...Args>
-		ChangeName(const char* name) : _name(name) { SetSystemName(name); /*_oldName.swap(_Name);*/ }
-		~ChangeName() { /*SetSystemName(_Name = std::move(_oldName));*/ }
-		operator const std::string&() const { return _name; }
+		template <typename ...Args>
+		ChangeName(Args&&... args) { SetSystemName(String::Assign(_oldName, std::forward<Args>(args)...)); _oldName.swap(_Name); }
+		~ChangeName() { SetSystemName(_Name = std::move(_oldName)); }
+		operator const std::string&() const { return _Name; }
 	private:
-		std::string _name;
-		//std::string _oldName;
+		std::string _oldName;
 	};
 protected:
 	Thread(const char* name);
 
 	Signal wakeUp;
-	//template <typename ...Args>
-	void setName(const char* name) { SetSystemName(name); }
+	template <typename ...Args>
+	const std::string& setName(Args&&... args) { SetSystemName(String::Assign(_Name, std::forward<Args>(args)...)); return _Name; }
 private:
 	virtual bool run(Exception& ex, const volatile bool& stopping) = 0;
 	void		 process();
 
-	static void  SetSystemName(const char* name);
+	static void  SetSystemName(const std::string& name);
 	
-	//static thread_local std::string		_Name;
+	static thread_local std::string		_Name;
 	static thread_local Thread*			_Me;
 
 	const char*		_name;
