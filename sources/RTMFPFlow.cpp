@@ -88,13 +88,24 @@ void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
 	}
 
 	if (flags&RTMFP::MESSAGE_ABANDON) {
-		DEBUG("Fragments ", nextStage, " to ", stage, " definitely lost on flow ", id, " in session ", _band.name());
+		DEBUG("Fragments ", nextStage, " to ", stage, " abandoned on flow ", id);
+		_lost += UInt32((stage - nextStage + 1)*RTMFP::SIZE_PACKET);
+		// Remove obsolete fragments
 		nextStage = stage + 1;
+		auto it = _fragments.begin();
+		while (it != _fragments.end() && it->first < nextStage) {
+			_lost += it->second.size();
+			fragmentation -= it->second.size();
+			++it;
+		}
+		_fragments.erase(_fragments.begin(), it);
+		// Remove buffer
 		if (_pBuffer) {
-			_lost += packet.size(); // this fragment abandonned
 			_lost += _pBuffer->size(); // the bufferized fragment abandonned
 			_pBuffer.reset();
 		}
+		// Assign new stage
+		_stage = stage;
 	}
 	else if (stage>nextStage) {
 		// not following stage, bufferizes the stage
@@ -103,7 +114,7 @@ void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
 		if (_fragments.emplace(piecewise_construct, forward_as_tuple(stage), forward_as_tuple(flags, packet)).second) {
 			fragmentation += packet.size();
 			if (_fragments.size() > 100)
-				DEBUG("fragments buffer increasing on flow ", id, " in session ", _band.name(), " : ", _fragments.size());
+				DEBUG("Fragments buffer increasing on flow ", id, " in session ", _band.name(), " : ", _fragments.size());
 		}
 		else
 			DEBUG("Stage ", stage, " on flow ", id, " has already been received in session ", _band.name())
@@ -114,7 +125,6 @@ void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
 
 	auto it = _fragments.begin();
 	while (it != _fragments.end() && it->first <= nextStage) {
-		TRACE("Processing stage ", it->first, " buffered received on flow ", id, " in session ", _band.name())
 		onFragment(nextStage++, it->second.flags, it->second);
 		fragmentation -= it->second.size();
 		it = _fragments.erase(it);
@@ -139,6 +149,7 @@ void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
 
 	}
 	if (flags&RTMFP::MESSAGE_WITH_BEFOREPART) {
+		DEBUG("Message partially abandoned on flow ", id);
 		_lost += packet.size();
 		return; // the beginning of this message is lost, ignore it!
 	}
