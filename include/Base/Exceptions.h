@@ -124,7 +124,7 @@ private:
 #define		FATAL_CHECK(CONDITION)			{ assert(CONDITION); }
 #if defined(_WIN32)
 #define		FATAL_ERROR(...)				{ if (_CrtDbgReport(_CRT_ASSERT, __FILE__, __LINE__, NULL, Base::String(__VA_ARGS__).c_str()) == 1) _CrtDbgBreak(); }
-#elif defined(__ANDROID__) 
+#elif defined(__ANDROID__)
 #define		FATAL_ERROR(...)				{  __assert(__FILE__,__LINE__, Base::String(__VA_ARGS__).c_str()); }
 #elif defined(__APPLE__)
 #define		FATAL_ERROR(...)				{  __assert_rtn(NULL, __FILE__,__LINE__, Base::String(__VA_ARGS__).c_str()); }

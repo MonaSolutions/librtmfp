@@ -22,10 +22,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include <unistd.h>
 #if defined(__APPLE__)
 #include <pthread.h>
-#include <AvailabilityMacros.h>
-#ifndef MAC_OS_X_VERSION_10_12
-	#define MAC_OS_X_VERSION_10_12 101200
-#endif
+#include <AvailabilityMacros.h> // to get MAC_OS_X_VERSION_MAX_ALLOWED
 #elif defined(_BSD)
 #include <pthread_np.h>
 #else
@@ -90,14 +87,12 @@ void Thread::SetSystemName(const string& name) {
 UInt32 Thread::CurrentId() {
 #ifdef _WIN32
 	return (UInt32)GetCurrentThreadId();
-#elif defined(__APPLE__)
-	#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12
-		uint64_t tid64;
-		pthread_threadid_np(NULL, &tid64);
-		return (UInt32)tid64;
-	#else
-		return (UInt32)syscall(SYS_thread_selfid);
-	#endif
+#elif (MAC_OS_X_VERSION_MAX_ALLOWED >= 101200)
+	uint64_t tid64;
+	pthread_threadid_np(NULL, &tid64);
+	return (UInt32)tid64;
+#elif defined(SYS_thread_selfid)
+	return (UInt32)syscall(SYS_thread_selfid);
 #elif defined(SYS_gettid)
 	return (UInt32)syscall(SYS_gettid);
 #elif defined(__NR_gettid)

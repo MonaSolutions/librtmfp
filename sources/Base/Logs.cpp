@@ -26,6 +26,7 @@ namespace Base {
 mutex					Logs::_Mutex;
 
 volatile bool			Logs::_Dumping(false);
+string					Logs::_Dump;
 
 Int32					Logs::_DumpLimit(-1);
 volatile bool			Logs::_DumpRequest(true);
@@ -41,22 +42,22 @@ Logger*					Logs::_PLogger(&DefaultLogger());
 void Logs::SetDump(const char* name) {
 	lock_guard<mutex> lock(_Mutex);
 	_DumpResponse = _DumpRequest = true;
-	string& filter = DumpFilter();
 	if (!name) {
 		_Dumping = false;
-		filter.clear();
+		_Dump.clear();
+		_Dump.shrink_to_fit();
 		return;
 	}
 	_Dumping = true;
-	filter.assign(name);
-	if (filter.empty())
+	_Dump = name;
+	if (_Dump.empty())
 		return;
-	if (filter.back() == '>') {
+	if (_Dump.back() == '>') {
 		_DumpRequest = false;
-		filter.pop_back();
-	} else if (filter.back() == '<') {
+		_Dump.pop_back();
+	} else if (_Dump.back() == '<') {
 		_DumpResponse = false;
-		filter.pop_back();
+		_Dump.pop_back();
 	}
 }
 

@@ -24,6 +24,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 namespace Base {
 
 struct Logs : virtual Static {
+	static Logger&		DefaultLogger() { static Logger Logger; return Logger; }
 	static void			SetLogger(Logger& logger) { std::lock_guard<std::mutex> lock(_Mutex); _PLogger = &logger; }
 
 	static void			SetLevel(LOG_LEVEL level) { _Level = level; }
@@ -55,7 +56,7 @@ struct Logs : virtual Static {
 		if (!_Dumping)
 			return;
 		std::lock_guard<std::mutex> lock(_Mutex);
-		if ((DumpFilter().empty() || String::ICompare(DumpFilter(), name) == 0))
+		if (_Dump.empty() || String::ICompare(_Dump, name) == 0)
 			Dump(String(std::forward<Args>(args)...), data, size);
 	}
 
@@ -79,13 +80,9 @@ struct Logs : virtual Static {
 	}
 #endif
 
-	static Logger& DefaultLogger() { static Logger logger; return logger; }
 
 private:
-
-	static std::string& DumpFilter() { static std::string filter; return filter; } // empty() means all dump, otherwise is a dump filter
-
-	static void Dump(const std::string& header, const UInt8* data, UInt32 size);
+	static void		Dump(const std::string& header, const UInt8* data, UInt32 size);
 
 
 	static std::mutex				_Mutex;
@@ -93,10 +90,12 @@ private:
 	static std::atomic<LOG_LEVEL>	_Level;
 	static Logger*					_PLogger;
 
-	static volatile bool		_Dumping;
-	static volatile bool		_DumpRequest;
-	static volatile bool		_DumpResponse;
-	static Int32				_DumpLimit; // -1 means no limit
+	static volatile bool	_Dumping;
+	static std::string		_Dump; // empty() means all dump, otherwise is a dump filter
+
+	static volatile bool	_DumpRequest;
+	static volatile bool	_DumpResponse;
+	static Int32			_DumpLimit; // -1 means no limit
 };
 
 #undef ERROR
