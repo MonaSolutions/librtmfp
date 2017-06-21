@@ -60,11 +60,11 @@ public:
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	// return : the id of the media created
-	Base::UInt16 connect2Group(const char* streamName, RTMFPGroupConfig* parameters);
+	Base::UInt16 connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable);
 
 	// Create a stream (play/publish) in the main stream 
 	// return : the id of the media created
-	Base::UInt16 addStream(bool publisher, const char* streamName, bool audioReliable = false, bool videoReliable = false);
+	Base::UInt16 addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable);
 
 	// Asynchronous read (buffered)
 	// return : -1 if an error occurs, 0 if the stream is closed, otherwise 1

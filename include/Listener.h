@@ -31,8 +31,8 @@ public:
 	virtual void startPublishing() = 0;
 	virtual void stopPublishing() = 0;
 
-	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet) = 0;
-	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet) = 0;
+	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet, bool reliable) = 0;
+	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet, bool reliable) = 0;
 	//virtual void pushData(DataReader& packet) = 0;
 	//virtual void pushProperties(DataReader& packet) = 0;
 
@@ -51,8 +51,8 @@ public:
 	virtual void startPublishing();
 	virtual void stopPublishing();
 
-	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet);
-	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet);
+	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet, bool reliable);
+	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 
 	virtual void flush();
 
@@ -80,5 +80,4 @@ private:
 	std::shared_ptr<RTMFPWriter>	_pAudioWriter;
 	std::shared_ptr<RTMFPWriter>	_pVideoWriter;
 	bool							_dataInitialized;
-	bool							_reliable;
 };

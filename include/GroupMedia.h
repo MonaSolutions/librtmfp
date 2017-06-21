@@ -68,7 +68,7 @@ private:
 	#define MAP_FRAGMENTS_ITERATOR std::map<Base::UInt64, std::unique_ptr<GroupFragment>>::iterator
 
 	// Add a new fragment to the map _fragments
-	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, Base::UInt8 marker, Base::UInt64 id, Base::UInt8 splitedNumber, Base::UInt8 mediaType, Base::UInt32 time, const Base::Packet& packet);
+	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, Base::UInt8 marker, Base::UInt64 id, Base::UInt8 splitedNumber, Base::UInt8 mediaType, Base::UInt32 time, const Base::Packet& packet);
 
 	// Try to push a fragment (to the parent) and following fragments until finding a hole or reaching timeout
 	void						processFragments(MAP_FRAGMENTS_ITERATOR& itFragment);

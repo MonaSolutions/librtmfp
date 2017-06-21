@@ -33,7 +33,7 @@ Listener::Listener(Publisher& publication, const string& identifier) : publicati
 
 FlashListener::FlashListener(Publisher& publication, const string& identifier, shared_ptr<RTMFPWriter>& pDataWriter, shared_ptr<RTMFPWriter>& pAudioWriter, shared_ptr<RTMFPWriter>& pVideoWriter) : Listener(publication, identifier),
 	_pDataWriter(pDataWriter), _pAudioWriter(pAudioWriter), _pVideoWriter(pVideoWriter), receiveAudio(true), receiveVideo(true), _firstTime(true), _seekTime(0),
-	_dataInitialized(false), _reliable(true), _startTime(0), _lastTime(0), _codecInfosSent(false) {
+	_dataInitialized(false), _startTime(0), _lastTime(0), _codecInfosSent(false) {
 
 }
 
@@ -106,7 +106,7 @@ void FlashListener::stopPublishing() {
 }
 
 
-void FlashListener::pushVideo(UInt32 time, const Packet& packet) {
+void FlashListener::pushVideo(UInt32 time, const Packet& packet, bool reliable) {
 	if (!receiveVideo && !RTMFP::IsVideoCodecInfos(packet.data(), packet.size()))
 		return;
 
@@ -115,7 +115,7 @@ void FlashListener::pushVideo(UInt32 time, const Packet& packet) {
 			_codecInfosSent = true;
 			if (publication.videoCodecBuffer() && !RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
 				INFO("Video codec infos sent to one FlashListener of ", publication.name(), " publication")
-				pushVideo(time, publication.videoCodecBuffer());
+				pushVideo(time, publication.videoCodecBuffer(), true);
 			}
 		}
 		else {
@@ -133,18 +133,18 @@ void FlashListener::pushVideo(UInt32 time, const Packet& packet) {
 
 		// for audio sync (audio is usually the reference track)
 		if (pushAudioInfos(time)) 
-			pushAudio(time, Packet::Null()); // push a empty audio packet to avoid a video which waits audio tracks!
+			pushAudio(time, Packet::Null(), true); // push a empty audio packet to avoid a video which waits audio tracks!
 	}
 	time -= _startTime;
 
 	//TRACE("Video time(+seekTime) => ", time, "(+", _seekTime, "), size : ", size);
 
-	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(packet.data(), packet.size()) || _reliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), packet))
+	if (!writeMedia(*_pVideoWriter, RTMFP::IsKeyFrame(packet.data(), packet.size()) || reliable, FlashWriter::VIDEO, _lastTime = (time + _seekTime), packet))
 		initWriters();
 }
 
 
-void FlashListener::pushAudio(UInt32 time, const Packet& packet) {
+void FlashListener::pushAudio(UInt32 time, const Packet& packet, bool reliable) {
 	if (!receiveAudio && !RTMFP::IsAACCodecInfos(packet.data(), packet.size()))
 		return;
 
@@ -160,7 +160,7 @@ void FlashListener::pushAudio(UInt32 time, const Packet& packet) {
 
 	//TRACE("Audio time(+seekTime) => ", time, "(+", _seekTime, ")");
 
-	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(packet.data(), packet.size()) || _reliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), packet))
+	if (!writeMedia(*_pAudioWriter, RTMFP::IsAACCodecInfos(packet.data(), packet.size()) || reliable, FlashWriter::AUDIO, _lastTime = (time + _seekTime), packet))
 		initWriters();
 }
 
@@ -168,7 +168,7 @@ bool FlashListener::pushAudioInfos(UInt32 time) {
 	if (!publication.audioCodecBuffer())
 		return false;
 	INFO("AAC codec infos sent to one FlashListener of ", publication.name(), " publication")
-	pushAudio(time, publication.audioCodecBuffer());
+	pushAudio(time, publication.audioCodecBuffer(), true);
 	return true;
 }
 

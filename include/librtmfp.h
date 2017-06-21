@@ -78,18 +78,24 @@ LIBRTMFP_API unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters
 LIBRTMFP_API unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking);
 
 // Connect to a NetGroup (in the G:... form)
+// param audioReliable if True all audio packets losts are repeated, otherwise audio packets are not repeated
+// param videoReliable if True all video packets losts are repeated, otherwise video packets are not repeated
 // return the id of the stream (to call with RTMFP_Read) or 0 if an error occurs 
-LIBRTMFP_API unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters);
+LIBRTMFP_API unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters, unsigned short audioReliable, unsigned short videoReliable);
 
 // RTMFP NetStream Play function
 // return the id of the stream (to call with RTMFP_Read) or 0 if an error occurs 
 LIBRTMFP_API unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName);
 
 // RTMFP NetStream Publish function
+// param audioReliable if True all audio packets losts are repeated, otherwise audio packets are not repeated
+// param videoReliable if True all video packets losts are repeated, otherwise video packets are not repeated
 // return the id of the stream or 0 if an error occurs 
 LIBRTMFP_API unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
 
 // RTMFP P2P NetStream Publish function (equivalent of NetStream.DIRECT_CONNECTIONS)
+// param audioReliable if True all audio packets losts are repeated, otherwise audio packets are not repeated
+// param videoReliable if True all video packets losts are repeated, otherwise video packets are not repeated
 // return : 1 if the request succeed, 0 otherwise
 LIBRTMFP_API unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
 

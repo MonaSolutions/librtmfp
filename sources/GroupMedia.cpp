@@ -55,7 +55,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 
 		// Send fragment to peer (pull mode)
-		pPeer->sendMedia(*itFragment->second, true);
+		pPeer->sendMedia(*itFragment->second, true, true); // pull fragment is always reliable
 	};
 	_onFragmentsMap = [this](UInt64 counter) {
 		if (groupParameters->isPublisher)
@@ -92,7 +92,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 
 			// Add the fragment to the map
 			UInt32 fragmentSize = ((splitCounter > 0) ? NETGROUP_MAX_PACKET_SIZE : reader.available());
-			addFragment(itFragment, NULL, marker, ++_fragmentCounter, splitCounter, type, time, Packet(packet, reader.current(), fragmentSize));
+			addFragment(itFragment, reliable, NULL, marker, ++_fragmentCounter, splitCounter, type, time, Packet(packet, reader.current(), fragmentSize));
 			reader.next(fragmentSize);
 		} while (splitCounter-- > 0);
 
@@ -158,7 +158,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 
 		// Add the fragment to the map
-		addFragment(itFragment, pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet);
+		addFragment(itFragment, true, pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet);
 
 		// Push the fragment to the output file (if ordered)
 		processFragments(itFragment);
@@ -210,13 +210,13 @@ void GroupMedia::closePublisher() {
 	close(_fragmentCounter);
 }
 
-void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet) {
+void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet) {
 	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(id), forward_as_tuple(new GroupFragment(packet, time, (AMF::Type)mediaType, id, marker, splitedNumber)));
 
 	// Send fragment to peers (push mode)
 	UInt8 nbPush = groupParameters->pushLimit + 1;
 	for (auto it : _mapPeers) {
-		if (it.second.get() != pPeer && it.second->sendMedia(*itFragment->second) && (--nbPush == 0)) {
+		if (it.second.get() != pPeer && it.second->sendMedia(*itFragment->second, false, reliable) && (--nbPush == 0)) {
 			TRACE("GroupMedia ", id, " - Push limit (", groupParameters->pushLimit + 1, ") reached for fragment ", id, " (mask=", String::Format<UInt8>("%.2x", 1 << (id % 8)), ")")
 			break;
 		}

@@ -201,9 +201,9 @@ void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
 	flush();
 }
 
-void RTMFPWriter::writeGroupFragment(const GroupFragment& fragment) {
+void RTMFPWriter::writeGroupFragment(const GroupFragment& fragment, bool fragmentReliable) {
 	Packet emptyPacket;
-	AMFWriter& writer = newMessage(reliable, emptyPacket);
+	AMFWriter& writer = newMessage(reliable && fragmentReliable, emptyPacket);
 
 	// AMF Group marker
 	writer->write8(fragment.marker);

@@ -31,8 +31,8 @@ struct GroupListener : Listener {
 	virtual void startPublishing();
 	virtual void stopPublishing();
 
-	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet);
-	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet);
+	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet, bool reliable);
+	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 
 	virtual void flush() {}
 
@@ -52,5 +52,4 @@ private:
 	Base::Time				_lastAACCodecs; // last time AAC audio codecs have been sent
 
 	bool					_dataInitialized;
-	bool					_reliable;
 };

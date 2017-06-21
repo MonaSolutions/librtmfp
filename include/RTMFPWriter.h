@@ -81,7 +81,7 @@ struct RTMFPWriter : FlashWriter, virtual Base::Object {
 	// Send a pull request to a peer (message 2B)
 	virtual void		writeGroupPull(Base::UInt64 index);
 	// Send a fragment
-	virtual void		writeGroupFragment(const GroupFragment& fragment);
+	virtual void		writeGroupFragment(const GroupFragment& fragment, bool fragmentReliable);
 
 	const Base::UInt64	id;
 	const Base::UInt64	flowId;

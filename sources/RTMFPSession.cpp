@@ -153,9 +153,21 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 				dataAvailable = true;
 		}
 	};
-	onPushAudio = [this](MediaPacket& packet) { _pPublisher->pushAudio(packet.time, packet); };
-	onPushVideo = [this](MediaPacket& packet) { _pPublisher->pushVideo(packet.time, packet); };
-	onFlushPublisher = [this]() { _pPublisher->flush(); };
+	onPushAudio = [this](MediaPacket& packet) { 
+		lock_guard<mutex> lock(_mutexConnections);
+		if (_pPublisher)
+			_pPublisher->pushAudio(packet.time, packet);
+	};
+	onPushVideo = [this](MediaPacket& packet) {
+		lock_guard<mutex> lock(_mutexConnections);
+		if (_pPublisher)
+			_pPublisher->pushVideo(packet.time, packet);
+	};
+	onFlushPublisher = [this]() { 
+		lock_guard<mutex> lock(_mutexConnections);
+		if (_pPublisher)
+			_pPublisher->flush();
+	};
 	_onDecoded = [this](RTMFPDecoder::Decoded& decoded) {
 
 		lock_guard<mutex> lock(_mutexConnections);
@@ -365,7 +377,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const char* streamName, co
 	return true;
 }
 
-UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters) {
+UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable) {
 	INFO("Connecting to group ", parameters->netGroup, "...")
 
 	if (strncmp("G:", parameters->netGroup, 2) != 0) {
@@ -419,7 +431,7 @@ UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* par
 				WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
 				return 0;
 			}
-			_pPublisher.reset(new Publisher(streamName, _invoker, true, true, true));
+			_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
 		} else // Create the player
 			_mapPlayers.emplace(piecewise_construct, forward_as_tuple(_mediaCount+1), forward_as_tuple());
 

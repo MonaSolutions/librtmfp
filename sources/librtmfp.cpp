@@ -131,7 +131,7 @@ unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId,
 	return mediaId;
 }
 
-unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters) {
+unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters, unsigned short audioReliable, unsigned short videoReliable) {
 	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
 		return 0;
@@ -141,7 +141,7 @@ unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* stream
 	if (!GlobalInvoker->getConnection(RTMFPcontext, pConn))
 		return 0;
 	
-	UInt16 mediaId = pConn->connect2Group(streamName, parameters);
+	UInt16 mediaId = pConn->connect2Group(streamName, parameters, audioReliable>0, videoReliable>0);
 	if (!mediaId)
 		return 0;
 
@@ -166,7 +166,7 @@ unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 	if (!GlobalInvoker->getConnection(RTMFPcontext,pConn))
 		return 0;
 
-	return pConn->addStream(false, streamName);
+	return pConn->addStream(false, streamName, true, true);
 }
 
 unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
