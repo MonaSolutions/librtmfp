@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02020000	// (2.2.0)
+#define RTMFP_LIB_VERSION	0x02020001	// (2.2.1)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -97,9 +97,25 @@ struct RTMFP : virtual Base::Static {
 	};
 
 	struct Engine : virtual Base::Object {
-		Engine(const Base::UInt8* key) { memcpy(_key, key, KEY_SIZE); EVP_CIPHER_CTX_init(&_context); }
-		Engine(const Engine& engine) { memcpy(_key, engine._key, KEY_SIZE); EVP_CIPHER_CTX_init(&_context); }
-		virtual ~Engine() { EVP_CIPHER_CTX_cleanup(&_context); }
+		Engine(const Base::UInt8* key) {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+			_context = new EVP_CIPHER_CTX();
+#endif
+			memcpy(_key, key, KEY_SIZE); EVP_CIPHER_CTX_init(_context);
+		}
+		Engine(const Engine& engine) {
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+			_context = new EVP_CIPHER_CTX();
+#endif
+			memcpy(_key, engine._key, KEY_SIZE); EVP_CIPHER_CTX_init(_context);
+		}
+		virtual ~Engine() {
+			EVP_CIPHER_CTX_cleanup(_context);
+#if OPENSSL_VERSION_NUMBER < 0x10100000L
+			delete _context;
+			_context = NULL;
+#endif
+		}
 
 		bool							decode(Base::Exception& ex, Base::Buffer& buffer, const Base::SocketAddress& address);
 		std::shared_ptr<Base::Buffer>&	encode(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt32 farId, const Base::SocketAddress& address);
@@ -112,7 +128,7 @@ struct RTMFP : virtual Base::Static {
 
 		enum { KEY_SIZE = 0x10 };
 		Base::UInt8						_key[KEY_SIZE];
-		EVP_CIPHER_CTX					_context;
+		EVP_CIPHER_CTX*					_context;
 	};
 
 	struct Message : virtual Base::Object, Base::Packet {
