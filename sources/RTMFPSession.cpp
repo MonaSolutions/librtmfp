@@ -524,7 +524,7 @@ bool RTMFPSession::write(const UInt8* data, UInt32 size, int& pos) {
 	}
 
 	const UInt8* cur = reader.current();
-	if (*cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header
+	if (*cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header (TODO: do the check only once)
 		reader.next(13);
 		pos = 13;
 	}
