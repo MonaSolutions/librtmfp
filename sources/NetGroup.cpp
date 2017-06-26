@@ -167,7 +167,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 			pPeer->groupReportInitiator = false;
 
 		// Send the Group Media Subscriptions if not already sent
-		if (sendMediaSubscription || groupParameters->isPublisher) {
+		if (sendMediaSubscription) {
 			DEBUG("Sending GroupMedia subscription to peer ", pPeer->name(), " (publisher: ", groupParameters->isPublisher, ")...")
 			for (auto& itGroupMedia : _mapGroupMedias) {
 				if (itGroupMedia.second.groupParameters->isPublisher || itGroupMedia.second.hasFragments()) {

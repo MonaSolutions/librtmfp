@@ -227,7 +227,7 @@ void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, 
 }
 
 bool GroupMedia::manage() {
-	if (_lastFragment.isElapsed(NETGROUP_MEDIA_TIMEOUT)) // to delete the GroupMedia after 5min
+	if (!groupParameters->isPublisher && _lastFragment.isElapsed(NETGROUP_MEDIA_TIMEOUT)) // to delete the GroupMedia after 5min without reception
 		return false;
 
 	if (_mapPeers.empty())
