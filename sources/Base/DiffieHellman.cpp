@@ -92,11 +92,9 @@ bool DiffieHellman::computeKeys(Exception& ex) {
 	}
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
-	const BIGNUM* pubKey = _pDH->pub_key;
-	const BIGNUM* privKey = _pDH->priv_key;
+	const BIGNUM *pubKey = _pDH->pub_key, *privKey = _pDH->priv_key;
 #else
-	const BIGNUM* pubKey;
-	const BIGNUM* privKey;
+	const BIGNUM *pubKey, *privKey;
 	DH_get0_key(_pDH, &pubKey, &privKey);
 #endif
 	_publicKeySize = BN_num_bytes(pubKey);

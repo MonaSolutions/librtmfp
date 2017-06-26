@@ -21,9 +21,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include "Base/Path.h"
 #include "Base/Date.h"
 #include <fstream>
-#if defined(_WIN32)
-#include "windows.h"
-#else
+#if !defined(_WIN32)
 #if !defined(_BSD)
 extern long timezone;
 #endif
