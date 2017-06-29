@@ -16,3 +16,5 @@
 /librtmfpVS14.vcxproj.user
 /TestClient/TestClientVS14.vcxproj.user
 /.vs
+/tmp64
+/TestClient/tmp64

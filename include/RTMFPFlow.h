@@ -34,8 +34,8 @@ It manages acknowledgments and lost count of messages received
 */
 class RTMFPFlow : public virtual Base::Object {
 public:
-	RTMFPFlow(Base::UInt64 id,const std::string& signature, FlowManager& band, const std::shared_ptr<FlashConnection>& pMainStream, Base::UInt64 idWriterRef);
-	RTMFPFlow(Base::UInt64 id,const std::string& signature,const std::shared_ptr<FlashStream>& pStream, FlowManager& band, Base::UInt64 idWriterRef);
+	RTMFPFlow(Base::UInt64 id, FlowManager& band, const std::shared_ptr<FlashConnection>& pMainStream, Base::UInt64 idWriterRef);
+	RTMFPFlow(Base::UInt64 id, const std::shared_ptr<FlashStream>& pStream, FlowManager& band, Base::UInt64 idWriterRef);
 	virtual ~RTMFPFlow();
 
 	const Base::UInt64		id;

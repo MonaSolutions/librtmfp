@@ -80,8 +80,6 @@ protected:
 
 	State					_state;
 private:
-	std::string				_onAudio;
-	std::string				_onVideo;
 	double					_callbackHandleOnAbort;
 	double					_callbackHandle;
 };

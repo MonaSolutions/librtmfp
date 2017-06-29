@@ -51,8 +51,6 @@ private:
 	virtual bool	rawHandler(Base::UInt16 type, const Base::Packet& packet);
 
 	std::map<Base::UInt16,std::shared_ptr<FlashStream>>	_streams;
-	std::string											_buffer;
 
 	bool			_creatingStream; // If we are waiting for a stream to be created
-	std::string		_streamToPlay;
 };

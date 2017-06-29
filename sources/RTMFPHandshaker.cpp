@@ -81,7 +81,7 @@ bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const S
 	const string& tag = pSession->tag();
 	auto itHandshake = _mapTags.lower_bound(tag);
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag), forward_as_tuple(new Handshake(pSession, address, addresses, p2p)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str(), tag.size()), forward_as_tuple(new Handshake(pSession, address, addresses, p2p)));
 		itHandshake->second->pTag = &itHandshake->first;
 		pHandshake = itHandshake->second;
 		return true;
@@ -398,7 +398,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	DEBUG("peer ID calculated from public key : ", peerId)
 
 	// Create the session, if already exists and connected we ignore the request
-	if (!_pSession->onNewPeerId(_address, pHandshake, farId, rawId, peerId)) {
+	if (!_pSession->onNewPeerId(_address, pHandshake, farId, peerId)) {
 		removeHandshake(pHandshake);
 		return;
 	}

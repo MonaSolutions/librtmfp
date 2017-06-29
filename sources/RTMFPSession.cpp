@@ -222,15 +222,11 @@ void RTMFPSession::closeSession() {
 		close(true);
 	}
 
-	if (_pSocket) {
-		_pSocket->close();
+	if (_pSocket)
 		_pSocket.reset();
-	}
 
-	if (_pSocketIPV6) {
-		_pSocketIPV6->close();
+	if (_pSocketIPV6)
 		_pSocketIPV6.reset();
-	}
 }
 
 void RTMFPSession::close(bool abrupt) {
@@ -289,12 +285,12 @@ RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const strin
 	if (signature.size() > 4 && signature.compare(0, 5, "\x00\x54\x43\x04\x00", 5) == 0) { // NetConnection
 		DEBUG("Creating new Flow (", id, ") for NetConnection ", name())
 		_mainFlowId = id;
-		return new RTMFPFlow(id, signature, *this, _pMainStream, idWriterRef);
+		return new RTMFPFlow(id, *this, _pMainStream, idWriterRef);
 	}
 	else if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
 		shared_ptr<FlashStream> pStream;
 		_pMainStream->addStream(pStream, true); // TODO: see if it is really a GroupStream
-		return new RTMFPFlow(id, signature, pStream, *this, idWriterRef);
+		return new RTMFPFlow(id,  pStream, *this, idWriterRef);
 	}
 	else {
 		ex.set<Ex::Protocol>("Unhandled signature type : ",  String::Hex(BIN signature.data(), signature.size()), " , cannot create RTMFPFlow");
@@ -365,7 +361,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const char* streamName, co
 
 	DEBUG("Connecting to peer ", peerId, "...")
 	itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId), 
-		forward_as_tuple(new P2PSession(this, peerId, _invoker, _pOnSocketError, _pOnStatusEvent, hostAddress, false, (bool)_group, mediaId)));
+		forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnSocketError, _pOnStatusEvent, hostAddress, false, (bool)_group, mediaId)));
 	_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 	shared_ptr<P2PSession> pPeer = itPeer->second;
@@ -851,14 +847,14 @@ void RTMFPSession::buildPeerID(const UInt8* data, UInt32 size) {
 	INFO("Peer ID : \n", _peerTxtId)
 }
 
-bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshake>& pHandshake, UInt32 farId, const string& rawId, const string& peerId) {
+bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshake>& pHandshake, UInt32 farId, const string& peerId) {
 
 	// If the peer session doesn't exists we create it
 	auto itPeer = _mapPeersById.lower_bound(peerId);
 	if (itPeer == _mapPeersById.end() || itPeer->first != peerId) {
 		SocketAddress emptyHost; // We don't know the peer's host address
 		itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId),
-			forward_as_tuple(new P2PSession(this, peerId, _invoker, _pOnSocketError, _pOnStatusEvent, emptyHost, true, (bool)_group)));
+			forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnSocketError, _pOnStatusEvent, emptyHost, true, (bool)_group)));
 		_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 		// associate the handshake & session

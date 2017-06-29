@@ -412,7 +412,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 
 		// Search in mainstream
 		if (_pMainStream->getStream(idSession, pStream))
-			pFlow = new RTMFPFlow(id, signature, pStream, *this, idWriterRef);
+			pFlow = new RTMFPFlow(id, pStream, *this, idWriterRef);
 		else
 			ex.set<Ex::Protocol>("RTMFPFlow ", id, " indicates a non-existent ", idSession, " NetStream on connection ", name());
 	}

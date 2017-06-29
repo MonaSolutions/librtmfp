@@ -200,7 +200,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
 		DEBUG("Creating new Flow (2) for P2PSession ", name())
 		_pMainStream->addStream(idSession, pStream);
-		return new RTMFPFlow(id, signature, pStream, *this, idWriterRef);
+		return new RTMFPFlow(id, pStream, *this, idWriterRef);
 	}
 	else if (signature.size() > 3 && ((signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Report stream (main flow)
 		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream
@@ -213,7 +213,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
 			_mainFlowId = id;
-		return new RTMFPFlow(id, signature, pStream, *this,  idWriterRef);
+		return new RTMFPFlow(id, pStream, *this,  idWriterRef);
 	}
 	ex.set<Ex::Protocol>("Unhandled signature type : ", String::Hex((const UInt8*)signature.data(), signature.size()), " , cannot create RTMFPFlow");
 	return NULL;

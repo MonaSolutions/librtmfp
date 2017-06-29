@@ -138,7 +138,7 @@ public:
 	virtual void					buildPeerID(const Base::UInt8* data, Base::UInt32 size);
 
 	// Called when we have received the handshake 38 and read peer ID of the far peer
-	bool							onNewPeerId(const Base::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake, Base::UInt32 farId, const std::string& rawId, const std::string& peerId);
+	bool							onNewPeerId(const Base::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake, Base::UInt32 farId, const std::string& peerId);
 
 	// Remove the handshake properly
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
