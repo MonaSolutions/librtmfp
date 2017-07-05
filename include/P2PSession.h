@@ -102,7 +102,7 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	bool							askPeer2Disconnect();
 
 	// Manage the flows
-	virtual void					manage() { FlowManager::manage(); }
+	virtual bool					manage() { return FlowManager::manage(); }
 	
 	// Remove the handshake properly
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);

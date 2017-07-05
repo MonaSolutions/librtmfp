@@ -37,7 +37,7 @@ using namespace std;
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId(PEER_ID_SIZE + 2, '\0'),
-	_handshaker(this), _isWaitingStream(false), _mediaCount(0), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), dataAvailable(false), _threadRcv(0),
+	_handshaker(this), _isWaitingStream(false), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), _threadRcv(0),
 	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pSocket(new UDPSocket(_invoker.sockets)), _pSocketIPV6(new UDPSocket(_invoker.sockets)) {
 
 	_pSocketIPV6->onPacket = _pSocket->onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
@@ -120,38 +120,16 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		handleNewGroupPeer(rawId, peerId);
 	};
 	onMediaPlay = _pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
-		auto itMedia = _mapPlayers.find(mediaId);
-		if (itMedia == _mapPlayers.end()) {
-			WARN("Unable to find media ", mediaId) // implementation error
+		if (!packet.size())
+			return;
+
+		// Synchronous read
+		if (_pOnMedia) {
+			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
 			return;
 		}
-		MediaPlayer& media = itMedia->second;
-
-		if (!media.codecInfosRead && type == AMF::TYPE_VIDEO) {
-			if (!RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
-				DEBUG("Video frame dropped to wait first key frame");
-				return;
-			}
-			INFO("Video codec infos found, starting to read")
-			media.codecInfosRead = true;
-		}
-		// AAC : we wait for the sequence header packet
-		else if (!media.AACsequenceHeaderRead && type == AMF::TYPE_AUDIO && (packet.size() > 1 && (*packet.data() >> 4) == 0x0A)) { // TODO: save the codec type
-			if (!RTMFP::IsAACCodecInfos(packet.data(), packet.size())) {
-				DEBUG("AAC frame dropped to wait first key frame (sequence header)");
-				return;
-			}
-			INFO("AAC codec infos found, starting to read audio part")
-			media.AACsequenceHeaderRead = true;
-		}
-
-		if (_pOnMedia) // Synchronous read
-			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
-		else { // Asynchronous read
-			media.mediaPackets.emplace_back(new MediaPlayer::RTMFPMediaPacket(packet, time, type));
-			if (!dataAvailable)
-				dataAvailable = true;
-		}
+		
+		_invoker.pushMedia(_id, mediaId, time, packet, lostRate, type);
 	};
 	onPushAudio = [this](MediaPacket& packet) { 
 		lock_guard<mutex> lock(_mutexConnections);
@@ -171,6 +149,9 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 	_onDecoded = [this](RTMFPDecoder::Decoded& decoded) {
 
 		lock_guard<mutex> lock(_mutexConnections);
+		if (status == RTMFP::FAILED)
+			return;
+
 		if (!decoded.idSession)
 			_handshaker.receive(decoded.address, decoded);
 		else {
@@ -271,7 +252,6 @@ void RTMFPSession::close(bool abrupt) {
 		p2pPublishSignal.set();
 		p2pPlaySignal.set();
 		publishSignal.set();
-		readSignal.set();
 
 		if (_pMainStream) {
 			_pMainStream->onStreamCreated = nullptr;
@@ -336,15 +316,11 @@ bool RTMFPSession::connect(Exception& ex, const char* url, const char* host) {
 	return true;
 }
 
-UInt16 RTMFPSession::connect2Peer(const char* peerId, const char* streamName) {
+bool RTMFPSession::connect2Peer(const char* peerId, const char* streamName, UInt16 mediaCount) {
 	lock_guard<mutex> lock(_mutexConnections);
 	PEER_LIST_ADDRESS_TYPE emptyAddresses;
 	SocketAddress emptyHost; // We don't know the peer's host address
-	if (connect2Peer(peerId, streamName, emptyAddresses, emptyHost, _mediaCount + 1)) {
-		_mapPlayers.emplace(piecewise_construct, forward_as_tuple(++_mediaCount), forward_as_tuple());
-		return _mediaCount;
-	}
-	return 0;
+	return connect2Peer(peerId, streamName, emptyAddresses, emptyHost, mediaCount);
 }
 
 bool RTMFPSession::connect2Peer(const string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, UInt16 mediaId) {
@@ -373,12 +349,12 @@ bool RTMFPSession::connect2Peer(const string& peerId, const char* streamName, co
 	return true;
 }
 
-UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable) {
+bool RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, UInt16 mediaCount) {
 	INFO("Connecting to group ", parameters->netGroup, "...")
 
 	if (strncmp("G:", parameters->netGroup, 2) != 0) {
 		ERROR("Group ID not well formated, it must begin with 'G:'")
-		return 0;
+		return false;
 	}
 
 	string value;
@@ -408,7 +384,7 @@ UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* par
 	// Keep the meanful part of the group ID (before end marker)
 	if (!endMarker) {
 		ERROR("Group ID not well formated")
-		return 0;
+		return false;
 	}
 	string groupTxt(parameters->netGroup, endMarker);
 
@@ -425,78 +401,17 @@ UInt16 RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* par
 		if (parameters->isPublisher) {
 			if (_pPublisher) {
 				WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
-				return 0;
+				return false;
 			}
 			_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
-		} else // Create the player
-			_mapPlayers.emplace(piecewise_construct, forward_as_tuple(_mediaCount+1), forward_as_tuple());
+		}
 
-		_group.reset(new NetGroup(++_mediaCount, groupHex, groupTxt, streamName, *this, parameters));
+		_group.reset(new NetGroup(mediaCount, groupHex, groupTxt, streamName, *this, parameters));
 		_group->onMedia = onMediaPlay;
 		_group->onStatus = _pMainStream->onStatus;
 		_waitingGroup.push_back(groupHex);
-		return _mediaCount;
 	}
-}
-
-int RTMFPSession::read(UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
-	
-	lock_guard<mutex> lock(_mutexConnections);
-	if (status != RTMFP::CONNECTED) {
-		WARN("Connection is not established, cannot read data")
-		return 0; // to stop the parent loop
-	}
-	if (nbRead != 0) {
-		ERROR("Parameter nbRead must equal zero in readAsync()")
-		return -1;
-	}
-	auto itMedia = _mapPlayers.find(mediaId);
-	if (itMedia == _mapPlayers.end()) {
-		WARN("Unable to find media ", mediaId, ", it can be closed")
-		return 0;
-	}
-
-	bool available = false;
-	if (!itMedia->second.mediaPackets.empty()) {
-		// First read => send header
-		BinaryWriter writer(buf, size);
-		if (itMedia->second.firstRead && size > 13) {
-			writer.write(EXPAND("FLV\x01\x05\x00\x00\x00\x09\x00\x00\x00\x00"));
-			itMedia->second.firstRead = false;
-		}
-
-		// While media packets are available and buffer is not full
-		while (!itMedia->second.mediaPackets.empty() && (writer.size() < size - 15)) {
-
-			// Read next packet
-			std::shared_ptr<MediaPlayer::RTMFPMediaPacket>& packet = itMedia->second.mediaPackets.front();
-			UInt32 bufferSize = packet->size() - packet->pos;
-			UInt32 toRead = (bufferSize > (size - writer.size() - 15)) ? size - writer.size() - 15 : bufferSize;
-
-			// header
-			if (!packet->pos) {
-			writer.write8(packet->type);
-			writer.write24(packet->size()); // size on 3 bytes
-			writer.write24(packet->time); // time on 3 bytes
-			writer.write32(0); // unknown 4 bytes set to 0
-			}
-			writer.write(packet->data() + packet->pos, toRead); // payload
-
-			// If packet too big : save position and exit, else write footer
-			if (bufferSize > toRead) {
-				packet->pos += toRead;
-				break;
-			}
-			writer.write32(11 + packet->size()); // footer, size on 4 bytes
-			itMedia->second.mediaPackets.pop_front();
-		}
-		// Finally update the nbRead & available
-		nbRead = writer.size();
-		available = !itMedia->second.mediaPackets.empty();
-	}
-	if (!available && dataAvailable)
-		dataAvailable = false;
-	return 1;
+	return true;
 }
 
 bool RTMFPSession::write(const UInt8* data, UInt32 size, int& pos) {
@@ -583,10 +498,10 @@ unsigned int RTMFPSession::callFunction(const char* function, int nbArgs, const 
 	return 0;
 }
 
-void RTMFPSession::manage() {
+bool RTMFPSession::manage() {
 	lock_guard<mutex> lock(_mutexConnections);
 	if (!_pMainStream)
-		return;
+		return false;
 
 	// Release closed P2P connections
 	auto itPeer = _mapPeersById.begin();
@@ -620,24 +535,20 @@ void RTMFPSession::manage() {
 	if (_group)
 		_group->manage();
 
-	// notify the client that data is available to flush
-	if (dataAvailable)
-		readSignal.set();
+	return !failed();
 }
 
-Base::UInt16 RTMFPSession::addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable) {
+bool RTMFPSession::addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable, UInt16 mediaCount) {
 	lock_guard<mutex> lock(_mutexConnections);
 
-	if (publisher && _pPublisher) {
+	if (publisher && _pPublisher) { // TODO: handle multiple publishers
 		WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
-		return 0;
+		return false;
 	}
 		
-	_waitingStreams.emplace(publisher, streamName, ++_mediaCount, audioReliable, videoReliable);
-	if (!publisher)
-		_mapPlayers.emplace(piecewise_construct, forward_as_tuple(_mediaCount), forward_as_tuple());
-	INFO("Creation of the ", publisher? "publisher" : "player", " stream ", _mediaCount)
-	return _mediaCount;
+	_waitingStreams.emplace(publisher, streamName, mediaCount, audioReliable, videoReliable);
+	INFO("Creation of the ", publisher? "publisher" : "player", " stream ", mediaCount)
+	return true;
 }
 
 

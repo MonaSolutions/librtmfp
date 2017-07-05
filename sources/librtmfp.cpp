@@ -80,32 +80,7 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 		return 0;
 	}
 
-	// Get hostname, port and publication name
-	string host, publication, query;
-	Util::UnpackUrl(url, host, publication, query);
-
-	Exception ex;
-	shared_ptr<RTMFPSession> pConn(new RTMFPSession(*GlobalInvoker, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
-	unsigned int index = GlobalInvoker->addConnection(pConn);
-	if (!pConn->connect(ex, url, host.c_str())) {
-		ERROR("Error in connect : ", ex)
-		GlobalInvoker->removeConnection(index);
-		return 0;
-	}
-
-	if (parameters->isBlocking) {
-		while (!pConn->connectReady) {
-			pConn->connectSignal.wait(200);
-			if (!GlobalInvoker)
-				return 0;
-			if (GlobalInvoker->isInterrupted()) {
-				GlobalInvoker->removeConnection(index);
-				return 0;
-			}
-		}
-	}
-
-	return index;
+	return GlobalInvoker->connect(url, parameters);
 }
 
 unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking) {
@@ -114,46 +89,16 @@ unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId,
 		return 0;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	if (!GlobalInvoker->getConnection(RTMFPcontext, pConn))
-		return 0;
-
-	UInt16 mediaId = pConn->connect2Peer(peerId, streamName);
-
-	if (blocking) {
-		while (!pConn->p2pPlayReady) {
-			pConn->p2pPlaySignal.wait(200);
-			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-				return 0;
-		}
-	}
-
-	return mediaId;
+	return GlobalInvoker->connect2Peer(RTMFPcontext, peerId, streamName, blocking);
 }
 
-unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters, unsigned short audioReliable, unsigned short videoReliable) {
+unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, unsigned short audioReliable, unsigned short videoReliable, const char* fallbackUrl) {
 	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
 		return 0;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	if (!GlobalInvoker->getConnection(RTMFPcontext, pConn))
-		return 0;
-	
-	UInt16 mediaId = pConn->connect2Group(streamName, parameters, audioReliable>0, videoReliable>0);
-	if (!mediaId)
-		return 0;
-
-	if (parameters->isBlocking && parameters->isPublisher) {
-		while (!pConn->publishReady) {
-			pConn->publishSignal.wait(200);
-			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-				return 0;
-		}
-	}
-
-	return mediaId;
+	return GlobalInvoker->connect2Group(RTMFPcontext, streamName, parameters, groupParameters, audioReliable>0, videoReliable>0, fallbackUrl);
 }
 
 unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
@@ -162,11 +107,7 @@ unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 		return 0;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	if (!GlobalInvoker->getConnection(RTMFPcontext,pConn))
-		return 0;
-
-	return pConn->addStream(false, streamName, true, true);
+	return GlobalInvoker->addStream(RTMFPcontext, false, streamName, true, true, false);
 }
 
 unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
@@ -175,22 +116,7 @@ unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, 
 		return 0;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if (!pConn)
-		return 0;
-	
-	UInt16 mediaId = pConn->addStream(true, streamName, audioReliable>0, videoReliable>0);
-
-	if (mediaId && blocking) {
-		while (!pConn->publishReady) {
-			pConn->publishSignal.wait(200);
-			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-				return 0;
-		}
-	}
-
-	return mediaId;
+	return GlobalInvoker->addStream(RTMFPcontext, true, streamName, audioReliable>0, videoReliable>0, blocking);
 }
 
 unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
@@ -199,23 +125,7 @@ unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamNam
 		return 0;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext, pConn);
-	if (!pConn)
-		return 0;
-
-	if (!pConn->startP2PPublisher(streamName, audioReliable > 0, videoReliable > 0))
-		return 0;
-
-	if (blocking) {
-		while (!pConn->p2pPublishReady) {
-			pConn->p2pPublishSignal.wait(200);
-			if (!GlobalInvoker || GlobalInvoker->isInterrupted())
-				return 0;
-		}
-	}
-
-	return 1;
+	return GlobalInvoker->publishP2P(RTMFPcontext, streamName, audioReliable, videoReliable, blocking);
 }
 
 unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {
@@ -246,28 +156,15 @@ void RTMFP_Close(unsigned int RTMFPcontext) {
 		RTMFP_Terminate();
 }
 
-int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext,char *buf,unsigned int size) {
+int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext, char *buf, unsigned int size) {
 	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
 		return -1;
 	}
 
-	int nbRead = 0, ret = 0;
-	shared_ptr<RTMFPSession> pConn;
-	// Loop while the connection is available and no data is available
-	while (GlobalInvoker && !GlobalInvoker->isInterrupted() && GlobalInvoker->getConnection(RTMFPcontext, pConn) && nbRead == 0) {
-		if (!(ret = pConn->read(streamId, (UInt8*)buf, size, nbRead)))
-			return ret;
-			
-		if (nbRead != 0)
-			return nbRead;
-
-		// Nothing read, wait for data
-		DEBUG("Nothing available, sleeping...")
-		pConn->readSignal.wait(100);
-	}
-
-	return 0;
+	int nbRead(0);
+	int ret = GlobalInvoker->read(RTMFPcontext, streamId, BIN buf, size, nbRead);
+	return (!ret) ? ret : nbRead;
 }
 
 int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {

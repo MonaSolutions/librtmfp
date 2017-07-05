@@ -92,15 +92,14 @@ bool GroupListener::pushVideoInfos(UInt32 time, const Packet& packet) {
 
 void GroupListener::pushAudio(UInt32 time, const Packet& packet, bool reliable) {
 	
-	// Send AAC codec infos periodically (TODO: save the codec type)
-	if ((packet.size() > 1 && (*packet.data() >> 4) == 0x0A) && _lastAACCodecs.isElapsed(5000)) // TODO: make the time configurable
-		pushAudioInfos(time);
-
 	if (_firstTime) {
 		_firstTime = false;
 		_startTime = time;
 		pushAudioInfos(time);
 	}
+	// Send AAC codec infos periodically (TODO: save the codec type)
+	else if ((packet.size() > 1 && (*packet.data() >> 4) == 0x0A) && _lastAACCodecs.isElapsed(5000)) // TODO: make the time configurable
+		pushAudioInfos(time);
 	time -= _startTime;
 
 	onMedia(RTMFP::IsAACCodecInfos(packet.data(), packet.size()) || reliable, AMF::TYPE_AUDIO, _lastTime = (time + _seekTime), packet);

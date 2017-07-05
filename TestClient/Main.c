@@ -226,7 +226,8 @@ void onMedia(unsigned short streamId, unsigned int time,const char* buf,unsigned
 }
 
 // Call each second to read/write asynchronously
-void onManage() {
+// return: 0 if an error occurs, 1 otherwise
+short onManage() {
 	int read = 0, towrite = MAX_BUFFER_SIZE;
 	unsigned int i = 0;
 
@@ -240,6 +241,7 @@ void onManage() {
 		}
 		else if(pOutFile && streamId && (read = RTMFP_Read(streamId, context, buf, MAX_BUFFER_SIZE))>0)
 			fwrite(buf, sizeof(char), read, pOutFile);
+		return read > 0; // no sleep here, done in RTMFP_Read
 	}
 	// Write
 	else if (pInFile && (_option == WRITE || _option == P2P_WRITE) && !endOfWrite) {
@@ -249,7 +251,7 @@ void onManage() {
 		if (ferror(pInFile) > 0) {
 			endOfWrite = terminating = 1; // Error encountered
 			onLog(3, __FILE__, __LINE__, "Error while reading the input file, closing...");
-			return;
+			return 0;
 		}
 		else if (feof(pInFile) > 0) {
 			onLog(5, __FILE__, __LINE__, "End of file reached, we send last data and unpublish");
@@ -257,7 +259,7 @@ void onManage() {
 			RTMFP_Write(context, buf, towrite);
 			if (_option == WRITE)
 				RTMFP_ClosePublication(context, publication);
-			return;
+			return 0;
 		}
 
 		if ((read = RTMFP_Write(context, buf, towrite)) < 0)
@@ -265,6 +267,9 @@ void onManage() {
 		else if (!endOfWrite)
 			resizeBuffer(read);
 	}
+	
+	SLEEP(50); // delay between each async IO (in msec)
+	return 1;
 }
 
 ////////////////////////////////////////////////////////
@@ -274,6 +279,7 @@ int main(int argc, char* argv[]) {
 	int					i = 1, version = 0;
 	unsigned int		indexPeer = 0;
 	const char*			peerId = NULL;
+	const char*			tryUnicast = NULL;
 	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	const char			*logFile = NULL, *mediaFile = NULL;
 	RTMFPConfig			config;
@@ -328,6 +334,8 @@ int main(int argc, char* argv[]) {
 			peerId = argv[i] + 9;
 		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--netGroup=", 11) == 0) // groupspec for NetGroup
 			groupConfig.netGroup = argv[i] + 11;
+		else if (strlen(argv[i]) > 14 && strnicmp(argv[i], "--fallbackUrl=", 14) == 0) // fallback rtmfp unicast url from NetGroup
+			tryUnicast = argv[i] + 14;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
 			RTMFP_LogSetLevel(atoi(argv[i] + 6));
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--peersFile=", 12) == 0) // p2p direct with multiple peers
@@ -367,7 +375,7 @@ int main(int argc, char* argv[]) {
 		if (!mediaFile || initFiles(mediaFile)) {
 
 			if (groupConfig.netGroup)
-				streamId = RTMFP_Connect2Group(context, publication, &groupConfig, audioReliable, videoReliable);
+				streamId = RTMFP_Connect2Group(context, publication, &config, &groupConfig, audioReliable, videoReliable, tryUnicast);
 			else if (_option == WRITE)
 				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
 			else if (_option == P2P_WRITE)
@@ -380,8 +388,8 @@ int main(int argc, char* argv[]) {
 				streamId = RTMFP_Play(context, publication);
 
 			while (!IsInterrupted(NULL)) {
-				onManage();
-				SLEEP(50); // delay between each async IO (in msec)
+				if (!onManage())
+					break;
 			}
 		}
 

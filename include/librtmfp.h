@@ -80,8 +80,9 @@ LIBRTMFP_API unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const 
 // Connect to a NetGroup (in the G:... form)
 // param audioReliable if True all audio packets losts are repeated, otherwise audio packets are not repeated
 // param videoReliable if True all video packets losts are repeated, otherwise video packets are not repeated
+// param fallbackUrl [optional] an rtmfp unicast url used if no data is coming from the NetGroup (be careful to use the same stream codecs to avoid undefined behavior)
 // return the id of the stream (to call with RTMFP_Read) or 0 if an error occurs 
-LIBRTMFP_API unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPGroupConfig* parameters, unsigned short audioReliable, unsigned short videoReliable);
+LIBRTMFP_API unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, unsigned short audioReliable, unsigned short videoReliable, const char* fallbackUrl);
 
 // RTMFP NetStream Play function
 // return the id of the stream (to call with RTMFP_Read) or 0 if an error occurs 
@@ -107,6 +108,7 @@ LIBRTMFP_API unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext, co
 LIBRTMFP_API void RTMFP_Close(unsigned int RTMFPcontext);
 
 // Read size bytes of flv data from the current connexion (Asynchronous read, to be called by ffmpeg)
+// Note: blocking method, if no data is found it will wait until founding data or isInterrupted() == true
 // peerId : the id of the peer or an empty string
 // streamId : the id of the stream to read
 // return : the number of bytes read (always less or equal than size) or -1 if an error occurs

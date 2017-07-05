@@ -52,23 +52,19 @@ public:
 	bool connect(Base::Exception& ex, const char* url, const char* host);
 
 	// Connect to a peer with asking server for the addresses and start playing streamName
-	// return : the id of the media created
-	Base::UInt16 connect2Peer(const char* peerId, const char* streamName);
+	// return : True if the peer has been added
+	bool connect2Peer(const char* peerId, const char* streamName, Base::UInt16 mediaCount);
 
 	// Connect to a peer (main function)
 	bool connect2Peer(const std::string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, Base::UInt16 mediaId=0);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
-	// return : the id of the media created
-	Base::UInt16 connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable);
+	// return : True if the group has been added
+	bool connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
 
 	// Create a stream (play/publish) in the main stream 
-	// return : the id of the media created
-	Base::UInt16 addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable);
-
-	// Asynchronous read (buffered)
-	// return : -1 if an error occurs, 0 if the stream is closed, otherwise 1
-	int read(Base::UInt16 mediaId, Base::UInt8* buf, Base::UInt32 size, int& nbRead);
+	// return : True if the stream has been added
+	bool addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
 
 	// Write media (netstream must be published)
 	// return false if the client is not ready to publish, otherwise true
@@ -88,7 +84,8 @@ public:
 	bool closePublication(const char* streamName);
 
 	// Called by Invoker every 50ms to manage connections (flush and ping)
-	virtual void manage();
+	// return: False if the connection has failed, true otherwise
+	bool manage();
 		
 	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
 	template <typename ListenerType, typename... Args>
@@ -158,12 +155,10 @@ public:
 	Base::Signal					p2pPublishSignal; // signal to wait p2p publish
 	Base::Signal					p2pPlaySignal; // signal to wait p2p publish
 	Base::Signal					publishSignal; // signal to wait publication
-	Base::Signal					readSignal; // signal to wait for asynchronous data
 	std::atomic<bool>				p2pPublishReady; // true if the p2p publisher is ready
 	std::atomic<bool>				p2pPlayReady; // true if the p2p player is ready
 	std::atomic<bool>				publishReady; // true if the publisher is ready
 	std::atomic<bool>				connectReady; // Ready if we have received the NetStream.Connect.Success event
-	std::atomic<bool>				dataAvailable; // true if there is asynchronous data available
 
 	// Publishing structures
 	struct MediaPacket : virtual Base::Object, Base::Packet {
@@ -198,6 +193,7 @@ protected:
 	virtual void onConnection();
 
 private:
+	friend struct Invoker;
 
 	// If there is at least one request of command : create the stream
 	// return : True if a stream has been created
@@ -211,6 +207,7 @@ private:
 
 	static Base::UInt32												RTMFPSessionCounter; // Global counter for generating incremental sessions id
 
+	int																_id; // RTMFPSession ID set by the Invoker
 	RTMFPHandshaker													_handshaker; // Handshake manager
 
 	std::string														_host; // server host name
@@ -253,24 +250,4 @@ private:
 	};
 	std::queue<StreamCommand>										_waitingStreams;
 	bool															_isWaitingStream; // True if a stream creation is waiting
-	
-	/* Asynchronous Read */
-	struct MediaPlayer : public Object {
-		MediaPlayer() : firstRead(true), codecInfosRead(false), AACsequenceHeaderRead(false) {}
-
-		// Packet structure
-		struct RTMFPMediaPacket : Base::Packet, virtual Base::Object {
-			RTMFPMediaPacket(const Base::Packet& packet, Base::UInt32 time, AMF::Type type) : time(time), type(type), Packet(std::move(packet)), pos(0) {}
-
-			Base::UInt32	time;
-			AMF::Type		type;
-			Base::UInt32	pos;
-		};
-		std::deque<std::shared_ptr<RTMFPMediaPacket>>	mediaPackets;
-		bool											firstRead;
-		bool											codecInfosRead; // Player : False until the video codec infos have been read
-		bool											AACsequenceHeaderRead; // False until the AAC sequence header infos have been read
-	};
-	std::map<Base::UInt16, MediaPlayer>							_mapPlayers; // Map of media players
-	Base::UInt16												_mediaCount; // Counter of media streams (publisher/player) id
 };

@@ -134,7 +134,7 @@ protected:
 	virtual RTMFPFlow*			createSpecialFlow(Base::Exception& ex, Base::UInt64 id, const std::string& signature, Base::UInt64 idWriterRef) = 0;
 
 	// Manage the flows
-	virtual void				manage();
+	virtual bool				manage();
 
 	// Called when we are connected to the peer/server
 	virtual void				onConnection() = 0;

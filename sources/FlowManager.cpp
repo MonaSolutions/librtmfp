@@ -325,7 +325,7 @@ void FlowManager::receive(const Packet& packet) {
 
 				if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
 					if (status < RTMFP::NEAR_CLOSED) {
-						ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested")
+						ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested (", pFlow->fragmentation, " > ", Net::GetRecvBufferSize(),")")
 						close(false);
 					}
 					return;
@@ -424,7 +424,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 	return _flows.emplace_hint(it, piecewise_construct, forward_as_tuple(id), forward_as_tuple(pFlow))->second;
 }
 
-void FlowManager::manage() {
+bool FlowManager::manage() {
 
 	// Release the old flows
 	auto itFlow = _flows.begin();
@@ -437,6 +437,7 @@ void FlowManager::manage() {
 
 	// Send the waiting messages
 	flushWriters();
+	return true;
 }
 
 void FlowManager::removeFlow(RTMFPFlow* pFlow) {
