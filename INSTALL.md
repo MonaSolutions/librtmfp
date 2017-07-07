@@ -43,7 +43,7 @@ A temporary repository of FFmpeg is available with a wrapper to librtmfp : https
 
 To use it just do a git clone and run the following command in FFmpeg directory :
 
-	./configure --disable-yasm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-libx264 --enable-debug --enable-gpl && make
+	./configure --disable-x86asm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-libx264 --enable-debug --enable-gpl && make
 
 **Note:** ffmpeg_g is the debug version of ffmpeg with debugging symbolic links.
 	
