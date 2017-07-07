@@ -485,6 +485,7 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size, 
 
 	_mutexRead.lock();
 	int ret = 0;
+	Time noData;
 	while (!nbRead) {
 
 		{
@@ -544,7 +545,10 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size, 
 			ret = 1;
 		}
 		else {
-			DEBUG("Nothing available, sleeping...")
+			if (noData.isElapsed(1000)) {
+				DEBUG("Nothing available during last second...")
+				noData.update();
+			}
 			UNLOCK_RUN_LOCK(_mutexRead, itMedia->second.readSignal.wait(DELAY_SIGNAL_READ));
 		}
 	}

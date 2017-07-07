@@ -208,10 +208,6 @@ void RTMFP_LogSetCallback(void(* onLog)(unsigned int, const char*, long, const c
 	GlobalInvoker->setLogCallback(onLog);
 }
 
-void RTMFP_LogSetLevel(int level) {
-	Logs::SetLevel(level);
-}
-
 void RTMFP_DumpSetCallback(void(*onDump)(const char*, const void*, unsigned int)) {
 	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
@@ -251,6 +247,20 @@ void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication) {
 
 void RTMFP_ActiveDump() {
 	Logs::SetDump("LIBRTMFP");
+}
+
+void RTMFP_SetParameter(const char* parameter, const char* value) {
+
+	if (String::ICompare(parameter, "logLevel")==0) {
+		Logs::SetLevel(atoi(value));
+	}
+	else if (String::ICompare(parameter, "socketReceiveSize") == 0) {
+		Net::SetRecvBufferSize(atoi(value));
+	}
+	else if (String::ICompare(parameter, "socketSendSize") == 0) {
+		Net::SetSendBufferSize(atoi(value));
+	} else
+		FATAL_ERROR("Unknown parameter ", parameter)
 }
 
 }

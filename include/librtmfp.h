@@ -130,9 +130,6 @@ LIBRTMFP_API void RTMFP_LogSetCallback(void (* onLog)(unsigned int, const char*,
 // Set dump callback
 LIBRTMFP_API void RTMFP_DumpSetCallback(void (*onDump)(const char*, const void*, unsigned int));
 
-// Set log level
-LIBRTMFP_API void RTMFP_LogSetLevel(int level);
-
 // Active RTMFP Dump
 LIBRTMFP_API void RTMFP_ActiveDump();
 
@@ -141,6 +138,13 @@ LIBRTMFP_API void RTMFP_InterruptSetCallback(int (* interruptCb)(void*), void* a
 
 // Retrieve publication name and url from original uri
 LIBRTMFP_API void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication);
+
+// Set a Parameter to the requested value
+// Allowed parameters are :
+// - logLevel (int) : log level of the application
+// - socketReceiveSize (int) : socket size limit to be used with input packets
+// - socketSendSize (int) : socket size limit to be used with output packets
+LIBRTMFP_API void RTMFP_SetParameter(const char* parameter, const char* value);
 
 #ifdef __cplusplus
 }

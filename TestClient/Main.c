@@ -278,38 +278,27 @@ int main(int argc, char* argv[]) {
 	char 				url[1024];
 	int					i = 1, version = 0;
 	unsigned int		indexPeer = 0;
-	const char*			peerId = NULL;
-	const char*			tryUnicast = NULL;
+	const char*			peerId = NULL, *tryUnicast = NULL, *netGroup = NULL;
 	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	const char			*logFile = NULL, *mediaFile = NULL;
 	RTMFPConfig			config;
 	RTMFPGroupConfig	groupConfig;
+	char				availabilityUpdatePeriod = 0, dump = 0;
+	unsigned int		windowDuration = 0, fetchPeriod = 0, pushLimit = 0, availabilitySendToAll = 0;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
-	// First, init the RTMFP parameters
-	RTMFP_Init(&config, &groupConfig, 1);
-	config.pOnSocketError = onSocketError;
-	config.pOnStatusEvent = onStatusEvent;
-	config.isBlocking = groupConfig.isBlocking = 1;
-
+	// Read parameters
 	for (i; i < argc; i++) {
-		if (stricmp(argv[i], "--syncread") == 0) {
+		if (stricmp(argv[i], "--syncread") == 0)
 			_option = SYNC_READ;
-			config.pOnMedia = onMedia;
-		} else if (stricmp(argv[i], "--asyncread") == 0)  // default
+		else if (stricmp(argv[i], "--asyncread") == 0)  // default
 			_option = ASYNC_READ;
-		else if (stricmp(argv[i], "--write") == 0) {
+		else if (stricmp(argv[i], "--write") == 0)
 			_option = WRITE;
-			groupConfig.isPublisher = 1;
-		}
-		else if (stricmp(argv[i], "--p2pWrite") == 0) {
+		else if (stricmp(argv[i], "--p2pWrite") == 0)
 			_option = P2P_WRITE;
-			groupConfig.isPublisher = 1;
-		}
-		else if (stricmp(argv[i], "--dump") == 0) {
-			RTMFP_ActiveDump();
-			RTMFP_DumpSetCallback(onDump);
-		}
+		else if (stricmp(argv[i], "--dump") == 0)
+			dump = 1;
 		else if (strlen(argv[i]) > 10 && strnicmp(argv[i], "--logfile=", 10) == 0)
 			logFile = argv[i] + 10;
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--mediaFile=", 12) == 0)
@@ -318,26 +307,30 @@ int main(int argc, char* argv[]) {
 			audioReliable = 0;
 		else if (stricmp(argv[i], "--videoUnbuffered") == 0) // for publish mode
 			videoReliable = 0;
+		else if (strlen(argv[i]) > 20 && strnicmp(argv[i], "--socketReceiveSize=", 20) == 0) // set the socketReceiveSize value
+			RTMFP_SetParameter("socketReceiveSize", argv[i] + 20);
+		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--socketSendSize=", 17) == 0) // set the socketSendSize value
+			RTMFP_SetParameter("socketSendSize", argv[i] + 17);
 		else if (strlen(argv[i]) > 15 && strnicmp(argv[i], "--updatePeriod=", 15) == 0) // for NetGroup mode (multicastAvailabilityUpdatePeriod)
-			groupConfig.availabilityUpdatePeriod = atoi(argv[i] + 15);
+			availabilityUpdatePeriod = atoi(argv[i] + 15);
 		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--windowDuration=", 17) == 0) // for NetGroup mode (multicastWindowDuration)
-			groupConfig.windowDuration = atoi(argv[i] + 17);
+			windowDuration = atoi(argv[i] + 17);
 		else if (strlen(argv[i]) > 14 && strnicmp(argv[i], "--fetchPeriod=", 14) == 0) // for NetGroup mode (multicastFetchPeriod)
-			groupConfig.fetchPeriod = atoi(argv[i] + 14);
+			fetchPeriod = atoi(argv[i] + 14);
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--pushLimit=", 12) == 0) // for NetGroup mode (multicastPushNeighborLimit)
-			groupConfig.pushLimit = atoi(argv[i] + 12);
+			pushLimit = atoi(argv[i] + 12);
 		else if (stricmp(argv[i], "--sendToAll") == 0) // for NetGroup mode (multicastAvailabilitySendToAll)
-			groupConfig.availabilitySendToAll = 1;
+			availabilitySendToAll = 1;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6) == 0)
 			snprintf(url, 1024, "%s", argv[i] + 6);
 		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--peerId=", 9) == 0) // p2p direct
 			peerId = argv[i] + 9;
 		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--netGroup=", 11) == 0) // groupspec for NetGroup
-			groupConfig.netGroup = argv[i] + 11;
+			netGroup = argv[i] + 11;
 		else if (strlen(argv[i]) > 14 && strnicmp(argv[i], "--fallbackUrl=", 14) == 0) // fallback rtmfp unicast url from NetGroup
 			tryUnicast = argv[i] + 14;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--log=", 6) == 0)
-			RTMFP_LogSetLevel(atoi(argv[i] + 6));
+			RTMFP_SetParameter("logLevel", argv[i] + 6);
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--peersFile=", 12) == 0) // p2p direct with multiple peers
 			loadPeers(argv[i] + 12);
 		else {
@@ -346,6 +339,35 @@ int main(int argc, char* argv[]) {
 		}
 	}
 
+	// First, init the RTMFP parameters
+	RTMFP_Init(&config, &groupConfig, 1);
+	config.pOnSocketError = onSocketError;
+	config.pOnStatusEvent = onStatusEvent;
+	config.isBlocking = groupConfig.isBlocking = 1;
+
+	// update the parameters
+	if (_option == SYNC_READ)
+		config.pOnMedia = onMedia;
+	else if (_option == P2P_WRITE || _option == WRITE)
+		groupConfig.isPublisher = 1;
+	if (netGroup)
+		groupConfig.netGroup = netGroup;
+	if (availabilityUpdatePeriod)
+		groupConfig.availabilityUpdatePeriod = availabilityUpdatePeriod;
+	if (windowDuration)
+		groupConfig.windowDuration = windowDuration;
+	if (fetchPeriod)
+		groupConfig.fetchPeriod = fetchPeriod; 
+	if (pushLimit)
+		groupConfig.pushLimit = pushLimit;
+	if (availabilitySendToAll)
+		availabilitySendToAll = 1;
+	if (dump) {
+		RTMFP_ActiveDump();
+		RTMFP_DumpSetCallback(onDump);
+	}
+
+	// Catch signals
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
 		onLog(4, __FILE__, __LINE__, "Cannot catch SIGINT\n");
 	if (signal(SIGTERM, ConsoleCtrlHandler) == SIG_ERR)
@@ -357,6 +379,7 @@ int main(int argc, char* argv[]) {
 	// Open log file
 	if (logFile)
 		openFile(&pLogFile, logFile, "w");
+
 	RTMFP_LogSetCallback(onLog);
 	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
 	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
