@@ -56,7 +56,7 @@ public:
 		FETCH_PERIOD = 7
 	};
 
-	NetGroup(Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters);
+	NetGroup(Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable);
 	virtual ~NetGroup() {}
 
 	// Close the NetGroup
@@ -137,6 +137,9 @@ private:
 	GroupMedia::OnGroupPacket								_onGroupPacket; // called by GroupMedia when receiving a packet to distribute it
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
+	
+	bool													_audioReliable; // if False we do not send back audio packets
+	bool													_videoReliable; // if False we do not send back video packets
 
 	// Peer instance in the heard list
 	struct GroupNode : virtual Base::Object {

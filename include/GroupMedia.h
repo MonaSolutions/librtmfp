@@ -32,7 +32,7 @@ from a NetGroup connection
 struct GroupMedia : virtual Base::Object {
 	typedef Base::Event<bool(Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type)> ON(GroupPacket); // called when a new packet is ready (complete & ordered)
 	
-	GroupMedia(const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters);
+	GroupMedia(const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable);
 	virtual ~GroupMedia();
 
 	// Close the Group Media (when receiving onClosedMedia notification)
@@ -129,6 +129,8 @@ private:
 	Base::UInt64												_endFragment; // last fragment number, if > 0 the GroupMedia is closed
 
 	Base::Buffer												_internalBuffer; // temporary buffer used to concatenate splitted fragments
+	bool														_audioReliable; // if False we do not send back audio packets
+	bool														_videoReliable; // if False we do not send back video packets
 
 	// map of peers & iterators
 	MAP_PEERS_INFO_TYPE											_mapPeers; // map of peers subscribed to this media stream

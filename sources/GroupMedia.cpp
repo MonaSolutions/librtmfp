@@ -30,9 +30,9 @@ using namespace std;
 
 UInt32	GroupMedia::GroupMediaCounter = 0;
 
-GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters) : _fragmentCounter(0), _firstPushMode(true), _currentPushMask(0), 
+GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _firstPushMode(true), _currentPushMask(0),
 	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false),
-	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false) {
+	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable) {
 
 	_onPeerClose = [this](const string& peerId, UInt8 mask) {
 		// unset push masks
@@ -82,6 +82,8 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 	};
 	onMedia = [this](bool reliable, AMF::Type type, UInt32 time, const Packet& packet) {
 		BinaryReader reader(packet.data(), packet.size());
+		if (!reader.size())
+			return;
 		UInt8 splitCounter = reader.size() / NETGROUP_MAX_PACKET_SIZE - ((reader.size() % NETGROUP_MAX_PACKET_SIZE) == 0);
 		UInt8 marker = GroupStream::GROUP_MEDIA_DATA ;
 		TRACE("GroupMedia ", id, " - Creating fragments ", _fragmentCounter + 1, " to ", _fragmentCounter + 1 + splitCounter, " - time : ", time)
@@ -158,7 +160,8 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 
 		// Add the fragment to the map
-		addFragment(itFragment, true, pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet);
+		// TODO: see if we need to keep the codec infos reliable here
+		addFragment(itFragment, (mediaType==AMF::TYPE_AUDIO)? _audioReliable : ((mediaType== AMF::TYPE_VIDEO)? _videoReliable : true), pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet);
 
 		// Push the fragment to the output file (if ordered)
 		processFragments(itFragment);

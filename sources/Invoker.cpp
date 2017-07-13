@@ -353,7 +353,7 @@ UInt16 Invoker::connect2Peer(UInt32 RTMFPcontext, const char* peerId, const char
 		return 0;
 
 	if (blocking) {
-		while (!itConn->second->p2pPlayReady) {
+		while (((itConn = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !itConn->second->p2pPlayReady) {
 			UNLOCK_RUN_LOCK(_mutexConnections, itConn->second->p2pPlaySignal.wait(200));
 			if (isInterrupted()) {
 				mediaId = 0;
@@ -410,7 +410,7 @@ UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFP
 
 		// Connect to the group
 		if (mediaId && parameters->isBlocking && groupParameters->isPublisher) {
-			while (!it->second->publishReady) {
+			while (((it = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !it->second->publishReady) {
 
 				UNLOCK_RUN_LOCK(_mutexConnections, it->second->publishSignal.wait(200));
 				if (isInterrupted()) {
@@ -439,7 +439,7 @@ UInt16 Invoker::addStream(UInt32 RTMFPcontext, bool publisher, const char* strea
 		});
 
 		if (mediaId && publisher && blocking) {
-			while (!it->second->publishReady) {
+			while (((it = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !it->second->publishReady) {
 
 				UNLOCK_RUN_LOCK(_mutexConnections, it->second->publishSignal.wait(200));
 				if (isInterrupted()) {
@@ -466,7 +466,7 @@ bool Invoker::publishP2P(unsigned int RTMFPcontext, const char* streamName, unsi
 		ret = it->second->startP2PPublisher(streamName, audioReliable > 0, videoReliable > 0);
 
 		if (ret && blocking) {
-			while (!it->second->p2pPublishReady) {
+			while (((it = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !it->second->p2pPublishReady) {
 
 				UNLOCK_RUN_LOCK(_mutexConnections, it->second->p2pPublishSignal.wait(200));
 				if (isInterrupted()) {
@@ -496,7 +496,7 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size, 
 
 		auto itBuffer = _connection2Buffer.find(RTMFPcontext);
 		if (itBuffer == _connection2Buffer.end()) {
-			WARN("Unable to find the buffer for connection ", RTMFPcontext, ", it can be closed")
+			DEBUG("Unable to find the buffer for connection ", RTMFPcontext, ", it can be closed")
 			break;
 		}
 

@@ -350,7 +350,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const char* streamName, co
 }
 
 bool RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, UInt16 mediaCount) {
-	INFO("Connecting to group ", parameters->netGroup, "...")
+	INFO("Connecting to group ", parameters->netGroup, " (mediaId=", mediaCount, " ; audioReliable=", audioReliable, " ; videoReliable=", videoReliable, ")...")
 
 	if (strncmp("G:", parameters->netGroup, 2) != 0) {
 		ERROR("Group ID not well formated, it must begin with 'G:'")
@@ -406,7 +406,7 @@ bool RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* param
 			_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
 		}
 
-		_group.reset(new NetGroup(mediaCount, groupHex, groupTxt, streamName, *this, parameters));
+		_group.reset(new NetGroup(mediaCount, groupHex, groupTxt, streamName, *this, parameters, audioReliable, videoReliable));
 		_group->onMedia = onMediaPlay;
 		_group->onStatus = _pMainStream->onStatus;
 		_waitingGroup.push_back(groupHex);

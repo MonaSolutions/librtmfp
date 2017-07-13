@@ -98,8 +98,8 @@ UInt32 NetGroup::targetNeighborsCount() {
 	return targetNeighbor;
 }
 
-NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters) : groupParameters(parameters),
-	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), FlashHandler(0, mediaId) {
+NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable) : groupParameters(parameters),
+	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), FlashHandler(0, mediaId), _audioReliable(audioReliable), _videoReliable(videoReliable) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
@@ -114,7 +114,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		// Create the Group Media if it does not exists
 		auto itGroupMedia = _mapGroupMedias.lower_bound(streamKey);
 		if (itGroupMedia == _mapGroupMedias.end() || itGroupMedia->first != streamKey) {
-			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters));
+			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable));
 			itGroupMedia->second.onGroupPacket = _onGroupPacket;
 			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
 
@@ -213,7 +213,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
 		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
-		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters)).first;
+		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable)).first;
 		_groupMediaPublisher->second.onGroupPacket = nullptr; // we do not need to follow the packet
 	}
 }

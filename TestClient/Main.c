@@ -235,11 +235,11 @@ short onManage() {
 	if (_option == ASYNC_READ) {
 		if (nbPeers>0) {
 			for (i = 0; i < nbPeers; i++) {
-				if (listFiles[i] && listStreamIds[i] && (read = RTMFP_Read(listStreamIds[i], context, buf, MAX_BUFFER_SIZE))>0)
+				if (listStreamIds[i] && (read = RTMFP_Read(listStreamIds[i], context, buf, MAX_BUFFER_SIZE))>0 && listFiles[i])
 					fwrite(buf, sizeof(char), read, listFiles[i]);
 			}
 		}
-		else if(pOutFile && streamId && (read = RTMFP_Read(streamId, context, buf, MAX_BUFFER_SIZE))>0)
+		else if(streamId && (read = RTMFP_Read(streamId, context, buf, MAX_BUFFER_SIZE))>0 && pOutFile)
 			fwrite(buf, sizeof(char), read, pOutFile);
 		return read > 0; // no sleep here, done in RTMFP_Read
 	}
