@@ -168,7 +168,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 
 		// Send the Group Media Subscriptions if not already sent
 		if (sendMediaSubscription) {
-			DEBUG("Sending GroupMedia subscription to peer ", pPeer->name(), " (publisher: ", groupParameters->isPublisher, ")...")
+			DEBUG("Sending GroupMedia subscription to peer ", pPeer->name(), " (publisher: ", groupParameters->isPublisher>0, ")...")
 			for (auto& itGroupMedia : _mapGroupMedias) {
 				if (itGroupMedia.second.groupParameters->isPublisher || itGroupMedia.second.hasFragments()) {
 					auto pPeerMedia = pPeer->getPeerMedia(itGroupMedia.first);
@@ -352,10 +352,8 @@ void NetGroup::manage() {
 			if ((_mapPeers.find(itHeardList->first) == _mapPeers.end()) && now > itHeardList->second.lastGroupReport && ((now - itHeardList->second.lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
 				DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the heard list...")
 				auto itGroupAddress = _mapGroupAddress.find(itHeardList->second.groupAddress);
-				if (itGroupAddress == _mapGroupAddress.end())
-					WARN("Unable to find peer ", itHeardList->first, " in the map of Group Addresses") // should not happen
-				else
-					_mapGroupAddress.erase(itGroupAddress);
+				FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
+				_mapGroupAddress.erase(itGroupAddress);
 				_mapHeardList.erase(itHeardList++);
 				continue;
 			}
@@ -655,8 +653,8 @@ bool NetGroup::readGroupReport(BinaryReader& packet) {
 		TRACE("Group Report - Time elapsed : ", time)
 		size = packet.read8(); // Addresses size
 
-		// New peer, read its addresses
-		if (newPeerId != _conn.peerId() && *packet.current() == 0x0A) {
+		// New peer, read its addresses if no timeout reached
+		if (newPeerId != _conn.peerId() && *packet.current() == 0x0A && (time < (NETGROUP_PEER_TIMEOUT/1000))) {
 
 			BinaryReader addressReader(packet.current() + 1, size - 1); // +1 to ignore 0A
 			auto itHeardList = _mapHeardList.find(newPeerId);

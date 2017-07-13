@@ -144,7 +144,7 @@ private:
 	// Peer instance in the heard list
 	struct GroupNode : virtual Base::Object {
 		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& host, Base::UInt64 timeElapsed) :
-			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - timeElapsed) {}
+			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - (timeElapsed*1000)) {}
 
 		// Return the size of peer addresses for Group Report 
 		Base::UInt32	addressesSize();
