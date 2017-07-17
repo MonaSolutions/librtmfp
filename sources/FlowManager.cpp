@@ -460,7 +460,7 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	// Compute Diffie-Hellman secret
 	Exception ex;
 	shared_ptr<Buffer> pSharedSecret(new Buffer(DiffieHellman::SIZE));
-	UInt8 sizeSecret = diffieHellman().computeSecret(ex, _pHandshake->farKey.data(), _pHandshake->farKey.size(), pSharedSecret->data());
+	UInt8 sizeSecret = diffieHellman().computeSecret(ex, _pHandshake->farKey->data(), _pHandshake->farKey->size(), pSharedSecret->data());
 	if (ex) {
 		WARN(ex)
 		return false;
@@ -472,9 +472,9 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	// Compute Keys
 	UInt8 responseKey[Crypto::SHA256_SIZE];
 	UInt8 requestKey[Crypto::SHA256_SIZE];
-	Packet& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
-	Packet& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
-	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce.data(), initiatorNonce.size(), BIN responderNonce.data(), responderNonce.size(), requestKey, responseKey);
+	shared_ptr<Buffer>& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
+	shared_ptr<Buffer>& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
+	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce->data(), initiatorNonce->size(), BIN responderNonce->data(), responderNonce->size(), requestKey, responseKey);
 	_pDecoder.reset(new RTMFP::Engine(_responder ? requestKey : responseKey));
 	_pEncoder.reset(new RTMFP::Engine(_responder ? responseKey : requestKey));
 	_pSendSession.reset(new RTMFPSender::Session(farId, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0)); // important, initialize the sender session
@@ -482,8 +482,8 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	// Save nonces just in case we are in a NetGroup connection
 	_farNonce = _pHandshake->farNonce;
 
-	TRACE(_responder ? "Initiator" : "Responder", " Nonce : ", String::Hex(BIN _farNonce.data(), _farNonce.size()))
-	TRACE(_responder ? "Responder" : "Initiator", " Nonce : ", String::Hex(BIN _nonce.data(), _nonce.size()))
+	TRACE(_responder ? "Initiator" : "Responder", " Nonce : ", String::Hex(BIN _farNonce->data(), _farNonce->size()))
+	TRACE(_responder ? "Responder" : "Initiator", " Nonce : ", String::Hex(BIN _nonce->data(), _nonce->size()))
 
 	_farId = farId; // important, save far ID
 	return true;
@@ -585,7 +585,7 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 		ERROR("Far nonce received is not well formated : ", String::Hex(pFarNonce->data(), nonceSize))
 		return;
 	}
-	_pHandshake->farNonce.set(pFarNonce);
+	_pHandshake->farNonce = pFarNonce;
 
 	UInt8 endByte = reader.read8();
 	if (endByte != 0x58) {
@@ -594,15 +594,18 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 	}
 
 	// If we are in client->server session far key = nonce+11
-	if (!_pHandshake->isP2P)
-		_pHandshake->farKey.set(_pHandshake->farNonce, _pHandshake->farNonce.data() + 11, nonceSize - 11);
+	if (!_pHandshake->isP2P) {
+		_pHandshake->farKey.reset(new Buffer(nonceSize - 11));
+		BinaryWriter writer(_pHandshake->farKey->data(), _pHandshake->farKey->size());
+		writer.write(_pHandshake->farNonce->data() + 11, nonceSize - 11);
+	}
 
 	// Compute keys for encryption/decryption and start connect requests
 	if (computeKeys(farId))
 		onConnection();
 }
 
-bool FlowManager::onPeerHandshake70(const SocketAddress& address, const Packet& farKey, const string& cookie) {
+bool FlowManager::onPeerHandshake70(const SocketAddress& address, const shared_ptr<Buffer>& farKey, const string& cookie) {
 	if (status > RTMFP::HANDSHAKE30) {
 		DEBUG("Handshake 70 ignored for session ", name(), ", we are already in state ", status)
 		return false;
@@ -614,7 +617,7 @@ bool FlowManager::onPeerHandshake70(const SocketAddress& address, const Packet& 
 	return true;
 };
 
-const Packet& FlowManager::getNonce() {
+const shared_ptr<Buffer>& FlowManager::getNonce() {
 	if (_nonce)
 		return _nonce; // already computed
 	
@@ -624,13 +627,13 @@ const Packet& FlowManager::getNonce() {
 		
 		nonceWriter.write(EXPAND("\x03\x1A\x00\x00\x02\x1E\x00\x41\x0E"));
 		nonceWriter.writeRandom(0x40); // nonce 64 random bytes
-		return _nonce.set(pBuffer);
+		return _nonce = pBuffer;
 	}
 
 	nonceWriter.write(EXPAND("\x02\x1D\x02\x41\x0E"));
 	nonceWriter.writeRandom(64); // nonce 64 random bytes
 	nonceWriter.write(EXPAND("\x03\x1A\x02\x0A\x02\x1E\x02"));
-	return _nonce.set(pBuffer);
+	return _nonce = pBuffer;
 }
 
 void FlowManager::closeFlow(UInt64 flowId) {

@@ -63,7 +63,7 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	virtual bool					failed() { return (status == RTMFP::FAILED && _closeTime.isElapsed(19000)) || ((status == RTMFP::NEAR_CLOSED) && _closeTime.isElapsed(90000)); }
 
 	// Called when we received the first handshake 70 to update the address
-	virtual bool					onPeerHandshake70(const Base::SocketAddress& address, const Base::Packet& farKey, const std::string& cookie);
+	virtual bool					onPeerHandshake70(const Base::SocketAddress& address, const std::shared_ptr<Base::Buffer>& farKey, const std::string& cookie);
 
 	// Called when when sending the handshake 38 to build the peer ID if we are RTMFPSession
 	virtual void					buildPeerID(const Base::UInt8* data, Base::UInt32 size) {}
@@ -81,7 +81,7 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	virtual Base::DiffieHellman&	diffieHellman()=0;
 
 	// Return the nonce (generate it if not ready)
-	const Base::Packet&				getNonce();
+	const std::shared_ptr<Base::Buffer>&	getNonce();
 
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt);
@@ -163,8 +163,8 @@ protected:
 	std::shared_ptr<Handshake>							_pHandshake; // Handshake object if not connected
 
 	Base::Packet										_sharedSecret; // shared secret for crypted communication
-	Base::Packet										_farNonce; // far nonce (saved for p2p group key building)
-	Base::Packet										_nonce; // Our Nonce for key exchange, can be of size 0x4C or 0x49 for responder
+	std::shared_ptr<Base::Buffer>						_farNonce; // far nonce (saved for p2p group key building)
+	std::shared_ptr<Base::Buffer>						_nonce; // Our Nonce for key exchange, can be of size 0x4C or 0x49 for responder
 
 private:
 

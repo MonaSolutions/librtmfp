@@ -197,9 +197,14 @@ void Invoker::manage() {
 	// Manage connections
 	auto it = _mapConnections.begin();
 	while(it != _mapConnections.end()) {
+		int idConn = it->first;
 		// unlock during manage to not lock the whole process
 		UNLOCK_RUN_LOCK(_mutexConnections, bool erase = !it->second->manage());
-		if (erase)
+
+		it = _mapConnections.lower_bound(idConn);
+		if (it == _mapConnections.end() || it->first != idConn)
+			continue; // connection deleted during manage()
+		else if (erase)
 			removeConnection(it++, true);
 		else
 			++it;
@@ -311,7 +316,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 			// sleep until connection is ready or timeout reached (unlock timeout to not lock the whole process)
 			UNLOCK_RUN_LOCK(_mutexConnections, pConn->connectSignal.wait(200));
 			if (isInterrupted()) {
-				removeConnection(itConn);
+				UNLOCK_RUN_LOCK(_mutexConnections, removeConnection(pConn->_id));
 				ret = 0;
 				break;
 			}

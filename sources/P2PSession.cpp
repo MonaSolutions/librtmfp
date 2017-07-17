@@ -54,18 +54,17 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 				onClosedMedia(*itPeerMedia->second->pStreamKey, lastFragment);
 			return true;
 		}
-		DEBUG("GroupMedia Subscription message received from ", peerId)
-
-		string streamName;
 
 		// Read the name
+		string streamName;
 		UInt8 sizeName = packet.read8();
 		if (sizeName <= 1) {
-			WARN("New stream available without name")
+			WARN("GroupMedia Subscription message without name received from ", peerId)
 			return false;
 		}
 		packet.next(); // 00
 		packet.read(sizeName - 1, streamName);
+		DEBUG("GroupMedia Subscription message received from ", peerId, " ; streamName=", streamName)
 
 		string streamKey;
 		packet.read(0x22, streamKey);
@@ -484,9 +483,9 @@ void P2PSession::buildGroupKey() {
 		_groupConnectKey.reset(new Buffer(Crypto::SHA256_SIZE));
 		_groupExpectedKey.reset(new Buffer(Crypto::SHA256_SIZE));
 		UInt8 mdp1[Crypto::SHA256_SIZE];
-		Crypto::HMAC::SHA256(_sharedSecret.data(), _sharedSecret.size(), _farNonce.data(), _farNonce.size(), mdp1);
+		Crypto::HMAC::SHA256(_sharedSecret.data(), _sharedSecret.size(), _farNonce->data(), _farNonce->size(), mdp1);
 		Crypto::HMAC::SHA256(_parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::SHA256_SIZE, _groupConnectKey->data());
-		Crypto::HMAC::SHA256(_sharedSecret.data(), _sharedSecret.size(), _nonce.data(), _nonce.size(), mdp1);
+		Crypto::HMAC::SHA256(_sharedSecret.data(), _sharedSecret.size(), _nonce->data(), _nonce->size(), mdp1);
 		Crypto::HMAC::SHA256(_parent->groupIdTxt().data(), _parent->groupIdTxt().size(), mdp1, Crypto::SHA256_SIZE, _groupExpectedKey->data());
 	}
 }

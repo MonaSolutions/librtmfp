@@ -49,8 +49,8 @@ struct Handshake : public virtual Base::Object {
 	PEER_LIST_ADDRESS_TYPE	listAddresses; // List of direct addresses (server or p2p addresses)
 
 	// Coding keys
-	Base::Packet							farKey; // Far public key
-	Base::Packet							farNonce; // Far nonce
+	std::shared_ptr<Base::Buffer>		farKey; // Far public key
+	std::shared_ptr<Base::Buffer>		farNonce; // Far nonce
 };
 
 /**************************************************

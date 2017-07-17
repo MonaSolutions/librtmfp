@@ -289,9 +289,8 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 			ERROR("Unexpected signature before responder key (expected 1D02)")
 			return;
 		}
-		shared_ptr<Buffer> pFarKey(new Buffer(keySize));
-		reader.read(keySize, *pFarKey);
-		pHandshake->farKey.set(pFarKey);
+		pHandshake->farKey.reset(new Buffer(keySize));
+		reader.read(keySize, *pHandshake->farKey);
 	}
 
 	// Handshake 70 accepted? => We send the handshake 38
@@ -329,9 +328,9 @@ void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, c
 	// Build and save Peer ID if it is RTMFPSession
 	pHandshake->pSession->buildPeerID(writer.data() + idPos, writer.size() - idPos);
 
-	const Packet& nonce = pHandshake->pSession->getNonce();
-	writer.write7BitValue(nonce.size());
-	writer.write(nonce);
+	const shared_ptr<Buffer>& nonce = pHandshake->pSession->getNonce();
+	writer.write7BitValue(nonce->size());
+	writer.write(*nonce);
 	writer.write8(0x58);
 
 	BinaryWriter(pBuffer->data() + 10, 2).write16(pBuffer->size() - 12);  // write size header
@@ -368,9 +367,8 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 		removeHandshake(pHandshake);
 		return;
 	}
-	shared_ptr<Buffer> pFarKey(new Buffer(publicKeySize-2));
-	reader.read(publicKeySize - 2, *pFarKey);
-	pHandshake->farKey.set(pFarKey);
+	pHandshake->farKey.reset(new Buffer(publicKeySize-2));
+	reader.read(publicKeySize - 2, *pHandshake->farKey);
 
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
@@ -378,9 +376,8 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 		removeHandshake(pHandshake);
 		return;
 	}
-	shared_ptr<Buffer> pNonce(new Buffer(nonceSize));
-	reader.read(nonceSize, *pNonce);
-	pHandshake->farNonce.set(pNonce);
+	pHandshake->farNonce.reset(new Buffer(nonceSize));
+	reader.read(nonceSize, *pHandshake->farNonce);
 
 	UInt8 endByte;
 	if ((endByte = reader.read8()) != 0x58) {
@@ -412,8 +409,8 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	writer.write8(0x78).next(2); // header type and size
 	writer.write32(pSession->sessionId());
 	writer.write8(0x49); // nonce is 73 bytes long
-	const Packet& nonce = pSession->getNonce();
-	writer.write(nonce.data(), nonce.size());
+	const shared_ptr<Buffer>& nonce = pSession->getNonce();
+	writer.write(*nonce);
 	writer.write8(0x58);
 
 	// Important: send this before computing encoder key because we need the default encoder
