@@ -278,11 +278,11 @@ bool P2PSession::handleGroupHandshake(const std::string& groupId, const std::str
 		return;*/
 
 	if (String::ICompare(groupId, _parent->groupIdHex()) != 0)
-		WARN("Unexpected group ID received : ", groupId, "\nExpected : ", _parent->groupIdHex())
+		WARN("Unexpected group ID received from ", peerId, ", group connect request ignored")
 	else if (memcmp(id.data(), _parent->rawId().data(), PEER_ID_SIZE+2) != 0)
-		WARN("Our peer ID was expected but received : ", String::Hex(BIN id.data() + 2, PEER_ID_SIZE))
+		WARN("Unexpected peer ID received from ", peerId, ", group connect request ignored")
 	else if (!_groupExpectedKey || memcmp(key.data(), _groupExpectedKey->data(), Crypto::SHA256_SIZE) != 0)
-		WARN("Unexpected group key received, group connect request ignored")
+		WARN("Unexpected group key received from ", peerId, ", group connect request ignored")
 	// Send the group connection request to peer if not already sent
 	else {
 		if (!_groupConnectSent)

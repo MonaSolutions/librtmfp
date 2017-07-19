@@ -373,9 +373,6 @@ int main(int argc, char* argv[]) {
 	if (signal(SIGTERM, ConsoleCtrlHandler) == SIG_ERR)
 		onLog(4, __FILE__, __LINE__, "Cannot catch SIGTERM\n");
 
-	version = RTMFP_LibVersion();
-	printf("Librtmfp version %u.%u.%u\n", (version >> 24) & 0xFF, (version >> 16) & 0xFF, version & 0xFFFF);
-
 	// Open log file
 	if (logFile)
 		openFile(&pLogFile, logFile, "w");

@@ -460,7 +460,7 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 	}
 
 	if (bestList == _bestList)
-		INFO("Best Peer - Peers connected : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
+		INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
 }
 
 void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {

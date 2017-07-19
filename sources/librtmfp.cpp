@@ -62,8 +62,10 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLo
 }
 
 void RTMFP_Terminate() {
-	delete GlobalInvoker;
-	GlobalInvoker = NULL;
+	if (GlobalInvoker) {
+		delete GlobalInvoker;
+		GlobalInvoker = NULL;
+	}
 }
 
 int RTMFP_LibVersion() {
@@ -152,8 +154,6 @@ void RTMFP_Close(unsigned int RTMFPcontext) {
 		return;
 
 	GlobalInvoker->removeConnection(RTMFPcontext);
-	if (GlobalInvoker->empty()) // delete if no more connections (shortcut to avoid calling RTMFP_Terminate() after RTMFP_Close())
-		RTMFP_Terminate();
 }
 
 int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext, char *buf, unsigned int size) {

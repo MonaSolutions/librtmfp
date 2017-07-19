@@ -103,6 +103,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 	DEBUG("Socket receiving buffer size of ", Net::GetRecvBufferSize(), " bytes");
 	DEBUG("Socket sending buffer size of ", Net::GetSendBufferSize(), " bytes");
 	DEBUG(threadPool.threads(), " threads in server threadPool");
+	DEBUG("Librtmfp version ", (RTMFP_LIB_VERSION >> 24) & 0xFF, ".", (RTMFP_LIB_VERSION >> 16) & 0xFF, ".", RTMFP_LIB_VERSION & 0xFFFF);
 }
 
 Invoker::~Invoker() {
