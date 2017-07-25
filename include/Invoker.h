@@ -43,11 +43,11 @@ struct Invoker : private Base::Thread {
 	// Start the socket manager if not started
 	bool			start();
 
+	// Return the RTMFP session at index
 	bool			getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& pConn);
 
+	// Delete the RTMFP session at index (safe threaded)
 	void			removeConnection(unsigned int index);
-
-	unsigned int	empty();
 
 	// Try to read data from the connection RTMFPcontext and the media ID streamId
 	// return : -1 if an error occurs, 0 if the stream is closed, otherwise 1
@@ -83,6 +83,9 @@ struct Invoker : private Base::Thread {
 	void			setDumpCallback(void(*onDump)(const char*, const void*, unsigned int));
 
 	void			setInterruptCallback(int(*interruptCb)(void*), void* argument);
+
+	// Do not call this method directly, it must run in the Handler
+	void			remove(Base::UInt32 index);
 
 private:
 	Base::Handler						_handler; // keep in first (must be build before sockets)

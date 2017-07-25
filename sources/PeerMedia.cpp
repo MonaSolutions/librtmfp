@@ -147,7 +147,7 @@ void PeerMedia::handleFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
 		return; // 0 size protection
 
 	if (size > MAX_FRAGMENT_MAP_SIZE)
-		WARN("Size of fragment map > max size : ", size)
+		WARN("Group Fragment map receive from ", _pParent->peerId, " > max size : ", size)
 	_fragmentsMap.resize(size);
 	BinaryWriter writer(_fragmentsMap.data(), size);
 	writer.write(data, size);

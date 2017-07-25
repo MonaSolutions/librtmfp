@@ -38,9 +38,9 @@ UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId(PEER_ID_SIZE + 2, '\0'),
 	_handshaker(this), _isWaitingStream(false), p2pPublishReady(false), p2pPlayReady(false), publishReady(false), connectReady(false), _threadRcv(0),
-	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), _pSocket(new UDPSocket(_invoker.sockets)), _pSocketIPV6(new UDPSocket(_invoker.sockets)) {
+	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
 
-	_pSocketIPV6->onPacket = _pSocket->onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
+	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
 		if (status > RTMFP::NEAR_CLOSED)
 			return;
 		if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
@@ -73,7 +73,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		pDecoder->onDecoded = _onDecoded;
 		AUTO_ERROR(_invoker.threadPool.queue(ex, pDecoder, _threadRcv), "RTMFP Decode")
 	};
-	_pSocketIPV6->onError = _pSocket->onError = [this](const Exception& ex) {
+	socketIPV6.onError = socketIPV4.onError = [this](const Exception& ex) {
 		SocketAddress address;
 		DEBUG("Socket error : ", ex)
 	};
@@ -167,9 +167,9 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 	_sessionId = RTMFPSessionCounter++;
 
 	Exception ex;
-	if (!_pSocketIPV6->bind(ex, SocketAddress::Wildcard(IPAddress::IPv6)))
+	if (!socketIPV6.bind(ex, SocketAddress::Wildcard(IPAddress::IPv6)))
 		WARN("Unable to bind [::], ipv6 will not work : ", ex)
-	if (!_pSocket->bind(ex, SocketAddress::Wildcard(IPAddress::IPv4)))
+	if (!socketIPV4.bind(ex, SocketAddress::Wildcard(IPAddress::IPv4)))
 		WARN("Unable to bind localhost, ipv4 will not work : ", ex)
 
 	// Add the session ID to the map
@@ -189,25 +189,15 @@ RTMFPSession::~RTMFPSession() {
 void RTMFPSession::closeSession() {
 
 	// Unsubscribing to socket : we don't want to receive packets anymore
-	if (_pSocket) {
-		_pSocket->onPacket = nullptr;
-		_pSocket->onError = nullptr;
-	}
-	if (_pSocketIPV6) {
-		_pSocketIPV6->onPacket = nullptr;
-		_pSocketIPV6->onError = nullptr;
-	}
+	socketIPV4.onPacket = nullptr;
+	socketIPV4.onError = nullptr;
+	socketIPV6.onPacket = nullptr;
+	socketIPV6.onError = nullptr;
 
 	{
 		lock_guard<mutex> lock(_mutexConnections);
 		close(true);
 	}
-
-	if (_pSocket)
-		_pSocket.reset();
-
-	if (_pSocketIPV6)
-		_pSocketIPV6.reset();
 }
 
 void RTMFPSession::close(bool abrupt) {
@@ -615,8 +605,8 @@ void RTMFPSession::onNetConnectionSuccess() {
 		return;
 	}
 
-	UInt16 port = _pSocket->socket()->address().port();
-	UInt16 portIPv6 = _pSocketIPV6->socket()->address().port();
+	UInt16 port = socketIPV4.socket()->address().port();
+	UInt16 portIPv6 = socketIPV6.socket()->address().port();
 	INFO("Sending peer info (port : ", port, " - port ipv6 : ", portIPv6,")")
 	AMFWriter& amfWriter = _pMainWriter->writeInvocation("setPeerInfo", false);
 	amfWriter.amf0 = true; // Cirrus wants amf0

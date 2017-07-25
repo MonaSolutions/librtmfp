@@ -46,7 +46,7 @@ public:
 	const Base::SocketAddress&					address() { return _address; }
 
 	// Return the socket object of the session
-	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family) { return ((family == Base::IPAddress::IPv4) ? _pSocket : _pSocketIPV6)->socket(); }
+	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family) { return ((family == Base::IPAddress::IPv4) ? socketIPV4 : socketIPV6).socket(); }
 
 	// Connect to the specified url, return true if the command succeed
 	bool connect(Base::Exception& ex, const char* url, const char* host);
@@ -228,8 +228,8 @@ private:
 
 	std::map<Base::UInt32, FlowManager*>							_mapSessions; // map of session ID to Sessions
 
-	std::shared_ptr<Base::UDPSocket>								_pSocket; // Sending socket established with server
-	std::shared_ptr<Base::UDPSocket>								_pSocketIPV6; // Sending socket established with server
+	Base::UDPSocket													socketIPV4; // Sending socket established with server
+	Base::UDPSocket													socketIPV6; // Sending socket established with server
 
 	Base::DiffieHellman												_diffieHellman; // diffie hellman object used for key computing
 

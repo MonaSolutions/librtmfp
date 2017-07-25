@@ -139,12 +139,37 @@ bool Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& p
 }
 
 void Invoker::removeConnection(unsigned int index) {
+	{
+		lock_guard<mutex>	lock(_mutexConnections);
+		if (_mapConnections.find(index) == _mapConnections.end()) {
+			INFO("Connection at index ", index, " as already been removed")
+				return;
+		}
+	}
+	
+	struct RemoveAction : Runner {
+		RemoveAction(UInt32 index, Invoker& invoker) : Runner("RemoveAction"), index(index), invoker(invoker) {}
+
+		virtual bool run(Exception& ex) {
+			invoker.remove(index);
+			return true;
+		}
+		
+	private:
+		UInt32		index;
+		Invoker&	invoker;
+	};
+
+	// Delete the session in the Handler thread and wait until operation is finished
+	_handler.queue(make_shared<RemoveAction>(index, *this));
+}
+
+void Invoker::remove(UInt32 index) {
 	lock_guard<mutex>	lock(_mutexConnections);
 	auto it = _mapConnections.find(index);
-	if(it == _mapConnections.end()) {
-		INFO("Connection at index ", index, " as already been removed")
-		return;
-	}
+	if (it == _mapConnections.end()) 
+		return; // already deleted
+
 	removeConnection(it);
 }
 
@@ -165,11 +190,6 @@ void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, 
 	}
 
 	_mapConnections.erase(it);
-}
-
-unsigned int Invoker::empty() {
-	lock_guard<mutex>	lock(_mutexConnections);
-	return _mapConnections.empty();
 }
 
 void Invoker::manage() {
