@@ -233,9 +233,6 @@ bool GroupMedia::manage() {
 	if (!groupParameters->isPublisher && _lastFragment.isElapsed(NETGROUP_MEDIA_TIMEOUT)) // to delete the GroupMedia after 5min without reception
 		return false;
 
-	if (_mapPeers.empty())
-		return true;
-
 	// Send the Fragments Map message
 	UInt64 lastFragment(0);
 	if (_lastFragmentsMap.isElapsed(groupParameters->availabilityUpdatePeriod) && (lastFragment = updateFragmentMap())) {
@@ -253,6 +250,9 @@ bool GroupMedia::manage() {
 		}
 		_lastFragmentsMap.update();
 	}
+
+	if (_mapPeers.empty())
+		return true;
 
 	// Send the Push requests
 	if (!groupParameters->isPublisher && _lastPushUpdate.isElapsed(NETGROUP_PUSH_DELAY))
