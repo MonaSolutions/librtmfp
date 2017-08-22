@@ -21,7 +21,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Publisher.h"
 #include "RTMFP.h"
-#include "RTMFPWriter.h"
 #include "Base/Logs.h"
 #include "GroupListener.h"
 #include "Invoker.h"
