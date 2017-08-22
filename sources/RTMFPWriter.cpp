@@ -103,14 +103,6 @@ void RTMFPWriter::repeatMessages(UInt32 lostCount) {
 }
 
 void RTMFPWriter::flush() {
-	// manage sub writers, erase them closed
-	auto it = _writers.begin();
-	while (it != _writers.end()) {
-		if ((*it)->closed())
-			it = _writers.erase(it);
-		else
-			++it;
-	}
 
 	repeatMessages();
 	if (!_pSender)
@@ -222,4 +214,5 @@ void RTMFPWriter::writeGroupFragment(const GroupFragment& fragment, bool fragmen
 	}
 	
 	writer->write(fragment.data(), fragment.size());
+	flush();
 }

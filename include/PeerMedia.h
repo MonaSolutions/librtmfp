@@ -65,9 +65,6 @@ struct PeerMedia : public virtual Base::Object {
 	// Called by P2PSession to close the media writer
 	void closeMediaWriter(bool abrupt);
 
-	// Set the media writer
-	void setMediaWriter(std::shared_ptr<RTMFPWriter>& pWriter);
-
 	// Flush the media report writer
 	void flushReportWriter();
 

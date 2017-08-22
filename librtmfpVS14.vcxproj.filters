@@ -138,6 +138,9 @@
     <ClCompile Include="sources\Base\BinaryReader.cpp">
       <Filter>Base</Filter>
     </ClCompile>
+    <ClCompile Include="sources\Base\Congestion.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BandWriter.h" />
@@ -322,6 +325,9 @@
       <Filter>Base</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\FileSystem.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\Congestion.h">
       <Filter>Base</Filter>
     </ClInclude>
   </ItemGroup>

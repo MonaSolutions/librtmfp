@@ -104,7 +104,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 			amfWriter.writeString(command.value.c_str(), command.value.size());
 			pWriter->flush();
 			// Create the publisher
-			_pPublisher.reset(new Publisher(command.value, _invoker, command.audioReliable, command.videoReliable, false));
+			_pPublisher.reset(new Publisher(command.value.c_str(), _invoker, command.audioReliable, command.videoReliable, false));
 		}
 		else {
 			AMFWriter& amfWriter = pWriter->writeInvocation("play", true);
@@ -396,7 +396,7 @@ bool RTMFPSession::connect2Group(const char* streamName, RTMFPGroupConfig* param
 			_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
 		}
 
-		_group.reset(new NetGroup(mediaCount, groupHex, groupTxt, streamName, *this, parameters, audioReliable, videoReliable));
+		_group.reset(new NetGroup(mediaCount, groupHex, groupTxt.c_str(), streamName, *this, parameters, audioReliable, videoReliable));
 		_group->onMedia = onMediaPlay;
 		_group->onStatus = _pMainStream->onStatus;
 		_waitingGroup.push_back(groupHex);

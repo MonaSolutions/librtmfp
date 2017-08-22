@@ -58,10 +58,6 @@ void PeerMedia::closeMediaWriter(bool abrupt) {
 	_pMediaWriter.reset();
 }
 
-void PeerMedia::setMediaWriter(shared_ptr<RTMFPWriter>& pWriter) {
-	_pMediaWriter = pWriter;
-}
-
 void PeerMedia::flushReportWriter() {
 	if (_pMediaReportWriter)
 		_pMediaReportWriter->flush();
@@ -92,7 +88,6 @@ bool PeerMedia::sendMedia(const GroupFragment& fragment, bool pull, bool reliabl
 	}	
 
 	_pMediaWriter->writeGroupFragment(fragment, reliable);
-	_pMediaWriter->flush();
 	return true;
 }
 

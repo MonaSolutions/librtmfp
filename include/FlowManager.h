@@ -26,6 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "BandWriter.h"
 #include "Base/DiffieHellman.h"
 #include "RTMFPSender.h"
+#include "Base/Congestion.h"
 
 // Callback typedef definitions
 typedef void(*OnStatusEvent)(const char* code, const char* description);
@@ -96,7 +97,7 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	void						closeFlow(Base::UInt64 flowId);
 
 
-	/* Implementation of RTMFPOutput */
+	/* TODO: Implementation of RTMFPOutput */
 	Base::UInt32							rto() const { return Base::Net::RTO_INIT; }
 	// Send function used by RTMFPWriter to send packet with header
 	void									send(const std::shared_ptr<RTMFPSender>& pSender);
@@ -189,6 +190,10 @@ private:
 	// Send the close message (0C if normal, 4C if abrupt)
 	void												sendCloseChunk(bool abrupt);
 
+	// Return true if the writing buffer is congested
+	bool												writeCongested();
+
+	Base::Congestion															_congestion; // Congestion control
 	Base::Time																	_closeTime; // Time since closure
 	Base::Time																	_lastPing; // Time since last ping sent
 	Base::Time																	_lastClose; // Time since last close chunk

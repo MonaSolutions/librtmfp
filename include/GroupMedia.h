@@ -35,6 +35,8 @@ struct GroupMedia : virtual Base::Object {
 	GroupMedia(const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable);
 	virtual ~GroupMedia();
 
+	void						printStats();
+
 	// Close the Group Media (when receiving onClosedMedia notification)
 	void						close(Base::UInt64 lastFragment);
 

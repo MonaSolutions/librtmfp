@@ -670,3 +670,7 @@ void GroupMedia::callFunction(const char* function, int nbArgs, const char** arg
 	TRACE("Creating fragment for function ", function, "...")
 	onMedia(true, AMF::TYPE_DATA_AMF3, currentTime, Packet(pBuffer));
 }
+
+void GroupMedia::printStats() {
+	INFO("Fragments : ", _fragments.size(), " ; Times : ", _mapTime2Fragment.size(), " ; peers : ", _mapPeers.size(), " ; masks : ", _mapPushMasks.size())
+}

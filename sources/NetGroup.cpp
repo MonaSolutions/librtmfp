@@ -102,18 +102,22 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), FlashHandler(0, mediaId), _audioReliable(audioReliable), _videoReliable(videoReliable) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
-		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
-		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
-		ReadGroupConfig(pParameters, packet);  // TODO: check groupParameters
-
 		if (streamName != stream) {
 			INFO("New stream available in the group but not registered : ", streamName)
 			return false;
 		}
 
+		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
+		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
+		ReadGroupConfig(pParameters, packet);  // TODO: check groupParameters
+
 		// Create the Group Media if it does not exists
 		auto itGroupMedia = _mapGroupMedias.lower_bound(streamKey);
 		if (itGroupMedia == _mapGroupMedias.end() || itGroupMedia->first != streamKey) {
+			if (groupParameters->isPublisher) {
+				INFO("New GroupMedia ignored, we are the publisher")
+				return false;
+			}
 			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable));
 			itGroupMedia->second.onGroupPacket = _onGroupPacket;
 			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
@@ -342,7 +346,8 @@ void NetGroup::manage() {
 	if (_lastReport.isElapsed(NETGROUP_REPORT_DELAY)) {
 
 		auto itRandom = _mapPeers.begin();
-		if (RTMFP::GetRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { return it->second->status == RTMFP::CONNECTED; }))
+		if (RTMFP::GetRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { 
+			return it->second->status == RTMFP::CONNECTED && !it->second->groupReportInitiator; })) // Important to check that we are not already the group report initiator
 			sendGroupReport(itRandom->second.get(), true);
 
 		// Clean the Heard List from old peers
@@ -459,8 +464,11 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 		}
 	}
 
-	if (bestList == _bestList)
-		INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
+	if (bestList == _bestList) {
+		INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), "(", _mapHeardList.size(), ") ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
+		for (auto& itGroup : _mapGroupMedias)
+			itGroup.second.printStats();
+	}
 }
 
 void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
@@ -513,7 +521,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 		}
 	}
 
-	TRACE("Sending the group report to ", pPeer->peerId)
+	DEBUG("Sending the group report to ", pPeer->peerId)
 	pPeer->groupReportInitiator = initiator;
 	pPeer->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
 }

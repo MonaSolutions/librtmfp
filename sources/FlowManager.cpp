@@ -108,7 +108,6 @@ void FlowManager::flushWriters() {
 	auto it = _flowWriters.begin();
 	while (it != _flowWriters.end()) {
 		shared_ptr<RTMFPWriter>& pWriter(it->second);
-		Exception ex;
 		pWriter->flush();
 		if (pWriter->consumed()) {
 			DEBUG("Writer ", pWriter->id, " of Session ", name(), " consumed")
@@ -323,6 +322,7 @@ void FlowManager::receive(const Packet& packet) {
 			if (pFlow && (status != RTMFP::FAILED)) {
 				pFlow->input(stage, flags, Packet(packet, message.current(), message.available()));
 
+				// Read congestion management (reliable mode)
 				if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
 					if (status < RTMFP::NEAR_CLOSED) {
 						ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested (", pFlow->fragmentation, " > ", Net::GetRecvBufferSize(),")")
@@ -367,9 +367,24 @@ void FlowManager::receive(const Packet& packet) {
 	}
 }
 
+bool FlowManager::writeCongested() {
+	UInt64 queueSize(_pSendSession->queueing);
+	UInt32 bufferSize(_pSendSession->socket.sendBufferSize());
+	// superior to buffer 0xFFFF to limit onFlush usage!
+	queueSize = queueSize > bufferSize ? queueSize - bufferSize : 0;
+	return queueSize && _congestion(queueSize, Net::RTO_MAX);
+}
+
 void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
 	if (!_pSendSession) {
 		WARN("Sender is not is not initalized, cannot send packet to ", name()) // implementation error
+		return;
+	}
+
+	// Write congestion management
+	if (writeCongested() && status < RTMFP::NEAR_CLOSED) {
+		ERROR("Session ", name(), " output is congested, closing...")
+		close(false);
 		return;
 	}
 

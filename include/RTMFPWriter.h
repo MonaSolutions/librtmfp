@@ -42,7 +42,7 @@ struct RTMFPWriter : FlashWriter, virtual Base::Object {
 
 	Base::UInt64		queueing() const { return _output.queueing(); }
 	void		acquit(Base::UInt64 stageAck, Base::UInt32 lostCount);
-	bool		consumed() { return _writers.empty() && closed() && !_pSender && _pQueue.unique() && _pQueue->empty() && _closeTime.isElapsed(130000); } // Wait 130s before closing the writer definetly
+	bool		consumed() { return closed() && !_pSender && _pQueue.unique() && _pQueue->empty() && _closeTime.isElapsed(130000); } // Wait 130s before closing the writer definetly
 
 	template <typename ...Args>
 	void fail(Args&&... args) {
@@ -101,7 +101,6 @@ private:
 	Base::UInt32							_lostCount;
 	Base::UInt32							_repeatDelay;
 	Base::Time								_repeatTime;
-	std::set<std::shared_ptr<RTMFPWriter>>	_writers;
 
 private:
 

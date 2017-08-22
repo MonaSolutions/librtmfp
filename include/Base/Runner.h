@@ -23,9 +23,9 @@ namespace Base {
 
 
 struct Runner : virtual Object {
-	Runner(const char* name) : name(name) {}
+	Runner(const std::string& name) : name(name) {}
 
-	const char* name;
+	const std::string name;
 
 	// If ex is raised, an error is displayed if the operation has returned false
 	// otherwise a warning is displayed

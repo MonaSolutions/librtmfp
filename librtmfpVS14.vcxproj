@@ -371,6 +371,7 @@
     <ClInclude Include="include\Base\BufferPool.h" />
     <ClInclude Include="include\Base\Byte.h" />
     <ClInclude Include="include\Base\ByteRate.h" />
+    <ClInclude Include="include\Base\Congestion.h" />
     <ClInclude Include="include\Base\Crypto.h" />
     <ClInclude Include="include\Base\Date.h" />
     <ClInclude Include="include\Base\DiffieHellman.h" />
@@ -439,6 +440,7 @@
     <ClCompile Include="sources\Base\BinaryWriter.cpp" />
     <ClCompile Include="sources\Base\Buffer.cpp" />
     <ClCompile Include="sources\Base\BufferPool.cpp" />
+    <ClCompile Include="sources\Base\Congestion.cpp" />
     <ClCompile Include="sources\Base\Crypto.cpp" />
     <ClCompile Include="sources\Base\Date.cpp" />
     <ClCompile Include="sources\Base\DiffieHellman.cpp" />

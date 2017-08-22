@@ -439,11 +439,11 @@ UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFP
 			while (((it = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !it->second->publishReady) {
 
 				UNLOCK_RUN_LOCK(_mutexConnections, it->second->publishSignal.wait(200));
-				if (isInterrupted()) {
-					mediaId = 0;
+				if (isInterrupted())
 					break;
-				}
 			}
+			if (it == _mapConnections.end() || !it->second->publishReady)
+				mediaId = 0;
 		}
 	}
 	_mutexConnections.unlock();

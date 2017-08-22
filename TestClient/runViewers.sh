@@ -66,5 +66,6 @@ do
   LOGFILE=$([ $NOLOG == 0 ] && echo "--logFile=testPlay$i.log" || echo "")
   echo "./TestClient --url=$URL $GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &"
   ./TestClient --url=$URL $GROUP --log=$LOG $DUMP --updatePeriod=$UPDATEPERIOD --windowDuration=$WINDOWDURATION $LOGFILE $MEDIAFILE &>/dev/null &
+  sleep 1
 done
 

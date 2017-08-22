@@ -415,14 +415,14 @@ int main(int argc, char* argv[]) {
 
 		onLog(6, __FILE__, __LINE__, "Closing connection...");
 		RTMFP_Close(context);
-		closeFiles();
 	}
+	RTMFP_Terminate(); // To ensure that invoker is dead
 
+	closeFiles();
 	if (logFile) {
 		fclose(pLogFile);
 		pLogFile = NULL;
 	}
-	RTMFP_Terminate(); // To ensure that invoker is dead
 	printf("End of the program\n");
 }
 
