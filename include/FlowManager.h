@@ -193,6 +193,7 @@ private:
 	// Return true if the writing buffer is congested
 	bool												writeCongested();
 
+	bool																		_waitClose; // Set to true when a congestion is detected during writing, we must wait the next manage to close the session
 	Base::Congestion															_congestion; // Congestion control
 	Base::Time																	_closeTime; // Time since closure
 	Base::Time																	_lastPing; // Time since last ping sent

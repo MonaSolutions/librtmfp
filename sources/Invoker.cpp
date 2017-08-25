@@ -23,6 +23,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPLogger.h"
 #include "RTMFPSession.h"
 #include "Base/BufferPool.h"
+#include "Base/DNS.h"
 #include "librtmfp.h"
 
 // Method used to unlock a mutex during an instruction which can take time
@@ -31,6 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
+// RTMFP Fallback connection wrapper from NetGroup to unicast
 struct Invoker::FallbackConnection : virtual Base::Object {
 	FallbackConnection(Base::UInt32 idConnection, Base::UInt32 idFallback, Base::UInt16 mediaId, const char* streamName) :
 		lastTime(0), mediaId(mediaId), idConnection(idConnection), idFallback(idFallback), streamName(streamName) {}
@@ -44,7 +46,7 @@ struct Invoker::FallbackConnection : virtual Base::Object {
 	const Base::Time	timeCreation; // time when the fallback connection has been created
 };
 
-// Connection Buffer structure, contains the media buffers
+// Connection Buffer structure, contains the input media buffers from 1 session
 struct Invoker::ConnectionBuffer : virtual Object {
 	ConnectionBuffer() : mediaCount(0) {}
 	virtual ~ConnectionBuffer() {
@@ -75,26 +77,114 @@ struct Invoker::ConnectionBuffer : virtual Object {
 	UInt16										mediaCount; // Counter of media streams (publisher/player) id
 };
 
-struct Invoker::MediaPacket : Runner, Packet, virtual Object {
-	MediaPacket(Invoker& invoker, UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) :
-		invoker(invoker), idConn(RTMFPcontext), idMedia(mediaId), time(time), Packet(move(packet)), lostRate(lostRate), type(type), Runner("MediaPacket") {}
-
-	bool run(Base::Exception& ex) {
-		invoker.bufferizeMedia(idConn, idMedia, time, *this, lostRate, type);
-		return true;
-	}
-
-	UInt32 idConn;
-	UInt16 idMedia;
-	UInt32 time;
-	const double lostRate;
-	const AMF::Type type;
-	Invoker& invoker;
-};
-
 /** Invoker **/
 
 Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _interruptArg(NULL), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp), _threadPush(0) {
+	onPushAudio = [this](WritePacket& packet) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(packet.index);
+		if (it != _mapConnections.end() && it->second->status < RTMFP::NEAR_CLOSED)
+			it->second->writeAudio(packet, packet.time);
+	};
+	onPushVideo = [this](WritePacket& packet) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(packet.index);
+		if (it != _mapConnections.end() && it->second->status < RTMFP::NEAR_CLOSED)
+			it->second->writeVideo(packet, packet.time);
+	};
+	onFlushPublisher = [this](const WriteFlush& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(obj.index);
+		if (it != _mapConnections.end() && it->second->status < RTMFP::NEAR_CLOSED)
+			it->second->writeFlush();
+	};
+	onFunction = [this](CallFunction& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(obj.index);
+		if (it != _mapConnections.end())
+			it->second->callFunction(obj.function, obj.arguments, obj.peerId);
+	};
+	onClosePublication = [this](ClosePublication& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(obj.index);
+		if (it != _mapConnections.end())
+			it->second->closePublication(obj.streamName.c_str());
+	};
+	onConnect = [this](ConnectAction& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(obj.index);
+		if (it != _mapConnections.end())
+			it->second->connect(obj.url, obj.host, obj.address, obj.addresses, obj.rawUrl);
+	};
+	onRemoveConnection = [this](RemoveAction& obj) {
+		lock_guard<mutex>	lock(_mutexConnections);
+
+		auto it = _mapConnections.find(obj.index);
+		if (it != _mapConnections.end())
+			removeConnection(it);
+	};
+	onPublishP2P = [this](PublishP2P& obj) {
+		lock_guard<mutex>	lock(_mutexConnections);
+
+		auto it = _mapConnections.find(obj.index);
+		if (it != _mapConnections.end())
+			it->second->startP2PPublisher(obj.streamName, obj.audioReliable, obj.videoReliable);
+	};
+	onConnect2Peer = [this](Connect2Peer& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto itConn = _mapConnections.find(obj.index);
+		if (itConn != _mapConnections.end()) {
+
+			// Start connecting to the peer and create the media buffer for this stream
+			obj.mediaId = createMediaBuffer(obj.index, [&itConn, &obj](UInt16 mediaCount) {
+				return itConn->second->connect2Peer(obj.peerId, obj.streamName, mediaCount);
+			});
+		}
+	};
+	onCreateStream = [this](CreateStream& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto itConn = _mapConnections.find(obj.index);
+		if (itConn != _mapConnections.end()) {
+
+			// Start connecting to the peer and create the media buffer for this stream
+			obj.mediaId = createMediaBuffer(obj.index, [&itConn, &obj](UInt16 mediaCount) {
+				return itConn->second->addStream(obj.publisher, obj.streamName, obj.audioReliable, obj.videoReliable, mediaCount);
+			});
+		}
+
+		if (obj.publisher) // If publisher we wait for the onPublished() event
+			return;
+		
+		// To exit from the caller loop
+		obj.ready = true;
+		_waitSignal.set();
+	};
+	onConnect2Group = [this](Connect2Group& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto itConn = _mapConnections.find(obj.index);
+		if (itConn != _mapConnections.end()) {
+			// Start connecting to the group and create the media buffer for this stream
+			obj.mediaId = createMediaBuffer(obj.index, [&itConn, &obj](UInt16 mediaCount) {
+				return itConn->second->connect2Group(obj.streamName, obj.groupParameters, obj.audioReliable, obj.videoReliable, obj.groupHex, obj.groupTxt, mediaCount);
+			});
+		}
+
+		if (obj.blocking) // If blocking we wait for the onConnected2Group() event
+			return;
+
+		// To exit from the caller loop
+		obj.ready = true;
+		_waitSignal.set();
+	};
 
 	if (createLogger) {
 		_logger.reset(new RTMFPLogger());
@@ -113,6 +203,8 @@ Invoker::~Invoker() {
 	// terminate the tasks
 	if (running())
 		stop();
+
+	_waitSignal.set();
 }
 
 // Start the socket manager if not started
@@ -124,72 +216,6 @@ bool Invoker::start() {
 	
 	Exception ex;
 	return Thread::start(ex);
-}
-
-bool Invoker::getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& pConn) {
-	lock_guard<mutex>	lock(_mutexConnections);
-	auto it = _mapConnections.find(index);
-	if(it == _mapConnections.end()) {
-		WARN("There is no connection at specified index ", index)
-		return false;
-	}
-
-	pConn = it->second;
-	return true;
-}
-
-void Invoker::removeConnection(unsigned int index) {
-	{
-		lock_guard<mutex>	lock(_mutexConnections);
-		if (_mapConnections.find(index) == _mapConnections.end()) {
-			INFO("Connection at index ", index, " as already been removed")
-				return;
-		}
-	}
-	
-	struct RemoveAction : Runner {
-		RemoveAction(UInt32 index, Invoker& invoker) : Runner("RemoveAction"), index(index), invoker(invoker) {}
-
-		virtual bool run(Exception& ex) {
-			invoker.remove(index);
-			return true;
-		}
-		
-	private:
-		UInt32		index;
-		Invoker&	invoker;
-	};
-
-	// Delete the session in the Handler thread and wait until operation is finished
-	_handler.queue(make_shared<RemoveAction>(index, *this));
-}
-
-void Invoker::remove(UInt32 index) {
-	lock_guard<mutex>	lock(_mutexConnections);
-	auto it = _mapConnections.find(index);
-	if (it == _mapConnections.end()) 
-		return; // already deleted
-
-	removeConnection(it);
-}
-
-void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt) {
-
-	INFO("Deleting connection ", it->first, "...")
-	if (!abrupt)
-		it->second->closeSession(); // we must close here because there can be shared pointers
-
-	// Erase fallback connections
-	_waitingFallback.erase(it->first);
-	_connection2Fallback.erase(it->first);
-
-	// Erase saved data
-	{
-		lock_guard<mutex> lock(_mutexRead);
-		_connection2Buffer.erase(it->first);
-	}
-
-	_mapConnections.erase(it);
 }
 
 void Invoker::manage() {
@@ -316,34 +342,112 @@ bool Invoker::isInterrupted() {
 	return !Thread::running() || (_interruptCb && _interruptCb(_interruptArg) == 1);
 }
 
+void Invoker::removeConnection(unsigned int index) {
+	{
+		lock_guard<mutex>	lock(_mutexConnections);
+		if (_mapConnections.find(index) == _mapConnections.end()) {
+			INFO("Connection at index ", index, " as already been removed")
+			return;
+		}
+	}
+
+	// Delete the session in the Handler thread and wait until operation is finished
+	_handler.queue(onRemoveConnection, index);
+}
+
+void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt) {
+
+	INFO("Deleting connection ", it->first, "...")
+	if (!abrupt)
+		it->second->closeSession(); // we must close here because there can be shared pointers
+
+										// Erase fallback connections
+	_waitingFallback.erase(it->first);
+	_connection2Fallback.erase(it->first);
+
+	// Erase saved data
+	{
+		lock_guard<mutex> lock(_mutexRead);
+		_connection2Buffer.erase(it->first);
+	}
+
+	it->second->onPublishP2P = nullptr;
+	it->second->onConnectSucceed = nullptr;
+	it->second->onConnected2Peer = nullptr;
+	it->second->onStreamPublished = nullptr;
+	it->second->onConnected2Group = nullptr;
+	_mapConnections.erase(it);
+}
+
 UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 
-	_mutexConnections.lock();
 	// Get hostname, port and publication name
 	string host, publication, query;
 	Util::UnpackUrl(url, host, publication, query);
 
+	// Generate the raw url
+	shared_ptr<Buffer> rawUrl(new Buffer());
+	BinaryWriter urlWriter(*rawUrl);
+	urlWriter.write7BitValue(strlen(url) + 1);
+	urlWriter.write8('\x0A').write(url);
+
+	// Extract the port
+	size_t portPos = host.find_last_of(':'), ipv6End = host.find_last_of(']');
+	if ((portPos != string::npos) && (ipv6End != string::npos) && portPos < ipv6End)
+		portPos = 0;
+	string port = (portPos != string::npos) ? host.substr(portPos + 1) : "1935";
+	host = (portPos != string::npos) ? host.substr(0, portPos) : host;
+
+	DEBUG("Trying to resolve the host address...")
+	HostEntry hostEntry;
+	SocketAddress address;
+	PEER_LIST_ADDRESS_TYPE addresses;
 	Exception ex;
-	shared_ptr<RTMFPSession> pConn(new RTMFPSession(*this, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
-	auto itConn = _mapConnections.emplace(++_lastIndex, pConn).first;
-	int ret = pConn->_id = _lastIndex;
-	if (!pConn->connect(ex, url, host.c_str())) {
-		ERROR("Error in connect : ", ex)
-		removeConnection(itConn);
-		ret = 0;
-	}
-	else if (parameters->isBlocking) {
-		while (!pConn->connectReady) {
-			// sleep until connection is ready or timeout reached (unlock timeout to not lock the whole process)
-			UNLOCK_RUN_LOCK(_mutexConnections, pConn->connectSignal.wait(200));
-			if (isInterrupted()) {
-				UNLOCK_RUN_LOCK(_mutexConnections, removeConnection(pConn->_id));
-				ret = 0;
-				break;
+	if (!address.set(ex, host, port)) {
+		if (DNS::Resolve(ex, host, hostEntry)) { // list of addresses
+			for (auto itAddress : hostEntry.addresses()) {
+				if (address.set(ex, itAddress, port))
+					addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
 			}
+			address.reset();
 		}
 	}
-	_mutexConnections.unlock();
+	if (!address && addresses.empty()) {
+		ERROR("Unable to resolve host address : ", ex)
+		return 0;
+	}
+
+	// Create the session
+	shared_ptr<RTMFPSession> pConn(new RTMFPSession(*this, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
+	int ret = pConn->_id = ++_lastIndex;
+	bool ready(false);
+	if (parameters->isBlocking)
+		pConn->onConnectSucceed = [this, &ready]() {
+			ready = true;
+			_waitSignal.set();
+		};
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+		_mapConnections.emplace(_lastIndex, pConn);
+	}
+
+	_handler.queue(onConnect, _lastIndex, url, host, address, addresses, rawUrl);
+
+	// Wait for the connection to happen
+	if (parameters->isBlocking) {
+		while (!ready && !isInterrupted())
+			_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+
+		// unsubscribe from event if needed
+		if (!isInterrupted()) {
+			lock_guard<mutex> lock(_mutexConnections);
+
+			auto it = _mapConnections.find(ret);
+			if (it != _mapConnections.end())
+				it->second->onConnectSucceed = nullptr;
+		}
+		return !ready ? 0 : ret;
+	}
 	return ret;
 }
 
@@ -366,151 +470,315 @@ UInt16 Invoker::createMediaBuffer(UInt32 RTMFPcontext, function<bool(UInt16)> co
 }
 
 UInt16 Invoker::connect2Peer(UInt32 RTMFPcontext, const char* peerId, const char* streamName, bool blocking) {
-	_mutexConnections.lock();
-	auto itConn = _mapConnections.find(RTMFPcontext);
-	if (itConn == _mapConnections.end()) {
-		WARN("There is no connection at specified index ", RTMFPcontext)
-		return 0;
+	atomic<UInt16> mediaId(0), ready(false);
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+			return false;
+		}
+		if (blocking)
+			it->second->onConnected2Peer = [this, &ready]() {
+				ready = true;
+				_waitSignal.set();
+			};
 	}
 
-	// Start connecting to the peer and create the media buffer for this stream
-	UInt16 mediaId = createMediaBuffer(RTMFPcontext, [&itConn, peerId, streamName](UInt16 mediaCount) { return itConn->second->connect2Peer(peerId, streamName, mediaCount); });
-	if (!mediaId)
-		return 0;
+	_handler.queue(onConnect2Peer, RTMFPcontext, peerId, streamName, mediaId);
 
+	// Wait for the connection to happen
 	if (blocking) {
-		while (((itConn = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !itConn->second->p2pPlayReady) {
-			UNLOCK_RUN_LOCK(_mutexConnections, itConn->second->p2pPlaySignal.wait(200));
-			if (isInterrupted()) {
-				mediaId = 0;
-				break;
-			}
+		while (!ready && !isInterrupted())
+			_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+
+		// unsubscribe from event if needed
+		if (!isInterrupted()) {
+			lock_guard<mutex> lock(_mutexConnections);
+
+			auto it = _mapConnections.find(RTMFPcontext);
+			if (it != _mapConnections.end())
+				it->second->onConnected2Peer = nullptr;
 		}
 	}
-	_mutexConnections.unlock();
 	return mediaId;
 }
 
-UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const char* fallbackUrl) {
-
-	_mutexConnections.lock();
-	UInt16 mediaId(0);
-	auto it = _mapConnections.find(RTMFPcontext);
-	if (it == _mapConnections.end())
-		ERROR("Unable to find the connection ", RTMFPcontext)
-	else {
-
-		// Start connecting to the group and create the media buffer for this stream
-		mediaId = createMediaBuffer(RTMFPcontext, [&it, streamName, groupParameters, audioReliable, videoReliable](UInt16 mediaCount) {
-			 return it->second->connect2Group(streamName, groupParameters, audioReliable, videoReliable, mediaCount);
-		});
-
-		// Create fallback and start waiting
-		if (mediaId && fallbackUrl) {
-
-			if (_connection2Fallback.find(RTMFPcontext) != _connection2Fallback.end()) {
-				ERROR("A fallback connection exist already for connection ", RTMFPcontext)
-				mediaId = 0;
-			}
-			auto itFbConn = _waitingFallback.lower_bound(RTMFPcontext);
-			if (itFbConn != _waitingFallback.end() && itFbConn->first == RTMFPcontext) {
-				ERROR("A waiting fallback connection exist already for connection ", RTMFPcontext)
-				mediaId = 0;
-			}
-			else {
-
-				 // Connect to the fallback url
-				 short isBlocking = parameters->isBlocking; // save blocking state before connecting
-				 parameters->isBlocking = 1;
-				 UNLOCK_RUN_LOCK(_mutexConnections, UInt32 idFallback = connect(fallbackUrl, parameters));
-				 parameters->isBlocking = isBlocking;
-
-				 if (idFallback) {
-					 char* streamName(NULL);
-					 RTMFP_GetPublicationAndUrlFromUri(fallbackUrl, &streamName);
-					 _waitingFallback.emplace_hint(itFbConn, piecewise_construct, forward_as_tuple(RTMFPcontext), forward_as_tuple(new FallbackConnection(RTMFPcontext, idFallback, mediaId, streamName)));
-				 }
-				// else not important, we continue the group connection
-			}
-		}
-
-		// Connect to the group
-		if (mediaId && parameters->isBlocking && groupParameters->isPublisher) {
-			while (((it = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !it->second->publishReady) {
-
-				UNLOCK_RUN_LOCK(_mutexConnections, it->second->publishSignal.wait(200));
-				if (isInterrupted())
-					break;
-			}
-			if (it == _mapConnections.end() || !it->second->publishReady)
-				mediaId = 0;
-		}
-	}
-	_mutexConnections.unlock();
-	return mediaId;
-}
-
-UInt16 Invoker::addStream(UInt32 RTMFPcontext, bool publisher, const char* streamName, bool audioReliable, bool videoReliable, bool blocking) {
-
-	UInt16 mediaId(0);
-	_mutexConnections.lock();
-	auto it = _mapConnections.find(RTMFPcontext);
-	if (it == _mapConnections.end())
-		ERROR("Unable to find the connection ", RTMFPcontext)
-	else {
-
-		// Create the stream and the media buffer for this stream
-		mediaId = createMediaBuffer(RTMFPcontext, [&it, publisher, streamName, audioReliable, videoReliable](UInt16 mediaCount) {
-			return it->second->addStream(publisher, streamName, audioReliable, videoReliable, mediaCount);
-		});
-
-		if (mediaId && publisher && blocking) {
-			while (((it = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !it->second->publishReady) {
-
-				UNLOCK_RUN_LOCK(_mutexConnections, it->second->publishSignal.wait(200));
-				if (isInterrupted()) {
-					mediaId = 0;
-					break;
-				}
-			}
-		}
-	}
-
-	_mutexConnections.unlock();
-	return mediaId;
-}
-
-bool Invoker::publishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
-
-	_mutexConnections.lock();
+bool Invoker::connect2FallbackUrl(UInt32 RTMFPcontext, RTMFPConfig* parameters, const char* fallbackUrl, Base::UInt16 mediaId) {
 	bool ret(false);
-	auto it = _mapConnections.find(RTMFPcontext);
-	if (it == _mapConnections.end())
-		ERROR("Unable to find the connection ", RTMFPcontext)
+	_mutexConnections.lock();
+	if (_connection2Fallback.find(RTMFPcontext) != _connection2Fallback.end())
+		ERROR("A fallback connection exist already for connection ", RTMFPcontext)
+	auto itFbConn = _waitingFallback.lower_bound(RTMFPcontext);
+	if (itFbConn != _waitingFallback.end() && itFbConn->first == RTMFPcontext)
+		ERROR("A waiting fallback connection exist already for connection ", RTMFPcontext)
 	else {
 
-		ret = it->second->startP2PPublisher(streamName, audioReliable > 0, videoReliable > 0);
+		// Connect to the fallback url
+		short isBlocking = parameters->isBlocking; // save blocking state before connecting
+		parameters->isBlocking = 1;
+		UNLOCK_RUN_LOCK(_mutexConnections, UInt32 idFallback = connect(fallbackUrl, parameters));
+		parameters->isBlocking = isBlocking;
 
-		if (ret && blocking) {
-			while (((it = _mapConnections.find(RTMFPcontext)) != _mapConnections.end()) && !it->second->p2pPublishReady) {
-
-				UNLOCK_RUN_LOCK(_mutexConnections, it->second->p2pPublishSignal.wait(200));
-				if (isInterrupted()) {
-					ret = false;
-					break;
-				}
-			}
+		if (idFallback) {
+			char* streamName(NULL);
+			RTMFP_GetPublicationAndUrlFromUri(fallbackUrl, &streamName);
+			_waitingFallback.emplace_hint(itFbConn, piecewise_construct, forward_as_tuple(RTMFPcontext), forward_as_tuple(new FallbackConnection(RTMFPcontext, idFallback, mediaId, streamName)));
 		}
+		// else not important, we continue the group connection
+		ret = true;
 	}
-
 	_mutexConnections.unlock();
 	return ret;
 }
 
-int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size, int& nbRead) {
+UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable) {
+
+	if (strncmp("G:", groupParameters->netGroup, 2) != 0) {
+		ERROR("Group ID not well formated, it must begin with 'G:'")
+		return 0;
+	}
+
+	string value;
+	bool groupV2 = false;
+	const char* endMarker = NULL;
+
+	// Create the reader of NetGroup ID
+	Buffer buff;
+	String::ToHex(groupParameters->netGroup + 2, buff);
+	BinaryReader reader(buff.data(), buff.size());
+
+	// Read each NetGroup parameters and save group version + end marker
+	while (reader.available() > 0) {
+		UInt8 size = reader.read8();
+		if (size == 0) {
+			endMarker = groupParameters->netGroup + 2 * reader.position();
+			break;
+		}
+		else if (reader.available() < size)
+			break;
+
+		reader.read(size, value);
+		if (!groupV2 && value == "\x7f\x02")
+			groupV2 = true;
+	}
+
+	// Keep the meanful part of the group ID (before end marker)
+	if (!endMarker) {
+		ERROR("Group ID not well formated")
+		return 0;
+	}
+	string groupTxt(groupParameters->netGroup, endMarker);
+
+	// Compute the encrypted group specifier ID (2 consecutive sha256)
+	UInt8 encryptedGroup[32];
+	EVP_Digest(groupTxt.data(), groupTxt.size(), (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
+	if (groupV2)
+		EVP_Digest(encryptedGroup, 32, (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL); // v2 groupspec needs 2 sha256s
+	String groupHex(String::Hex(encryptedGroup, 32));
+	DEBUG("Encrypted Group Id : ", groupHex)
+
+	atomic<UInt16> mediaId(0);
+	atomic<bool> ready(false);
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+				return false;
+		}
+		if (parameters->isBlocking && groupParameters->isPublisher)
+			it->second->onConnected2Group = [this, &ready]() {
+				ready = true;
+				_waitSignal.set();
+			};
+	}
+
+	_handler.queue(onConnect2Group, RTMFPcontext, streamName, groupParameters, audioReliable, videoReliable, groupHex, groupTxt, parameters->isBlocking && groupParameters->isPublisher, ready, mediaId);
+
+	// Wait for the connection to happen
+	while (!ready && !isInterrupted())
+		_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+
+	// unsubscribe from event if needed
+	if (!isInterrupted() && parameters->isBlocking && groupParameters->isPublisher) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it != _mapConnections.end())
+			it->second->onConnected2Group = nullptr;
+	}
+
+	return ready? mediaId.load() : 0;
+}
+
+UInt16 Invoker::addStream(UInt32 RTMFPcontext, bool publisher, const char* streamName, bool audioReliable, bool videoReliable, bool blocking) {
+	atomic<UInt16> mediaId(0);
+	atomic<bool> ready(false);
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+				return false;
+		}
+		if (blocking && publisher)
+			it->second->onStreamPublished = [this, &ready]() { // publication accepted
+				ready = true;
+				_waitSignal.set();
+			};
+	}
+
+	_handler.queue(onCreateStream, RTMFPcontext, publisher, streamName, audioReliable, videoReliable, mediaId, ready);
+
+	// Wait for the stream to be created or the publication to be accepted
+	while (!ready && !isInterrupted())
+		_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+
+	// unsubscribe from event if needed
+	if (!isInterrupted() && blocking && publisher) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it != _mapConnections.end())
+			it->second->onStreamPublished = nullptr;
+	}
+
+	return ready? mediaId.load() : 0;
+}
+
+bool Invoker::publishP2P(UInt32 RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
+	bool ret(false), ready(false);
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+			return false;
+		}
+		if (blocking)
+			it->second->onPublishP2P = [this, &ret, &ready](bool succeed) {
+				ret = succeed;
+				ready = true;
+				_waitSignal.set();
+			};
+	}
+
+	_handler.queue(onPublishP2P, RTMFPcontext, streamName, audioReliable > 0, videoReliable > 0);
+
+	// Wait for a peer to connect to us
+	if (blocking) {
+		while (!ready && !isInterrupted())
+			_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+
+		// unsubscribe from event
+		if (!isInterrupted()) {
+			lock_guard<mutex> lock(_mutexConnections);
+			auto it = _mapConnections.find(RTMFPcontext);
+			if (it != _mapConnections.end())
+				it->second->onPublishP2P = nullptr;
+		}
+	}
+	return ret;
+}
+
+bool Invoker::closePublication(unsigned int RTMFPcontext, const char* streamName) {
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+			return false;
+		}
+	}
+
+	_handler.queue(onClosePublication, RTMFPcontext, streamName);
+	return true;
+}
+
+
+bool Invoker::callFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId) {
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+			return false;
+		}
+	}
+
+	_handler.queue(onFunction, RTMFPcontext, function, nbArgs, args, peerId);
+	return true;
+}
+
+int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
+
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+			return -1;
+		}
+		else if (it->second->status >= RTMFP::NEAR_CLOSED)
+			return -1; // to stop the caller loop
+	}
+
+	int pos = 0;
+	BinaryReader reader(data, size);
+	if (reader.available()<14) {
+		DEBUG("Packet too small")
+		return -1;
+	}
+
+	const UInt8* cur = reader.current();
+	if (*cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header (TODO: do the check only once)
+		reader.next(13);
+		pos = 13;
+	}
+
+	// Send all packets
+	while (reader.available()) {
+		if (reader.available() < 11) // smaller than flv header
+			break;
+
+		UInt8 type = reader.read8();
+		UInt32 bodySize = reader.read24();
+		UInt32 time = reader.read24();
+		reader.next(4); // ignored
+
+		if (reader.available() < bodySize + 4)
+			break; // we will wait for further data
+
+		if (type == AMF::TYPE_AUDIO)
+			_handler.queue(onPushAudio, RTMFPcontext, Packet(reader.current(), bodySize), time);
+		else if (type == AMF::TYPE_VIDEO)
+			_handler.queue(onPushVideo, RTMFPcontext, Packet(reader.current(), bodySize), time);
+		else
+			WARN("Unhandled packet type : ", type)
+			reader.next(bodySize);
+		UInt32 sizeBis = reader.read32();
+		pos += bodySize + 15;
+		if (sizeBis != bodySize + 11) {
+			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize + 11, ")")
+			break;
+		}
+	}
+	_handler.queue(onFlushPublisher, RTMFPcontext);
+	return pos;
+}
+
+int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) {
 
 	_mutexRead.lock();
-	int ret = 0;
+	int nbRead = 0;
 	Time noData;
 	while (!nbRead) {
 
@@ -568,7 +836,6 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size, 
 			}
 			// Finally update the nbRead & available
 			nbRead += writer.size();
-			ret = 1;
 		}
 		else {
 			if (noData.isElapsed(1000)) {
@@ -579,13 +846,13 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size, 
 		}
 	}
 	_mutexRead.unlock();
-	return ret;
+	return nbRead;
 }
 
 void Invoker::pushMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 
 	Exception ex;
-	shared_ptr<MediaPacket> pPacket(new MediaPacket(*this, RTMFPcontext, mediaId, time, packet, lostRate, type));
+	shared_ptr<ReadPacket> pPacket(new ReadPacket(*this, RTMFPcontext, mediaId, time, packet, lostRate, type));
 	AUTO_ERROR(threadPool.queue(ex, pPacket, _threadPush), "Invoker PushMedia")
 }
 

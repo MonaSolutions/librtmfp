@@ -26,7 +26,7 @@ using namespace std;
 namespace Base {
 
 bool Congestion::operator()(UInt64 queueing, UInt32 duration) {
-	bool congested(queueing>_lastQueueing);
+	bool congested(queueing>=_lastQueueing);
 	_lastQueueing = queueing;
 	if (congested) {
 		// congestion

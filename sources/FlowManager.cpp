@@ -32,7 +32,7 @@ using namespace Base;
 using namespace std;
 
 FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0), _ping(0) {
+	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0), _ping(0), _waitClose(false) {
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
@@ -376,15 +376,13 @@ bool FlowManager::writeCongested() {
 }
 
 void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
-	if (!_pSendSession) {
-		WARN("Sender is not is not initalized, cannot send packet to ", name()) // implementation error
+	if (!_pSendSession)
 		return;
-	}
 
 	// Write congestion management
-	if (writeCongested() && status < RTMFP::NEAR_CLOSED) {
+	if (!_waitClose && (status < RTMFP::NEAR_CLOSED) && writeCongested()) {
 		ERROR("Session ", name(), " output is congested, closing...")
-		close(false);
+		_waitClose = true;
 		return;
 	}
 
@@ -440,6 +438,12 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 }
 
 bool FlowManager::manage() {
+
+	// Close the session if needed
+	if (_waitClose) {
+		close(false);
+		_waitClose = false;
+	}
 
 	// Release the old flows
 	auto itFlow = _flows.begin();

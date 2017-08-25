@@ -100,7 +100,12 @@ unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* stream
 		return 0;
 	}
 
-	return GlobalInvoker->connect2Group(RTMFPcontext, streamName, parameters, groupParameters, audioReliable>0, videoReliable>0, fallbackUrl);
+	UInt16 mediaId = GlobalInvoker->connect2Group(RTMFPcontext, streamName, parameters, groupParameters, audioReliable, videoReliable);
+
+	if (mediaId && fallbackUrl)
+		GlobalInvoker->connect2FallbackUrl(RTMFPcontext, parameters, fallbackUrl, mediaId);
+
+	return mediaId;
 }
 
 unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
@@ -136,12 +141,7 @@ unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* stre
 		return 0;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if(!pConn || !pConn->closePublication(streamName))
-		return 0;
-
-	return 1;
+	return GlobalInvoker->closePublication(RTMFPcontext, streamName);
 }
 
 void RTMFP_Close(unsigned int RTMFPcontext) {
@@ -162,9 +162,7 @@ int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext, char *buf, un
 		return -1;
 	}
 
-	int nbRead(0);
-	int ret = GlobalInvoker->read(RTMFPcontext, streamId, BIN buf, size, nbRead);
-	return (!ret) ? ret : nbRead;
+	return GlobalInvoker->read(RTMFPcontext, streamId, BIN buf, size);
 }
 
 int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
@@ -173,16 +171,7 @@ int RTMFP_Write(unsigned int RTMFPcontext,const char *buf,int size) {
 		return -1;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext,pConn);
-	if (pConn) {
-		int pos = 0;
-		if (!pConn->write((const UInt8*)buf, size, pos))
-			return -1;
-		return pos;
-	}
-	
-	return -1;
+	return GlobalInvoker->write(RTMFPcontext, BIN buf, size);
 }
 
 unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId) {
@@ -191,12 +180,7 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 		return -1;
 	}
 
-	shared_ptr<RTMFPSession> pConn;
-	GlobalInvoker->getConnection(RTMFPcontext, pConn);
-	if (!pConn)
-		return -1;
-	
-	return pConn->callFunction(function, nbArgs, args, peerId);
+	return GlobalInvoker->callFunction(RTMFPcontext, function, nbArgs, args, peerId);
 }
 
 void RTMFP_LogSetCallback(void(* onLog)(unsigned int, const char*, long, const char*)) {

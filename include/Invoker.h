@@ -24,12 +24,15 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/IOSocket.h"
 #include "Base/Timer.h"
 #include "AMF.h"
+#include "RTMFP.h"
+#include <queue>
 
-#define DELAY_CONNECTIONS_MANAGER	50 // Delay between each onManage (in msec)
+#define DELAY_CONNECTIONS_MANAGER	75 // Delay between each onManage (in msec)
 #define TIMEOUT_FALLBACK_CONNECTION	3500 // time to wait before connecting to fallback connection (Netgroup=>Unicast switch)
 #define DELAY_SIGNAL_READ			100 // time to wait before each read request
+#define DELAY_BLOCKING_SIGNALS		200 // time to wait before checking interrupted status in each waiting signals
 
-class RTMFPSession;
+struct RTMFPSession;
 class RTMFPLogger;
 struct RTMFPGroupConfig;
 struct RTMFPConfig;
@@ -43,15 +46,16 @@ struct Invoker : private Base::Thread {
 	// Start the socket manager if not started
 	bool			start();
 
-	// Return the RTMFP session at index
-	bool			getConnection(unsigned int index, std::shared_ptr<RTMFPSession>& pConn);
-
 	// Delete the RTMFP session at index (safe threaded)
 	void			removeConnection(unsigned int index);
 
 	// Try to read data from the connection RTMFPcontext and the media ID streamId
-	// return : -1 if an error occurs, 0 if the stream is closed, otherwise 1
-	int				read(Base::UInt32 RTMFPcontext, Base::UInt16 streamId, Base::UInt8 *buf, Base::UInt32 size, int& nbRead);
+	// return : The number of bytes read
+	int				read(Base::UInt32 RTMFPcontext, Base::UInt16 streamId, Base::UInt8 *buf, Base::UInt32 size);
+
+	// Write media (netstream must be published)
+	// return -1 if an error occurs
+	int				write(unsigned int RTMFPcontext, const Base::UInt8* data, Base::UInt32 size);
 
 	// Connect to the server from url
 	// return: the connection ID or 0 if an error occurs
@@ -61,10 +65,15 @@ struct Invoker : private Base::Thread {
 	// return: the stream ID for this peer or 0 if an error occurs
 	Base::UInt16	connect2Peer(Base::UInt32 RTMFPcontext, const char* peerId, const char* streamName, bool blocking);
 
+	// Create a fallback connection to link to a NetGroup session
+	// This connection will be run if the netgroup connection does not return data before the timeout
+	// And if data arrives later we switch to the netgroup connection and delete the fallback one
+	// return: True if the connection succeed, False otherwise
+	bool			connect2FallbackUrl(Base::UInt32 RTMFPcontext, RTMFPConfig* parameters, const char* fallbackUrl, Base::UInt16 mediaId);
+
 	// Connect to a netgroup and try to play the stream streamName
-	// param fallbackUrl an rtmfp url used if no P2P connection is established after timeout
 	// return: the stream ID for this group or 0 if an error occurs
-	Base::UInt16	connect2Group(Base::UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const char* fallbackUrl);
+	Base::UInt16	connect2Group(Base::UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable);
 
 	// Create the stream media and try to play/publish streamName
 	// return: the stream ID or 0 if an error occurs
@@ -72,20 +81,25 @@ struct Invoker : private Base::Thread {
 
 	// Start publishing the stream and wait for a P2P connection if blocking mode is set
 	// return: True if publish succeed, False otherwise
-	bool			publishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
+	bool			publishP2P(Base::UInt32 RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
+
+	// Close a publication from a session
+	// return: True if succeed, False otherwise
+	bool			closePublication(unsigned int RTMFPcontext, const char* streamName);
+
+	// Call a remote function in session RTMFPcontext
+	// return: True if succeed, False otherwise
+	bool			callFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId);
 
 	// Called by a connection to push a media packet
 	void			pushMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
 
-	/*** Set callback functions ***/
+	/*** Set callback functions (WARN: not thread-safe) ***/
 	void			setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*));
 
 	void			setDumpCallback(void(*onDump)(const char*, const void*, unsigned int));
 
 	void			setInterruptCallback(int(*interruptCb)(void*), void* argument);
-
-	// Do not call this method directly, it must run in the Handler
-	void			remove(Base::UInt32 index);
 
 private:
 	Base::Handler						_handler; // keep in first (must be build before sockets)
@@ -95,6 +109,124 @@ public:
 	const Base::Timer&					timer; 
 	const Base::Handler&				handler;
 private:
+	// Safe-Threaded structure to publish packets
+	struct WritePacket : virtual Base::Object, Base::Packet {
+		WritePacket(Base::UInt32 index, const Base::Packet& packet, Base::UInt32 time) : index(index), time(time), Base::Packet(std::move(packet)) {}
+		const Base::UInt32 time;
+		const Base::UInt32 index;
+	};
+	typedef Base::Event<void(WritePacket&)>			ON(PushAudio);
+	typedef Base::Event<void(WritePacket&)>			ON(PushVideo);
+
+	// Safe-Threaded structure to flush the publisher after publishing some packets
+	struct WriteFlush : virtual Base::Object {
+		WriteFlush(Base::UInt32 index) : index(index) {}
+		const Base::UInt32 index;
+	};
+	typedef Base::Event<void(const WriteFlush&)>	ON(FlushPublisher);
+
+	// Safe-Threaded structure to call a remote function
+	struct CallFunction : virtual Base::Object {
+		CallFunction(Base::UInt32 index, const char* function, int nbArgs, const char** args, const char* peerId) : index(index), function(function), peerId(peerId) {
+			for (int i = 0; i < nbArgs; i++) {
+				if (args[i])
+					arguments.push(args[i]);
+			}
+		}
+		std::queue<std::string>		arguments;
+		const std::string			peerId;
+		const std::string			function;
+		const Base::UInt32			index;
+	};
+	typedef Base::Event<void(CallFunction&)>	ON(Function);
+
+	// Safe-Threaded structure to close a publication from a session
+	struct ClosePublication : virtual Base::Object {
+		ClosePublication(Base::UInt32 index, const char* streamName) : index(index), streamName(streamName) {}
+
+		const std::string		streamName;
+		const Base::UInt32		index;
+	};
+	typedef Base::Event<void(ClosePublication&)>	ON(ClosePublication);
+
+	// Safe-Threaded structure to connect to a server
+	struct ConnectAction : virtual Base::Object {
+		ConnectAction(Base::UInt32 index, const char* url, const std::string& host, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, std::shared_ptr<Base::Buffer>& rawUrl) :
+			index(index), url(url), host(host), address(address), addresses(addresses), rawUrl(rawUrl) {}
+
+		std::shared_ptr<Base::Buffer>	rawUrl;
+		const std::string				url;
+		const std::string				host;
+		Base::SocketAddress				address;
+		PEER_LIST_ADDRESS_TYPE			addresses;
+		const Base::UInt32				index;
+	};
+	typedef Base::Event<void(ConnectAction&)>		ON(Connect);
+
+	// Safe-Threaded structure to close and remove a session
+	struct RemoveAction : virtual Base::Object {
+		RemoveAction(Base::UInt32 index) : index(index) {}
+
+		Base::UInt32		index;
+	};
+	typedef Base::Event<void(RemoveAction&)>		ON(RemoveConnection);
+
+	struct CreateStream : virtual Base::Object {
+		CreateStream(Base::UInt32 index, bool publisher, const char* streamName, bool audioReliable, bool videoReliable, std::atomic<Base::UInt16>& mediaId, std::atomic<bool>&	ready) :
+			index(index), publisher(publisher), streamName(streamName), audioReliable(audioReliable), videoReliable(videoReliable), mediaId(mediaId), ready(ready) {}
+
+		const Base::UInt32			index;
+		bool						publisher;
+		std::string					streamName;
+		bool						audioReliable;
+		bool						videoReliable;
+		std::atomic<Base::UInt16>&	mediaId;
+		std::atomic<bool>&			ready;
+	};
+	typedef Base::Event<void(CreateStream&)>		ON(CreateStream);
+
+	// Safe-Threaded structure to start the P2P publisher
+	struct PublishP2P : virtual Base::Object {
+		PublishP2P(Base::UInt32 index, const char* streamName, bool audioReliable, bool videoReliable) : 
+			index(index), streamName(streamName), audioReliable(audioReliable), videoReliable(videoReliable) {}
+
+		const Base::UInt32		index;
+		std::string				streamName;
+		bool					audioReliable; 
+		bool					videoReliable;
+	};
+	typedef Base::Event<void(PublishP2P&)>			ON(PublishP2P);
+
+	// Safe-Threaded structure to connect to a peer
+	struct Connect2Peer : virtual Base::Object {
+		Connect2Peer(Base::UInt32 index, const char* peerId, const char* streamName, std::atomic<Base::UInt16>& mediaId) :
+			index(index), peerId(peerId), streamName(streamName), mediaId(mediaId) {}
+
+		const Base::UInt32			index;
+		const std::string			streamName;
+		const std::string			peerId;
+		std::atomic<Base::UInt16>&	mediaId;
+	};
+	typedef Base::Event<void(Connect2Peer&)>		ON(Connect2Peer);
+
+	// Safe-Threaded structure to connect to a NetGroup
+	struct Connect2Group : virtual Base::Object {
+		Connect2Group(Base::UInt32 index, const char* streamName, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, bool blocking, std::atomic<bool>& ready, std::atomic<Base::UInt16>& mediaId) :
+			index(index), streamName(streamName), groupParameters(groupParameters), audioReliable(audioReliable), videoReliable(videoReliable), groupHex(groupHex), groupTxt(groupTxt), blocking(blocking), ready(ready), mediaId(mediaId) {}
+
+		const Base::UInt32 index;
+		const std::string streamName;
+		RTMFPGroupConfig* groupParameters;
+		const bool audioReliable;
+		const bool videoReliable;
+		const std::string& groupHex;
+		const std::string& groupTxt;
+		const bool blocking;
+		std::atomic<bool>& ready;
+		std::atomic<Base::UInt16>& mediaId;
+	};
+	typedef Base::Event<void(Connect2Group&)>		ON(Connect2Group);
+
 	virtual void		manage();
 	bool				run(Base::Exception& exc, const volatile bool& stopping);
 
@@ -112,6 +244,7 @@ private:
 	std::mutex										_mutexConnections;
 	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;
 	std::unique_ptr<RTMFPLogger>					_logger; // global logger for librtmfp
+	Base::Signal									_waitSignal; // signal for blocking functions
 
 	int												(*_interruptCb)(void*); // global interrupt callback function (NULL by default)
 	void*											_interruptArg; // global interrup callback argument for interrupt function
@@ -127,7 +260,23 @@ private:
 	std::mutex									_mutexRead; // mutex for read
 
 	/* MediaPacket temporary structure waiting buffering */
-	struct MediaPacket;
-	void bufferizeMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type); // bufferize packet for connection and stream
+	struct ReadPacket : Base::Runner, Base::Packet, virtual Object {
+		ReadPacket(Invoker& invoker, Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type) :
+			invoker(invoker), idConn(RTMFPcontext), idMedia(mediaId), time(time), Packet(std::move(packet)), lostRate(lostRate), type(type), Base::Runner("MediaPacket") {}
+
+		bool run(Base::Exception& ex) {
+			invoker.bufferizeMedia(idConn, idMedia, time, *this, lostRate, type);
+			return true;
+		}
+
+		Base::UInt32 idConn;
+		Base::UInt16 idMedia;
+		Base::UInt32 time;
+		const double lostRate;
+		const AMF::Type type;
+		Invoker& invoker;
+	};
+	// Bufferize an input packet from a stream/session pair (Threaded)
+	void bufferizeMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
 	Base::UInt16 _threadPush;
 };

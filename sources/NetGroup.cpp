@@ -160,7 +160,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 			}
 			INFO("First viewer play request, starting to play Stream ", stream)
 			_pListener->onMedia = _groupMediaPublisher->second.onMedia;
-			_conn.publishReady = true; // A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
+			_conn.onConnected2Group(); // A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 		}
 
 		if (!pPeer->groupReportInitiator) {
@@ -555,10 +555,10 @@ void NetGroup::manageBestConnections() {
 	}
 }
 
-unsigned int NetGroup::callFunction(const char* function, int nbArgs, const char** args) {
+unsigned int NetGroup::callFunction(const string& function, queue<string>& arguments) {
 
 	for (auto& itGroupMedia : _mapGroupMedias)
-		itGroupMedia.second.callFunction(function, nbArgs, args);
+		itGroupMedia.second.callFunction(function, arguments);
 
 	return 1;
 }

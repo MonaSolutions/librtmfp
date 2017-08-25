@@ -24,6 +24,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Mona.h"
 #include "P2PSession.h"
 #include "GroupListener.h"
+#include <queue>
 
 /**********************************************
 GroupMedia is the class that manage a stream
@@ -57,7 +58,7 @@ struct GroupMedia : virtual Base::Object {
 	bool						hasFragments() { return !_fragments.empty(); }
 
 	// Create a new fragment that will call a function
-	void						callFunction(const char* function, int nbArgs, const char** args);
+	void						callFunction(const std::string& function, std::queue<std::string>& arguments);
 
 	GroupListener::OnMedia						onMedia; // Create a new fragment from a media packet
 

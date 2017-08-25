@@ -650,7 +650,7 @@ void GroupMedia::removePeer(MAP_PEERS_INFO_ITERATOR_TYPE itPeer) {
 	_mapPeers.erase(itPeer);
 }
 
-void GroupMedia::callFunction(const char* function, int nbArgs, const char** args) {
+void GroupMedia::callFunction(const string& function, queue<string>& arguments) {
 	if (!groupParameters->isPublisher) // only publisher can create fragments
 		return;
 
@@ -658,10 +658,11 @@ void GroupMedia::callFunction(const char* function, int nbArgs, const char** arg
 	AMFWriter writer(*pBuffer);
 	writer.amf0 = true;
 	writer->write8(0);
-	writer.writeString(function, strlen(function));
-	for (int i = 0; i < nbArgs; i++) {
-		if (args[i])
-			writer.writeString(args[i], strlen(args[i]));
+	writer.writeString(function.data(), function.size());
+	while (!arguments.empty()) {
+		string& arg = arguments.front();
+		writer.writeString(arg.data(), arg.size());
+		arguments.pop();
 	}
 
 	UInt32 currentTime = (_fragments.empty())? 0 : _fragments.rbegin()->second->time;

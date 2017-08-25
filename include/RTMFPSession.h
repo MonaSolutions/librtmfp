@@ -33,8 +33,13 @@ RTMFPSession represents a connection to the
 RTMFP Server
 */
 struct NetGroup;
-class RTMFPSession : public FlowManager {
-public:
+struct RTMFPSession : public FlowManager {
+	typedef Base::Event<void()>				ON(ConnectSucceed);
+	typedef Base::Event<void(bool)>			ON(PublishP2P);
+	typedef Base::Event<void()>				ON(Connected2Peer);
+	typedef Base::Event<void()>				ON(StreamPublished);
+	typedef Base::Event<void()>				ON(Connected2Group);
+
 	RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	~RTMFPSession();
@@ -49,35 +54,31 @@ public:
 	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family) { return ((family == Base::IPAddress::IPv4) ? socketIPV4 : socketIPV6).socket(); }
 
 	// Connect to the specified url, return true if the command succeed
-	bool connect(Base::Exception& ex, const char* url, const char* host);
+	bool connect(const std::string& url, const std::string& host, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, std::shared_ptr<Base::Buffer>& rawUrl);
 
 	// Connect to a peer with asking server for the addresses and start playing streamName
 	// return : True if the peer has been added
-	bool connect2Peer(const char* peerId, const char* streamName, Base::UInt16 mediaCount);
+	bool connect2Peer(const std::string& peerId, const std::string& streamName, Base::UInt16 mediaCount);
 
 	// Connect to a peer (main function)
-	bool connect2Peer(const std::string& peerId, const char* streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, Base::UInt16 mediaId=0);
+	bool connect2Peer(const std::string& peerId, const std::string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, Base::UInt16 mediaId=0);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	// return : True if the group has been added
-	bool connect2Group(const char* streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
+	bool connect2Group(const std::string& streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, Base::UInt16 mediaCount);
 
 	// Create a stream (play/publish) in the main stream 
 	// return : True if the stream has been added
-	bool addStream(bool publisher, const char* streamName, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
-
-	// Write media (netstream must be published)
-	// return false if the client is not ready to publish, otherwise true
-	bool write(const Base::UInt8* data, Base::UInt32 size, int& pos);
+	bool addStream(bool publisher, const std::string& streamName, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
 
 	// Call a function of a server, peer or NetGroup
 	// param peerId If set to 0 the call we be done to the server, if set to "all" to all the peers of a NetGroup, and to a peer otherwise
 	// return 1 if the call succeed, 0 otherwise
-	unsigned int callFunction(const char* function, int nbArgs, const char** args, const char* peerId = 0);
+	unsigned int callFunction(const std::string& function, std::queue<std::string>& arguments, const std::string& peerId);
 
 	// Start a P2P publisher with name
 	// return : True if the creation succeed, false otherwise (there is already a publisher)
-	bool startP2PPublisher(const char* streamName, bool audioReliable = false, bool videoReliable = false);
+	void startP2PPublisher(const std::string& streamName, bool audioReliable, bool videoReliable);
 
 	// Close the publication
 	// return : True if the publication has been closed, false otherwise (publication not found)
@@ -103,10 +104,10 @@ public:
 	void stopListening(const std::string& peerId);
 
 	// Set the p2p publisher as ready (used for blocking mode)
-	void setP2pPublisherReady() { p2pPublishSignal.set(); p2pPublishReady = true; }
+	void setP2pPublisherReady() { onPublishP2P(true); }
 
 	// Set the p2p player as ready (used for blocking mode)
-	void setP2PPlayReady() { p2pPlaySignal.set(); p2pPlayReady = true; }
+	void setP2PPlayReady() { onConnected2Peer(); }
 
 	// Called by P2PSession when we are connected to the peer
 	bool addPeer2Group(const std::string& peerId);
@@ -127,7 +128,7 @@ public:
 	virtual const std::string&		name() { return _host; }
 
 	// Return the raw url of the session (for RTMFPConnection)
-	virtual const Base::Binary&		epd() { return _rawUrl; }
+	virtual const Base::Binary&		epd() { return *_rawUrl; }
 
 	bool							isPublisher() { return (bool)_pPublisher; }
 
@@ -148,26 +149,12 @@ public:
 
 	const RTMFPDecoder::OnDecoded&	getDecodeEvent() { return _onDecoded; }
 
+	/* Write functions */
+	void writeAudio(const Base::Packet& packet, Base::UInt32 time);
+	void writeVideo(const Base::Packet& packet, Base::UInt32 time);
+	void writeFlush();
+
 	FlashStream::OnMedia			onMediaPlay; // received when a packet from any media stream is ready for reading
-
-	// Blocking members (used for ffmpeg to wait for an event before exiting the function)
-	Base::Signal					connectSignal; // signal to wait connection
-	Base::Signal					p2pPublishSignal; // signal to wait p2p publish
-	Base::Signal					p2pPlaySignal; // signal to wait p2p publish
-	Base::Signal					publishSignal; // signal to wait publication
-	std::atomic<bool>				p2pPublishReady; // true if the p2p publisher is ready
-	std::atomic<bool>				p2pPlayReady; // true if the p2p player is ready
-	std::atomic<bool>				publishReady; // true if the publisher is ready
-	std::atomic<bool>				connectReady; // Ready if we have received the NetStream.Connect.Success event
-
-	// Publishing structures
-	struct MediaPacket : virtual Base::Object, Base::Packet {
-		MediaPacket(Base::UInt32 time, const Base::Packet& packet) : time(time), Base::Packet(std::move(packet)) {}
-		const Base::UInt32 time;
-	};
-	typedef Base::Event<void(MediaPacket&)> ON(PushAudio);
-	typedef Base::Event<void(MediaPacket&)> ON(PushVideo);
-	typedef Base::Event<void()>				ON(FlushPublisher);
 
 protected:
 
@@ -195,13 +182,6 @@ protected:
 private:
 	friend struct Invoker;
 
-	// If there is at least one request of command : create the stream
-	// return : True if a stream has been created
-	bool createWaitingStreams();
-
-	// Send waiting Connections (P2P or normal)
-	void sendConnections();
-
 	// Send handshake for group connection
 	void sendGroupConnection(const std::string& netGroup);
 
@@ -211,12 +191,10 @@ private:
 	RTMFPHandshaker													_handshaker; // Handshake manager
 
 	std::string														_host; // server host name
-	std::deque<std::string>											_waitingGroup; // queue of waiting connections to groups
-	std::mutex														_mutexConnections; // mutex for waiting connections (normal or p2p)
 	std::map<std::string, std::shared_ptr<P2PSession>>				_mapPeersById; // P2P connections by Id
 
 	std::string														_url; // RTMFP url of the application (base handshake)
-	Base::Buffer													_rawUrl; // Header (size + 0A) + Url to be sent in handshake 30
+	std::shared_ptr<Base::Buffer>									_rawUrl; // Header (size + 0A) + Url to be sent in handshake 30
 	std::string														_rawId; // my peer ID (computed with HMAC-SHA256) in binary format
 	std::string														_peerTxtId; // my peer ID in hex format
 
@@ -240,7 +218,7 @@ private:
 
 	// Publish/Play commands
 	struct StreamCommand : public Object {
-		StreamCommand(bool isPublisher, const char* v, Base::UInt16 id, bool aReliable, bool vReliable) : publisher(isPublisher), value(v), idMedia(id), audioReliable(aReliable), videoReliable(vReliable) {}
+		StreamCommand(bool isPublisher, const std::string& value, Base::UInt16 id, bool aReliable, bool vReliable) : publisher(isPublisher), value(value), idMedia(id), audioReliable(aReliable), videoReliable(vReliable) {}
 
 		bool			publisher;
 		std::string		value;
@@ -249,5 +227,4 @@ private:
 		Base::UInt16	idMedia; // id generated by the session
 	};
 	std::queue<StreamCommand>										_waitingStreams;
-	bool															_isWaitingStream; // True if a stream creation is waiting
 };

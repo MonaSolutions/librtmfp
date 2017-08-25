@@ -25,7 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "PeerMedia.h"
 #include "RTMFP.h"
 
-class RTMFPSession;
+struct RTMFPSession;
 struct RTMFPGroupConfig;
 
 /**************************************************
@@ -46,14 +46,14 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	virtual ~P2PSession();
 
 	// Set the stream name to send play command when connected
-	void setStreamName(const char* streamName) { _streamName = streamName; }
+	void setStreamName(const std::string& streamName) { _streamName = streamName; }
 
 	// Set the tag used for this connection (responder mode)
 	void							setTag(const std::string& tag) { _tag = tag; }
 
 	// Call a function on the peer side
 	// return 0 if it fails, 1 otherwise
-	unsigned int					callFunction(const char* function, int nbArgs, const char** args);
+	unsigned int					callFunction(const std::string& function, std::queue<std::string>& arguments);
 
 	// Create a flow for special signatures (NetGroup)
 	virtual RTMFPFlow*				createSpecialFlow(Base::Exception& ex, Base::UInt64 id, const std::string& signature, Base::UInt64 idWriterRef);

@@ -37,7 +37,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_PEER_TIMEOUT			300000	// number of msec since the last report known before we delete a peer from the heard list
 #define NETGROUP_DISCONNECT_DELAY		90000	// delay between each try to disconnect from a peer
 #define NETGROUP_MEDIA_TIMEOUT			300000	// number of msec before we delete a GroupMedia after being closed
-#define NETGROUP_PROCESS_FGMT_TIMEOUT	100		// number of msec before exiting the processFragments function
+#define NETGROUP_PROCESS_FGMT_TIMEOUT	50		// number of msec before exiting the processFragments function
 
 /**************************************
 NetGroup is the class that manage
@@ -80,7 +80,7 @@ public:
 
 	// Call a function on the peer side
 	// return 0 if it fails, 1 otherwise
-	unsigned int	callFunction(const char* function, int nbArgs, const char** args);
+	unsigned int	callFunction(const std::string& function, std::queue<std::string>& arguments);
 
 	// Stop listening if we are publisher
 	void			stopListener();

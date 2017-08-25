@@ -27,7 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/SocketAddress.h"
 
 struct Invoker;
-class RTMFPSession;
+struct RTMFPSession;
 struct FlowManager;
 
 // Waiting handshake request

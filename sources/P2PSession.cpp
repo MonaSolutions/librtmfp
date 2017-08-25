@@ -218,15 +218,16 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 	return NULL;
 }
 
-unsigned int P2PSession::callFunction(const char* function, int nbArgs, const char** args) {
+unsigned int P2PSession::callFunction(const string& function, queue<string>& arguments) {
 
 	if (!_pNetStreamWriter)
 		_pNetStreamWriter = createWriter(Packet(EXPAND("\x00\x54\x43\x04\xFA\x89\x01")), 0);  // stream id = 1
 
-	AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation(function, true);
-	for (int i = 0; i < nbArgs; i++) {
-		if (args[i])
-			amfWriter.writeString(args[i], strlen(args[i]));
+	AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation(function.c_str(), true);
+	while (!arguments.empty()) {
+		string& arg = arguments.front();
+		amfWriter.writeString(arg.data(), arg.size());
+		arguments.pop();
 	}
 	_pNetStreamWriter->flush();
 	return 0;
