@@ -119,7 +119,7 @@ private:
 
 
 struct RTMFPMessenger : RTMFPSender, virtual Base::Object {
-	RTMFPMessenger(Base::UInt8 marker, const std::shared_ptr<RTMFPSender::Queue>& pQueue) : RTMFPSender("RTMFPMessenger", marker, pQueue), _flags(0) {} // _flags must be initialized to 0!
+	RTMFPMessenger(Base::UInt8 marker, const std::shared_ptr<RTMFPSender::Queue>& pQueue) : RTMFPSender("RTMFPMessenger", marker, pQueue), _flags(0), _fragments(0) {} // _flags must be initialized to 0!
 
 	AMFWriter&	newMessage(bool reliable, const Base::Packet& packet) { _messages.emplace_back(reliable, packet); return _messages.back().writer; }
 

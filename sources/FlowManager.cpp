@@ -32,7 +32,8 @@ using namespace Base;
 using namespace std;
 
 FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
-	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0), _ping(0), _waitClose(false) {
+	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0), _ping(0), _waitClose(false),
+	_rttvar(0), _rto(Net::RTO_INIT) {
 
 	_pMainStream.reset(new FlashConnection());
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
@@ -559,9 +560,7 @@ void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
 			DEBUG("Initiator is sending wrong marker, request ignored")
 			return;
 		}
-		UInt16 time = RTMFP::TimeNow();
-		UInt16 timeEcho = reader.read16();
-		setPing(time, timeEcho);
+		setPing(RTMFP::TimeNow(), reader.read16());
 	}
 	case 0xF9:
 	case 0xFA:
@@ -581,7 +580,28 @@ void FlowManager::setPing(UInt16 time, UInt16 timeEcho) {
 		timeEcho = 0;
 	}
 	UInt16 value = (time - timeEcho) * RTMFP::TIMESTAMP_SCALE;
-	_ping = (value == 0 ? 1 : value);
+	if(value == 0)
+		value = 1;
+	else if (value > 0xFFFF)
+		value = 0xFFFF;
+
+	// Smoothed Round Trip time https://tools.ietf.org/html/rfc2988
+
+	if (!_rttvar)
+		_rttvar = value / 2.0;
+	else
+		_rttvar = ((3 * _rttvar) + Base::abs(_ping - UInt16(value))) / 4.0;
+
+	if (_ping == 0)
+		_ping = UInt16(value);
+	else if (value != _ping)
+		_ping = UInt16((7 * _ping + value) / 8.0);
+
+	_rto = (UInt32)(_ping + (4 * _rttvar) + 200);
+	if (_rto < Net::RTO_MIN)
+		_rto = Net::RTO_MIN;
+	else if (_rto > Net::RTO_MAX)
+		_rto = Net::RTO_MAX;
 }
 
 void FlowManager::sendConnect(BinaryReader& reader) {

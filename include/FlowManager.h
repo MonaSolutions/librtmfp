@@ -97,11 +97,11 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	void						closeFlow(Base::UInt64 flowId);
 
 
-	/* TODO: Implementation of RTMFPOutput */
-	Base::UInt32							rto() const { return Base::Net::RTO_INIT; }
+	/* Implementation of RTMFPOutput */
+	Base::UInt32							rto() const { return _rto; }
 	// Send function used by RTMFPWriter to send packet with header
 	void									send(const std::shared_ptr<RTMFPSender>& pSender);
-	virtual Base::UInt64					queueing() const { return 0; }
+	virtual Base::UInt64					queueing() const { return 0; } // TODO: see if we keep this
 
 protected:
 
@@ -198,7 +198,10 @@ private:
 	Base::Time																	_closeTime; // Time since closure
 	Base::Time																	_lastPing; // Time since last ping sent
 	Base::Time																	_lastClose; // Time since last close chunk
+
 	Base::UInt16																_ping; // ping value
+	double																		_rttvar; // round-trip time 
+	Base::UInt32																_rto; // retransmission timeout
 
 	Base::UInt32																_initiatorTime; // time in msec received from target
 	std::shared_ptr<Base::Buffer>												_pBuffer; // buffer for sending packets

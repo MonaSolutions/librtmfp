@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02050000	// (2.5.0)
+#define RTMFP_LIB_VERSION	0x02050001	// (2.5.1)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -129,14 +129,14 @@ struct RTMFP : virtual Base::Static {
 		const Base::UInt64 flowId;
 		const Base::UInt32 lost;
 	};
-	struct Flush : virtual Base::Object {
+	/*struct Flush : virtual Base::Object {
 		Flush(Base::Int32 ping, bool keepalive, bool died, std::map<Base::UInt64, Base::Packet>& acks) :
 			ping(ping), acks(std::move(acks)), keepalive(keepalive), died(died) {}
 		const Base::Int32				ping; // if died, ping takes error
 		const bool						keepalive;
 		const bool						died;
 		const std::map<Base::UInt64, Base::Packet>	acks; // ack + fails
-	};
+	};*/
 
 	struct Output : virtual Base::Object {
 

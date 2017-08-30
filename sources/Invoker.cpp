@@ -260,8 +260,8 @@ void Invoker::manage() {
 }
 
 bool Invoker::run(Exception& exc, const volatile bool& stopping) {
-	BufferPool bufferPool(timer);
-	Buffer::SetAllocator(bufferPool);
+	//BufferPool bufferPool(timer);
+	//Buffer::SetAllocator(bufferPool);
 
 	Timer::OnTimer onManage;
 
@@ -313,8 +313,8 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 
 	// release memory
 	INFO("Invoker memory release");
-	Buffer::SetAllocator();
-	bufferPool.clear();
+	//Buffer::SetAllocator();
+	//bufferPool.clear();
 	NOTE("Invoker stopped")
 	if (_logger) {
 		Logs::SetLogger(Logs::DefaultLogger()); // we must reset Logger to default to avoid crash if someone call Logs::Log() after Logger destruction
