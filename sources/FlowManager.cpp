@@ -326,7 +326,7 @@ void FlowManager::receive(const Packet& packet) {
 				// Read congestion management (reliable mode)
 				if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
 					if (status < RTMFP::NEAR_CLOSED) {
-						ERROR("Session ", name(), " continue to send packets until exceeds buffer capacity whereas lost data has been requested (", pFlow->fragmentation, " > ", Net::GetRecvBufferSize(),")")
+						WARN("Session ", name(), " input is congested (", pFlow->fragmentation, " > ", Net::GetRecvBufferSize(),")")
 						close(false);
 					}
 					return;
@@ -360,6 +360,7 @@ void FlowManager::receive(const Packet& packet) {
 			else // commit everything (flow unknown)
 				BinaryWriter(write(0x51, 1 + Binary::Get7BitValueSize(flowId) + Binary::Get7BitValueSize(stage))).write7BitLongValue(flowId).write7BitValue(0).write7BitLongValue(stage);
 			if (_pBuffer) {
+				TRACE("Sending ack ", stage)
 				RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
 				_pBuffer.reset();
 			}
@@ -368,21 +369,13 @@ void FlowManager::receive(const Packet& packet) {
 	}
 }
 
-bool FlowManager::writeCongested() {
-	UInt64 queueSize(_pSendSession->queueing);
-	UInt32 bufferSize(_pSendSession->socket.sendBufferSize());
-	// superior to buffer 0xFFFF to limit onFlush usage!
-	queueSize = queueSize > bufferSize ? queueSize - bufferSize : 0;
-	return queueSize && _congestion(queueSize, Net::RTO_MAX);
-}
-
 void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
 	if (!_pSendSession)
 		return;
 
 	// Write congestion management
-	if (!_waitClose && (status < RTMFP::NEAR_CLOSED) && writeCongested()) {
-		ERROR("Session ", name(), " output is congested, closing...")
+	if (!_waitClose && (status < RTMFP::NEAR_CLOSED) && _pSendSession->congested) {
+		WARN("Session ", name(), " output is congested, closing...")
 		_waitClose = true;
 		return;
 	}
@@ -464,12 +457,11 @@ void FlowManager::removeFlow(RTMFPFlow* pFlow) {
 
 	if (pFlow->id == _mainFlowId) {
 		DEBUG("Main flow is closing, session ", name(), " will close")
-		if (status != RTMFP::CONNECTED) {
-			// without connection, nothing must be sent!
-			clearWriters();
-		}
+		if (status != RTMFP::CONNECTED)
+			clearWriters(); // without connection, nothing must be sent!
 		_mainFlowId = 0;
-		close(false);
+		if (status <= RTMFP::CONNECTED)
+			close(false);
 	}
 	DEBUG("RTMFPFlow ", pFlow->id, " of session ", name(), " consumed")
 	_flows.erase(pFlow->id);

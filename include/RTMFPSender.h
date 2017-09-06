@@ -26,6 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "AMFWriter.h"
 #include "Base/LostRate.h"
 #include "RTMFP.h"
+#include "Base/Congestion.h"
 
 struct RTMFPSender : Base::Runner, virtual Base::Object {
 	struct Packet : Base::Packet, virtual Base::Object {
@@ -46,7 +47,16 @@ struct RTMFPSender : Base::Runner, virtual Base::Object {
 	struct Session : virtual Base::Object {
 		Session(Base::UInt32 farId, const std::shared_ptr<RTMFP::Engine>& pEncoder, const std::shared_ptr<Base::Socket>& pSocket, Base::Int64 time) :
 			sendable(RTMFP::SENDABLE_MAX), socket(*pSocket), pEncoder(new RTMFP::Engine(*pEncoder)), farId(farId), initiatorTime(time),
-			queueing(0), _pSocket(pSocket), sendLostRate(sendByteRate), sendTime(0) {}
+			queueing(0), sendingSize(0), _pSocket(pSocket), sendLostRate(sendByteRate), sendTime(0), congested(false) {}
+
+		bool isCongested() {
+			Base::UInt64 queueSize(queueing);
+			Base::UInt32 bufferSize(socket.sendBufferSize());
+			// superior to buffer size to limit onFlush usage!
+			queueSize = queueSize > bufferSize ? queueSize - bufferSize : 0;
+			return queueSize && _congestion(queueSize, Base::Net::RTO_MAX);
+		}
+
 		Base::UInt32					farId;
 		std::atomic<Base::Int64>		initiatorTime;
 		std::shared_ptr<RTMFP::Engine>	pEncoder;
@@ -55,9 +65,12 @@ struct RTMFPSender : Base::Runner, virtual Base::Object {
 		Base::ByteRate					sendByteRate;
 		Base::LostRate					sendLostRate;
 		std::atomic<Base::UInt64>		queueing;
+		std::atomic<Base::UInt64>		sendingSize;
 		Base::UInt8						sendable;
+		std::atomic<bool>				congested;
 	private:
 		std::shared_ptr<Base::Socket>	_pSocket; // to keep the socket open
+		Base::Congestion				_congestion;
 	};
 	struct Queue : virtual Base::Object, std::deque<std::shared_ptr<Packet>> {
 		template<typename SignatureType>

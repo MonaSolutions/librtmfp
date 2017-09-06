@@ -29,7 +29,7 @@ using namespace Base;
 using namespace std;
 
 Publisher::Publisher(const string& name, Invoker& invoker, bool audioReliable, bool videoReliable, bool p2p) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),
-	_audioReliable(audioReliable), _videoReliable(videoReliable), isP2P(p2p), _invoker(invoker) {
+	_audioReliable(audioReliable), _videoReliable(videoReliable), isP2P(p2p), _invoker(invoker), _lastTime(0) {
 
 	INFO("Initialization of the publisher ", _name, " (audioReliable : ", _audioReliable, " - videoReliable : ", _videoReliable, ")");
 }
@@ -79,13 +79,28 @@ void Publisher::stop() {
 	_running = false;
 }
 
+void Publisher::updateTime(UInt32 time) {
+
+	// Test time synchro issue
+	if (_lastTime > time) {
+		if (_lastSyncWarn.isElapsed(1000) && (_lastTime - time) > 1000) {
+			WARN("Packet time of publication ", _name, " is more than 1s in the past : ", time, "ms < ", _lastTime, "ms")
+			_lastSyncWarn.update();
+		}
+	}
+	// Test a gap of packets
+	if (_lastTime && _lastPacket.isElapsed(1000))
+		WARN("More than 1s without receiving any packet from ", _name, " : ", _lastPacket.elapsed(), "ms")
+	_lastTime = time;
+	_lastPacket.update();
+}
+
 void Publisher::pushAudio(UInt32 time, const Packet& packet) {
 	if (!_running) {
 		ERROR("Audio packet pushed on '", _name, "' publication stopped");
 		return;
 	}
-
-	//	TRACE("Time Audio ",time)
+	updateTime(time);
 
 	// save audio codec packet for future listeners
 	if (RTMFP::IsAACCodecInfos(packet.data(), packet.size())) {
@@ -106,7 +121,7 @@ void Publisher::pushVideo(UInt32 time, const Packet& packet) {
 		return;
 	}
 
-	//  TRACE("Time Video ",time," => ",Util::FormatHex(packet.current(),16,LOG_BUFFER))
+	updateTime(time);
 
 	// save video codec packet for future listeners
 	if (RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {

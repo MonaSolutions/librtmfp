@@ -144,7 +144,7 @@ unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* stre
 	return GlobalInvoker->closePublication(RTMFPcontext, streamName);
 }
 
-void RTMFP_Close(unsigned int RTMFPcontext) {
+void RTMFP_Close(unsigned int RTMFPcontext, unsigned short blocking) {
 	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")
 		return;
@@ -153,7 +153,7 @@ void RTMFP_Close(unsigned int RTMFPcontext) {
 	if (!RTMFPcontext)
 		return;
 
-	GlobalInvoker->removeConnection(RTMFPcontext);
+	GlobalInvoker->removeConnection(RTMFPcontext, blocking>0);
 }
 
 int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext, char *buf, unsigned int size) {
@@ -233,18 +233,24 @@ void RTMFP_ActiveDump() {
 	Logs::SetDump("LIBRTMFP");
 }
 
-void RTMFP_SetParameter(const char* parameter, const char* value) {
+void RTMFP_SetIntParameter(const char* parameter, int value) {
 
-	if (String::ICompare(parameter, "logLevel")==0) {
-		Logs::SetLevel(atoi(value));
+	if (String::ICompare(parameter, "logLevel") == 0) {
+		Logs::SetLevel(value);
 	}
 	else if (String::ICompare(parameter, "socketReceiveSize") == 0) {
-		Net::SetRecvBufferSize(atoi(value));
+		Net::SetRecvBufferSize(value);
 	}
 	else if (String::ICompare(parameter, "socketSendSize") == 0) {
-		Net::SetSendBufferSize(atoi(value));
-	} else
+		Net::SetSendBufferSize(value);
+	}
+	else
 		FATAL_ERROR("Unknown parameter ", parameter)
+}
+
+void RTMFP_SetParameter(const char* parameter, const char* value) {
+
+	RTMFP_SetIntParameter(parameter, atoi(value));
 }
 
 }

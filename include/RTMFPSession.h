@@ -147,7 +147,8 @@ struct RTMFPSession : public FlowManager {
 	// Return the diffie hellman object (related to main session)
 	virtual Base::DiffieHellman&	diffieHellman() { return _diffieHellman; }
 
-	const RTMFPDecoder::OnDecoded&	getDecodeEvent() { return _onDecoded; }
+	// Handle a decoded message
+	void							receive(RTMFPDecoder::Decoded& decoded);
 
 	/* Write functions */
 	void writeAudio(const Base::Packet& packet, Base::UInt32 time);
@@ -211,7 +212,6 @@ private:
 
 	Base::DiffieHellman												_diffieHellman; // diffie hellman object used for key computing
 
-	RTMFPDecoder::OnDecoded											_onDecoded; // Decoded callback
 	Base::UInt16													_threadRcv; // Thread used to decode last message
 		
 	OnMediaEvent													_pOnMedia; // External Callback to link with parent

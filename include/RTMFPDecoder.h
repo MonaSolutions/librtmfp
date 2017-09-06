@@ -29,25 +29,27 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 struct RTMFPDecoder : Base::Runner, virtual Base::Object{
 	struct Decoded : Base::Packet {
-		Decoded(Base::UInt32 id, const Base::SocketAddress& address, std::shared_ptr<Base::Buffer>& pBuffer) : address(address), Packet(pBuffer), idSession(id) {}
+		Decoded(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, std::shared_ptr<Base::Buffer>& pBuffer) : address(address), Packet(pBuffer), idConnection(idConnection), idSession(idSession) {}
 		const Base::SocketAddress		address;
+		int								idConnection;
 		Base::UInt32					idSession;
 	};
 	typedef Base::Event<void(Decoded& decoded)> ON(Decoded);
 
-	RTMFPDecoder(Base::UInt32 id, const Base::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pDecoder, std::shared_ptr<Base::Buffer>& pBuffer, const Base::Handler& handler) :
-		_handler(handler), _idSession(id), _address(address), _pBuffer(std::move(pBuffer)), Base::Runner("RTMFPDecoder"), _pDecoder(pDecoder) {}
+	RTMFPDecoder(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pDecoder, std::shared_ptr<Base::Buffer>& pBuffer, const Base::Handler& handler) :
+		_handler(handler), _idConnection(idConnection), _idSession(idSession), _address(address), _pBuffer(std::move(pBuffer)), Base::Runner("RTMFPDecoder"), _pDecoder(pDecoder) {}
 
 private:
 	bool run(Base::Exception& ex) {
 		bool decoded;
 		if ((decoded = _pDecoder->decode(ex, *_pBuffer, _address)))
-			_handler.queue(onDecoded, _idSession, _address, _pBuffer);
+			_handler.queue(onDecoded, _idConnection, _idSession, _address, _pBuffer);
 		return decoded;
 	}
 	std::shared_ptr<RTMFP::Engine>	_pDecoder;
 	std::shared_ptr<Base::Buffer>	_pBuffer;
 	Base::SocketAddress				_address;
 	const Base::Handler&			_handler;
+	int								_idConnection;
 	Base::UInt32					_idSession;
 };

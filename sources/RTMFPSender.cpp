@@ -32,7 +32,7 @@ bool RTMFPSender::run(Exception&) {
 
 	// Flush Queue!
 	while (pSession->sendable && !pQueue->empty()) {
-		TRACE("Stage ", pQueue->stageSending + 1, " sent");
+		TRACE("Stage ", pQueue->stageSending + 1, " sent on writer ", pQueue->id);
 		shared<Packet>& pPacket(pQueue->front());
 		if (!RTMFP::Send(pSession->socket, *pPacket, address)) {
 			pSession->sendable = 0;
@@ -45,6 +45,7 @@ bool RTMFPSender::run(Exception&) {
 		pPacket->setSent();
 		pQueue->stageSending += pPacket->fragments;
 		pQueue->sending.emplace_back(pPacket);
+		pSession->sendingSize += pPacket->size();
 		pQueue->pop_front();
 	}
 	return true;
@@ -64,7 +65,9 @@ void RTMFPAcquiter::run() {
 		_stageAck = pQueue->stageSending;
 	}
 	while (!pQueue->sending.empty() && _stageAck > pQueue->stageAck) {
-		pQueue->stageAck += pQueue->sending.front()->fragments;
+		shared<Packet>& pPacket(pQueue->sending.front());
+		pQueue->stageAck += pPacket->fragments;		
+		pSession->sendingSize -= pPacket->size();
 		pQueue->sending.pop_front();
 		pSession->sendable = RTMFP::SENDABLE_MAX; // has progressed, can send max!
 	}
@@ -136,7 +139,9 @@ void RTMFPMessenger::flush() {
 		return;
 	// encode and add to pQueue
 	pQueue->emplace_back(new Packet(pSession->pEncoder->encode(_pBuffer, pSession->farId, address), _fragments, _flags&RTMFP::MESSAGE_RELIABLE ? true : false));
-	pSession->queueing += pQueue->back()->size();
+	pSession->queueing += pQueue->back()->size();	
+	if (!pSession->congested && pSession->isCongested()) // Important : test congestion after queuing, otherwise it can give a false negative
+		pSession->congested = true;
 }
 
 void RTMFPMessenger::write(const Message& message) {

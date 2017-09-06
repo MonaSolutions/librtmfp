@@ -65,7 +65,8 @@ struct Publisher : virtual Base::Object {
 
 	bool	isP2P; // If true it is a p2p publisher
 private:
-
+	// Update and check the time synchronisation variables
+	void updateTime(Base::UInt32 time);
 
 	bool publishAudio;
 	bool publishVideo;
@@ -81,4 +82,9 @@ private:
 	Base::Packet						_audioCodec;
 	Base::Packet						_videoCodec;
 	bool								_new; // True if there is at list a packet to send
+
+	// Synchronisation checks
+	Base::UInt32						_lastTime; // last time received
+	Base::Time							_lastSyncWarn; // Time since last synchronisation issue
+	Base::Time							_lastPacket; // last time we received a packet
 };

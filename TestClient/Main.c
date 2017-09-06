@@ -414,7 +414,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		onLog(6, __FILE__, __LINE__, "Closing connection...");
-		RTMFP_Close(context);
+		RTMFP_Close(context, 1);
 	}
 	RTMFP_Terminate(); // To ensure that invoker is dead
 

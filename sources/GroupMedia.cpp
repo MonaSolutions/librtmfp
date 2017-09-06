@@ -86,7 +86,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 			return;
 		UInt8 splitCounter = reader.size() / NETGROUP_MAX_PACKET_SIZE - ((reader.size() % NETGROUP_MAX_PACKET_SIZE) == 0);
 		UInt8 marker = GroupStream::GROUP_MEDIA_DATA ;
-		TRACE("GroupMedia ", id, " - Creating fragments ", _fragmentCounter + 1, " to ", _fragmentCounter + 1 + splitCounter, " - time : ", time)
+		TRACE("GroupMedia ", id, " - Creating ", (type==AMF::TYPE_VIDEO? "Video":((type==AMF::TYPE_AUDIO)? "Audio" : "Unknown"))," fragments ", _fragmentCounter + 1, " to ", _fragmentCounter + 1 + splitCounter, " - time : ", time)
 		auto itFragment = _fragments.end();
 		do {
 			if (reader.size() > NETGROUP_MAX_PACKET_SIZE)

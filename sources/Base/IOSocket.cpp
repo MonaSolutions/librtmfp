@@ -57,7 +57,7 @@ protected:
 
 	
 	struct Handle : Runner, virtual Object {
-		Handle(const string& name, const shared<Socket>& pSocket, const Exception& ex) : Runner(name), _ex(ex), _weakSocket(pSocket) {}
+		Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex) : Runner(name), _ex(ex), _weakSocket(pSocket) {}
 	private:
 		bool run(Exception&) {
 			// Handler safe thread!
@@ -277,7 +277,7 @@ struct IOSocket::Send : IOSocket::Action {
 
 private:
 	struct Handle : Action::Handle {
-		Handle(const string& name, const shared<Socket>& pSocket, const Exception& ex) : Action::Handle(name, pSocket, ex) {}
+		Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex) : Action::Handle(name, pSocket, ex) {}
 	private:
 		void handle(const shared<Socket>& pSocket) {
 			if (!pSocket->queueing()) // check again on handle, "queueing" can had changed
@@ -308,7 +308,7 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 			Accept(int error, const shared<Socket>& pSocket) : Action("SocketAccept", error, pSocket) {}
 		private:
 			struct Handle : Action::Handle {
-				Handle(const string& name, const shared<Socket>& pSocket, const Exception& ex, shared<Socket>& pConnection, bool& stop) :
+				Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex, shared<Socket>& pConnection, bool& stop) :
 					Action::Handle(name, pSocket, ex), _pConnection(move(pConnection)), _pThread(NULL) {
 					if (++pSocket->_receiving < Socket::BACKLOG_MAX)
 						return;
@@ -356,7 +356,7 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 
 	private:
 		struct Handle : Action::Handle {
-			Handle(const string& name, const shared<Socket>& pSocket, const Exception& ex, shared<Buffer>& pBuffer, const SocketAddress& address, bool& stop) :
+			Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex, shared<Buffer>& pBuffer, const SocketAddress& address, bool& stop) :
 				Action::Handle(name, pSocket, ex), _address(address), _pBuffer(move(pBuffer)), _pThread(NULL) {
 				if ((pSocket->_receiving += _pBuffer->size()) < pSocket->recvBufferSize())
 					return;
@@ -445,7 +445,7 @@ void IOSocket::close(const shared<Socket>& pSocket, int error) {
 		Close(int error, const shared<Socket>& pSocket) : Action("SocketClose", error, pSocket) {}
 	private:
 		struct Handle : Action::Handle {
-			Handle(const string& name, const shared<Socket>& pSocket, const Exception& ex) : Action::Handle(name, pSocket, ex) {}
+			Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex) : Action::Handle(name, pSocket, ex) {}
 		private:
 			void handle(const shared<Socket>& pSocket) {
 				pSocket->onDisconnection();

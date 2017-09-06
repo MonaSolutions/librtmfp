@@ -68,9 +68,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 			return;
 		}
 
-		shared_ptr<RTMFPDecoder> pDecoder(new RTMFPDecoder(idSession, address, pEngine, pBuffer, _invoker.handler));
-		pDecoder->onDecoded = _onDecoded;
-		AUTO_ERROR(_invoker.threadPool.queue(ex, pDecoder, _threadRcv), "RTMFP Decode")
+		_invoker.decode(_id, idSession, address, pEngine, pBuffer, _threadRcv);
 	};
 	socketIPV6.onError = socketIPV4.onError = [this](const Exception& ex) {
 		SocketAddress address;
@@ -130,22 +128,6 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 		
 		_invoker.pushMedia(_id, mediaId, time, packet, lostRate, type);
 	};
-	_onDecoded = [this](RTMFPDecoder::Decoded& decoded) {
-
-		if (status == RTMFP::FAILED)
-			return;
-
-		if (!decoded.idSession)
-			_handshaker.receive(decoded.address, decoded);
-		else {
-			auto itSession = _mapSessions.find(decoded.idSession);
-			if (itSession == _mapSessions.end()) {
-				WARN("Unknown session ", String::Format<UInt32>("0x%.8x", decoded.idSession), ", possibly deleted (", decoded.address, ")")
-				return;
-			}
-			itSession->second->receive(decoded.address, decoded);
-		}
-	};
 
 	_sessionId = RTMFPSessionCounter++;
 
@@ -162,7 +144,6 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 RTMFPSession::~RTMFPSession() {
 	DEBUG("Deletion of RTMFPSession ", name())
 
-	_onDecoded = nullptr;
 	closeSession();
 }
 
@@ -652,4 +633,20 @@ void RTMFPSession::removeHandshake(shared_ptr<Handshake>& pHandshake) {
 	pHandshake->pSession = NULL; // to not close the session
 	_handshaker.removeHandshake(pHandshake); 
 	pHandshake.reset(); 
+}
+
+void RTMFPSession::receive(RTMFPDecoder::Decoded& decoded) {
+	if (status == RTMFP::FAILED)
+		return;
+
+	if (!decoded.idSession)
+		_handshaker.receive(decoded.address, decoded);
+	else {
+		auto itSession = _mapSessions.find(decoded.idSession);
+		if (itSession == _mapSessions.end()) {
+			WARN("Unknown session ", String::Format<UInt32>("0x%.8x", decoded.idSession), ", possibly deleted (", decoded.address, ")")
+				return;
+		}
+		itSession->second->receive(decoded.address, decoded);
+	}
 }

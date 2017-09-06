@@ -105,7 +105,7 @@ LIBRTMFP_API unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const ch
 LIBRTMFP_API unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext, const char* streamName);
 
 // Close the RTMFP connection
-LIBRTMFP_API void RTMFP_Close(unsigned int RTMFPcontext);
+LIBRTMFP_API void RTMFP_Close(unsigned int RTMFPcontext, unsigned short blocking);
 
 // Read size bytes of flv data from the current connexion (Asynchronous read, to be called by ffmpeg)
 // Note: blocking method, if no data is found it will wait until founding data or isInterrupted() == true
@@ -145,6 +145,9 @@ LIBRTMFP_API void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publ
 // - socketReceiveSize (int) : socket size limit to be used with input packets
 // - socketSendSize (int) : socket size limit to be used with output packets
 LIBRTMFP_API void RTMFP_SetParameter(const char* parameter, const char* value);
+
+// Set an integer Parameter to the requested value (int version)
+LIBRTMFP_API void RTMFP_SetIntParameter(const char* parameter, int value);
 
 #ifdef __cplusplus
 }

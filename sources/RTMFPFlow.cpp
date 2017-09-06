@@ -119,7 +119,7 @@ void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
 			DEBUG("Wait stage ", nextStage, " lost on flow ", id, " in session ", _band.name());
 		if (_fragments.emplace(piecewise_construct, forward_as_tuple(stage), forward_as_tuple(flags, packet)).second) {
 			fragmentation += packet.size();
-			if (_fragments.size() > 10)
+			if (_fragments.size() > 100)
 				DEBUG("Fragments buffer increasing on flow ", id, " in session ", _band.name(), " : ", _fragments.size());
 		}
 		else

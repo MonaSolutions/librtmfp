@@ -25,6 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Timer.h"
 #include "AMF.h"
 #include "RTMFP.h"
+#include "RTMFPDecoder.h"
 #include <queue>
 
 #define DELAY_CONNECTIONS_MANAGER	75 // Delay between each onManage (in msec)
@@ -47,7 +48,7 @@ struct Invoker : private Base::Thread {
 	bool			start();
 
 	// Delete the RTMFP session at index (safe threaded)
-	void			removeConnection(unsigned int index);
+	void			removeConnection(unsigned int index, bool blocking);
 
 	// Try to read data from the connection RTMFPcontext and the media ID streamId
 	// return : The number of bytes read
@@ -93,6 +94,9 @@ struct Invoker : private Base::Thread {
 
 	// Called by a connection to push a media packet
 	void			pushMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
+
+	// Called by a connection to start decoding a packet from target
+	void			decode(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pEngine, std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt16& threadRcv);
 
 	/*** Set callback functions (WARN: not thread-safe) ***/
 	void			setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*));
@@ -165,9 +169,11 @@ private:
 
 	// Safe-Threaded structure to close and remove a session
 	struct RemoveAction : virtual Base::Object {
-		RemoveAction(Base::UInt32 index) : index(index) {}
+		RemoveAction(Base::UInt32 index, std::atomic<bool>& ready, bool blocking) : index(index), ready(ready), blocking(blocking) {}
 
 		Base::UInt32		index;
+		std::atomic<bool>&	ready; // Warn, do not use this reference if not blocking
+		bool				blocking;
 	};
 	typedef Base::Event<void(RemoveAction&)>		ON(RemoveConnection);
 
@@ -239,15 +245,17 @@ private:
 	// return: the media ID created or 0 if an error occurs
 	Base::UInt16		createMediaBuffer(Base::UInt32 RTMFPcontext, std::function<bool(Base::UInt16)> condition);
 
-	Base::Timer										_timer; // manage timer
-	int												_lastIndex; // last index of connection
-	std::mutex										_mutexConnections;
-	std::map<int, std::shared_ptr<RTMFPSession>>	_mapConnections;
-	std::unique_ptr<RTMFPLogger>					_logger; // global logger for librtmfp
-	Base::Signal									_waitSignal; // signal for blocking functions
+	Base::Timer														_timer; // manage timer
+	int																_lastIndex; // last index of connection
+	std::mutex														_mutexConnections;
+	std::map<int, std::shared_ptr<RTMFPSession>>					_mapConnections;
+	std::unique_ptr<RTMFPLogger>									_logger; // global logger for librtmfp
+	Base::Signal													_waitSignal; // signal for blocking functions
 
-	int												(*_interruptCb)(void*); // global interrupt callback function (NULL by default)
-	void*											_interruptArg; // global interrup callback argument for interrupt function
+	int																(*_interruptCb)(void*); // global interrupt callback function (NULL by default)
+	void*															_interruptArg; // global interrup callback argument for interrupt function
+
+	RTMFPDecoder::OnDecoded											_onDecoded; // Decoded callback
 
 	/* Netgroup/Unicast Fallback connections */
 	struct FallbackConnection;
@@ -256,8 +264,8 @@ private:
 
 	/* Data buffers for Readding */
 	struct ConnectionBuffer;
-	std::map <Base::UInt32, ConnectionBuffer>	_connection2Buffer; // map of connection ID to media buffers
-	std::mutex									_mutexRead; // mutex for read
+	std::map <Base::UInt32, ConnectionBuffer>						_connection2Buffer; // map of connection ID to media buffers
+	std::mutex														_mutexRead; // mutex for read
 
 	/* MediaPacket temporary structure waiting buffering */
 	struct ReadPacket : Base::Runner, Base::Packet, virtual Object {

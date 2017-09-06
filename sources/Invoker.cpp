@@ -128,6 +128,12 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		auto it = _mapConnections.find(obj.index);
 		if (it != _mapConnections.end())
 			removeConnection(it);
+
+		// To exit from the caller loop
+		if (obj.blocking) {
+			obj.ready = true;
+			_waitSignal.set();
+		}
 	};
 	onPublishP2P = [this](PublishP2P& obj) {
 		lock_guard<mutex>	lock(_mutexConnections);
@@ -185,6 +191,17 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		obj.ready = true;
 		_waitSignal.set();
 	};
+	_onDecoded = [this](RTMFPDecoder::Decoded& decoded) {
+		_mutexConnections.lock();
+
+		auto itConn = _mapConnections.find(decoded.idConnection);
+		if (itConn != _mapConnections.end()) {
+			UNLOCK_RUN_LOCK(_mutexConnections, itConn->second->receive(decoded));
+		} else
+			DEBUG("RTMFPDecoder callback without connection, possibly deleted")
+
+		_mutexConnections.unlock();
+	};
 
 	if (createLogger) {
 		_logger.reset(new RTMFPLogger());
@@ -204,6 +221,18 @@ Invoker::~Invoker() {
 	if (running())
 		stop();
 
+	onPushAudio = nullptr;
+	onPushVideo = nullptr;
+	onFlushPublisher = nullptr;
+	onFunction = nullptr;
+	onClosePublication = nullptr;
+	onConnect = nullptr;
+	onRemoveConnection = nullptr;
+	onPublishP2P = nullptr;
+	onConnect2Peer = nullptr;
+	onCreateStream = nullptr;
+	onConnect2Group = nullptr;
+	_onDecoded = nullptr;
 	_waitSignal.set();
 }
 
@@ -261,7 +290,8 @@ void Invoker::manage() {
 
 bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	//BufferPool bufferPool(timer);
-	//Buffer::SetAllocator(bufferPool);
+	Allocator simpleAllocator;
+	Buffer::SetAllocator(simpleAllocator);
 
 	Timer::OnTimer onManage;
 
@@ -313,7 +343,7 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 
 	// release memory
 	INFO("Invoker memory release");
-	//Buffer::SetAllocator();
+	Buffer::SetAllocator();
 	//bufferPool.clear();
 	NOTE("Invoker stopped")
 	if (_logger) {
@@ -342,7 +372,7 @@ bool Invoker::isInterrupted() {
 	return !Thread::running() || (_interruptCb && _interruptCb(_interruptArg) == 1);
 }
 
-void Invoker::removeConnection(unsigned int index) {
+void Invoker::removeConnection(unsigned int index, bool blocking) {
 	{
 		lock_guard<mutex>	lock(_mutexConnections);
 		if (_mapConnections.find(index) == _mapConnections.end()) {
@@ -352,7 +382,13 @@ void Invoker::removeConnection(unsigned int index) {
 	}
 
 	// Delete the session in the Handler thread and wait until operation is finished
-	_handler.queue(onRemoveConnection, index);
+	atomic<bool> ready(false);
+	_handler.queue(onRemoveConnection, index, ready, blocking);
+
+	if (blocking) {
+		while (!ready && !isInterrupted())
+			_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+	}
 }
 
 void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt) {
@@ -894,7 +930,7 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 	}
 	// Remove fallback connection if needed
 	if (eraseFallback)
-		removeConnection(eraseFallback);
+		removeConnection(eraseFallback, false);
 
 	// Add the new packet
 	{
@@ -938,4 +974,12 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 		itMedia->second.mediaPackets.emplace_back(packet, time + itMedia->second.timeOffset, type);
 		itMedia->second.readSignal.set(); // signal that data is available
 	}
+}
+
+void Invoker::decode(int idConnection, UInt32 idSession, const SocketAddress& address, const shared_ptr<RTMFP::Engine>& pEngine, shared_ptr<Buffer>& pBuffer, UInt16& threadRcv) {
+
+	shared_ptr<RTMFPDecoder> pDecoder(new RTMFPDecoder(idConnection, idSession, address, pEngine, pBuffer, handler));
+	pDecoder->onDecoded = _onDecoded;
+	Exception ex;
+	AUTO_ERROR(threadPool.queue(ex, pDecoder, threadRcv), "RTMFP Decode")
 }
