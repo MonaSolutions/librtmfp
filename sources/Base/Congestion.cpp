@@ -1,22 +1,17 @@
 /*
-Copyright 2016 Thomas Jammet
+This file is a part of MonaSolutions Copyright 2017
 mathieu.poux[a]gmail.com
 jammetthomas[a]gmail.com
 
-This file is part of Librtmfp.
+This program is free software: you can redistribute it and/or
+modify it under the terms of the the Mozilla Public License v2.0.
 
-Librtmfp is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-Librtmfp is distributed in the hope that it will be useful,
+This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
+Mozilla Public License v. 2.0 received along this program for more
+details (or else see http://mozilla.org/MPL/2.0/).
 
-You should have received a copy of the GNU Lesser General Public License
-along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "Base/Congestion.h"
@@ -42,4 +37,4 @@ bool Congestion::operator()(UInt64 queueing, UInt32 duration) {
 }
 
 
-} // namespace Mona
+} // namespace Base
