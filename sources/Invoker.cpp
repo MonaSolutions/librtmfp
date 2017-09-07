@@ -130,7 +130,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 			removeConnection(it);
 
 		// To exit from the caller loop
-		if (obj.blocking) {
+		if (obj.blocking && Thread::running()) {
 			obj.ready = true;
 			_waitSignal.set();
 		}
@@ -386,7 +386,7 @@ void Invoker::removeConnection(unsigned int index, bool blocking) {
 	_handler.queue(onRemoveConnection, index, ready, blocking);
 
 	if (blocking) {
-		while (!ready && !isInterrupted())
+		while (!ready && Thread::running())
 			_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
 	}
 }
