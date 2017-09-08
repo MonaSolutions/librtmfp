@@ -7,7 +7,7 @@ It is made to allow softwares to connect to RTMFP servers and publish or receive
 
 Both MonaServer and AMS server are supported.
 
-**librtmfp** can be integrated with FFmpeg to get a best experience.
+**librtmfp** can be integrated with [our fork of FFmpeg](https://github.com/thomasjammet/FFmpeg/) to get a reliable streaming experience.
 
 ## Installation
 
@@ -21,7 +21,7 @@ Coming soon...
 
 As **librtmfp** is a C++ LGPL library it can be included in many softwares.
 
-A testing software (TestClient) is delivered with **librtmfp** as a sample of usage but we recommend FFmpeg for production use.
+A testing software (TestClient) is delivered with **librtmfp** as a sample of usage but we recommend [FFmpeg](https://github.com/thomasjammet/FFmpeg/) for production use.
 
  
 ### Sample FFmpeg commands
