@@ -28,6 +28,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "GroupMedia.h"
 #include <set>
 
+#define NETGROUP_MAX_REPORT_SIZE		20000 // max size used for NetGroup Report messages
 #define NETGROUP_MAX_PACKET_SIZE		959
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
 #define NETGROUP_BEST_LIST_DELAY		10000	// delay between each best list calculation (in msec)

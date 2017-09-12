@@ -31,7 +31,7 @@ using namespace std;
 UInt32	GroupMedia::GroupMediaCounter = 0;
 
 GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _firstPushMode(true), _currentPushMask(0),
-	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false),
+	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false), _fragmentsMapBuffer(MAX_FRAGMENT_MAP_SIZE*4),
 	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable) {
 
 	_onPeerClose = [this](const string& peerId, UInt8 mask) {
@@ -94,7 +94,11 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 
 			// Add the fragment to the map
 			UInt32 fragmentSize = ((splitCounter > 0) ? NETGROUP_MAX_PACKET_SIZE : reader.available());
-			addFragment(itFragment, reliable, NULL, marker, ++_fragmentCounter, splitCounter, type, time, Packet(packet, reader.current(), fragmentSize));
+			shared<Buffer> pBuffer(new Buffer(NETGROUP_MAX_PACKET_SIZE));
+			pBuffer->resize(fragmentSize);
+			BinaryWriter writer(pBuffer->data(), pBuffer->size());
+			writer.write(reader.current(), fragmentSize);
+			addFragment(itFragment, reliable, NULL, marker, ++_fragmentCounter, splitCounter, type, time, Packet(pBuffer));
 			reader.next(fragmentSize);
 		} while (splitCounter-- > 0);
 
@@ -114,7 +118,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		else {
 			UInt8 mask = 1 << (fragmentId % 8);
 			if (pPeer->pushInMode & mask) {
-				TRACE("GroupMedia ", id, " - Push In fragment received from ", peerId, " : ", fragmentId, " ; mask : ", String::Format<UInt8>("%.2x", mask))
+				TRACE("GroupMedia ", id, " - Push In - fragment received from ", peerId, " : ", fragmentId, " ; mask : ", String::Format<UInt8>("%.2x", mask))
 
 				auto itPushMask = _mapPushMasks.lower_bound(mask);
 				// first push with this mask?
@@ -124,14 +128,14 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 					if (itPushMask->second.first != peerId) {
 						// Peer is faster?
 						if (itPushMask->second.second < fragmentId) {
-							TRACE("GroupMedia ", id, " - Push In - Updating the pusher, last peer was ", itPushMask->second.first)
+							DEBUG("GroupMedia ", id, " - Push In - Updating the pusher of mask ", mask, ", last peer was ", itPushMask->second.first)
 							auto itOldPeer = _mapPeers.find(itPushMask->second.first);
 							if (itOldPeer != _mapPeers.end())
 								itOldPeer->second->sendPushMode(itOldPeer->second->pushInMode - mask);
 							itPushMask->second.first = peerId.c_str();
 						}
 						else {
-							TRACE("GroupMedia ", id, " - Push In - Tested pusher is slower than current one, resetting mask...")
+							TRACE("GroupMedia ", id, " - Push In - Tested pusher is slower than current one, resetting mask ", mask, "...")
 							pPeer->sendPushMode(pPeer->pushInMode - mask);
 						}
 					}
@@ -145,7 +149,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 
 		auto itFragment = _fragments.lower_bound(fragmentId);
 		if (itFragment != _fragments.end() && itFragment->first == fragmentId) {
-			TRACE("GroupMedia ", id, " - Fragment ", fragmentId, " already received, ignored")
+			DEBUG("GroupMedia ", id, " - Fragment ", fragmentId, " already received, ignored")
 			return;
 		}
 
@@ -154,7 +158,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 			auto itBegin = _mapTime2Fragment.begin();
 			auto itEnd = _mapTime2Fragment.rbegin();
 			if (((itEnd->first - itBegin->first) > groupParameters->windowDuration) && itBegin->second > fragmentId) {
-				TRACE("GroupMedia ", id, " - Fragment ", fragmentId, " too old (min : ", itBegin->second, "), ignored") // TODO: see if we must close the session in this case
+				DEBUG("GroupMedia ", id, " - Fragment ", fragmentId, " too old (min : ", itBegin->second, "), ignored") // TODO: see if we must close the session in this case
 				return;
 			}
 		}
@@ -251,22 +255,22 @@ bool GroupMedia::manage() {
 		_lastFragmentsMap.update();
 	}
 
-	if (_mapPeers.empty())
+	if (_mapPeers.empty() || groupParameters->isPublisher)
 		return true;
 
 	// Send the Push requests
-	if (!groupParameters->isPublisher && _lastPushUpdate.isElapsed(NETGROUP_PUSH_DELAY))
+	if (_lastPushUpdate.isElapsed(NETGROUP_PUSH_DELAY))
 		sendPushRequests();
 
 	// Send the Pull requests
-	if (!groupParameters->isPublisher && _lastPullUpdate.isElapsed(NETGROUP_PULL_DELAY)) {
+	if (_lastPullUpdate.isElapsed(NETGROUP_PULL_DELAY)) {
 
 		sendPullRequests();
 		_lastPullUpdate.update();
 	}
 
 	// Try to process again the last fragments
-	if (!groupParameters->isPublisher && _lastProcessFragment.isElapsed(NETGROUP_PROCESS_FGMT_TIMEOUT)) {
+	if (_lastProcessFragment.isElapsed(NETGROUP_PROCESS_FGMT_TIMEOUT)) { // TODO: should we process also if no peer?
 		auto itLast = _fragments.find(_fragmentCounter + 1);
 		if (itLast != _fragments.end())
 			processFragments(itLast);
@@ -401,7 +405,7 @@ UInt64 GroupMedia::updateFragmentMap() {
 	UInt64 lastFragment = _fragments.empty() ? _endFragment : _fragments.rbegin()->first;
 	UInt64 nbFragments = lastFragment - firstFragment; // number of fragments - the first one
 	_fragmentsMapBuffer.resize((UInt32)((nbFragments / 8) + ((nbFragments % 8) > 0)) + Binary::Get7BitValueSize(lastFragment) + 1, false);
-	BinaryWriter writer(BIN _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
+	BinaryWriter writer(_fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
 	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(_endFragment? _endFragment : lastFragment);
 
 	// If there is only one fragment we just write its counter
@@ -460,6 +464,7 @@ bool GroupMedia::processFragment(MAP_FRAGMENTS_ITERATOR& itFragment) {
 			}
 			return true;
 		}
+		return false;
 	}
 	// else Splitted fragment
 	
@@ -501,16 +506,15 @@ bool GroupMedia::processFragment(MAP_FRAGMENTS_ITERATOR& itFragment) {
 		itFragment = itEnd;
 
 		// Buffer the fragments and forward the whole packet
-		_internalBuffer.resize(totalSize, false);
-		BinaryWriter writer(_internalBuffer.data(), _internalBuffer.size());
+		shared_ptr<Buffer>	pBuffer(new Buffer(totalSize));
+		BinaryWriter writer(pBuffer->data(), pBuffer->size());
 		auto itCurrent = itStart;
 		do {
 			writer.write(itCurrent->second->data(), itCurrent->second->size());
 		} while (itCurrent++ != itEnd);
 
 		DEBUG("GroupMedia ", id, " - Pushing splitted packet ", itStart->first, " - ", nbFragments, " fragments for a total size of ", writer.size())
-		Packet packet(_internalBuffer);
-		if (!onGroupPacket(itStart->second->time, packet, 0, itStart->second->type)) {
+		if (!onGroupPacket(itStart->second->time, Packet(pBuffer), 0, itStart->second->type)) {
 			close(itFragment->first + 1); // if last fragment receive we record it
 			return false;
 		}
@@ -608,7 +612,7 @@ void GroupMedia::sendPullRequests() {
 			break; // we wait for the fragment to be available
 	}
 
-	TRACE("GroupMedia ", id, " - sendPullRequests - Pull requests done : ", _mapWaitingFragments.size(), " waiting fragments (current : ", _currentPullFragment, "; last Fragment : ", lastFragment, ")")
+	DEBUG("GroupMedia ", id, " - sendPullRequests - Pull requests done : ", _mapWaitingFragments.size(), " waiting fragments (current : ", _currentPullFragment, "; last Fragment : ", lastFragment, ")")
 }
 
 bool GroupMedia::sendPullToNextPeer(UInt64 idFragment) {
@@ -673,5 +677,10 @@ void GroupMedia::callFunction(const string& function, queue<string>& arguments) 
 }
 
 void GroupMedia::printStats() {
-	INFO("Fragments : ", _fragments.size(), " ; Times : ", _mapTime2Fragment.size(), " ; peers : ", _mapPeers.size(), " ; masks : ", _mapPushMasks.size())
+	INFO("Fragments : ", _fragments.size(), " ; Times : ", _mapTime2Fragment.size(), " ; peers : ", _mapPeers.size(), " ; masks : ", _mapPushMasks.size(), " ; waiting : ", _mapWaitingFragments.size())
+
+#if defined(_DEBUG)
+	for (auto itMask : _mapPushMasks)
+		DEBUG("Push In mask ", itMask.first, " peer : ", itMask.second.first, " ; id : ", itMask.second.second)
+#endif	
 }

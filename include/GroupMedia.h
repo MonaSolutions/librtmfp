@@ -131,7 +131,6 @@ private:
 
 	Base::UInt64												_endFragment; // last fragment number, if > 0 the GroupMedia is closed
 
-	Base::Buffer												_internalBuffer; // temporary buffer used to concatenate splitted fragments
 	bool														_audioReliable; // if False we do not send back audio packets
 	bool														_videoReliable; // if False we do not send back video packets
 
@@ -144,7 +143,7 @@ private:
 	// Pushers calculation
 	bool														_firstPushMode; // True if no play push mode have been send for now
 	Base::UInt8													_currentPushMask; // current mask analyzed
-	std::map<Base::UInt8, std::pair<std::string, Base::UInt64>>	_mapPushMasks; // Map of push mask to a pair of peerId/fragmentId
+	std::map<Base::UInt8, std::pair<std::string, Base::UInt64>>	_mapPushMasks; // Map of push IN mask to a pair of peerId/fragmentId
 
 	std::map<Base::UInt64, Base::Time>							_mapWaitingFragments; // Map of waiting fragments in Pull requests to the time of the request
 	std::map<Base::Int64, Base::UInt64>							_mapPullTime2Fragment; // Map of reception time to fragments map id (used for pull requests)

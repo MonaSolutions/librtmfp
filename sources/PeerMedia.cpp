@@ -27,7 +27,7 @@ using namespace Base;
 using namespace std;
 
 PeerMedia::PeerMedia(P2PSession* pSession, shared_ptr<RTMFPWriter>& pMediaReportWriter) : _pMediaReportWriter(pMediaReportWriter), _pParent(pSession), _idFragmentsMapIn(0), _idFragmentsMapOut(0), 
-	idFlow(0), idFlowMedia(0), pStreamKey(NULL), _pushOutMode(0), pushInMode(0), groupMediaSent(false), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE), id(pMediaReportWriter->id), _closed(false) {
+	idFlow(0), idFlowMedia(0), pStreamKey(NULL), _pushOutMode(0), pushInMode(0), groupMediaSent(false), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE*4), id(pMediaReportWriter->id), _closed(false) {
 	TRACE("Creation of PeerMedia ", id, " from ", _pParent->name())
 }
 
@@ -142,7 +142,7 @@ void PeerMedia::handleFragmentsMap(UInt64 id, const UInt8* data, UInt32 size) {
 		return; // 0 size protection
 
 	if (size > MAX_FRAGMENT_MAP_SIZE)
-		WARN("Group Fragment map receive from ", _pParent->peerId, " > max size : ", size)
+		DEBUG("Group Fragment map receive from ", _pParent->peerId, " > max size : ", size)
 	_fragmentsMap.resize(size);
 	BinaryWriter writer(_fragmentsMap.data(), size);
 	writer.write(data, size);

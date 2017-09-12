@@ -99,7 +99,7 @@ UInt32 NetGroup::targetNeighborsCount() {
 }
 
 NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable) : groupParameters(parameters),
-	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), FlashHandler(0, mediaId), _audioReliable(audioReliable), _videoReliable(videoReliable) {
+	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), FlashHandler(0, mediaId), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		if (streamName != stream) {
@@ -386,6 +386,11 @@ void NetGroup::updateBestList() {
 
 	buildBestList(_myGroupAddress, _bestList);
 	manageBestConnections();
+
+	INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), "(", _mapHeardList.size(), ") ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
+	for (auto& itGroup : _mapGroupMedias)
+		itGroup.second.printStats();
+
 	_lastBestCalculation.update();
 }
 
@@ -462,12 +467,6 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 				}
 			}
 		}
-	}
-
-	if (bestList == _bestList) {
-		INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), "(", _mapHeardList.size(), ") ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
-		for (auto& itGroup : _mapGroupMedias)
-			itGroup.second.printStats();
 	}
 }
 

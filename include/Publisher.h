@@ -66,7 +66,7 @@ struct Publisher : virtual Base::Object {
 	bool	isP2P; // If true it is a p2p publisher
 private:
 	// Update and check the time synchronisation variables
-	void updateTime(Base::UInt32 time);
+	void updateTime(AMF::Type type, Base::UInt32 time, Base::UInt32 size);
 
 	bool publishAudio;
 	bool publishVideo;
@@ -87,4 +87,20 @@ private:
 	Base::UInt32						_lastTime; // last time received
 	Base::Time							_lastSyncWarn; // Time since last synchronisation issue
 	Base::Time							_lastPacket; // last time we received a packet
+
+	// This class is used to detect time jump and congestion from publisher
+	struct TimeJump {
+		TimeJump() : _cumulatedTime(0), _lastTime(0), _bytes(0) {}
+
+		// Update the time jump/congestion state
+		// return: 0 if we received less than 1,5s last second, the number of ms received
+		Base::Int64 operator()(Base::UInt32 time, Base::UInt32 size, Base::UInt64& bytes);
+	private:
+		Base::Time		_lastSecond;
+		Base::UInt64	_cumulatedTime; // cumulated number of second received
+		Base::UInt32	_lastTime; // last time received
+		Base::UInt64	_bytes; // number of bytes received last second
+	};
+	TimeJump							_audioJump;
+	TimeJump							_videoJump;
 };

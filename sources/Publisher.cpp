@@ -28,6 +28,31 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
+Int64 Publisher::TimeJump::operator()(UInt32 time, UInt32 size, UInt64& bytes) {
+
+	if (!_lastTime) { // first time received
+		_lastSecond.update();
+		_lastTime = time;
+		return 0;
+	}
+	
+	if (time > _lastTime) { // if the time increase we save it
+		_cumulatedTime += time - _lastTime;
+		_lastTime = time;
+	}
+	_bytes += size;
+
+	Int64 elapsed = _lastSecond.elapsed();
+	if (_cumulatedTime && elapsed > 1000) {
+		Int64 deltaPackets = _cumulatedTime - elapsed;
+		_lastSecond.update();
+		bytes = _bytes;
+		_cumulatedTime = _bytes = 0;
+		return (deltaPackets < 500)? 0 : deltaPackets + elapsed; // More than 1,5s of packets in 1s, we consider it is a time jump
+	}
+	return 0;
+}
+
 Publisher::Publisher(const string& name, Invoker& invoker, bool audioReliable, bool videoReliable, bool p2p) : _running(false), _new(false), _name(name), publishAudio(true), publishVideo(true),
 	_audioReliable(audioReliable), _videoReliable(videoReliable), isP2P(p2p), _invoker(invoker), _lastTime(0) {
 
@@ -79,18 +104,30 @@ void Publisher::stop() {
 	_running = false;
 }
 
-void Publisher::updateTime(UInt32 time) {
+void Publisher::updateTime(AMF::Type type, UInt32 time, UInt32 size) {
 
-	// Test time synchro issue
-	if (_lastTime > time) {
-		if (_lastSyncWarn.isElapsed(1000) && (_lastTime - time) > 1000) {
-			WARN("Packet time of publication ", _name, " is more than 1s in the past : ", time, "ms < ", _lastTime, "ms")
-			_lastSyncWarn.update();
-		}
-	}
 	// Test a gap of packets
 	if (_lastTime && _lastPacket.isElapsed(1000))
-		WARN("More than 1s without receiving any packet from ", _name, " : ", _lastPacket.elapsed(), "ms")
+		WARN("More than 1s without receiving any packet from publication ", _name, " : ", _lastPacket.elapsed(), "ms")
+
+	// Test time synchro issue
+	Int64 deltaPackets;
+	if (_lastTime && (deltaPackets = (Int64)_lastTime - (Int64)time) > 1000) {
+		if (_lastSyncWarn.isElapsed(1000)) {
+			WARN((type == AMF::TYPE_AUDIO) ? "Audio" : "Video", " packet of publication ", _name, " is more than 1s in the past : ", deltaPackets, "ms")
+			_lastSyncWarn.update();
+		}
+	} 
+
+	// Every 1s test if there is a publishing congestion
+	UInt64 bytes(0);
+	if (type == AMF::TYPE_AUDIO) {
+		if ((deltaPackets = _audioJump(time, size, bytes)))
+			WARN("Publication ", _name, " audio time jump : ", deltaPackets, "ms received in 1s (", bytes/125, " kbits)")
+	}
+	else if ((deltaPackets = _videoJump(time, size, bytes)))
+		WARN("Publication ", _name, " video time jump : ", deltaPackets, "ms received in 1s (", bytes/125, " kbits)")
+
 	_lastTime = time;
 	_lastPacket.update();
 }
@@ -100,7 +137,7 @@ void Publisher::pushAudio(UInt32 time, const Packet& packet) {
 		ERROR("Audio packet pushed on '", _name, "' publication stopped");
 		return;
 	}
-	updateTime(time);
+	updateTime(AMF::TYPE_AUDIO, time, packet.size());
 
 	// save audio codec packet for future listeners
 	if (RTMFP::IsAACCodecInfos(packet.data(), packet.size())) {
@@ -121,7 +158,7 @@ void Publisher::pushVideo(UInt32 time, const Packet& packet) {
 		return;
 	}
 
-	updateTime(time);
+	updateTime(AMF::TYPE_VIDEO, time, packet.size());
 
 	// save video codec packet for future listeners
 	if (RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) {
