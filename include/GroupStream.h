@@ -50,5 +50,5 @@ public:
 	virtual ~GroupStream();
 
 	// return flase if writer is closed!
-	virtual bool	process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate=0);
+	virtual bool	process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate, bool lastFragment);
 };

@@ -38,7 +38,7 @@ struct FlashHandler : virtual Base::Object {
 
 	void			setIdMedia(Base::UInt16 idMedia) { _mediaId = idMedia; }
 
-	bool			process(AMF::Type type, Base::UInt32 time, const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate);
+	bool			process(AMF::Type type, Base::UInt32 time, const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate, bool lastFragment);
 
 protected:
 
@@ -60,7 +60,7 @@ struct FlashStream : FlashHandler, virtual Base::Object {
 	typedef Base::Event<bool(Base::BinaryReader& reader, Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>							ON(GroupMedia); // Received when a connected peer send us a peer Group Media (Subscription/Infos)
 	typedef Base::Event<void(Base::BinaryReader& reader, Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>							ON(GroupReport);
 	typedef Base::Event<void(Base::BinaryReader& reader, Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>							ON(GroupPlayPush);
-	typedef Base::Event<void(Base::BinaryReader& reader, Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>							ON(GroupPlayPull);
+	typedef Base::Event<void(Base::BinaryReader& reader, Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId, bool flush)>				ON(GroupPlayPull);
 	typedef Base::Event<void(Base::BinaryReader& reader, Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>							ON(FragmentsMap);
 	typedef Base::Event<void(Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>														ON(GroupBegin);
 	typedef Base::Event<void(Base::UInt8 type, Base::UInt64 id, Base::UInt8 splitNumber, Base::UInt8 mediaType, Base::UInt32 time, 
@@ -71,7 +71,7 @@ struct FlashStream : FlashHandler, virtual Base::Object {
 	virtual ~FlashStream();
 
 	// return flase if writer is closed!
-	virtual bool	process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate=0);
+	virtual bool	process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate, bool lastFragment);
 
 private:
 	virtual bool messageHandler(const std::string& name, AMFReader& message, Base::UInt64 flowId, Base::UInt64 writerId, double callbackHandler);

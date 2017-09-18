@@ -61,6 +61,7 @@ struct GroupMedia : virtual Base::Object {
 	void						callFunction(const std::string& function, std::queue<std::string>& arguments);
 
 	GroupListener::OnMedia						onMedia; // Create a new fragment from a media packet
+	GroupListener::OnFlush						onFlush; // Flush the listeners
 
 	const Base::UInt32								id; // id of the GroupMedia (incremental)
 	std::shared_ptr<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream

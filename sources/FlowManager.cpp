@@ -161,7 +161,7 @@ void FlowManager::receive(const Packet& packet) {
 	UInt64 stage = 0;
 
 	BinaryReader reader(packet.data(), packet.size());
-	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF;
+	UInt8 type = reader.available()>0 ? reader.read8() : 0xFF, nextType(0xFF);
 
 	// If it is a p2p responder and it is the first message we call onConnection()
 	if (_responder && status < RTMFP::CONNECTED)
@@ -173,6 +173,8 @@ void FlowManager::receive(const Packet& packet) {
 		UInt16 size = reader.read16();
 
 		BinaryReader message(reader.current(), size);
+		reader.next(size);
+		nextType = reader.available()>0 ? reader.read8() : 0xFF;
 
 		switch (type) {
 		case 0x0f: // P2P address destinator exchange
@@ -180,9 +182,6 @@ void FlowManager::receive(const Packet& packet) {
 			break;
 		case 0xcc:
 			INFO("CC message received (unknown for now) from connection ", name())
-#if defined(_DEBUG)
-			DUMP("LIBRTMFP", reader.current(), size, "CC message :");
-#endif
 			break;
 		case 0x0c:
 			INFO("Session ", name(), " is closing");
@@ -321,7 +320,7 @@ void FlowManager::receive(const Packet& packet) {
 
 			// Process request
 			if (pFlow && (status != RTMFP::FAILED)) {
-				pFlow->input(stage, flags, Packet(packet, message.current(), message.available()));
+				pFlow->input(stage, flags, Packet(packet, message.current(), message.available()), nextType==0xFF);
 
 				// Read congestion management (reliable mode)
 				if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
@@ -340,8 +339,7 @@ void FlowManager::receive(const Packet& packet) {
 		}
 
 		// Next
-		reader.next(size);
-		type = reader.available()>0 ? reader.read8() : 0xFF;
+		type = nextType;
 
 		// Commit RTMFPFlow (pFlow means 0x11 or 0x10 message)
 		if (stage && (status != RTMFP::FAILED) && type != 0x11) {

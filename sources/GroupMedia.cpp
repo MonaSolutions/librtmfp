@@ -47,7 +47,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 		removePeer(peerId);
 	};
-	_onPlayPull = [this](PeerMedia* pPeer, UInt64 index) {
+	_onPlayPull = [this](PeerMedia* pPeer, UInt64 index, bool flush) {
 		auto itFragment = _fragments.find(index);
 		if (itFragment == _fragments.end()) {
 			DEBUG("GroupMedia ", id, " - Peer is asking for an unknown Fragment (", index, "), possibly deleted")
@@ -55,7 +55,9 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 
 		// Send fragment to peer (pull mode)
-		pPeer->sendMedia(*itFragment->second, true, true); // pull fragment is always reliable
+		pPeer->sendMedia(*itFragment->second, true, itFragment->second->type == AMF::TYPE_AUDIO? _audioReliable : _videoReliable);
+		if (flush)
+			pPeer->flush();
 	};
 	_onFragmentsMap = [this](UInt64 counter) {
 		if (groupParameters->isPublisher)
@@ -102,6 +104,10 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 			reader.next(fragmentSize);
 		} while (splitCounter-- > 0);
 
+	};
+	onFlush = [this]() {
+		for (auto& it : _mapPeers)
+			it.second->flush();
 	};
 	_onFragment = [this](PeerMedia* pPeer, const string& peerId, UInt8 marker, UInt64 fragmentId, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet, double lostRate) {
 		_lastFragment.update(); // save the last fragment reception time for timeout calculation

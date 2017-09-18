@@ -34,7 +34,7 @@ GroupStream::~GroupStream() {
 	DEBUG("GroupStream ", streamId," deleted")
 }
 
-bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate, bool lastFragment) {
 	if (!packet)
 		return true; // Flow is closing
 
@@ -98,7 +98,7 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 			onGroupPlayPush(reader, streamId, flowId, writerId);
 			return true;
 		case GroupStream::GROUP_PLAY_PULL:
-			onGroupPlayPull(reader, streamId, flowId, writerId);
+			onGroupPlayPull(reader, streamId, flowId, writerId, lastFragment);
 			return true;
 		case GroupStream::GROUP_MEDIA_INFOS:
 			return onGroupMedia(reader, streamId, flowId, writerId);

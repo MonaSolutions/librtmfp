@@ -41,7 +41,7 @@ public:
 	const Base::UInt64		id;
 
 	// Handle fragments received
-	void	input(Base::UInt64 stage, Base::UInt8 flags, const Base::Packet& packet);
+	void	input(Base::UInt64 stage, Base::UInt8 flags, const Base::Packet& packet, bool lastFragment);
 
 	// Build acknowledgment
 	Base::UInt64	buildAck(std::vector<Base::UInt64>& losts, Base::UInt16& size);
@@ -52,13 +52,14 @@ public:
 
 private:
 	// Handle on fragment received
-	void	onFragment(Base::UInt64 stage, Base::UInt8 flags, const Base::Packet& packet);
+	void	onFragment(Base::UInt64 stage, Base::UInt8 flags, const Base::Packet& packet, bool lastFragment);
 
-	void	output(Base::UInt64 flowId, Base::UInt32& lost, const Base::Packet& packet);
+	void	output(Base::UInt64 flowId, Base::UInt32& lost, const Base::Packet& packet, bool lastFragment);
 
 	struct Fragment : Base::Packet, virtual Base::Object {
-		Fragment(Base::UInt8 flags, const Base::Packet& packet) : flags(flags), Base::Packet(std::move(packet)) {}
-		const Base::UInt8 flags;
+		Fragment(Base::UInt8 flags, const Base::Packet& packet, bool lastFragment) : flags(flags), Base::Packet(std::move(packet)), lastFragment(lastFragment) {}
+		const Base::UInt8	flags;
+		const bool			lastFragment;
 	};
 
 	Base::UInt64						_stageEnd; // If not 0 it is completed

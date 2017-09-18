@@ -214,5 +214,4 @@ void RTMFPWriter::writeGroupFragment(const GroupFragment& fragment, bool fragmen
 	}
 	
 	writer->write(fragment.data(), fragment.size());
-	//flush();
 }

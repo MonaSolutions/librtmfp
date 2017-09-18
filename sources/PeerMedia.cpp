@@ -192,9 +192,9 @@ bool PeerMedia::hasFragment(UInt64 index) {
 	return (*(_fragmentsMap.data() + offset) & (1 << rest)) > 0;
 }
 
-void PeerMedia::handlePlayPull(UInt64 index) {
+void PeerMedia::handlePlayPull(UInt64 index, bool flush) {
 
-	onPlayPull(this, index);
+	onPlayPull(this, index, flush);
 }
 
 void PeerMedia::sendPull(UInt64 index) {
@@ -203,4 +203,9 @@ void PeerMedia::sendPull(UInt64 index) {
 
 	TRACE("Sending pull request for fragment ", index, " to peer ", _pParent->peerId);
 	_pMediaReportWriter->writeGroupPull(index);
+}
+
+void PeerMedia::flush() {
+	if (_pMediaWriter)
+		_pMediaWriter->flush();
 }

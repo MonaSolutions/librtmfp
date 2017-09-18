@@ -66,7 +66,7 @@ UInt64 RTMFPFlow::buildAck(vector<UInt64>& losts, UInt16& size) {
 	return _stage;
 }
 
-void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
+void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet, bool lastFragment) {
 	if (_stageEnd) {
 		if (_fragments.empty()) {
 			// if completed accept anyway to allow ack and avoid repetition
@@ -117,7 +117,7 @@ void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
 		// not following stage, bufferizes the stage
 		if (_fragments.empty())
 			DEBUG("Wait stage ", nextStage, " lost on flow ", id, " in session ", _band.name());
-		if (_fragments.emplace(piecewise_construct, forward_as_tuple(stage), forward_as_tuple(flags, packet)).second) {
+		if (_fragments.emplace(piecewise_construct, forward_as_tuple(stage), forward_as_tuple(flags, packet, lastFragment)).second) {
 			fragmentation += packet.size();
 			if (_fragments.size() > 100)
 				DEBUG("Fragments buffer increasing on flow ", id, " in session ", _band.name(), " : ", _fragments.size());
@@ -127,20 +127,20 @@ void RTMFPFlow::input(UInt64 stage, UInt8 flags, const Packet& packet) {
 		return;
 	}
 	else
-		onFragment(nextStage++, flags, packet);
+		onFragment(nextStage++, flags, packet, lastFragment);
 
 	auto it = _fragments.begin();
 	while (it != _fragments.end() && it->first <= nextStage) {
-		onFragment(nextStage++, it->second.flags, it->second);
+		onFragment(nextStage++, it->second.flags, it->second, it->second.lastFragment);
 		fragmentation -= it->second.size();
 		it = _fragments.erase(it);
 	}
 	if (_fragments.empty() && _stageEnd)
-		output(id, _lost, Packet::Null()); // end flow!
+		output(id, _lost, Packet::Null(), true); // end flow!
 	
 }
 
-void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
+void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet, bool lastFragment) {
 	
 	_stage = stage;
 
@@ -150,7 +150,7 @@ void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
 			return;
 		Packet packet(_pBuffer);
 		if (packet)
-			output(id, _lost, packet);
+			output(id, _lost, packet, lastFragment);
 		return;
 
 	}
@@ -164,12 +164,12 @@ void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet) {
 		return;
 	}
 	if (packet)
-		output(id, _lost, packet);
+		output(id, _lost, packet, lastFragment);
 }
 
-void RTMFPFlow::output(UInt64 flowId, UInt32& lost, const Packet& packet) {
+void RTMFPFlow::output(UInt64 flowId, UInt32& lost, const Packet& packet, bool lastFragment) {
 
-	if (!_pStream || !_pStream->process(packet, id, _writerRef, lost)) {
+	if (!_pStream || !_pStream->process(packet, id, _writerRef, lost, lastFragment)) {
 		_band.closeFlow(id); // send an exception
 		return;
 	}

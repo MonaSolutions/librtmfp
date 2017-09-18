@@ -109,13 +109,13 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		if (itPeerMedia != _mapFlow2PeerMedia.end())
 			itPeerMedia->second->setPushMode(packet.read8());
 	};
-	_pMainStream->onGroupPlayPull = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
+	_pMainStream->onGroupPlayPull = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId, bool flush) {
 		UInt64 fragment = packet.read7BitLongValue();
 		TRACE("Group Pull message received from peer ", peerId, " - fragment : ", fragment)
 
 		auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
 		if (itPeerMedia != _mapFlow2PeerMedia.end())
-			itPeerMedia->second->handlePlayPull(fragment);
+			itPeerMedia->second->handlePlayPull(fragment, flush);
 	};
 	_pMainStream->onFragmentsMap = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 		UInt64 counter = packet.read7BitLongValue();

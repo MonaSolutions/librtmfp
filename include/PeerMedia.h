@@ -52,7 +52,7 @@ media messages to the peer
 */
 struct PeerMedia : public virtual Base::Object {
 	typedef Base::Event<void(const std::string& peerId, Base::UInt8 mask)>	ON(PeerClose); // notify parent that the peer is closing (update the NetGroup push flags)
-	typedef Base::Event<void(PeerMedia*, Base::UInt64)>						ON(PlayPull); // called when we receive a pull request
+	typedef Base::Event<void(PeerMedia*, Base::UInt64, bool)>				ON(PlayPull); // called when we receive a pull request
 	typedef Base::Event<bool(Base::UInt64)>									ON(FragmentsMap); // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
 	typedef Base::Event<void(PeerMedia*, const std::string&, Base::UInt8, Base::UInt64, Base::UInt8, Base::UInt8, Base::UInt32, const Base::Packet&, double)> ON(Fragment); // called when receiving a fragment
 
@@ -105,7 +105,10 @@ struct PeerMedia : public virtual Base::Object {
 	void sendPull(Base::UInt64 index);
 
 	// Handle a pull request
-	void handlePlayPull(Base::UInt64 index);
+	void handlePlayPull(Base::UInt64 index, bool flush);
+
+	// Flush the media Writer
+	void flush();
 
 	Base::UInt64					id; // id of the PeerMedia, it is also the id of the report writer
 	Base::UInt64					idFlow; // id of the Media Report RTMFPFlow linked to, used to create the Media Writer

@@ -160,6 +160,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 			}
 			INFO("First viewer play request, starting to play Stream ", stream)
 			_pListener->onMedia = _groupMediaPublisher->second.onMedia;
+			_pListener->onFlush = _groupMediaPublisher->second.onFlush;
 			_conn.onConnected2Group(); // A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 		}
 
@@ -193,7 +194,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 	};
 	_onGroupPacket = [this](UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 		// Go back to Flash handler
-		return FlashHandler::process(type, time, packet, 0, 0, lostRate);
+		return FlashHandler::process(type, time, packet, 0, 0, lostRate, false);
 	};
 	_onPeerClose = [this](const string& peerId) {
 		removePeer(peerId);
@@ -239,7 +240,8 @@ void NetGroup::stopListener() {
 	// Terminate the GroupMedia properly
 	if (_groupMediaPublisher != _mapGroupMedias.end()) {
 		_groupMediaPublisher->second.closePublisher();
-		_groupMediaPublisher->second.onMedia = nullptr;
+		_groupMediaPublisher->second.onMedia = nullptr; 
+		_groupMediaPublisher->second.onFlush = nullptr;
 	}
 	_groupMediaPublisher = _mapGroupMedias.end();
 	_pListener->onMedia = nullptr;
@@ -387,7 +389,7 @@ void NetGroup::updateBestList() {
 	buildBestList(_myGroupAddress, _bestList);
 	manageBestConnections();
 
-	INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), "(", _mapHeardList.size(), ") ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
+	INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
 	for (auto& itGroup : _mapGroupMedias)
 		itGroup.second.printStats();
 

@@ -25,6 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 struct GroupListener : Listener {
 	typedef Base::Event<void(bool reliable, AMF::Type type, Base::UInt32 time, const Base::Packet& packet)> ON(Media);
+	typedef Base::Event<void()>																				ON(Flush); // called at the end of the RTMFP_Write
 	GroupListener(Publisher& publication, const std::string& identifier);
 	virtual ~GroupListener();
 
@@ -34,7 +35,7 @@ struct GroupListener : Listener {
 	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 
-	virtual void flush() {}
+	virtual void flush();
 
 private:
 

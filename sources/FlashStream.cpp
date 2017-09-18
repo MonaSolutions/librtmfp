@@ -35,7 +35,7 @@ FlashStream::~FlashStream() {
 	DEBUG("FlashStream ", streamId," deleted")
 }
 
-bool FlashStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+bool FlashStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate, bool lastFragment) {
 	if (!packet)
 		return true; // Flow is closing
 
@@ -43,7 +43,7 @@ bool FlashStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 
 	AMF::Type type = (AMF::Type)reader.read8();
 	UInt32 time = reader.read32();
-	return FlashHandler::process(type, time, Packet(packet, reader.current(), reader.available()), flowId, writerId, lostRate);
+	return FlashHandler::process(type, time, Packet(packet, reader.current(), reader.available()), flowId, writerId, lostRate, lastFragment);
 }
 
 bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 flowId, UInt64 writerId, double callbackHandler) {
@@ -60,7 +60,7 @@ bool FlashStream::messageHandler(const string& name, AMFReader& message, UInt64 
 		return FlashHandler::messageHandler(name, message, flowId, writerId, callbackHandler);
 }
 
-bool FlashHandler::process(AMF::Type type, UInt32 time, const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate) {
+bool FlashHandler::process(AMF::Type type, UInt32 time, const Packet& packet, UInt64 flowId, UInt64 writerId, double lostRate, bool lastFragment) {
 
 	// if exception, it closes the connection, and print an ERROR message
 	switch(type) {

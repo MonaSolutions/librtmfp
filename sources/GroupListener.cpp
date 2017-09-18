@@ -61,7 +61,7 @@ void GroupListener::pushVideo(UInt32 time, const Packet& packet, bool reliable) 
 		}
 	}
 	// Send codec infos periodically
-	else if (_lastVideoCodecs.isElapsed(5000))  // TODO: make the time configurable
+	else if (_lastVideoCodecs.isElapsed(900))  // we want to send the video codecs frame for every keyframe (with a max of 0,9s between each) 
 		pushVideoInfos(time, packet);
 
 	if (_firstTime) {
@@ -98,7 +98,7 @@ void GroupListener::pushAudio(UInt32 time, const Packet& packet, bool reliable) 
 		pushAudioInfos(time);
 	}
 	// Send AAC codec infos periodically (TODO: save the codec type)
-	else if ((packet.size() > 1 && (*packet.data() >> 4) == 0x0A) && _lastAACCodecs.isElapsed(5000)) // TODO: make the time configurable
+	else if ((packet.size() > 1 && (*packet.data() >> 4) == 0x0A) && _lastAACCodecs.isElapsed(1000)) // Every second we send the audio codecs infos
 		pushAudioInfos(time);
 	time -= _startTime;
 
@@ -112,4 +112,8 @@ bool GroupListener::pushAudioInfos(UInt32 time) {
 	INFO("AAC codec infos sent to one listener of ", publication.name(), " publication")
 	pushAudio(time, publication.audioCodecBuffer(), true);
 	return true;
+}
+
+void GroupListener::flush() {
+	onFlush();
 }
