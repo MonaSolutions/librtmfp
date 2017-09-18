@@ -39,7 +39,7 @@ A temporary repository of FFmpeg is available with a wrapper to librtmfp : https
 - You can remove --enable-debug if you doesn't want to debug ffmpeg,
 - You can remove --enable-librtmp and libspeex if you don't need them,
 - You can also remove --enable-libx264 and --enable-gpl if you don't need h264 encoder,
-- Install SDL-devel (or libsdl-dev) if you want to compile ffplay.
+- Install SDL2-devel (or libsdl2-dev) if you want to compile ffplay (on older linux distributions SDL is used instead).
 
 To use it just do a git clone and run the following command in FFmpeg directory :
 
