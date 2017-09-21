@@ -30,7 +30,7 @@ using namespace std;
 
 UInt32	GroupMedia::GroupMediaCounter = 0;
 
-GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _firstPushMode(true), _currentPushMask(0),
+GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _currentPushMask(0),
 	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false), _fragmentsMapBuffer(MAX_FRAGMENT_MAP_SIZE*4),
 	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable) {
 
@@ -76,10 +76,8 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 
 		// Start push mode if not started
-		if (_firstPushMode) {
+		if (!_currentPushMask)
 			sendPushRequests();
-			_firstPushMode = false;
-		}
 		return true;
 	};
 	onMedia = [this](bool reliable, AMF::Type type, UInt32 time, const Packet& packet) {
@@ -226,10 +224,10 @@ void GroupMedia::closePublisher() {
 void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet) {
 	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(id), forward_as_tuple(new GroupFragment(packet, time, (AMF::Type)mediaType, id, marker, splitedNumber)));
 
-	// Send fragment to peers (push mode)
+	// Send fragment to peers (push mode) in order of priority
 	UInt8 nbPush = groupParameters->pushLimit + 1;
-	for (auto it : _mapPeers) {
-		if (it.second.get() != pPeer && it.second->sendMedia(*itFragment->second, false, reliable) && (--nbPush == 0)) {
+	for (auto& it : _listPeers) {
+		if (it.get() != pPeer && it->sendMedia(*itFragment->second, false, reliable) && (--nbPush == 0)) {
 			TRACE("GroupMedia ", id, " - Push limit (", groupParameters->pushLimit + 1, ") reached for fragment ", id, " (mask=", String::Format<UInt8>("%.2x", 1 << (id % 8)), ")")
 			break;
 		}
@@ -291,6 +289,7 @@ void GroupMedia::addPeer(const string& peerId, shared_ptr<PeerMedia>& pPeer) {
 	if (itPeer != _mapPeers.end() && itPeer->first == peerId)
 		return;
 
+	_listPeers.push_back(pPeer);
 	_mapPeers.emplace(peerId, pPeer);
 	pPeer->onPeerClose = _onPeerClose;
 	pPeer->onPlayPull = _onPlayPull;
@@ -650,6 +649,14 @@ void GroupMedia::removePeer(MAP_PEERS_INFO_ITERATOR_TYPE itPeer) {
 	itPeer->second->onFragmentsMap = nullptr;
 	itPeer->second->onFragment = nullptr;
 
+	// Remove from the list of peers 
+	for (auto itList = _listPeers.begin(); itList != _listPeers.end(); ++itList) {
+		if (itList->get() == itPeer->second.get()) {
+			_listPeers.erase(itList);
+			break;
+		}
+	}
+
 	// If it is a current peer => increment
 	if (itPeer == _itPullPeer && getNextPeer(_itPullPeer, true, 0, 0) && itPeer == _itPullPeer)
 		_itPullPeer = _mapPeers.end(); // to avoid bad pointer
@@ -686,7 +693,7 @@ void GroupMedia::printStats() {
 	INFO("Fragments : ", _fragments.size(), " ; Times : ", _mapTime2Fragment.size(), " ; peers : ", _mapPeers.size(), " ; masks : ", _mapPushMasks.size(), " ; waiting : ", _mapWaitingFragments.size())
 
 #if defined(_DEBUG)
-	for (auto itMask : _mapPushMasks)
+	for (auto& itMask : _mapPushMasks)
 		DEBUG("Push In mask ", itMask.first, " peer : ", itMask.second.first, " ; id : ", itMask.second.second)
-#endif	
+#endif
 }

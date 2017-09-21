@@ -25,6 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "P2PSession.h"
 #include "GroupListener.h"
 #include <queue>
+#include <list>
 
 /**********************************************
 GroupMedia is the class that manage a stream
@@ -68,6 +69,7 @@ struct GroupMedia : virtual Base::Object {
 	
 private:
 	#define MAP_PEERS_INFO_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>
+	#define LIST_PEERS_INFO_TYPE std::list<std::shared_ptr<PeerMedia>>
 	#define MAP_PEERS_INFO_ITERATOR_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>::iterator
 	#define MAP_FRAGMENTS_ITERATOR std::map<Base::UInt64, std::unique_ptr<GroupFragment>>::iterator
 
@@ -137,12 +139,12 @@ private:
 
 	// map of peers & iterators
 	MAP_PEERS_INFO_TYPE											_mapPeers; // map of peers subscribed to this media stream
+	LIST_PEERS_INFO_TYPE										_listPeers; // list of peers in order of connection for sending fragments
 	MAP_PEERS_INFO_ITERATOR_TYPE								_itFragmentsPeer; // Current peer for fragments map requests
 	MAP_PEERS_INFO_ITERATOR_TYPE								_itPushPeer; // Current peer for push request
 	MAP_PEERS_INFO_ITERATOR_TYPE								_itPullPeer; // Current peer for pull request
 
 	// Pushers calculation
-	bool														_firstPushMode; // True if no play push mode have been send for now
 	Base::UInt8													_currentPushMask; // current mask analyzed
 	std::map<Base::UInt8, std::pair<std::string, Base::UInt64>>	_mapPushMasks; // Map of push IN mask to a pair of peerId/fragmentId
 
