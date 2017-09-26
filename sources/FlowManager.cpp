@@ -95,15 +95,6 @@ void FlowManager::clearWriters() {
 }
 
 void FlowManager::flushWriters() {
-	// Every 25s : ping
-	if (_lastPing.isElapsed(25000) && status == RTMFP::CONNECTED) {
-		send(make_shared<RTMFPCmdSender>(0x01, 0x89 + _responder));
-		_lastPing.update();
-	}
-
-	// Every 5s : send back session close request
-	if (status == RTMFP::NEAR_CLOSED && _lastClose.isElapsed(5000))
-		sendCloseChunk(false);
 
 	// Raise RTMFPWriter
 	auto it = _flowWriters.begin();
@@ -431,19 +422,38 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 
 bool FlowManager::manage() {
 
-	// Close the session if needed
-	if (_waitClose) {
-		close(false);
-		_waitClose = false;
-	}
+	if (status != RTMFP::FAILED) {
 
-	// Release the old flows
-	auto itFlow = _flows.begin();
-	while (itFlow != _flows.end()) {
-		if (itFlow->second->consumed())
-			removeFlow((itFlow++)->second);
-		else
-			++itFlow;
+		// Release the old flows
+		auto itFlow = _flows.begin();
+		while (itFlow != _flows.end()) {
+			if (itFlow->second->consumed())
+				removeFlow((itFlow++)->second);
+			else
+				++itFlow;
+		}
+
+		// Close the session if congestion
+		if (_waitClose) {
+			close(false);
+			_waitClose = false;
+		}
+		// After 6 mn without any message we can considerate that the session has failed
+		else if (_recvTime.isElapsed(360000)) {
+			WARN(name(), " failed, reception timeout");
+			close(true);
+			return false;
+		}
+
+		// Every 25s : ping
+		if (_lastPing.isElapsed(25000) && status == RTMFP::CONNECTED) {
+			send(make_shared<RTMFPCmdSender>(0x01, 0x89 + _responder));
+			_lastPing.update();
+		}
+
+		// Every 5s : send back session close request
+		if (status == RTMFP::NEAR_CLOSED && _lastClose.isElapsed(5000))
+			sendCloseChunk(false);
 	}
 
 	// Send the waiting messages
@@ -503,6 +513,7 @@ void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
 	BinaryReader reader(packet.data(), packet.size());
 	UInt8 marker = reader.read8();
 	UInt16 time = reader.read16();
+	_recvTime.update();
 
 	if (address != _address) {
 		DEBUG("Session ", name(), " has change its address from ", _address, " to ", address)

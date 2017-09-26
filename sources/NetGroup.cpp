@@ -115,7 +115,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		auto itGroupMedia = _mapGroupMedias.lower_bound(streamKey);
 		if (itGroupMedia == _mapGroupMedias.end() || itGroupMedia->first != streamKey) {
 			if (groupParameters->isPublisher) {
-				INFO("New GroupMedia ignored, we are the publisher")
+				DEBUG("New GroupMedia ignored, we are the publisher")
 				return false;
 			}
 			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable));

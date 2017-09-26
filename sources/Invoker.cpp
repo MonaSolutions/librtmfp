@@ -376,7 +376,7 @@ void Invoker::removeConnection(unsigned int index, bool blocking) {
 	{
 		lock_guard<mutex>	lock(_mutexConnections);
 		if (_mapConnections.find(index) == _mapConnections.end()) {
-			INFO("Connection at index ", index, " as already been removed")
+			INFO("Connection at index ", index, " has already been removed")
 			return;
 		}
 	}
@@ -397,7 +397,7 @@ void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, 
 	if (!abrupt)
 		it->second->closeSession(); // we must close here because there can be shared pointers
 
-										// Erase fallback connections
+	// Erase fallback connections
 	_waitingFallback.erase(it->first);
 	_connection2Fallback.erase(it->first);
 
@@ -816,24 +816,18 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) 
 	_mutexRead.lock();
 	int nbRead = 0;
 	Time noData;
-	while (!nbRead) {
-
-		{
-			lock_guard<mutex> lock(_mutexConnections);
-			if (isInterrupted())
-				break;
-		}
+	while (!nbRead && !isInterrupted()) {
 
 		auto itBuffer = _connection2Buffer.find(RTMFPcontext);
 		if (itBuffer == _connection2Buffer.end()) {
-			DEBUG("Unable to find the buffer for connection ", RTMFPcontext, ", it can be closed")
-			break;
+			WARN("Unable to find the buffer for connection ", RTMFPcontext, ", it can be closed")
+			return -1;
 		}
 
 		auto itMedia = itBuffer->second.mapMedias.find(mediaId);
 		if (itMedia == itBuffer->second.mapMedias.end()) {
 			WARN("Unable to find buffer media ", mediaId, " of connection ", RTMFPcontext)
-			break;
+			return -1;
 		}
 
 		if (!itMedia->second.mediaPackets.empty()) {

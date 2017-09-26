@@ -135,6 +135,7 @@ protected:
 	virtual RTMFPFlow*			createSpecialFlow(Base::Exception& ex, Base::UInt64 id, const std::string& signature, Base::UInt64 idWriterRef) = 0;
 
 	// Manage the flows
+	// return False if the connection is died, True otherwise
 	virtual bool				manage();
 
 	// Called when we are connected to the peer/server
@@ -145,7 +146,8 @@ protected:
 		P2P_HANDSHAKE = 0x0F
 	};
 
-	Base::Time											_lastKeepAlive; // last time a keepalive request has been received+
+	Base::Time											_lastKeepAlive; // last time a keepalive request has been received
+	Base::Time											_recvTime; // last time a packet has been received
 	std::string											_tag;
 
 	// External Callbacks to link with parent
