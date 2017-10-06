@@ -61,7 +61,8 @@ struct RTMFPSession : public FlowManager {
 	bool connect2Peer(const std::string& peerId, const std::string& streamName, Base::UInt16 mediaCount);
 
 	// Connect to a peer (main function)
-	bool connect2Peer(const std::string& peerId, const std::string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, Base::UInt16 mediaId=0);
+	// param delayed: if True we first try to connect directly to addresses and after 5s we start to contact the rendezvous service, if False we connect to all addresses
+	bool connect2Peer(const std::string& peerId, const std::string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, bool delayed, Base::UInt16 mediaId=0);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	// return : True if the group has been added
@@ -149,6 +150,12 @@ struct RTMFPSession : public FlowManager {
 
 	// Handle a decoded message
 	void							receive(RTMFPDecoder::Decoded& decoded);
+
+	// Called by NetGroup to close a peer connection and handshake of a non connected peer
+	void							removePeer(const std::string& peerId);
+
+	// Called by NetGroup when receiving a new address from a peer
+	void							updatePeerAddress(const std::string& peerId, const Base::SocketAddress& address, RTMFP::AddressType type);
 
 	/* Write functions */
 	void writeAudio(const Base::Packet& packet, Base::UInt32 time);

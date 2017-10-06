@@ -35,11 +35,11 @@ using namespace std;
 	#define log2(VARIABLE) (log(VARIABLE) / log(2))
 #endif
 
-UInt32 NetGroup::GroupNode::addressesSize() {
+UInt32 NetGroup::AddressesSize(const SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses) {
 	UInt32 size = 1; // 1 for 0A header
-	if (hostAddress.host())
-		size += hostAddress.host().size() + 3; // +3 for address type and port
-	for (auto itAddress : addresses)
+	if (host.host())
+		size += host.host().size() + 3; // +3 for address type and port
+	for (auto& itAddress : addresses)
 		size += itAddress.first.host().size() + 3; // +3 for address type and port
 	return size;
 }
@@ -51,6 +51,14 @@ const string& NetGroup::GetGroupAddressFromPeerId(const char* rawId, std::string
 	String::Assign(groupAddress, String::Hex(tmp, PEER_ID_SIZE));
 	TRACE("Group address : ", groupAddress)
 	return groupAddress;
+}
+
+UInt32 NetGroup::TargetNeighborsCount(double peersCount) {
+
+	UInt32 targetNeighbor = (UInt32)(log2(peersCount)) + 13;
+	TRACE("estimatedMemberCount : ", peersCount, " ; targetNeighbor : ", targetNeighbor)
+
+	return targetNeighbor;
 }
 
 double NetGroup::estimatedPeersCount() {
@@ -90,16 +98,9 @@ double NetGroup::estimatedPeersCount() {
 		return (MAX_PEER_COUNT / (double(valLast - valFirst + MAX_PEER_COUNT) / 4)) + 1;
 }
 
-UInt32 NetGroup::targetNeighborsCount() {
-	double memberCount = estimatedPeersCount();
-	UInt32 targetNeighbor = (UInt32)(2 * log2(memberCount)) + 13;
-	TRACE("estimatedMemberCount : ", memberCount, " ; targetNeighbor : ", targetNeighbor)
-
-	return targetNeighbor;
-}
-
-NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable) : groupParameters(parameters),
-	idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), FlashHandler(0, mediaId), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE) {
+NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable) : groupParameters(parameters), 
+	_p2pAble(false), idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()),
+	FlashHandler(0, mediaId), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		if (streamName != stream) {
@@ -123,7 +124,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
 
 			// Send the group media infos to each other peers
-			for (auto itPeer : _mapPeers) {
+			for (auto& itPeer : _mapPeers) {
 				if (itPeer.first == peerId)
 					continue;
 				auto pPeerMedia = itPeer.second->getPeerMedia(itGroupMedia->first);
@@ -144,11 +145,14 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 	_onGroupReport = [this](P2PSession* pPeer, BinaryReader& packet, bool sendMediaSubscription) {
 		
 		auto itNode = _mapHeardList.find(pPeer->peerId);
-		if (itNode != _mapHeardList.end())
-			itNode->second.lastGroupReport = Time::Now(); // Record the time of last Group Report received to build our Group Report
+		if (itNode == _mapHeardList.end()) {
+			WARN("Group report received from unknown peer ", pPeer->peerId) // should not happen
+			return;
+		}
+		itNode->second.lastGroupReport = Time::Now(); // Record the time of last Group Report received to build our Group Report
 
-		// If there are new peers : manage the best list
-		if (readGroupReport(packet))
+		// Read the Group Report & try to update the Best List if new peers are found
+		if (readGroupReport(itNode, packet) && (!_bestList.size() || _lastBestCalculation.isElapsed(NETGROUP_BEST_LIST_DELAY))) // Wait at least 5s before calculating again the Best List
 			updateBestList();
 
 		// First Viewer = > create listener
@@ -164,6 +168,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 			_conn.onConnected2Group(); // A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
 		}
 
+		// Group Report response?
 		if (!pPeer->groupReportInitiator) {
 			sendGroupReport(pPeer, false);
 			_lastReport.update();
@@ -173,7 +178,7 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 
 		// Send the Group Media Subscriptions if not already sent
 		if (sendMediaSubscription) {
-			DEBUG("Sending GroupMedia subscription to peer ", pPeer->name(), " (publisher: ", groupParameters->isPublisher>0, ")...")
+			DEBUG("Sending GroupMedia subscription (", _mapGroupMedias.size(), ") to peer ", pPeer->name(), " (publisher: ", groupParameters->isPublisher>0, ")")
 			for (auto& itGroupMedia : _mapGroupMedias) {
 				if (itGroupMedia.second.groupParameters->isPublisher || itGroupMedia.second.hasFragments()) {
 					auto pPeerMedia = pPeer->getPeerMedia(itGroupMedia.first);
@@ -201,9 +206,9 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 	};
 	_onGroupAskClose = [this](const string& peerId) {
 		if (_bestList.empty())
-			return true; // do not disconnect peer if we have not calculated the best list (can it happen?)
+			return false; // do not disconnect peer if we have not calculated the best list
 
-		return _bestList.find(peerId) != _bestList.end(); // if peer is not in the Best list return False tu close the main flow, otherwise keep connection open
+		return _bestList.find(peerId) == _bestList.end(); // if peer is not in the Best list return True to close the main flow, otherwise keep connection open
 	};
 
 	GetGroupAddressFromPeerId(_conn.rawId().c_str(), _myGroupAddress);
@@ -292,11 +297,13 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 		return false;
 	}
 	DEBUG("Adding the peer ", peerId, " to the Best List")
+	if (!_p2pAble)
+		_p2pAble = true;
 
 	// Update the heard list addresses
 	itHeardList->second.hostAddress = pPeer->hostAddress;
-	for (auto itAddress : pPeer->addresses())
-		if (itAddress.second & RTMFP::ADDRESS_LOCAL)
+	for (auto& itAddress : pPeer->addresses())
+		if (itAddress.second & RTMFP::ADDRESS_PUBLIC) // In Netgroup report we just save the public addresses
 			itHeardList->second.addresses.emplace(itAddress.first, itAddress.second);
 
 	_mapPeers.emplace_hint(it, peerId, pPeer);
@@ -308,7 +315,6 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 	pPeer->onPeerClose = _onPeerClose;
 	pPeer->onPeerGroupAskClose = _onGroupAskClose;
 
-	buildBestList(_myGroupAddress, _bestList); // rebuild the best list to know if the peer is in it
 	return true;
 }
 
@@ -333,41 +339,58 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 	_mapPeers.erase(itPeer);
 }
 
-bool NetGroup::checkPeer(const string& peerId) {
-
-	return _mapPeers.find(peerId) == _mapPeers.end();
-}
-
 void NetGroup::manage() {
 
-	// Manage the Best list
+	// P2P unable, we reset the connection
+	if (!_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _conn.status == RTMFP::CONNECTED && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
+		ERROR(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...")
+		_conn.close(true);
+		return;
+	}
+
+	// Manage the Best List
 	if (_lastBestCalculation.isElapsed(NETGROUP_BEST_LIST_DELAY))
 		updateBestList();
 
 	// Send the Group Report message (0A) to a random connected peer
 	if (_lastReport.isElapsed(NETGROUP_REPORT_DELAY)) {
 
-		auto itRandom = _mapPeers.begin();
-		if (RTMFP::GetRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { 
-			return it->second->status == RTMFP::CONNECTED && !it->second->groupReportInitiator; })) // Important to check that we are not already the group report initiator
-			sendGroupReport(itRandom->second.get(), true);
-
-		// Clean the Heard List from old peers
+		// Clean the Heard List from old peers (can take time!)
 		Int64 now = Time::Now();
 		auto itHeardList = _mapHeardList.begin();
 		while (itHeardList != _mapHeardList.end()) {
-			if ((_mapPeers.find(itHeardList->first) == _mapPeers.end()) && now > itHeardList->second.lastGroupReport && ((now - itHeardList->second.lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
-				DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the heard list...")
+			if (now > itHeardList->second.lastGroupReport && ((now - itHeardList->second.lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
+				DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Heard List...")
+				auto itPeer = _mapPeers.find(itHeardList->first);
+				if (itPeer != _mapPeers.end())
+					itPeer->second->close(true);
 				auto itGroupAddress = _mapGroupAddress.find(itHeardList->second.groupAddress);
 				FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
-				_mapGroupAddress.erase(itGroupAddress);
+					_mapGroupAddress.erase(itGroupAddress);
 				_mapHeardList.erase(itHeardList++);
 				continue;
 			}
 			++itHeardList;
 		}
 
+		// Send the Group Report
+		auto itRandom = _mapPeers.begin();
+		if (RTMFP::GetRandomIt<MAP_PEERS_TYPE, MAP_PEERS_ITERATOR_TYPE>(_mapPeers, itRandom, [](const MAP_PEERS_ITERATOR_TYPE it) { 
+			return it->second->status == RTMFP::CONNECTED && !it->second->groupReportInitiator; })) // Important to check that we are not already the group report initiator
+			sendGroupReport(itRandom->second.get(), true);
+
 		_lastReport.update();
+	}
+
+	// Print statistics
+	if (_lastStats.isElapsed(NETGROUP_STATS_DELAY)) {
+		double peersCount = estimatedPeersCount();
+		INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), "/", TargetNeighborsCount(peersCount), "/", (UInt64)peersCount, 
+			" ; GroupMedia count : ", _mapGroupMedias.size())
+		for (auto& itGroup : _mapGroupMedias)
+			itGroup.second.printStats();
+
+		_lastStats.update();
 	}
 
 	// Manage all group medias
@@ -386,27 +409,28 @@ void NetGroup::manage() {
 
 void NetGroup::updateBestList() {
 
-	buildBestList(_myGroupAddress, _bestList);
-	manageBestConnections();
+	// Calculate the Best List
+	std::set<std::string> oldList(move(_bestList));
+	buildBestList(_myGroupAddress, _conn.peerId(), _bestList);
 
-	INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), " ; GroupMedia count : ", _mapGroupMedias.size())
-	for (auto& itGroup : _mapGroupMedias)
-		itGroup.second.printStats();
+	// Send new connection requests and close the old ones
+	manageBestConnections(oldList);
 
 	_lastBestCalculation.update();
 }
 
-void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) {
+void NetGroup::buildBestList(const string& groupAddress, const string& peerId, set<string>& bestList) {
 	bestList.clear();
 
 	// Find the 6 closest peers
 	if (_mapGroupAddress.size() <= 6) {
-		for (auto it : _mapGroupAddress)
+		for (auto& it : _mapGroupAddress)
 			bestList.emplace(it.second);
 	}
-	else { // More than 6 peers
+	else { // More than 6 peers, in this part redundant peers are accepted to limit the size of the Best List
+		UInt8 count(0);
 
-		// First we search the first of the 6 peers
+		// First we search the first of the 6 closest peers
 		auto itFirst = _mapGroupAddress.lower_bound(groupAddress);
 		if (itFirst == _mapGroupAddress.end())
 			itFirst = --(_mapGroupAddress.end());
@@ -415,17 +439,19 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 
 		// Then we add the 6 peers
 		for (int j = 0; j < 6; j++) {
-			bestList.emplace(itFirst->second);
+			if (itFirst->second == groupAddress)
+				--j; // to avoid adding our own address
+			else {
+				bestList.emplace(itFirst->second);
+				++count;
+			}
 			RTMFP::GetNextIt(_mapGroupAddress, itFirst);
 		}
-	}
-
-	if (_mapGroupAddress.size() > 6) {
 
 		// Find the 6 lowest latency
 		deque<shared_ptr<P2PSession>> queueLatency;
 		if (!_mapPeers.empty()) {
-			for (auto it : _mapPeers) { // First, order the peers by latency
+			for (auto& it : _mapPeers) { // First, order the peers by latency (we know only latency from connected peers here)
 				UInt16 latency = it.second->latency();
 				auto it2 = queueLatency.begin();
 				while (it2 != queueLatency.end() && (*it2)->latency() < latency)
@@ -433,40 +459,42 @@ void NetGroup::buildBestList(const string& groupAddress, set<string>& bestList) 
 				queueLatency.emplace(it2, it.second);
 			}
 			auto itLatency = queueLatency.begin();
-			int i = 0;
-			do {
-				if (bestList.emplace((*itLatency)->peerId).second)
-					i++;
-			} while (++itLatency != queueLatency.end() && i < 6);
+			for (int i = 0; ++itLatency != queueLatency.end() && i < 6; i++) {
+				if ((*itLatency)->peerId == peerId)
+					--i; // to avoid adding our own address
+				else {
+					bestList.emplace((*itLatency)->peerId);
+					++count;
+				}
+			}
 		}
 
 		// Add one random peer
-		if (_mapGroupAddress.size() > bestList.size()) {
-
-			auto itRandom = _mapGroupAddress.begin();
-			if (RTMFP::GetRandomIt<map<string, string>, map<string, string>::iterator>(_mapGroupAddress, itRandom, [bestList](const map<string, string>::iterator& it) { return bestList.find(it->second) != bestList.end(); }))
-				bestList.emplace(itRandom->second);
+		auto itRandom = _mapGroupAddress.begin();
+		if (RTMFP::GetRandomIt<map<string, string>, map<string, string>::iterator>(_mapGroupAddress, itRandom, [bestList, groupAddress](const map<string, string>::iterator& it) { return it->first != groupAddress; })) {
+			bestList.emplace(itRandom->second);
+			++count;
 		}
 
 		// Find 2 log(N) peers with location + 1/2, 1/4, 1/8 ...
-		UInt32 bests = bestList.size(), estimatedCount = targetNeighborsCount();
-		if (_mapGroupAddress.size() > bests && estimatedCount > bests) {
-			UInt32 count = estimatedCount - bests;
-			if (count > _mapGroupAddress.size() - bests)
-				count = _mapGroupAddress.size() - bests;
+		UInt32 targetCount = TargetNeighborsCount(estimatedPeersCount());
+		if (count < targetCount) {
 
-			auto itNode = _mapGroupAddress.lower_bound(groupAddress);
-			UInt32 rest = (_mapGroupAddress.size() / 2) - 1;
-			int step = rest / (2 * count);
-			for (; count > 0; count--) {
-				if (distance(itNode, _mapGroupAddress.end()) <= step) {
+			int step = (_mapGroupAddress.size() / (2 * (targetCount - count))); // calculate the number of peers to fill
+			auto&& itNode = _mapGroupAddress.lower_bound(groupAddress);
+			while (count < targetCount) {
+				// Advance from 1 step
+				int dist = distance(itNode, _mapGroupAddress.end());
+				if (dist <= step) {
 					itNode = _mapGroupAddress.begin();
-				}
-				advance(itNode, step);
-				while (!bestList.emplace(itNode->second).second) { // If not added go to next
-					if (++itNode == _mapGroupAddress.end())
-						itNode = _mapGroupAddress.begin();
-				}
+					advance(itNode, step - dist);
+				} else
+					advance(itNode, step);
+
+				if (itNode->first == groupAddress) // to avoid adding our own address
+					RTMFP::GetNextIt(_mapGroupAddress, itNode);
+				bestList.emplace(itNode->second);
+				++count;
 			}
 		}
 	}
@@ -481,42 +509,53 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 		return;
 	}
 
+	// Build the Best list for far peer
 	set<string> bestList;
-	buildBestList(itNode->second.groupAddress, bestList);
+	buildBestList(itNode->second.groupAddress, itNode->first, bestList);
+
+	const SocketAddress& hostAddress(_conn.address()), peerAddress(pPeer->address());
 
 	// Calculate the total size to allocate sufficient memory
-	UInt32 sizeTotal = (UInt32)(pPeer->address().host().size() + _conn.address().host().size() + 12);
+	UInt32 sizeTotal = (UInt32)(peerAddress.host().size() + 8 + AddressesSize(hostAddress, _myAddresses));
 	Int64 timeNow(Time::Now());
-	for (auto it1 : bestList) {
+	for (auto& it1 : bestList) {
 		itNode = _mapHeardList.find(it1);
 		if (itNode != _mapHeardList.end())
-			sizeTotal += itNode->second.addressesSize() + PEER_ID_SIZE + 5 + ((itNode->second.lastGroupReport > 0) ? Binary::Get7BitValueSize((UInt32)((timeNow - itNode->second.lastGroupReport) / 1000)) : 1);
+			sizeTotal += AddressesSize(itNode->second.hostAddress, itNode->second.addresses) + PEER_ID_SIZE + 5 + ((itNode->second.lastGroupReport > 0) ? Binary::Get7BitValueSize((UInt32)((timeNow - itNode->second.lastGroupReport) / 1000)) : 1);
 	}
 	_reportBuffer.resize(sizeTotal, false);
 
 	BinaryWriter writer(_reportBuffer.data(), _reportBuffer.size());
+
+	// Group far address
 	writer.write8(0x0A);
-	writer.write8(pPeer->address().host().size() + 4);
+	writer.write8(peerAddress.host().size() + 4);
 	writer.write8(0x0D);
-	RTMFP::WriteAddress(writer, pPeer->address(), RTMFP::ADDRESS_PUBLIC);
-	writer.write8(_conn.address().host().size() + 4);
+	RTMFP::WriteAddress(writer, peerAddress, RTMFP::ADDRESS_PUBLIC); // current address of far peer
+	TRACE("Group far peer address : ", peerAddress)
+
+	// My addresses
+	writer.write8(AddressesSize(hostAddress, _myAddresses));
 	writer.write8(0x0A);
-	RTMFP::WriteAddress(writer, _conn.address(), RTMFP::ADDRESS_REDIRECTION);
+	RTMFP::WriteAddress(writer, hostAddress, RTMFP::ADDRESS_REDIRECTION); // my host address
+	for (auto& itAddress : _myAddresses)
+		RTMFP::WriteAddress(writer, itAddress.first, itAddress.second); // my addresses
 	writer.write8(0);
 
-	for (auto it2 : bestList) {
+	// Peers ID, addresses and time
+	for (auto& it2 : bestList) {
 		itNode = _mapHeardList.find(it2);
 		if (itNode != _mapHeardList.end()) {
 
 			UInt64 timeElapsed = (UInt64)((itNode->second.lastGroupReport > 0) ? ((timeNow - itNode->second.lastGroupReport) / 1000) : 0);
-			TRACE("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed) //, " (latency : ", itPeer.second->latency(), ")")
+			TRACE("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed)
 			writer.write8(0x22).write(itNode->second.rawId.data(), PEER_ID_SIZE+2);
 			writer.write7BitLongValue(timeElapsed);
-			writer.write8(itNode->second.addressesSize());
+			writer.write8(AddressesSize(itNode->second.hostAddress, itNode->second.addresses));
 			writer.write8(0x0A);
 			if (itNode->second.hostAddress)
 				RTMFP::WriteAddress(writer, itNode->second.hostAddress, RTMFP::ADDRESS_REDIRECTION);
-			for (auto itAddress : itNode->second.addresses)
+			for (auto& itAddress : itNode->second.addresses)
 				RTMFP::WriteAddress(writer, itAddress.first, itAddress.second);
 			writer.write8(0);
 		}
@@ -527,29 +566,31 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	pPeer->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
 }
 
-void NetGroup::manageBestConnections() {
+void NetGroup::manageBestConnections(const set<string>& oldList) {
 
-	// Close old peers
+	// Close the old connections & handshakes
 	int nbDisconnect = _mapPeers.size() - _bestList.size(); // trick to keep the target count of peers
-	auto it2Close = _mapPeers.begin();
-	while (nbDisconnect > 0 && it2Close != _mapPeers.end()) {
-		if (_bestList.find(it2Close->first) == _bestList.end() && it2Close->second->askPeer2Disconnect())
-			--nbDisconnect;
-		++it2Close;
+	for (auto& peerId : oldList) {
+		if (_bestList.find(peerId) == _bestList.end()) {
+			const auto& it2Close = _mapPeers.find(peerId);
+			if (it2Close != _mapPeers.end()) {
+				if (nbDisconnect && it2Close->second->askPeer2Disconnect()) // ask far peer to disconnect (if we are not in its Best List)
+					--nbDisconnect;
+			} else
+				_conn.removePeer(peerId); // Ask parent to close the session and handshake
+		}
 	}
 
 	// Connect to new peers
-	int nbConnect = _bestList.size() - _mapPeers.size(); // trick to keep the target count of peers
 	auto it2Connect = _bestList.begin();
-	while (nbConnect > 0 && it2Connect != _bestList.end()) {
+	while (it2Connect != _bestList.end()) {
 		if (_mapPeers.find(*it2Connect) == _mapPeers.end()) {
 			auto itNode = _mapHeardList.find(*it2Connect);
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", *it2Connect) // implementation error, should not happen
 			else {
 				DEBUG("Best Peer - Connecting to peer ", *it2Connect, "...")
-				_conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress);
-				--nbConnect;
+				_conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress, true); // delayed, we first try without rendezvous service
 			}
 		}
 		++it2Connect;
@@ -562,6 +603,32 @@ unsigned int NetGroup::callFunction(const string& function, queue<string>& argum
 		itGroupMedia.second.callFunction(function, arguments);
 
 	return 1;
+}
+
+bool NetGroup::p2pNewPeer(const string& peerId) {
+
+	// Control if we have reached the first 6 peers without any connection
+	p2PAddressExchange(peerId);
+
+	return _mapPeers.find(peerId) == _mapPeers.end();
+}
+
+
+void NetGroup::p2PAddressExchange(const std::string& tag) {
+
+	// Control if we have reached the first 6 peers without any connection
+	if (!_p2pAble && (_p2pEntities.size() < NETGROUP_MIN_PEERS_TIMEOUT)) {
+		auto itPeer = _p2pEntities.lower_bound(tag);
+
+		// New tag?
+		if (itPeer == _p2pEntities.end() || *itPeer != tag) {
+			_p2pEntities.emplace_hint(itPeer, tag);
+			if (_p2pEntities.size() == NETGROUP_MIN_PEERS_TIMEOUT) {
+				DEBUG(NETGROUP_MIN_PEERS_TIMEOUT, " p2p tries without connection, waiting ", NETGROUP_TIMEOUT_P2PABLE, "ms before disconnection...")
+				_p2pAbleTime.update(); // start the timer for p2p capability
+			}
+		}
+	}
 }
 
 void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryReader& packet) {
@@ -604,12 +671,11 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryR
 	}
 }
 
-bool NetGroup::readGroupReport(BinaryReader& packet) {
+bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, BinaryReader& packet) {
 	string tmp, newPeerId, rawId;
 	SocketAddress myAddress, serverAddress;
 	RTMFP::AddressType addressType;
 	PEER_LIST_ADDRESS_TYPE listAddresses;
-	SocketAddress hostAddress(_conn.address());
 
 	UInt8 size = packet.read8();
 	while (size == 1) { // TODO: check what this means
@@ -624,7 +690,10 @@ bool NetGroup::readGroupReport(BinaryReader& packet) {
 		return false;
 	}
 	RTMFP::ReadAddress(packet, myAddress, addressType);
-	TRACE("Group Report - My address : ", myAddress)
+	TRACE("Group Report - My address : ", myAddress) // Address seen by the far peer
+	auto itAddress = _myAddresses.lower_bound(myAddress);
+	if (itAddress == _myAddresses.end() || itAddress->first != myAddress)
+		_myAddresses.emplace_hint(itAddress, myAddress, addressType); // New address => save it
 	
 	size = packet.read8();
 	tmpMarker = packet.read8();
@@ -632,8 +701,9 @@ bool NetGroup::readGroupReport(BinaryReader& packet) {
 		ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 0A")
 		return false;
 	}
+	// Update the far peer addresses
 	BinaryReader peerAddressReader(packet.current(), size - 1);
-	RTMFP::ReadAddresses(peerAddressReader, listAddresses, hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
+	RTMFP::ReadAddresses(peerAddressReader, itNode->second.addresses, itNode->second.hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 	packet.next(size - 1);
 
 	// Loop on each peer of the NetGroup
@@ -669,15 +739,17 @@ bool NetGroup::readGroupReport(BinaryReader& packet) {
 			auto itHeardList = _mapHeardList.find(newPeerId);
 			// New peer? => add it to heard list
 			if (itHeardList == _mapHeardList.end()) {
-				hostAddress.reset();
+				SocketAddress hostAddress;
 				listAddresses.clear();
 				RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 				newPeers = true;
 				addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
 			} 
 			// Else update the addresses
-			else
-				RTMFP::ReadAddresses(addressReader, itHeardList->second.addresses, itHeardList->second.hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
+			else // TODO: if a new address is found, should we update an existing Handshake?
+				RTMFP::ReadAddresses(addressReader, itHeardList->second.addresses, itHeardList->second.hostAddress, [this, newPeerId](const SocketAddress& address, RTMFP::AddressType type) {
+					_conn.updatePeerAddress(newPeerId, address, type);
+				});
 				
 		}
 		packet.next(size);

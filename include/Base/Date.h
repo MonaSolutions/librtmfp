@@ -19,6 +19,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include "Base/Mona.h"
 #include "Base/Time.h"
 #include "Base/Timezone.h"
+#include "inttypes.h"
 
 namespace Base {
 
@@ -181,6 +182,25 @@ struct Date : Time, virtual Object {
 				case 'c': out.append(buffer, snprintf(buffer, sizeof(buffer), "%u", _millisecond / 100)); break;
 				case 'z': Timezone::Format(isGMT() ? Timezone::GMT : offset(), out); break;
 				case 'Z': Timezone::Format(isGMT() ? Timezone::GMT : offset(), out, false); break;
+				case 't':
+				case 'T': {
+					if (iFormat == formatSize)
+						break;
+					UInt32 factor(1);
+					switch (tolower(format[iFormat++])) {
+						case 'h':
+							factor = 3600000;
+							break;
+						case 'm':
+							factor = 60000;
+							break;
+						case 's':
+							factor = 1000;
+							break;
+					}
+					out.append(buffer, snprintf(buffer, sizeof(buffer), "%02" PRIu64, UInt64(time() / factor)));
+					break;
+				}
 				default: out.append(&c, 1);
 			}
 		}

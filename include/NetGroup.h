@@ -31,7 +31,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_MAX_REPORT_SIZE		20000 // max size used for NetGroup Report messages
 #define NETGROUP_MAX_PACKET_SIZE		959
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
-#define NETGROUP_BEST_LIST_DELAY		10000	// delay between each best list calculation (in msec)
+#define NETGROUP_BEST_LIST_DELAY		5000	// delay between each best list calculation (in msec)
 #define NETGROUP_REPORT_DELAY			10000	// delay between each NetGroup Report (in msec)
 #define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
 #define NETGROUP_PULL_DELAY				100		// delay between each pull request (in msec)
@@ -39,6 +39,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_DISCONNECT_DELAY		90000	// delay between each try to disconnect from a peer
 #define NETGROUP_MEDIA_TIMEOUT			300000	// number of msec before we delete a GroupMedia after being closed
 #define NETGROUP_PROCESS_FGMT_TIMEOUT	50		// number of msec before exiting the processFragments function
+#define NETGROUP_MIN_PEERS_TIMEOUT		6		// number of p2p connections tries to reach before saying that a peer is p2p unable
+#define NETGROUP_TIMEOUT_P2PABLE		100000	// number of msec since the 6th connection try before closing the connection when it's p2p unable
+#define NETGROUP_STATS_DELAY			5000	// delay between each print of statistics (in msec)
 
 /**************************************
 NetGroup is the class that manage
@@ -73,9 +76,6 @@ public:
 	// Remove a peer from the NetGroup map
 	void			removePeer(const std::string& peerId);
 
-	// Return True if the peer doesn't already exists
-	bool			checkPeer(const std::string& peerId);
-
 	// Manage the netgroup peers and send the recurrent requests
 	void			manage();
 
@@ -85,6 +85,13 @@ public:
 
 	// Stop listening if we are publisher
 	void			stopListener();
+
+	// Called by parent when the server send us a new peer ID to connect to
+	// Return True if the peer doesn't already exists
+	bool			p2pNewPeer(const std::string& peerId);
+
+	// Called by parent when a peer is trying to connect to us
+	void			p2PAddressExchange(const std::string& tag);
 	
 	const std::string					idHex;	// Group ID in hex format
 	const std::string					idTxt;	// Group ID in plain text (without final zeroes)
@@ -105,12 +112,16 @@ private:
 	// Return the Group Address calculated from a Peer ID
 	static const std::string&	GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
 
+	// Return the size of peer addresses for Group Report 
+	static Base::UInt32			AddressesSize(const Base::SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses);
+
+	// Calculate the number of neighbors we must connect to (log2(N)+13)
+	static Base::UInt32			TargetNeighborsCount(double peersCount);
+
 	// Calculate the estimation of the number of peers (this is the same as Flash NetGroup.estimatedMemberCount)
 	double						estimatedPeersCount();
 
-	// Calculate the number of neighbors we must connect to (2*log2(N)+13)
-	Base::UInt32				targetNeighborsCount();
-
+	// Remove a peer from the connected peer list
 	void						removePeer(MAP_PEERS_ITERATOR_TYPE itPeer);
 
 	// Build the Group Report for the peer in parameter
@@ -121,13 +132,25 @@ private:
 	void						updateBestList();
 
 	// Calculate the Best list from a group address
-	void						buildBestList(const std::string& groupAddress, std::set<std::string>& bestList);
+	void						buildBestList(const std::string& groupAddress, const std::string& peerId, std::set<std::string>& bestList);
 
 	// Connect and disconnect peers to fit the best list
-	void						manageBestConnections();
+	void						manageBestConnections(const std::set<std::string>& oldList);
+
+	// Peer instance in the heard list
+	struct GroupNode : virtual Base::Object {
+		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& host, Base::UInt64 timeElapsed) :
+			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - (timeElapsed * 1000)) {}
+
+		std::string rawId;
+		std::string groupAddress;
+		PEER_LIST_ADDRESS_TYPE addresses;
+		Base::SocketAddress hostAddress;
+		Base::Int64 lastGroupReport; // Time in msec of last Group report received
+	};
 
 	// Read the group report and return true if at least a new peer has been found
-	bool						readGroupReport(Base::BinaryReader& packet);
+	bool						readGroupReport(const std::map<std::string, GroupNode>::iterator& itNode, Base::BinaryReader& packet);
 
 	P2PSession::OnPeerGroupReport							_onGroupReport; // called when receiving a Group Report message from the peer
 	P2PSession::OnNewMedia									_onNewMedia; // called when a new PeerMedia is called (new stream available for the peer)
@@ -138,34 +161,26 @@ private:
 	GroupMedia::OnGroupPacket								_onGroupPacket; // called by GroupMedia when receiving a packet to distribute it
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
+	PEER_LIST_ADDRESS_TYPE									_myAddresses; // Our public ip addresses for Group Report
 	
 	bool													_audioReliable; // if False we do not send back audio packets
 	bool													_videoReliable; // if False we do not send back video packets
 
-	// Peer instance in the heard list
-	struct GroupNode : virtual Base::Object {
-		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& host, Base::UInt64 timeElapsed) :
-			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - (timeElapsed*1000)) {}
-
-		// Return the size of peer addresses for Group Report 
-		Base::UInt32	addressesSize();
-
-		std::string rawId;
-		std::string groupAddress;
-		PEER_LIST_ADDRESS_TYPE addresses;
-		Base::SocketAddress hostAddress;
-		Base::Int64 lastGroupReport; // Time in msec of last Group report received
-	};
-	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address
-
+	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address and info from Group Report
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID (same as heard list)
 	std::set<std::string>									_bestList; // Last best list calculated
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPSession&											_conn; // RTMFPSession related to
+	Base::Buffer											_reportBuffer; // Buffer for reporting messages
 	Base::Time												_lastBestCalculation; // last Best list calculation
 	Base::Time												_lastReport; // last Report Message calculation
-	Base::Buffer											_reportBuffer; // Buffer for reporting messages
+	Base::Time												_lastStats; // last Statistics print
+
+	bool													_p2pAble; // True if at least 1 connection has succeed
+	Base::Time												_p2pAbleTime; // Time since p2pExchanges reaches 6 to detect a p2p unable error
+	Base::UInt8												_p2pExchanges; // Count of p2p tries to control p2p ability
+	std::set<std::string>									_p2pEntities; // Set of identifier (tag or peer ID)
 
 	std::map<std::string, GroupMedia>						_mapGroupMedias; // map of stream key to GroupMedia
 	std::map<std::string, GroupMedia>::iterator				_groupMediaPublisher; // iterator to the GroupMedia publisher

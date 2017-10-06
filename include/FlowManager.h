@@ -87,8 +87,9 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt);
 
-	// Set the host and peer addresses when receiving redirection request (only for P2P)
-	virtual void					addAddress(const Base::SocketAddress& address, RTMFP::AddressType type) {}
+	// Add host or address when receiving address
+	// Update handhsake if present
+	virtual void					addAddress(const Base::SocketAddress& address, RTMFP::AddressType type);
 
 	// Treat decoded message
 	virtual void				receive(const Base::SocketAddress& address, const Base::Packet& packet);

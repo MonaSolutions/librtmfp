@@ -65,7 +65,7 @@ struct Publisher : virtual Base::Object {
 
 	bool	isP2P; // If true it is a p2p publisher
 private:
-	// Update and check the time synchronisation variables
+	// Update and check the time synchronization variables
 	void updateTime(AMF::Type type, Base::UInt32 time, Base::UInt32 size);
 
 	bool publishAudio;

@@ -88,7 +88,7 @@ struct PeerMedia : public virtual Base::Object {
 
 	// Create the flow if necessary and send media
 	// The fragment is sent if pull is true or if this is a pushable fragment
-	bool sendMedia(const GroupFragment& fragment, bool pull, bool reliable);
+	bool sendMedia(const GroupFragment& fragment, bool pull, bool reliable, bool flush);
 
 	// Send the Fragments map message
 	// param lastFragment : latest fragment in the message

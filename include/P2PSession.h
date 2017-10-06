@@ -38,7 +38,7 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	typedef Base::Event<void(const std::string&, Base::UInt64)>																				ON(ClosedMedia); // called when the peer publisher close the GroupMedia
 	typedef Base::Event<void(P2PSession*)>																									ON(PeerGroupBegin); // called when receiving a Group Begin message from the peer
 	typedef Base::Event<void(const std::string&)>																							ON(PeerClose); // called when the peer is closing
-	typedef Base::Event<bool(const std::string&)>																							ON(PeerGroupAskClose); // called when a peer ask to close its session
+	typedef Base::Event<bool(const std::string&)>																							ON(PeerGroupAskClose); // called when a peer ask to close its session (return True to accept closing)
 
 	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, 
 		const Base::SocketAddress& host, bool responder, bool group, Base::UInt16 mediaId=0);
@@ -110,7 +110,8 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	// Return the diffie hellman object (related to main session)
 	virtual Base::DiffieHellman&	diffieHellman();
 	
-	// Set the host and peer addresses when receiving redirection request (only for P2P)
+	// Add host or address when receiving address
+	// Update handhsake if present
 	virtual void					addAddress(const Base::SocketAddress& address, RTMFP::AddressType type);
 
 	/*** Public members ***/

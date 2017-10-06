@@ -95,7 +95,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		return true;
 	};
 	_pMainStream->onGroupReport = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
-		DEBUG("NetGroup Report message received from ", peerId)
+		DEBUG("NetGroup Report message received from ", peerId, " ; size=", packet.size())
 		onPeerGroupReport(this, packet, _mapStream2PeerMedia.empty()); // no PeerMedia => no Group Media received for now, we can send the group media subscription message
 	};
 	_pMainStream->onGroupBegin = [this](UInt16 streamId, UInt64 flowId, UInt64 writerId) {
@@ -137,9 +137,9 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		}
 	};
 	_pMainStream->onGroupAskClose = [this](UInt16 streamId, UInt64 flowId, UInt64 writerId) {
-		bool res = onPeerGroupAskClose(peerId);
-		DEBUG("NetGroup close message received from peer ", peerId, " : ", res ? "refused" : "accepted")
-		return res;
+		bool accepted = onPeerGroupAskClose(peerId);
+		DEBUG("NetGroup close message received from peer ", peerId, " : ", accepted ? "accepted" : "refused")
+		return !accepted; // return False if accepted to close the session
 	};
 
 	_sessionId = P2PSessionCounter++;
@@ -177,7 +177,7 @@ void P2PSession::close(bool abrupt) {
 		_pReportWriter.reset();
 	}
 
-	for (auto itPeerMedia : _mapWriter2PeerMedia)
+	for (auto& itPeerMedia : _mapWriter2PeerMedia)
 		itPeerMedia.second->close(abrupt);
 	_mapStream2PeerMedia.clear();
 	_mapWriter2PeerMedia.clear();
@@ -475,6 +475,8 @@ void P2PSession::addAddress(const SocketAddress& address, RTMFP::AddressType typ
 		hostAddress = address;
 	else
 		_knownAddresses.emplace(address, type);
+
+	FlowManager::addAddress(address, type);
 }
 
 void P2PSession::buildGroupKey() {

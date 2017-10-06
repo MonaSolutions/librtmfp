@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02060006	// (2.6.6)
+#define RTMFP_LIB_VERSION	0x02060007	// (2.6.7)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -203,7 +203,7 @@ struct RTMFP : virtual Base::Static {
 		return it;
 	}
 
-	// Return the previous iterator in an ordered container, if the next iterator is end() return the first iterator
+	// Return the next iterator in an ordered container, if the next iterator is end() return the first iterator
 	template<class ContainerType, typename Iterator>
 	static Iterator& GetNextIt(ContainerType& container, Iterator& it) {
 		if (it == container.end() || ++it == container.end())

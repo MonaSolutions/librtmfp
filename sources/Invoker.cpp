@@ -441,7 +441,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	Exception ex;
 	if (!address.set(ex, host, port)) {
 		if (DNS::Resolve(ex, host, hostEntry)) { // list of addresses
-			for (auto itAddress : hostEntry.addresses()) {
+			for (auto& itAddress : hostEntry.addresses()) {
 				if (address.set(ex, itAddress, port))
 					addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
 			}

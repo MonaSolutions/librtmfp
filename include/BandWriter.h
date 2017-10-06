@@ -49,5 +49,5 @@ protected:
 	// Encryption/Decryption
 	std::shared_ptr<RTMFP::Engine>			_pDecoder;
 	std::shared_ptr<RTMFP::Engine>			_pEncoder;
-	Base::SocketAddress						_address;
+	Base::SocketAddress						_address; // current address used for the session
 };

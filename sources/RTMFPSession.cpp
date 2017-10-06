@@ -187,7 +187,7 @@ void RTMFPSession::close(bool abrupt) {
 		}
 
 		// Close peers
-		for (auto it : _mapPeersById)
+		for (auto& it : _mapPeersById)
 			it.second->close(true);
 		_mapPeersById.clear();
 		_mapSessions.clear();
@@ -232,7 +232,7 @@ bool RTMFPSession::connect(const string& url, const string& host, const SocketAd
 	_rawUrl = rawUrl;
 
 	if (address)
-		_handshaker.startHandshake(_pHandshake, address, this, false, false);
+		_handshaker.startHandshake(_pHandshake, address, this, false);
 	else
 		_handshaker.startHandshake(_pHandshake, address, addresses, this, false, false);
 	return true;
@@ -242,10 +242,10 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 
 	PEER_LIST_ADDRESS_TYPE emptyAddresses;
 	SocketAddress emptyHost; // We don't know the peer's host address
-	return connect2Peer(peerId, streamName, emptyAddresses, emptyHost, mediaCount);
+	return connect2Peer(peerId, streamName, emptyAddresses, emptyHost, false, mediaCount);
 }
 
-bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, UInt16 mediaId) {
+bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, bool delayed, UInt16 mediaId) {
 	if (status != RTMFP::CONNECTED) {
 		ERROR("Cannot start a P2P connection before being connected to the server")
 		onConnected2Peer(); // to exit from the parent loop 
@@ -269,7 +269,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 	if (!streamName.empty()) 
 		pPeer->setStreamName(streamName);
 
-	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress? hostAddress : _address, addresses, (FlowManager*)itPeer->second.get(), false, true);
+	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress? hostAddress : _address, addresses, (FlowManager*)itPeer->second.get(), true, delayed);
 	return true;
 }
 
@@ -448,7 +448,7 @@ void RTMFPSession::onNetConnectionSuccess() {
 			addresses.push_back(IPAddress::Loopback());
 	}
 	SocketAddress address;
-	for (auto it : addresses) {
+	for (auto& it : addresses) {
 		if (it.isLoopback() || it.isLinkLocal())
 			continue; // ignore loopback and link-local addresses
 		address.set(it, (it.family() == IPAddress::IPv4) ? port : portIPv6);
@@ -486,14 +486,14 @@ void RTMFPSession::stopListening(const string& peerId) {
 void RTMFPSession::handleNewGroupPeer(const string& rawId, const string& peerId) {
 	DEBUG("NetGroup Peer ID ", peerId, " from server ", _address)
 	
-	if (!_group || !_group->checkPeer(peerId)) {
-		DEBUG("Unable to add the peer ", peerId, ", it can be a wrong group ID or the peer already exists")
+	if (!_group || !_group->p2pNewPeer(peerId)) {
+		DEBUG("Unable to add the peer ", peerId, ", the peer already exists")
 		return;
 	}
 
 	PEER_LIST_ADDRESS_TYPE emptyAddresses;
 	SocketAddress emptyHost; // We don't know the peer's host address
-	connect2Peer(peerId.c_str(), "", emptyAddresses, _address);
+	connect2Peer(peerId.c_str(), "", emptyAddresses, _address, false); // not delayed when receiving the peer ID, contact the rendezvous service to get the addresses of the peer
 	_group->addPeer2HeardList(peerId, rawId.c_str(), emptyAddresses, emptyHost);
 }
 
@@ -525,6 +525,10 @@ void RTMFPSession::handleP2PAddressExchange(BinaryReader& reader) {
 	string tag;
 	reader.read(16, tag);
 	DEBUG("A peer will contact us with address : ", address)
+
+	// If NetGroup we notify that a peer is trying to connect
+	if (_group)
+		_group->p2PAddressExchange(tag.c_str());
 
 	// Send the handshake 70 to the peer
 	_handshaker.sendHandshake70(tag, address, _address);
@@ -626,8 +630,8 @@ void RTMFPSession::onConnection() {
 }
 
 void RTMFPSession::removeHandshake(shared_ptr<Handshake>& pHandshake) { 
-	pHandshake->pSession = NULL; // to not close the session
-	_handshaker.removeHandshake(pHandshake); 
+
+	_handshaker.removeHandshake(pHandshake, false); 
 	pHandshake.reset(); 
 }
 
@@ -645,4 +649,23 @@ void RTMFPSession::receive(RTMFPDecoder::Decoded& decoded) {
 		}
 		itSession->second->receive(decoded.address, decoded);
 	}
+}
+
+void RTMFPSession::removePeer(const string& peerId) {
+
+	auto itPeer = _mapPeersById.find(peerId);
+	if (itPeer == _mapPeersById.end())
+		return;
+
+	// Close the peer session (and remove the handshake)
+	itPeer->second->close(true);
+}
+
+void RTMFPSession::updatePeerAddress(const std::string& peerId, const Base::SocketAddress& address, RTMFP::AddressType type) {
+
+	auto itPeer = _mapPeersById.find(peerId);
+	if (itPeer == _mapPeersById.end())
+		return;
+
+	itPeer->second->addAddress(address, type);
 }

@@ -55,9 +55,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		}
 
 		// Send fragment to peer (pull mode)
-		pPeer->sendMedia(*itFragment->second, true, itFragment->second->type == AMF::TYPE_AUDIO? _audioReliable : _videoReliable);
-		if (flush)
-			pPeer->flush();
+		pPeer->sendMedia(*itFragment->second, true, itFragment->second->type == AMF::TYPE_AUDIO? _audioReliable : _videoReliable, flush);
 	};
 	_onFragmentsMap = [this](UInt64 counter) {
 		if (groupParameters->isPublisher)
@@ -98,7 +96,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 			pBuffer->resize(fragmentSize);
 			BinaryWriter writer(pBuffer->data(), pBuffer->size());
 			writer.write(reader.current(), fragmentSize);
-			addFragment(itFragment, reliable, NULL, marker, ++_fragmentCounter, splitCounter, type, time, Packet(pBuffer));
+			addFragment(itFragment, reliable, NULL, marker, ++_fragmentCounter, splitCounter, type, time, Packet(pBuffer), false); // wait onFlush for flushing
 			reader.next(fragmentSize);
 		} while (splitCounter-- > 0);
 
@@ -113,7 +111,7 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 		// Pull fragment?
 		auto itWaiting = _mapWaitingFragments.find(fragmentId);
 		if (itWaiting != _mapWaitingFragments.end()) {
-			TRACE("GroupMedia ", id, " - Waiting fragment ", fragmentId, " is arrived")
+			TRACE("GroupMedia ", id, " - Waiting fragment ", fragmentId, " received from ", peerId)
 			_mapWaitingFragments.erase(itWaiting);
 			if (!_firstPullReceived)
 				_firstPullReceived = true;
@@ -167,9 +165,9 @@ GroupMedia::GroupMedia(const string& name, const string& key, std::shared_ptr<RT
 			}
 		}
 
-		// Add the fragment to the map
-		// TODO: see if we need to keep the codec infos reliable here
-		addFragment(itFragment, (mediaType==AMF::TYPE_AUDIO)? _audioReliable : ((mediaType== AMF::TYPE_VIDEO)? _videoReliable : true), pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet);
+		// Add the fragment to the map and send it to pushers, always flush
+		// TODO: see if we can keep the codec infos reliable here
+		addFragment(itFragment, (mediaType==AMF::TYPE_AUDIO)? _audioReliable : ((mediaType== AMF::TYPE_VIDEO)? _videoReliable : true), pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet, true);
 
 		// Push the fragment to the output file (if ordered)
 		processFragments(itFragment);
@@ -215,19 +213,19 @@ void GroupMedia::closePublisher() {
 
 	// Send GroupMedia end message
 	++_fragmentCounter;
-	for (auto itPeer : _mapPeers)
+	for (auto& itPeer : _mapPeers)
 		itPeer.second->sendEndMedia(_fragmentCounter);
 
 	close(_fragmentCounter);
 }
 
-void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet) {
+void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet, bool flush) {
 	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(id), forward_as_tuple(new GroupFragment(packet, time, (AMF::Type)mediaType, id, marker, splitedNumber)));
 
 	// Send fragment to peers (push mode) in order of priority
 	UInt8 nbPush = groupParameters->pushLimit + 1;
 	for (auto& it : _listPeers) {
-		if (it.get() != pPeer && it->sendMedia(*itFragment->second, false, reliable) && (--nbPush == 0)) {
+		if (it.get() != pPeer && it->sendMedia(*itFragment->second, false, reliable, flush) && (--nbPush == 0)) {
 			TRACE("GroupMedia ", id, " - Push limit (", groupParameters->pushLimit + 1, ") reached for fragment ", id, " (mask=", String::Format<UInt8>("%.2x", 1 << (id % 8)), ")")
 			break;
 		}
@@ -247,9 +245,8 @@ bool GroupMedia::manage() {
 
 		// Send to all neighbors
 		if (groupParameters->availabilitySendToAll) {
-			for (auto it : _mapPeers) {
+			for (auto& it : _mapPeers)
 				it.second->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
-			}
 		} // Or just one peer at random
 		else {	
 			if ((_itFragmentsPeer == _mapPeers.end() && RTMFP::GetRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itFragmentsPeer, [](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return true; })) 

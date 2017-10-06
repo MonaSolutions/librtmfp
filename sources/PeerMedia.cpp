@@ -78,7 +78,7 @@ void PeerMedia::sendEndMedia(UInt64 lastFragment) {
 	_pMediaReportWriter->writeGroupEndMedia(lastFragment);
 }
 
-bool PeerMedia::sendMedia(const GroupFragment& fragment, bool pull, bool reliable) {
+bool PeerMedia::sendMedia(const GroupFragment& fragment, bool pull, bool reliable, bool flush) {
 	if ((!pull && !isPushable((UInt8)fragment.id%8)))
 		return false;
 
@@ -88,6 +88,8 @@ bool PeerMedia::sendMedia(const GroupFragment& fragment, bool pull, bool reliabl
 	}	
 
 	_pMediaWriter->writeGroupFragment(fragment, reliable);
+	if (flush)
+		_pMediaWriter->flush();
 	return true;
 }
 

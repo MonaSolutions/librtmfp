@@ -119,6 +119,10 @@ void FlowManager::close(bool abrupt) {
 	if (status == RTMFP::FAILED)
 		return;
 
+	// Close handshake if exists
+	if (_pHandshake)
+		removeHandshake(_pHandshake);
+
 	// Send the close message
 	if (status >= RTMFP::CONNECTED)
 		sendCloseChunk(abrupt);
@@ -216,38 +220,38 @@ void FlowManager::receive(const Packet& packet) {
 			/// Acknowledgment
 			UInt64 id = message.read7BitLongValue();
 			UInt64 bufferSize = message.read7BitLongValue();
-			if (bufferSize == 0) {
-				// no more place to write, reliability broken
-				WARN("RTMFPWriter ", id, " can't deliver its data, buffer full on session ", name());
-				close(false);
-				return;
-			}
-			UInt64 ackStage(message.read7BitLongValue());
 			shared_ptr<RTMFPWriter> pWriter;
 			if (writer(id, pWriter)) {
-				UInt32 lostCount(0);
-				if (message.available()) {
-					++lostCount;
-					if (type == 0x50) {
-						UInt8 i;
-						do {
-							UInt8 bits(message.read8());
-							for (i = 0; i < 8; ++i) {
-								if (bits & 1)
-									break;
-								++lostCount;
-								bits >>= 1;
-							}
+				if (bufferSize) {
+					UInt64 ackStage(message.read7BitLongValue());
+					UInt32 lostCount(0);
+					if (message.available()) {
+						++lostCount;
+						if (type == 0x50) {
+							UInt8 i;
+							do {
+								UInt8 bits(message.read8());
+								for (i = 0; i < 8; ++i) {
+									if (bits & 1)
+										break;
+									++lostCount;
+									bits >>= 1;
+								}
 
-						} while (i == 8 && message.available());
+							} while (i == 8 && message.available());
+						}
+						else
+							lostCount += UInt32(message.read7BitLongValue());
 					}
-					else
-						lostCount += UInt32(message.read7BitLongValue());
+					pWriter->acquit(ackStage, lostCount);
 				}
-				pWriter->acquit(ackStage, lostCount);
+				else if (!pWriter->closed()) {
+					// no more place to write, reliability broken
+					WARN("RTMFPWriter ", id, " can't deliver its data, buffer full on session ", name());
+					close(false);
+					return;
+				} // else ack on a closed writer, ignored
 			}
-			else
-				DEBUG("Writer ", id, " unfound for acknowledgment ", ackStage, " stage on session ", name(), ", certainly an obsolete message (writer closed)");
 			break;
 		}
 		/// Request
@@ -682,4 +686,17 @@ void FlowManager::closeFlow(UInt64 flowId) {
 
 	BinaryWriter(write(0x5e, 1 + Binary::Get7BitValueSize(flowId))).write7BitLongValue(flowId).write8(0);
 	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
+}
+
+
+void FlowManager::addAddress(const SocketAddress& address, RTMFP::AddressType type) {
+	if (!_pHandshake || (type == RTMFP::ADDRESS_REDIRECTION))
+		return;
+
+	auto itAddress = _pHandshake->mapAddresses.lower_bound(address);
+	if (itAddress != _pHandshake->mapAddresses.end() && itAddress->first == address)
+		return; // already known
+
+	// Save the address
+	_pHandshake->mapAddresses.emplace_hint(itAddress, piecewise_construct, forward_as_tuple(address), forward_as_tuple());
 }
