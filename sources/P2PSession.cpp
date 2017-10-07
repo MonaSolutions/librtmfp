@@ -81,7 +81,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 		} 
 		// else the stream already exists, it is a subscription
 		else if (itStream->second->idFlow) {
-			WARN("Already subscribed to this stream, media subscription refused")
+			DEBUG("Peer ", peerId, " already subscribed to this stream, media subscription refused")
 			return false;
 		}
 		_mapFlow2PeerMedia.emplace(flowId, itStream->second);
@@ -473,10 +473,18 @@ DiffieHellman&	P2PSession::diffieHellman() {
 void P2PSession::addAddress(const SocketAddress& address, RTMFP::AddressType type) {
 	if (type == RTMFP::ADDRESS_REDIRECTION)
 		hostAddress = address;
-	else
+	else {
 		_knownAddresses.emplace(address, type);
 
-	FlowManager::addAddress(address, type);
+		if (_pHandshake) {
+			auto itAddress = _pHandshake->addresses.lower_bound(address);
+			if (itAddress != _pHandshake->addresses.end() && itAddress->first == address)
+				return; // already known
+
+			// Save the address
+			_pHandshake->addresses.emplace_hint(itAddress, piecewise_construct, forward_as_tuple(address), forward_as_tuple(type));
+		}
+	}
 }
 
 void P2PSession::buildGroupKey() {

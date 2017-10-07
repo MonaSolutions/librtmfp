@@ -234,7 +234,7 @@ bool RTMFPSession::connect(const string& url, const string& host, const SocketAd
 	if (address)
 		_handshaker.startHandshake(_pHandshake, address, this, false);
 	else
-		_handshaker.startHandshake(_pHandshake, address, addresses, this, false, false);
+		_handshaker.startHandshake(_pHandshake, address, addresses, this, false);
 	return true;
 }
 
@@ -242,10 +242,10 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 
 	PEER_LIST_ADDRESS_TYPE emptyAddresses;
 	SocketAddress emptyHost; // We don't know the peer's host address
-	return connect2Peer(peerId, streamName, emptyAddresses, emptyHost, false, mediaCount);
+	return connect2Peer(peerId, streamName, emptyAddresses, emptyHost, mediaCount);
 }
 
-bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, bool delayed, UInt16 mediaId) {
+bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, UInt16 mediaId) {
 	if (status != RTMFP::CONNECTED) {
 		ERROR("Cannot start a P2P connection before being connected to the server")
 		onConnected2Peer(); // to exit from the parent loop 
@@ -269,7 +269,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 	if (!streamName.empty()) 
 		pPeer->setStreamName(streamName);
 
-	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress? hostAddress : _address, addresses, (FlowManager*)itPeer->second.get(), true, delayed);
+	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress? hostAddress : _address, addresses, (FlowManager*)itPeer->second.get(), true);
 	return true;
 }
 

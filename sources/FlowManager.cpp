@@ -687,16 +687,3 @@ void FlowManager::closeFlow(UInt64 flowId) {
 	BinaryWriter(write(0x5e, 1 + Binary::Get7BitValueSize(flowId))).write7BitLongValue(flowId).write8(0);
 	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
 }
-
-
-void FlowManager::addAddress(const SocketAddress& address, RTMFP::AddressType type) {
-	if (!_pHandshake || (type == RTMFP::ADDRESS_REDIRECTION))
-		return;
-
-	auto itAddress = _pHandshake->mapAddresses.lower_bound(address);
-	if (itAddress != _pHandshake->mapAddresses.end() && itAddress->first == address)
-		return; // already known
-
-	// Save the address
-	_pHandshake->mapAddresses.emplace_hint(itAddress, piecewise_construct, forward_as_tuple(address), forward_as_tuple());
-}

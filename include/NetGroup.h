@@ -42,6 +42,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_MIN_PEERS_TIMEOUT		6		// number of p2p connections tries to reach before saying that a peer is p2p unable
 #define NETGROUP_TIMEOUT_P2PABLE		100000	// number of msec since the 6th connection try before closing the connection when it's p2p unable
 #define NETGROUP_STATS_DELAY			5000	// delay between each print of statistics (in msec)
+#define NETGROUP_CLEAN_DELAY			10000	// delay betwen each netgroup clean (of Heard List)
 
 /**************************************
 NetGroup is the class that manage
@@ -176,11 +177,15 @@ private:
 	Base::Time												_lastBestCalculation; // last Best list calculation
 	Base::Time												_lastReport; // last Report Message calculation
 	Base::Time												_lastStats; // last Statistics print
+	Base::Time												_lastClean; // last NetGroup clean
 
 	bool													_p2pAble; // True if at least 1 connection has succeed
 	Base::Time												_p2pAbleTime; // Time since p2pExchanges reaches 6 to detect a p2p unable error
 	Base::UInt8												_p2pExchanges; // Count of p2p tries to control p2p ability
 	std::set<std::string>									_p2pEntities; // Set of identifier (tag or peer ID)
+
+	Base::UInt64											_countP2P; // Count of p2p try
+	Base::UInt64											_countP2PSuccess; // Count of p2p success
 
 	std::map<std::string, GroupMedia>						_mapGroupMedias; // map of stream key to GroupMedia
 	std::map<std::string, GroupMedia>::iterator				_groupMediaPublisher; // iterator to the GroupMedia publisher

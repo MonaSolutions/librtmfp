@@ -27,14 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-Handshake::Handshake(FlowManager* session, const Base::SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses, bool p2p, bool hostDelay) :
-	status(RTMFP::STOPPED), pCookie(NULL), pTag(NULL), totalCount(0), hostAddress(piecewise_construct, forward_as_tuple(host), forward_as_tuple()), pSession(session), isP2P(p2p), hostDelay(hostDelay) {
-
-	for (auto it : addresses)
-		mapAddresses.emplace(piecewise_construct, forward_as_tuple(it.first), forward_as_tuple());
-}
-
-RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker") {
+RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _countP2PHandshakes(0) {
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
@@ -81,14 +74,14 @@ void RTMFPHandshaker::receive(const SocketAddress& address, const Packet& packet
 
 bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, FlowManager* pSession, bool p2p) {
 	PEER_LIST_ADDRESS_TYPE mapAddresses;
-	return startHandshake(pHandshake, address, mapAddresses, pSession, p2p, false);
+	return startHandshake(pHandshake, address, mapAddresses, pSession, p2p);
 }
 
-bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p, bool delayed) {
+bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p) {
 	const string& tag = pSession->tag();
 	auto itHandshake = _mapTags.lower_bound(tag);
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str(), tag.size()), forward_as_tuple(new Handshake(pSession, address, addresses, p2p, delayed)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str(), tag.size()), forward_as_tuple(new Handshake(pSession, address, addresses, p2p)));
 		itHandshake->second->pTag = &itHandshake->first;
 		pHandshake = itHandshake->second;
 		return true;
@@ -103,14 +96,14 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
 		PEER_LIST_ADDRESS_TYPE addresses;
 		addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str()), forward_as_tuple(new Handshake(NULL, host, addresses, true, false)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str()), forward_as_tuple(new Handshake(NULL, host, addresses, true)));
 		itHandshake->second->pTag = &itHandshake->first;
 		TRACE("Creating handshake for tag ", String::Hex(BIN itHandshake->second->pTag->c_str(), itHandshake->second->pTag->size()))
 	}
 	else { // Add the address if unknown
-		auto itAddress = itHandshake->second->mapAddresses.lower_bound(address);
-		if (itAddress == itHandshake->second->mapAddresses.end() || itAddress->first != address)
-			itHandshake->second->mapAddresses.emplace_hint(itAddress, piecewise_construct, forward_as_tuple(address), forward_as_tuple());
+		auto itAddress = itHandshake->second->addresses.lower_bound(address);
+		if (itAddress == itHandshake->second->addresses.end() || itAddress->first != address)
+			itHandshake->second->addresses.emplace_hint(itAddress, address, RTMFP::ADDRESS_PUBLIC);
 	}
 	_address.set(address); // set address before sending
 	sendHandshake70(tag, itHandshake->second);
@@ -120,7 +113,6 @@ void RTMFPHandshaker::manage() {
 	// TODO: maybe add a timer to not loop every call of manage()
 
 	// Ask server to send p2p (or host) addresses
-	bool timeout = false;
 	auto itHandshake = _mapTags.begin();
 	while (itHandshake != _mapTags.end()) {
 		shared_ptr<Handshake> pHandshake = itHandshake->second;
@@ -130,43 +122,44 @@ void RTMFPHandshaker::manage() {
 			case RTMFP::STOPPED:
 			case RTMFP::HANDSHAKE30:
 
-				if (pHandshake->status == RTMFP::STOPPED)
-					pHandshake->status = RTMFP::HANDSHAKE30;
+				if (!pHandshake->attempt || pHandshake->lastTry.isElapsed(pHandshake->attempt * 1500)) {
+					if (pHandshake->attempt++ >= 11) {
+						DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 attempt without answer, closing...")
+						removeHandshake((itHandshake++)->second, true);
+						continue;
+					}
+					if (pHandshake->isP2P)
+						++_countP2PHandshakes;
 
-				// Send to host Address
-				if (pHandshake->hostAddress.first && (!pHandshake->hostDelay || pHandshake->startTime.isElapsed(P2P_DELAY_RENDEZVOUS))) { // In NetGroup delay before starting rendezvous is 5s
-					if (!sendHandshake30(pHandshake->hostAddress.first, *pHandshake, pHandshake->hostAddress.second, pHandshake->pSession->epd(), itHandshake->first))
-						timeout = true;
-				}
+					DEBUG("Sending new handshake 30 to server (session : ", pHandshake->pSession->name(), " attempts : ", pHandshake->attempt, "/11)")
 
-				// Send to all addresses (peers or far servers)
-				for (auto& itAddress : pHandshake->mapAddresses) {
-					if (!sendHandshake30(itAddress.first, *pHandshake, itAddress.second, pHandshake->pSession->epd(), itHandshake->first))
-						timeout = true;
-				}
+					// Send to host Address
+					if (pHandshake->hostAddress)
+						sendHandshake30(pHandshake->hostAddress, pHandshake->pSession->epd(), itHandshake->first);
 
-				// Close if limit exceeded
-				if (timeout && (pHandshake->totalCount >= ((pHandshake->mapAddresses.size() + (bool)pHandshake->hostAddress.first) * 11))) {
-					DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 attempt without answer, closing...")
-					removeHandshake((itHandshake++)->second, true);
-					continue;
+					// Send to all addresses
+					for (auto& itAddress : pHandshake->addresses)
+						sendHandshake30(itAddress.first, pHandshake->pSession->epd(), itHandshake->first);
+
+					if (pHandshake->status == RTMFP::STOPPED)
+						pHandshake->status = RTMFP::HANDSHAKE30;
+					pHandshake->lastTry.update();
 				}
 
 				break;
 			case RTMFP::HANDSHAKE38:
 			{
-				Handshake::Attempt& attempt = pHandshake->hostAddress.second; // handshake 38 attempt is saved in hostAddress
-				if (attempt.lastTry.isElapsed(attempt.count * 1500)) {
-					if (attempt.count++ == 11) {
+				if (pHandshake->lastTry.isElapsed(pHandshake->attempt * 1500)) {
+					if (pHandshake->attempt++ == 11) {
 						DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 handshake 38 without answer, closing...")
 						removeHandshake((itHandshake++)->second, true);
 						continue;
 					}
 
-					DEBUG("Sending new handshake 38 to ", pHandshake->pSession->address(), " (target : ", pHandshake->pSession->name(), "; ", attempt.count, "/11)")
-						_address.set(pHandshake->pSession->address());
+					DEBUG("Sending new handshake 38 to ", pHandshake->pSession->address(), " (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
+					_address.set(pHandshake->pSession->address());
 					sendHandshake38(pHandshake, pHandshake->cookieReceived);
-					attempt.lastTry.update();
+					pHandshake->lastTry.update();
 				}
 				break;
 			}
@@ -175,6 +168,11 @@ void RTMFPHandshaker::manage() {
 			}
 		}
 		++itHandshake;
+	}
+
+	if (_lastStats.isElapsed(5000)) {
+		INFO("Handshakes 30 sent : ", _countP2PHandshakes, " ; handshakes remaining : ", _mapTags.size())
+		_lastStats.update();
 	}
 
 	// Release cookies after 95s
@@ -187,11 +185,7 @@ void RTMFPHandshaker::manage() {
 	}
 }
 
-bool RTMFPHandshaker::sendHandshake30(const SocketAddress& address, Handshake& handshake, Handshake::Attempt& attempt, const Binary& epd, const string& tag) {
-	if (attempt.count && !attempt.lastTry.isElapsed(attempt.count * 1500))
-		return true;
-	else if (attempt.count >= 11)
-		return false; // limit exceeded
+void RTMFPHandshaker::sendHandshake30(const SocketAddress& address, const Binary& epd, const string& tag) {
 
 	shared<Buffer> pBuffer;
 	RTMFP::InitBuffer(pBuffer, 0x0B);
@@ -206,12 +200,6 @@ bool RTMFPHandshaker::sendHandshake30(const SocketAddress& address, Handshake& h
 
 	_address.set(address);
 	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(pBuffer, 0, _address)), _address);
-
-	++attempt.count;
-	attempt.lastTry.update();
-	++handshake.totalCount;
-	DEBUG("Sending new handshake 30 to ", address, " (session : ", handshake.pSession->name(), " attempts : ", attempt.count, ")")
-	return true;
 }
 
 void RTMFPHandshaker::handleHandshake30(BinaryReader& reader) {
@@ -325,11 +313,9 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 	if (pHandshake->pSession->onPeerHandshake70(_address, pHandshake->farKey, cookie)) {
 		pHandshake->cookieReceived.assign(cookie.data(), cookie.size());
 
-		// Reset addresses & save the one to use
-		pHandshake->mapAddresses.clear();
-		pHandshake->hostAddress.first = _address;
-		pHandshake->hostAddress.second.count = 1;
-		pHandshake->hostAddress.second.lastTry.update();
+		// Reset attempt status
+		pHandshake->attempt = 1;
+		pHandshake->lastTry.update();
 
 		// Send handshake 38
 		sendHandshake38(pHandshake, pHandshake->cookieReceived);
@@ -484,22 +470,17 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		DEBUG(_address, " - Redirection message ignored, we have already received handshake 70")
 		return;
 	}
-	DEBUG(_address, " - ", pHandshake->isP2P ? "Server has sent to us the peer addresses of responders" : "Server redirection messsage, sending back the handshake 30")
+	DEBUG(_address, " - ", pHandshake->isP2P ? "Server has sent to us the peer addresses of " : "Server redirection message from ", pHandshake->pSession->name())
 
 	// Read addresses
 	SocketAddress hostAddress;
-	PEER_LIST_ADDRESS_TYPE listAddresses;
-	RTMFP::ReadAddresses(reader, listAddresses, pHandshake->hostAddress.first, [this, pHandshake, hostAddress, tag](const SocketAddress& address, RTMFP::AddressType type) {
+	RTMFP::ReadAddresses(reader, pHandshake->addresses, pHandshake->hostAddress, [this, pHandshake, hostAddress, tag](const SocketAddress& address, RTMFP::AddressType type) {
 
-		// Add address to senssion and handshake
+		// Add address to session and handshake (TODO: can be redundant)
 		pHandshake->pSession->addAddress(address, type);
 
-		// If it's not a redirection address start sending handshake 30
-		if (type != RTMFP::ADDRESS_REDIRECTION) {
-			auto itAddress = pHandshake->mapAddresses.find(address);
-			if (itAddress != pHandshake->mapAddresses.end())
-				sendHandshake30(address, *pHandshake, itAddress->second, pHandshake->pSession->epd(), tag);
-		}		
+		if (type != RTMFP::ADDRESS_REDIRECTION)
+			sendHandshake30(address, pHandshake->pSession->epd(), tag);
 	});
 }
 

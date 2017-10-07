@@ -76,10 +76,10 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	const Base::SocketAddress&		address() { return _address; }
 
 	// Remove the handshake properly
-	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake)=0;
+	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake) = 0;
 
 	// Return the diffie hellman object (related to main session)
-	virtual Base::DiffieHellman&	diffieHellman()=0;
+	virtual Base::DiffieHellman&	diffieHellman() = 0;
 
 	// Return the nonce (generate it if not ready)
 	const std::shared_ptr<Base::Buffer>&	getNonce();
@@ -87,15 +87,16 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt);
 
-	// Add host or address when receiving address
-	// Update handhsake if present
-	virtual void					addAddress(const Base::SocketAddress& address, RTMFP::AddressType type);
+	// Add host or address when receiving address (p2p only)
+	virtual void					addAddress(const Base::SocketAddress& address, RTMFP::AddressType type) {}
 
 	// Treat decoded message
 	virtual void				receive(const Base::SocketAddress& address, const Base::Packet& packet);
 
 	// Send a flow exception (message 0x5E)
 	void						closeFlow(Base::UInt64 flowId);
+
+	bool						initiator() { return !_responder; }
 
 
 	/* Implementation of RTMFPOutput */

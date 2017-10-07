@@ -62,7 +62,7 @@ struct RTMFPSession : public FlowManager {
 
 	// Connect to a peer (main function)
 	// param delayed: if True we first try to connect directly to addresses and after 5s we start to contact the rendezvous service, if False we connect to all addresses
-	bool connect2Peer(const std::string& peerId, const std::string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, bool delayed, Base::UInt16 mediaId=0);
+	bool connect2Peer(const std::string& peerId, const std::string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, Base::UInt16 mediaId=0);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	// return : True if the group has been added
