@@ -157,6 +157,9 @@ struct RTMFPSession : public FlowManager {
 	// Called by NetGroup when receiving a new address from a peer
 	void							updatePeerAddress(const std::string& peerId, const Base::SocketAddress& address, RTMFP::AddressType type);
 
+	// Called by a peer when a concurrent connection happen (to notify netgroup)
+	void							handleConcurrentSwitch();
+
 	/* Write functions */
 	void writeAudio(const Base::Packet& packet, Base::UInt32 time);
 	void writeVideo(const Base::Packet& packet, Base::UInt32 time);

@@ -669,3 +669,8 @@ void RTMFPSession::updatePeerAddress(const std::string& peerId, const Base::Sock
 
 	itPeer->second->addAddress(address, type);
 }
+
+void RTMFPSession::handleConcurrentSwitch() {
+	if (_group) 
+		_group->handleConcurrentSwitch();
+}

@@ -42,7 +42,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_MIN_PEERS_TIMEOUT		6		// number of p2p connections tries to reach before saying that a peer is p2p unable
 #define NETGROUP_TIMEOUT_P2PABLE		100000	// number of msec since the 6th connection try before closing the connection when it's p2p unable
 #define NETGROUP_STATS_DELAY			5000	// delay between each print of statistics (in msec)
-#define NETGROUP_CLEAN_DELAY			10000	// delay betwen each netgroup clean (of Heard List)
+#define NETGROUP_CLEAN_DELAY			10000	// delay betwen each Heard List clean (in msec)
+#define NETGROUP_TIMEOUT_P2PRATE		30000	// delay before disconnecting if p2p connection rate is too low (in msec)
+#define NETGROUP_RATE_MIN				5		// minimum rate of p2p connection to keep connection open
 
 /**************************************
 NetGroup is the class that manage
@@ -93,6 +95,9 @@ public:
 
 	// Called by parent when a peer is trying to connect to us
 	void			p2PAddressExchange(const std::string& tag);
+	
+	// Called by parent when a concurrent connection happen (to update P2P count)
+	void							handleConcurrentSwitch() { --_countP2P; } // This is not a fail
 	
 	const std::string					idHex;	// Group ID in hex format
 	const std::string					idTxt;	// Group ID in plain text (without final zeroes)
@@ -184,8 +189,9 @@ private:
 	Base::UInt8												_p2pExchanges; // Count of p2p tries to control p2p ability
 	std::set<std::string>									_p2pEntities; // Set of identifier (tag or peer ID)
 
-	Base::UInt64											_countP2P; // Count of p2p try
+	Base::UInt64											_countP2P; // Count of p2p attempt
 	Base::UInt64											_countP2PSuccess; // Count of p2p success
+	Base::Time												_p2pRateTime; // last Time we check the p2p rate
 
 	std::map<std::string, GroupMedia>						_mapGroupMedias; // map of stream key to GroupMedia
 	std::map<std::string, GroupMedia>::iterator				_groupMediaPublisher; // iterator to the GroupMedia publisher

@@ -343,12 +343,25 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 }
 
 void NetGroup::manage() {
+	if (_conn.status != RTMFP::CONNECTED)
+		return;
 
 	// P2P unable, we reset the connection
-	if (!_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _conn.status == RTMFP::CONNECTED && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
+	if (!_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
 		ERROR(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...")
 		_conn.close(true);
 		return;
+	}
+	
+	// P2P rate too low, we reset the connection
+	if (_p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
+		// Count > 10 to be sure that we have sufficient tries
+		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
+			ERROR("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...")
+			_conn.close(true);
+			return;
+		}
+		_p2pRateTime.update();
 	}
 
 	// Clean the Heard List from old peers (can take time!)
@@ -599,9 +612,11 @@ void NetGroup::manageBestConnections(const set<string>& oldList) {
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", *it2Connect, " to start connecting") // implementation error, should not happen
 			else {
-				DEBUG("Best Peer - Connecting to peer ", *it2Connect, "...")
 				if (_conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress)) {
-					++_countP2P;
+					if (++_countP2P == ULLONG_MAX) { // reset p2p count
+						_countP2PSuccess = _countP2P = 0;
+						_p2pRateTime.update();
+					}
 					--nbConnect;
 				}
 			}

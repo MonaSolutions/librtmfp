@@ -309,30 +309,30 @@ void GroupMedia::sendGroupMedia(shared_ptr<PeerMedia>& pPeer) {
 }
 
 bool GroupMedia::getNextPeer(MAP_PEERS_INFO_ITERATOR_TYPE& itPeer, bool ascending, UInt64 idFragment, UInt8 mask) {
-	if (!_mapPeers.empty()) {
+	if (_mapPeers.empty())
+		return false;
 
-		// To go faster when there is only one peer
-		if (_mapPeers.size() == 1) {
-			itPeer = _mapPeers.begin();
-			if (itPeer != _mapPeers.end() && (!idFragment || itPeer->second->hasFragment(idFragment)) && (!mask || !(itPeer->second->pushInMode & mask)))
+	// To go faster when there is only one peer
+	if (_mapPeers.size() == 1) {
+		itPeer = _mapPeers.begin();
+		if (itPeer != _mapPeers.end() && (!idFragment || itPeer->second->hasFragment(idFragment)) && (!mask || !(itPeer->second->pushInMode & mask)))
+			return true;
+	}
+	else {
+
+		auto itBegin = (itPeer == _mapPeers.end())? _mapPeers.begin() : itPeer;
+		do {
+			if (ascending)
+				RTMFP::GetNextIt(_mapPeers, itPeer);
+			else // descending
+				RTMFP::GetPreviousIt(_mapPeers, itPeer);
+
+			// Peer match? Exiting
+			if ((!idFragment || itPeer->second->hasFragment(idFragment)) && (!mask || !(itPeer->second->pushInMode & mask)))
 				return true;
 		}
-		else {
-
-			auto itBegin = itPeer;
-			do {
-				if (ascending)
-					RTMFP::GetNextIt(_mapPeers, itPeer);
-				else // descending
-					RTMFP::GetPreviousIt(_mapPeers, itPeer);
-
-				// Peer match? Exiting
-				if ((!idFragment || itPeer->second->hasFragment(idFragment)) && (!mask || !(itPeer->second->pushInMode & mask)))
-					return true;
-			}
-			// loop until finding a peer available
-			while (itPeer != itBegin);
-		}
+		// loop until finding a peer available
+		while (itPeer != itBegin);
 	}
 
 	return false;

@@ -454,6 +454,7 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 		_responder = true;
 		_nonce.reset(); // reset the nonce to avoid handshake error
 		_address.set(address);
+		_parent->handleConcurrentSwitch();
 	}
 	return true;
 }
