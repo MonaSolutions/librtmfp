@@ -347,14 +347,14 @@ void NetGroup::manage() {
 		return;
 
 	// P2P unable, we reset the connection
-	if (!_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
+	if (!groupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
 		ERROR(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...")
 		_conn.close(true);
 		return;
 	}
 	
 	// P2P rate too low, we reset the connection
-	if (_p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
+	if (!groupParameters->isPublisher && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
 		// Count > 10 to be sure that we have sufficient tries
 		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
 			ERROR("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...")
@@ -503,18 +503,17 @@ void NetGroup::buildBestList(const string& groupAddress, const string& peerId, s
 		}
 
 		// Find 2 log(N) peers with location + 1/2, 1/4, 1/8 ...
-		int targetCount = min((int)TargetNeighborsCount(estimatedPeersCount()), (int)(_mapGroupAddress.size() - (peerId != _conn.peerId()))); // to avoid infinite loop
+		int targetCount = min((int)TargetNeighborsCount(estimatedPeersCount()), (int)(_mapGroupAddress.size() - (peerId != _conn.peerId())));
+		auto itTarget = _mapGroupAddress.lower_bound(groupAddress);
+		if (itTarget == _mapGroupAddress.end())
+			itTarget = _mapGroupAddress.begin();
 		for (int missing = targetCount - count; missing > 0; --missing) {
-			auto&& itNode = _mapGroupAddress.lower_bound(groupAddress);
-			int step = _mapGroupAddress.size() / missing;
+			auto& itNode = itTarget;
 
-			// Advance from x + N/i
-			int dist = distance(itNode, _mapGroupAddress.end());
-			if (dist <= step) {
-				itNode = _mapGroupAddress.begin();
-				advance(itNode, step - dist);
-			} else
-				advance(itNode, step);
+			// Advance from x + 1/2^i
+			int step = _mapGroupAddress.size() / pow(2, missing);
+			for (int i = 0; i < step; ++i)
+				RTMFP::GetNextIt(_mapGroupAddress, itNode);
 
 			while (itNode->first == groupAddress || !bestList.emplace(itNode->second).second) // If not added go to next
 				RTMFP::GetNextIt(_mapGroupAddress, itNode);
@@ -783,4 +782,10 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	}
 
 	return newPeers;
+}
+
+void NetGroup::newGroupPeer(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& hostAddress) {
+
+	++_countP2P; // new p2p connection
+	addPeer2HeardList(peerId, rawId, listAddresses, hostAddress);
 }

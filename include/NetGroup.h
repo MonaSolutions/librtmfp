@@ -97,7 +97,10 @@ public:
 	void			p2PAddressExchange(const std::string& tag);
 	
 	// Called by parent when a concurrent connection happen (to update P2P count)
-	void							handleConcurrentSwitch() { --_countP2P; } // This is not a fail
+	void			handleConcurrentSwitch() { --_countP2P; } // This is not a fail
+
+	// Called by parent when the server send us a new Peer ID (new peer connected to the group)
+	void			newGroupPeer(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& hostAddress);
 	
 	const std::string					idHex;	// Group ID in hex format
 	const std::string					idTxt;	// Group ID in plain text (without final zeroes)

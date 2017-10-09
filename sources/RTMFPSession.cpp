@@ -484,7 +484,7 @@ void RTMFPSession::stopListening(const string& peerId) {
 }
 
 void RTMFPSession::handleNewGroupPeer(const string& rawId, const string& peerId) {
-	DEBUG("NetGroup Peer ID ", peerId, " from server ", _address)
+	DEBUG("NetGroup Peer ID ", peerId, " received")
 	
 	if (!_group || !_group->p2pNewPeer(peerId)) {
 		DEBUG("Unable to add the peer ", peerId, ", the peer already exists")
@@ -494,7 +494,7 @@ void RTMFPSession::handleNewGroupPeer(const string& rawId, const string& peerId)
 	PEER_LIST_ADDRESS_TYPE emptyAddresses;
 	SocketAddress emptyHost; // We don't know the peer's host address
 	connect2Peer(peerId.c_str(), "", emptyAddresses, _address, false); // not delayed when receiving the peer ID, contact the rendezvous service to get the addresses of the peer
-	_group->addPeer2HeardList(peerId, rawId.c_str(), emptyAddresses, emptyHost);
+	_group->newGroupPeer(peerId, rawId.c_str(), emptyAddresses, emptyHost);
 }
 
 void RTMFPSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
