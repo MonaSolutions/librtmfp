@@ -29,7 +29,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include <queue>
 
 #define DELAY_CONNECTIONS_MANAGER	75 // Delay between each onManage (in msec)
-#define TIMEOUT_FALLBACK_CONNECTION	3500 // time to wait before connecting to fallback connection (Netgroup=>Unicast switch)
+#define TIMEOUT_FALLBACK_CONNECTION	8000 // time to wait before connecting to fallback connection (Netgroup=>Unicast switch)
 #define DELAY_SIGNAL_READ			100 // time to wait before each read request
 #define DELAY_BLOCKING_SIGNALS		200 // time to wait before checking interrupted status in each waiting signals
 
@@ -86,7 +86,11 @@ struct Invoker : private Base::Thread {
 
 	// Close a publication from a session
 	// return: True if succeed, False otherwise
-	bool			closePublication(unsigned int RTMFPcontext, const char* streamName);
+	bool			closePublication(Base::UInt32 RTMFPcontext, const char* streamName);
+
+	// Close a stream of a session
+	// return: True if succeed, False otherwise
+	bool			closeStream(Base::UInt32 RTMFPcontext, Base::UInt16 streamId);
 
 	// Call a remote function in session RTMFPcontext
 	// return: True if succeed, False otherwise
@@ -152,6 +156,15 @@ private:
 		const Base::UInt32		index;
 	};
 	typedef Base::Event<void(ClosePublication&)>	ON(ClosePublication);
+
+	// Safe-Threaded structure to close a stream in a session
+	struct CloseStream : virtual Base::Object {
+		CloseStream(Base::UInt32 index, Base::UInt16 streamId) : index(index), streamId(streamId) {}
+
+		const Base::UInt16		streamId;
+		const Base::UInt32		index;
+	};
+	typedef Base::Event<void(CloseStream&)>			ON(CloseStream);
 
 	// Safe-Threaded structure to connect to a server
 	struct ConnectAction : virtual Base::Object {
@@ -245,6 +258,10 @@ private:
 	// return: the media ID created or 0 if an error occurs
 	Base::UInt16		createMediaBuffer(Base::UInt32 RTMFPcontext, std::function<bool(Base::UInt16)> condition);
 
+	struct FallbackConnection;
+	// Start a fallback play
+	void				startFallback(FallbackConnection& fallback);
+
 	Base::Timer														_timer; // manage timer
 	int																_lastIndex; // last index of connection
 	std::mutex														_mutexConnections;
@@ -257,10 +274,7 @@ private:
 
 	RTMFPDecoder::OnDecoded											_onDecoded; // Decoded callback
 
-	/* Netgroup/Unicast Fallback connections */
-	struct FallbackConnection;
-	std::map<Base::UInt32, std::shared_ptr<FallbackConnection>>		_connection2Fallback; // map of connection ID to fallback connection
-	std::map<Base::UInt32, std::shared_ptr<FallbackConnection>>		_waitingFallback; // map of waiting connection ID to fallback connection
+	std::map<Base::UInt32, FallbackConnection>						_waitingFallback; // map of waiting connection ID to fallback connection
 
 	/* Data buffers for Readding */
 	struct ConnectionBuffer;

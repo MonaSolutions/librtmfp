@@ -36,7 +36,7 @@ using namespace std;
 
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
-RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _rawId(PEER_ID_SIZE + 2, '\0'),
+RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _id(id), _rawId(PEER_ID_SIZE + 2, '\0'),
 	_handshaker(this), _threadRcv(0), FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
 
 	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
@@ -109,6 +109,7 @@ RTMFPSession::RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnSta
 			amfWriter.writeString(command.value.c_str(), command.value.size());
 			pWriter->flush();
 		}
+		_mapStreamWriters[command.idMedia] = pWriter; // save the writer id
 		idMedia = command.idMedia;
 		_waitingStreams.pop();
 		return true;
@@ -353,20 +354,19 @@ bool RTMFPSession::manage() {
 				WARN("RTMFPSession management - Error to remove P2P session ", itPeer->first, " (", itPeer->second->sessionId(),") : ", nbRemoved)
 			_mapPeersById.erase(itPeer++);
 		}
-		else {
-			itPeer->second->manage();
-			++itPeer;
-		}
+		else
+			(itPeer++)->second->manage();
 	}
 
 	// Manage the flows
 	FlowManager::manage();
 
 	// Send waiting handshake requests
-	_handshaker.manage();
+	if (status <= RTMFP::CONNECTED)
+		_handshaker.manage();
 
 	// Manage NetGroup
-	if (_group)
+	if (_group && status == RTMFP::CONNECTED)
 		_group->manage();
 
 	return !failed();
@@ -395,6 +395,17 @@ bool RTMFPSession::addStream(bool publisher, const string& streamName, bool audi
 
 	_waitingStreams.emplace(publisher, streamName, mediaCount, audioReliable, videoReliable);
 	INFO("Creation of the ", publisher? "publisher" : "player", " stream ", mediaCount)
+	return true;
+}
+
+bool RTMFPSession::closeStream(UInt16 mediaCount) {
+
+	auto itWriter = _mapStreamWriters.find(mediaCount);
+	if (itWriter == _mapStreamWriters.end())
+		return false;
+
+	itWriter->second->writeInvocation("closeStream", true);
+	itWriter->second->close();
 	return true;
 }
 
@@ -503,6 +514,14 @@ void RTMFPSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 		_pGroupWriter.reset();
 	else if (pWriter == _pMainWriter)
 		_pMainWriter.reset();
+	else {
+		for (auto it = _mapStreamWriters.begin(); it != _mapStreamWriters.end(); ++it) {
+			if (pWriter != it->second)
+				continue;
+			_mapStreamWriters.erase(it);
+			break;
+		}
+	}
 
 	WARN("Writer ", pWriter->id, " terminated on session ", name())
 	pWriter->close(false);
@@ -600,7 +619,7 @@ bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshak
 }
 
 void RTMFPSession::onConnection() {
-	INFO("RTMFPSession is now connected to ", name())
+	INFO("RTMFPSession ", _id, " is now connected to ", name())
 	removeHandshake(_pHandshake);
 	status = RTMFP::CONNECTED;
 	_pMainWriter = createWriter(Packet(EXPAND("\x00\x54\x43\x04\x00")), 0);
@@ -673,4 +692,9 @@ void RTMFPSession::updatePeerAddress(const std::string& peerId, const Base::Sock
 void RTMFPSession::handleConcurrentSwitch() {
 	if (_group) 
 		_group->handleConcurrentSwitch();
+}
+
+void RTMFPSession::handleNetGroupException() {
+	close(true);
+	onNetGroupException(_id);
 }

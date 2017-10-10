@@ -343,13 +343,11 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 }
 
 void NetGroup::manage() {
-	if (_conn.status != RTMFP::CONNECTED)
-		return;
 
 	// P2P unable, we reset the connection
 	if (!groupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
 		ERROR(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...")
-		_conn.close(true);
+		_conn.handleNetGroupException();
 		return;
 	}
 	
@@ -358,7 +356,7 @@ void NetGroup::manage() {
 		// Count > 10 to be sure that we have sufficient tries
 		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
 			ERROR("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...")
-			_conn.close(true);
+			_conn.handleNetGroupException();
 			return;
 		}
 		_p2pRateTime.update();

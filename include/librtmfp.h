@@ -104,6 +104,10 @@ LIBRTMFP_API unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const ch
 // return : 1 if the request succeed, 0 otherwise
 LIBRTMFP_API unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext, const char* streamName);
 
+// RTMFP NetStream closeStream function
+// return : 1 if the request succeed, 0 otherwise
+LIBRTMFP_API unsigned short RTMFP_CloseStream(unsigned int RTMFPcontext, unsigned short streamId);
+
 // Close the RTMFP connection
 LIBRTMFP_API void RTMFP_Close(unsigned int RTMFPcontext, unsigned short blocking);
 

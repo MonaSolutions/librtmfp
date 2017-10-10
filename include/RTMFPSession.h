@@ -34,13 +34,14 @@ RTMFP Server
 */
 struct NetGroup;
 struct RTMFPSession : public FlowManager {
-	typedef Base::Event<void()>				ON(ConnectSucceed);
-	typedef Base::Event<void(bool)>			ON(PublishP2P);
-	typedef Base::Event<void()>				ON(Connected2Peer);
-	typedef Base::Event<void()>				ON(StreamPublished);
-	typedef Base::Event<void()>				ON(Connected2Group);
+	typedef Base::Event<void()>					ON(ConnectSucceed);
+	typedef Base::Event<void(bool)>				ON(PublishP2P);
+	typedef Base::Event<void()>					ON(Connected2Peer);
+	typedef Base::Event<void()>					ON(StreamPublished);
+	typedef Base::Event<void()>					ON(Connected2Group);
+	typedef Base::Event<void(Base::UInt32)>		ON(NetGroupException);
 
-	RTMFPSession(Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
+	RTMFPSession(Base::UInt32 id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	~RTMFPSession();
 
@@ -71,6 +72,10 @@ struct RTMFPSession : public FlowManager {
 	// Create a stream (play/publish) in the main stream 
 	// return : True if the stream has been added
 	bool addStream(bool publisher, const std::string& streamName, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
+
+	// Close a stream
+	// return : True if the stream has been closed
+	bool closeStream(Base::UInt16 mediaCount);
 
 	// Call a function of a server, peer or NetGroup
 	// param peerId If set to 0 the call we be done to the server, if set to "all" to all the peers of a NetGroup, and to a peer otherwise
@@ -160,6 +165,9 @@ struct RTMFPSession : public FlowManager {
 	// Called by a peer when a concurrent connection happen (to notify netgroup)
 	void							handleConcurrentSwitch();
 
+	// Called by NetGroup when an exception occurs, it notify the client and close the session
+	void							handleNetGroupException();
+
 	/* Write functions */
 	void writeAudio(const Base::Packet& packet, Base::UInt32 time);
 	void writeVideo(const Base::Packet& packet, Base::UInt32 time);
@@ -191,7 +199,6 @@ protected:
 	virtual void onConnection();
 
 private:
-	friend struct Invoker;
 
 	// Send handshake for group connection
 	void sendGroupConnection(const std::string& netGroup);
@@ -213,6 +220,7 @@ private:
 
 	std::shared_ptr<RTMFPWriter>									_pMainWriter; // Main writer for the connection
 	std::shared_ptr<RTMFPWriter>									_pGroupWriter; // Writer for the group requests
+	std::map<Base::UInt16, std::shared_ptr<RTMFPWriter>>			_mapStreamWriters; // Map of media ID to writer
 	std::shared_ptr<NetGroup>										_group;
 
 	std::map<Base::UInt32, FlowManager*>							_mapSessions; // map of session ID to Sessions

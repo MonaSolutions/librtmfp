@@ -144,6 +144,15 @@ unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* stre
 	return GlobalInvoker->closePublication(RTMFPcontext, streamName);
 }
 
+unsigned short RTMFP_CloseStream(unsigned int RTMFPcontext, unsigned short streamId) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return 0;
+	}
+
+	return GlobalInvoker->closeStream(RTMFPcontext, streamId);
+}
+
 void RTMFP_Close(unsigned int RTMFPcontext, unsigned short blocking) {
 	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it first")

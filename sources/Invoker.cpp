@@ -35,14 +35,16 @@ using namespace std;
 // RTMFP Fallback connection wrapper from NetGroup to unicast
 struct Invoker::FallbackConnection : virtual Base::Object {
 	FallbackConnection(Base::UInt32 idConnection, Base::UInt32 idFallback, Base::UInt16 mediaId, const char* streamName) :
-		lastTime(0), mediaId(mediaId), idConnection(idConnection), idFallback(idFallback), streamName(streamName) {}
+		lastTime(0), mediaId(mediaId), idConnection(idConnection), idFallback(idFallback), streamName(streamName), running(false), switched(false) {}
 	virtual ~FallbackConnection() {}
 
+	bool				switched; // True if the NetGroup Connection has started to send video
+	bool				running; // True if the connection fallback has been started
 	Base::UInt32		lastTime; // last time received from fallback connection (for time patching)
-	const Base::UInt16	mediaId;
-	const Base::UInt32	idConnection;
-	const Base::UInt32	idFallback;
-	const std::string	streamName;
+	const Base::UInt16	mediaId; // id of the main connection media for wrapping
+	const Base::UInt32	idConnection; // id of the main connection
+	const Base::UInt32	idFallback; // id of the fallback connection (unicast)
+	const std::string	streamName; // stream name to subscribe to
 	const Base::Time	timeCreation; // time when the fallback connection has been created
 };
 
@@ -114,6 +116,13 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		auto it = _mapConnections.find(obj.index);
 		if (it != _mapConnections.end())
 			it->second->closePublication(obj.streamName.c_str());
+	};
+	onCloseStream = [this](CloseStream& obj) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(obj.index);
+		if (it != _mapConnections.end())
+			it->second->closeStream(obj.streamId);
 	};
 	onConnect = [this](ConnectAction& obj) {
 		lock_guard<mutex> lock(_mutexConnections);
@@ -255,16 +264,10 @@ void Invoker::manage() {
 	auto itWait = _waitingFallback.begin();
 	while (itWait != _waitingFallback.end()) {
 		// If timeout reached we create the connection
-		if (itWait->second->timeCreation.isElapsed(TIMEOUT_FALLBACK_CONNECTION)) {
+		if (!itWait->second.switched && !itWait->second.running && itWait->second.timeCreation.isElapsed(TIMEOUT_FALLBACK_CONNECTION)) {
+
 			INFO(TIMEOUT_FALLBACK_CONNECTION, "ms without data, starting fallback connection from ", itWait->first)
-
-			auto itFb = _mapConnections.find(itWait->second->idFallback);
-			FATAL_CHECK(itFb != _mapConnections.end()) // implementation error
-
-			// Start playing the fallback stream
-			itFb->second->addStream(false, itWait->second->streamName.c_str(), false, false, 0); // media count == 0, we do not create a buffer for this connection
-			_connection2Fallback.emplace(itWait->first, itWait->second);
-			_waitingFallback.erase(itWait++);
+			startFallback(itWait->second);
 			continue;
 		}
 		++itWait;
@@ -280,10 +283,15 @@ void Invoker::manage() {
 		it = _mapConnections.lower_bound(idConn);
 		if (it == _mapConnections.end() || it->first != idConn)
 			continue; // connection deleted during manage()
-		else if (erase)
-			removeConnection(it++, true);
-		else
-			++it;
+		else if (erase) {
+			// If there is a fallback running we ignore the request
+			auto itFallback = _waitingFallback.find(idConn);
+			if (itFallback == _waitingFallback.end() || !itFallback->second.running) {
+				removeConnection(it++, true);
+				continue;
+			}
+		}
+		++it;
 	}
 	_mutexConnections.unlock();
 }
@@ -397,9 +405,14 @@ void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, 
 	if (!abrupt)
 		it->second->closeSession(); // we must close here because there can be shared pointers
 
-	// Erase fallback connections
-	_waitingFallback.erase(it->first);
-	_connection2Fallback.erase(it->first);
+	// Close possible fallback connection
+	auto itWait = _waitingFallback.find(it->first);
+	if (itWait != _waitingFallback.end()) {
+		auto itConn = _mapConnections.find(itWait->second.idFallback);
+		if (itConn != _mapConnections.end()) // can be deleted if an error occurs
+			removeConnection(itConn);
+		_waitingFallback.erase(itWait);
+	}
 
 	// Erase saved data
 	{
@@ -412,6 +425,7 @@ void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, 
 	it->second->onConnected2Peer = nullptr;
 	it->second->onStreamPublished = nullptr;
 	it->second->onConnected2Group = nullptr;
+	it->second->onNetGroupException = nullptr;
 	_mapConnections.erase(it);
 }
 
@@ -454,20 +468,28 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	}
 
 	// Create the session
-	shared_ptr<RTMFPSession> pConn(new RTMFPSession(*this, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
-	int ret = pConn->_id = ++_lastIndex;
 	bool ready(false);
-	if (parameters->isBlocking)
-		pConn->onConnectSucceed = [this, &ready]() {
-			ready = true;
-			_waitSignal.set();
-		};
+	int idConn(0); // 
 	{
 		lock_guard<mutex> lock(_mutexConnections);
-		_mapConnections.emplace(_lastIndex, pConn);
+		shared_ptr<RTMFPSession> pConn(new RTMFPSession(idConn = ++_lastIndex, *this, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
+		if (parameters->isBlocking) {
+			pConn->onConnectSucceed = [this, &ready]() {
+				ready = true;
+				_waitSignal.set();
+			};
+		}
+		pConn->onNetGroupException = [this](UInt32 idConn) {
+			auto itFallback = _waitingFallback.find(idConn);
+			if (itFallback != _waitingFallback.end() && !itFallback->second.running) {
+				INFO("Session ", idConn, " has been closed, starting fallback connection")
+				startFallback(itFallback->second);
+			}
+		};
+		_mapConnections.emplace(idConn, pConn);
 	}
 
-	_handler.queue(onConnect, _lastIndex, url, host, address, addresses, rawUrl);
+	_handler.queue(onConnect, idConn, url, host, address, addresses, rawUrl);
 
 	// Wait for the connection to happen
 	if (parameters->isBlocking) {
@@ -478,13 +500,13 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 		if (!isInterrupted()) {
 			lock_guard<mutex> lock(_mutexConnections);
 
-			auto it = _mapConnections.find(ret);
+			auto it = _mapConnections.find(idConn);
 			if (it != _mapConnections.end())
 				it->second->onConnectSucceed = nullptr;
 		}
-		return !ready ? 0 : ret;
+		return !ready ? 0 : idConn;
 	}
-	return ret;
+	return idConn;
 }
 
 UInt16 Invoker::createMediaBuffer(UInt32 RTMFPcontext, function<bool(UInt16)> condition) {
@@ -544,8 +566,6 @@ UInt16 Invoker::connect2Peer(UInt32 RTMFPcontext, const char* peerId, const char
 bool Invoker::connect2FallbackUrl(UInt32 RTMFPcontext, RTMFPConfig* parameters, const char* fallbackUrl, Base::UInt16 mediaId) {
 	bool ret(false);
 	_mutexConnections.lock();
-	if (_connection2Fallback.find(RTMFPcontext) != _connection2Fallback.end())
-		ERROR("A fallback connection exist already for connection ", RTMFPcontext)
 	auto itFbConn = _waitingFallback.lower_bound(RTMFPcontext);
 	if (itFbConn != _waitingFallback.end() && itFbConn->first == RTMFPcontext)
 		ERROR("A waiting fallback connection exist already for connection ", RTMFPcontext)
@@ -560,13 +580,25 @@ bool Invoker::connect2FallbackUrl(UInt32 RTMFPcontext, RTMFPConfig* parameters, 
 		if (idFallback) {
 			char* streamName(NULL);
 			RTMFP_GetPublicationAndUrlFromUri(fallbackUrl, &streamName);
-			_waitingFallback.emplace_hint(itFbConn, piecewise_construct, forward_as_tuple(RTMFPcontext), forward_as_tuple(new FallbackConnection(RTMFPcontext, idFallback, mediaId, streamName)));
+			_waitingFallback.emplace_hint(itFbConn, piecewise_construct, forward_as_tuple(RTMFPcontext), forward_as_tuple(RTMFPcontext, idFallback, mediaId, streamName));
 		}
 		// else not important, we continue the group connection
 		ret = true;
 	}
 	_mutexConnections.unlock();
 	return ret;
+}
+
+void Invoker::startFallback(FallbackConnection& fallback) {
+	auto itFb = _mapConnections.find(fallback.idFallback);
+	if (itFb == _mapConnections.end()) {
+		WARN("Unable to start playing fallback connection, it is already closed")
+		return;
+	}
+	
+	// Start playing the fallback stream
+	itFb->second->addStream(false, fallback.streamName.c_str(), false, false, 1); // fallback media id is always 1
+	fallback.running = true;
 }
 
 UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable) {
@@ -722,7 +754,7 @@ bool Invoker::publishP2P(UInt32 RTMFPcontext, const char* streamName, unsigned s
 	return ret;
 }
 
-bool Invoker::closePublication(unsigned int RTMFPcontext, const char* streamName) {
+bool Invoker::closePublication(Base::UInt32 RTMFPcontext, const char* streamName) {
 	{
 		lock_guard<mutex> lock(_mutexConnections);
 
@@ -734,6 +766,21 @@ bool Invoker::closePublication(unsigned int RTMFPcontext, const char* streamName
 	}
 
 	_handler.queue(onClosePublication, RTMFPcontext, streamName);
+	return true;
+}
+
+bool Invoker::closeStream(Base::UInt32 RTMFPcontext, Base::UInt16 streamId) {
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end()) {
+			ERROR("Unable to find the connection ", RTMFPcontext)
+				return false;
+		}
+	}
+
+	_handler.queue(onCloseStream, RTMFPcontext, streamId);
 	return true;
 }
 
@@ -889,42 +936,37 @@ void Invoker::pushMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const 
 void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 
 	bool newStream = false;
-	UInt32 eraseFallback(0), savedTime(0);
+	UInt32 savedTime(0);
 	{
 		// Search if a fallback connection exist
-		lock_guard<mutex> lockConn(_mutexConnections);
-		auto itFallback = _connection2Fallback.begin();
-		while (itFallback != _connection2Fallback.end()) {
-			// Fallback connection? => patch the mediaId & idConnection and save the time
-			if (itFallback->second->idFallback == RTMFPcontext) {
-				mediaId = itFallback->second->mediaId; // switch media ID 
-				RTMFPcontext = itFallback->second->idConnection; // switch connection ID
-				itFallback->second->lastTime = time;
-				break;
-			}
-			// Group Connection => first media packet, update the time and delete fallback
-			else if (itFallback->first == RTMFPcontext) {
-				INFO("First packet received, deleting fallback connection ", itFallback->second->idFallback, " to ", RTMFPcontext)
-				savedTime = itFallback->second->lastTime;
-				newStream = true;
-				eraseFallback = itFallback->second->idFallback;
-				_connection2Fallback.erase(itFallback);
-				break;
-			}
-			++itFallback;
-		}
+		lock_guard<mutex> lockConn(_mutexConnections);		
+		auto itFallback = _waitingFallback.find(RTMFPcontext);
+		if (itFallback == _waitingFallback.end()) {
 
-		// Search if a waiting fallback connection exist
-		auto itWait = _waitingFallback.find(RTMFPcontext);
-		if (itWait != _waitingFallback.end()) {
-			INFO("First packet received, deleting waiting fallback connection ", itWait->second->idFallback, " to ", RTMFPcontext)
-			eraseFallback = itWait->second->idFallback;
-			_waitingFallback.erase(itWait);
+			// Fallback connection found? => patch the mediaId & idConnection and save the time
+			for (auto& itWait : _waitingFallback) {
+				if (itWait.second.idFallback == RTMFPcontext) {
+					mediaId = itWait.second.mediaId; // switch media ID 
+					RTMFPcontext = itWait.second.idConnection; // switch connection ID
+					itWait.second.lastTime = time;
+					break;
+				}
+			}
 		}
-	}
-	// Remove fallback connection if needed
-	if (eraseFallback)
-		removeConnection(eraseFallback, false);
+		// NetGroup Connection with fallback url => first media packet, update the time and stop fallback
+		else if (!itFallback->second.switched) {
+
+			if (itFallback->second.running) {
+				INFO("First packet received, switching from fallback connection ", itFallback->second.idFallback, " to ", RTMFPcontext)
+				savedTime = itFallback->second.lastTime;
+				newStream = true;
+				// Close the stream
+				UNLOCK_RUN_LOCK(_mutexConnections, closeStream(itFallback->second.idFallback, 1));
+				itFallback->second.running = false; // we reset the fallback state, can restart when the connection close
+			}
+			itFallback->second.switched = true; // no more fallback timeout
+		}
+	}		
 
 	// Add the new packet
 	{
@@ -955,7 +997,7 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 			INFO("Video codec infos found, starting to read")
 				itMedia->second.codecInfosRead = true;
 		}
-		// AAC : we wait for the sequence header packet
+		// AAC : we wait for the sequence header packet 
 		else if (!itMedia->second.AACsequenceHeaderRead && type == AMF::TYPE_AUDIO && (packet.size() > 1 && (*packet.data() >> 4) == 0x0A)) { // TODO: save the codec type
 			if (!RTMFP::IsAACCodecInfos(packet.data(), packet.size())) {
 				DEBUG("AAC frame dropped to wait first key frame (sequence header)");

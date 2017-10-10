@@ -397,7 +397,7 @@ int main(int argc, char* argv[]) {
 			if (groupConfig.netGroup)
 				streamId = RTMFP_Connect2Group(context, publication, &config, &groupConfig, audioReliable, videoReliable, tryUnicast);
 			else if (_option == WRITE)
-				RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
+				streamId = RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
 			else if (_option == P2P_WRITE)
 				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
 			else if (nbPeers > 0) { // P2p Play
@@ -407,9 +407,17 @@ int main(int argc, char* argv[]) {
 			else if (_option == SYNC_READ || _option == ASYNC_READ)
 				streamId = RTMFP_Play(context, publication);
 
+			// Main Loop
 			while (!IsInterrupted(NULL)) {
 				if (!onManage())
 					break;
+			}
+
+			// close the stream if needed
+			if (streamId && (_option == WRITE || _option == SYNC_READ || _option == ASYNC_READ)) {
+				if (_option == WRITE)
+					RTMFP_ClosePublication(context, publication);
+				RTMFP_CloseStream(context, streamId);
 			}
 		}
 

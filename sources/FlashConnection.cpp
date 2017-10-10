@@ -116,7 +116,7 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 				shared_ptr<FlashStream> pStream;
 				addStream((UInt16)idStream, pStream);
 				if (onStreamCreated((UInt16)idStream, idMedia)) {
-					pStream->setIdMedia(idMedia); // set the media Id to retrieve the player/publisher
+					pStream->setIdMedia(idMedia); // set the media Id to retrieve the player/publisher in onMedia
 					continue;
 				} else
 					return false;

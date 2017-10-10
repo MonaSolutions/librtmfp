@@ -170,10 +170,12 @@ void RTMFPHandshaker::manage() {
 		++itHandshake;
 	}
 
+#if defined(_DEBUG)
 	if (_lastStats.isElapsed(5000)) {
 		INFO("Handshakes 30 sent : ", _countP2PHandshakes, " ; handshakes remaining : ", _mapTags.size())
 		_lastStats.update();
 	}
+#endif
 
 	// Release cookies after 95s
 	auto itCookie = _mapCookies.begin(); 
@@ -200,6 +202,7 @@ void RTMFPHandshaker::sendHandshake30(const SocketAddress& address, const Binary
 
 	_address.set(address);
 	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(pBuffer, 0, _address)), _address);
+	TRACE("Sending handshake 30 to ", _address)
 }
 
 void RTMFPHandshaker::handleHandshake30(BinaryReader& reader) {
