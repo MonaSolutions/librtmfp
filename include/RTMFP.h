@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02070000	// (2.7.0)
+#define RTMFP_LIB_VERSION	0x02070001	// (2.7.1)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10

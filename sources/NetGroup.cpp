@@ -283,6 +283,16 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 	DEBUG("Peer ", it->first, " added to heard list")
 }
 
+void NetGroup::handlePeerDisconnection(const string& peerId) {
+
+	auto itHeardList = _mapHeardList.find(peerId);
+	if (itHeardList == _mapHeardList.end() || itHeardList->second.died)
+		return;
+
+	itHeardList->second.died = true; // we don't delete the peer, just not send connection and group report with it anymore
+	--_countP2P; // this attempt was not a fail
+}
+
 bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 
 	auto itHeardList = _mapHeardList.find(peerId);
@@ -372,15 +382,15 @@ void NetGroup::manage() {
 			if (now > itHeardList->second.lastGroupReport && ((now - itHeardList->second.lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
 				DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Heard List...")
 
-					// Close the peer if we are connected to it
-					auto itPeer = _mapPeers.find(itHeardList->first);
+				// Close the peer if we are connected to it
+				auto itPeer = _mapPeers.find(itHeardList->first);
 				if (itPeer != _mapPeers.end())
 					itPeer->second->close(true);
 
 				// Delete from the Heard List
 				auto itGroupAddress = _mapGroupAddress.find(itHeardList->second.groupAddress);
 				FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
-					_mapGroupAddress.erase(itGroupAddress);
+				_mapGroupAddress.erase(itGroupAddress);
 				_mapHeardList.erase(itHeardList++);
 				continue;
 			}
@@ -539,7 +549,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	Int64 timeNow(Time::Now());
 	for (auto& it1 : bestList) {
 		itNode = _mapHeardList.find(it1);
-		if (itNode != _mapHeardList.end())
+		if (itNode != _mapHeardList.end() && !itNode->second.died)
 			sizeTotal += AddressesSize(itNode->second.hostAddress, itNode->second.addresses) + PEER_ID_SIZE + 5 + ((itNode->second.lastGroupReport > 0) ? Binary::Get7BitValueSize((UInt32)((timeNow - itNode->second.lastGroupReport) / 1000)) : 1);
 	}
 	_reportBuffer.resize(sizeTotal, false);
@@ -564,7 +574,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	// Peers ID, addresses and time
 	for (auto& it2 : bestList) {
 		itNode = _mapHeardList.find(it2);
-		if (itNode != _mapHeardList.end()) {
+		if (itNode != _mapHeardList.end() && !itNode->second.died) {
 
 			UInt64 timeElapsed = (UInt64)((itNode->second.lastGroupReport > 0) ? ((timeNow - itNode->second.lastGroupReport) / 1000) : 0);
 			TRACE("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed)
@@ -604,18 +614,17 @@ void NetGroup::manageBestConnections(const set<string>& oldList) {
 	int nbConnect = _bestList.size() - _mapPeers.size(); // trick to keep the target count of peers
 	for (auto it2Connect = _bestList.begin(); nbConnect > 0 && it2Connect != _bestList.end(); ++it2Connect) {
 		
-		if (_mapPeers.find(*it2Connect) == _mapPeers.end()) { // if peer is not connected
+		// if peer is not connected we try to connect to it
+		if (_mapPeers.find(*it2Connect) == _mapPeers.end()) {
 			auto itNode = _mapHeardList.find(*it2Connect);
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", *it2Connect, " to start connecting") // implementation error, should not happen
-			else {
-				if (_conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress)) {
-					if (++_countP2P == ULLONG_MAX) { // reset p2p count
-						_countP2PSuccess = _countP2P = 0;
-						_p2pRateTime.update();
-					}
-					--nbConnect;
+			else if (!itNode->second.died && _conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress)) {
+				if (++_countP2P == ULLONG_MAX) { // reset p2p count
+					_countP2PSuccess = _countP2P = 0;
+					_p2pRateTime.update();
 				}
+				--nbConnect;
 			}
 		}
 	}

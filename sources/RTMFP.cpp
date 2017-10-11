@@ -182,7 +182,11 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 				onNewAddress(address, addressType);
 			}
 			break;
+		case RTMFP::ADDRESS_UNSPECIFIED:
+			onNewAddress(address, addressType);
+			break;
 		}
+		
 		TRACE("IP Address : ", address, " - type : ", addressType)
 	}
 	return !addresses.empty() || hostAddress;

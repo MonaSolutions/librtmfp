@@ -172,7 +172,7 @@ void RTMFPHandshaker::manage() {
 
 #if defined(_DEBUG)
 	if (_lastStats.isElapsed(5000)) {
-		INFO("Handshakes 30 sent : ", _countP2PHandshakes, " ; handshakes remaining : ", _mapTags.size())
+		INFO("P2P Handshakes 30 sent : ", _countP2PHandshakes, " ; handshakes remaining : ", _mapTags.size())
 		_lastStats.update();
 	}
 #endif
@@ -476,8 +476,15 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 	DEBUG(_address, " - ", pHandshake->isP2P ? "Server has sent to us the peer addresses of " : "Server redirection message from ", pHandshake->pSession->name())
 
 	// Read addresses
+	bool disconnected(false);
 	SocketAddress hostAddress;
-	RTMFP::ReadAddresses(reader, pHandshake->addresses, pHandshake->hostAddress, [this, pHandshake, hostAddress, tag](const SocketAddress& address, RTMFP::AddressType type) {
+	RTMFP::ReadAddresses(reader, pHandshake->addresses, pHandshake->hostAddress, [this, pHandshake, hostAddress, tag, &disconnected](const SocketAddress& address, RTMFP::AddressType type) {
+
+		// Trick with MonaServer to delete a disconnected peer
+		if (!address || type == RTMFP::ADDRESS_UNSPECIFIED) {
+			disconnected = true;
+			return;
+		}
 
 		// Add address to session and handshake (TODO: can be redundant)
 		pHandshake->pSession->addAddress(address, type);
@@ -485,6 +492,9 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		if (type != RTMFP::ADDRESS_REDIRECTION)
 			sendHandshake30(address, pHandshake->pSession->epd(), tag);
 	});
+
+	if (disconnected)
+		_pSession->handlePeerDisconnection(pHandshake->pSession->name());
 }
 
 const shared_ptr<Socket>& RTMFPHandshaker::socket(Base::IPAddress::Family family) { 

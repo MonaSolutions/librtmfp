@@ -868,13 +868,15 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) 
 		auto itBuffer = _connection2Buffer.find(RTMFPcontext);
 		if (itBuffer == _connection2Buffer.end()) {
 			WARN("Unable to find the buffer for connection ", RTMFPcontext, ", it can be closed")
-			return -1;
+			nbRead = -1;
+			break;
 		}
 
 		auto itMedia = itBuffer->second.mapMedias.find(mediaId);
 		if (itMedia == itBuffer->second.mapMedias.end()) {
 			WARN("Unable to find buffer media ", mediaId, " of connection ", RTMFPcontext)
-			return -1;
+			nbRead = -1;
+			break;
 		}
 
 		if (!itMedia->second.mediaPackets.empty()) {

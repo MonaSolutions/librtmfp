@@ -698,3 +698,15 @@ void RTMFPSession::handleNetGroupException() {
 	close(true);
 	onNetGroupException(_id);
 }
+
+void RTMFPSession::handlePeerDisconnection(const string& peerId) {
+	auto itPeer = _mapPeersById.find(peerId);
+	if (itPeer == _mapPeersById.end())
+		return;
+
+	DEBUG("Address empty found, the peer ", peerId, " has been deleted")
+	itPeer->second->close(true);
+
+	if (_group)
+		_group->handlePeerDisconnection(peerId);
+}

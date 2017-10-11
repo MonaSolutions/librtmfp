@@ -73,6 +73,9 @@ public:
 	// param update : if set to True we will recalculate the best list after
 	void			addPeer2HeardList(const std::string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& hostAddress, Base::UInt64 timeElapsed=0);
 
+	// Handle a peer disconnection, set the peer has died
+	void			handlePeerDisconnection(const std::string& peerId);
+
 	// Add a peer to the NetGroup map
 	bool			addPeer(const std::string& peerId, std::shared_ptr<P2PSession> pPeer);
 
@@ -149,8 +152,9 @@ private:
 	// Peer instance in the heard list
 	struct GroupNode : virtual Base::Object {
 		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& host, Base::UInt64 timeElapsed) :
-			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - (timeElapsed * 1000)) {}
+			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - (timeElapsed * 1000)), died(false) {}
 
+		bool		died; // Trick to stop connexion to old peers faster
 		std::string rawId;
 		std::string groupAddress;
 		PEER_LIST_ADDRESS_TYPE addresses;

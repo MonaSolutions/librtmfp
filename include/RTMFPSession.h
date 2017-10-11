@@ -168,6 +168,9 @@ struct RTMFPSession : public FlowManager {
 	// Called by NetGroup when an exception occurs, it notify the client and close the session
 	void							handleNetGroupException();
 
+	// Called by Handshaker when receiving an empty address from the server rendezvous service (peer not found)
+	void							handlePeerDisconnection(const std::string& peerId);
+
 	/* Write functions */
 	void writeAudio(const Base::Packet& packet, Base::UInt32 time);
 	void writeVideo(const Base::Packet& packet, Base::UInt32 time);
