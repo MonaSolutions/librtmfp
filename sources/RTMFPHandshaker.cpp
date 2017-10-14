@@ -27,7 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _countP2PHandshakes(0) {
+RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _countP2PHandshakes(0), _first(true) {
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
@@ -49,7 +49,7 @@ void RTMFPHandshaker::receive(const SocketAddress& address, const Packet& packet
 
 	// Handshake
 	if (marker != 0x0B) {
-		WARN("Unexpected Handshake marker : ", String::Format<UInt8>("%02x", marker));
+		WARN("Unexpected Handshake marker : ", String::Format<UInt8>("%02x", marker), " received from ", address);
 		return;
 	}
 
@@ -74,14 +74,14 @@ void RTMFPHandshaker::receive(const SocketAddress& address, const Packet& packet
 
 bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, FlowManager* pSession, bool p2p) {
 	PEER_LIST_ADDRESS_TYPE mapAddresses;
-	return startHandshake(pHandshake, address, mapAddresses, pSession, p2p);
+	return startHandshake(pHandshake, address, mapAddresses, pSession, p2p, false); // direct P2P => no delay
 }
 
-bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p) {
+bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p, bool delay) {
 	const string& tag = pSession->tag();
 	auto itHandshake = _mapTags.lower_bound(tag);
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str(), tag.size()), forward_as_tuple(new Handshake(pSession, address, addresses, p2p)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str(), tag.size()), forward_as_tuple(new Handshake(pSession, address, addresses, p2p, delay)));
 		itHandshake->second->pTag = &itHandshake->first;
 		pHandshake = itHandshake->second;
 		return true;
@@ -96,7 +96,7 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
 		PEER_LIST_ADDRESS_TYPE addresses;
 		addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str()), forward_as_tuple(new Handshake(NULL, host, addresses, true)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str()), forward_as_tuple(new Handshake(NULL, host, addresses, true, false)));
 		itHandshake->second->pTag = &itHandshake->first;
 		TRACE("Creating handshake for tag ", String::Hex(BIN itHandshake->second->pTag->c_str(), itHandshake->second->pTag->size()))
 	}
@@ -110,7 +110,10 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 }
 
 void RTMFPHandshaker::manage() {
-	// TODO: maybe add a timer to not loop every call of manage()
+	if (_first)
+		_first = false;
+	else if (!_lastManage.isElapsed(DELAY_MANAGE))
+		return;
 
 	// Ask server to send p2p (or host) addresses
 	auto itHandshake = _mapTags.begin();
@@ -128,14 +131,24 @@ void RTMFPHandshaker::manage() {
 						removeHandshake((itHandshake++)->second, true);
 						continue;
 					}
-					if (pHandshake->isP2P)
-						++_countP2PHandshakes;
 
 					DEBUG("Sending new handshake 30 to server (session : ", pHandshake->pSession->name(), " attempts : ", pHandshake->attempt, "/11)")
 
 					// Send to host Address
-					if (pHandshake->hostAddress)
-						sendHandshake30(pHandshake->hostAddress, pHandshake->pSession->epd(), itHandshake->first);
+					if (pHandshake->hostAddress) {
+
+						if (!pHandshake->rdvDelayed) {
+							sendHandshake30(pHandshake->hostAddress, pHandshake->pSession->epd(), itHandshake->first);
+							if (pHandshake->isP2P)
+								++_countP2PHandshakes;
+						}
+						// If it is the 3rd attempt without rendezvous service we disable the delay, in 0.5s there will be the first request with rendezvous service
+						else if (pHandshake->attempt == 2) {
+							
+							pHandshake->rdvDelayed = false;
+							pHandshake->attempt = 0;
+						}
+					}
 
 					// Send to all addresses
 					for (auto& itAddress : pHandshake->addresses)
@@ -156,10 +169,8 @@ void RTMFPHandshaker::manage() {
 						continue;
 					}
 
-					DEBUG("Sending new handshake 38 to ", pHandshake->pSession->address(), " (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
 					_address.set(pHandshake->pSession->address());
 					sendHandshake38(pHandshake, pHandshake->cookieReceived);
-					pHandshake->lastTry.update();
 				}
 				break;
 			}
@@ -185,6 +196,8 @@ void RTMFPHandshaker::manage() {
 		else
 			++itCookie;
 	}
+
+	_lastManage.update();
 }
 
 void RTMFPHandshaker::sendHandshake30(const SocketAddress& address, const Binary& epd, const string& tag) {
@@ -318,7 +331,6 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 
 		// Reset attempt status
 		pHandshake->attempt = 1;
-		pHandshake->lastTry.update();
 
 		// Send handshake 38
 		sendHandshake38(pHandshake, pHandshake->cookieReceived);
@@ -329,6 +341,10 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 }
 
 void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, const string& cookie) {
+
+
+	DEBUG("Sending new handshake 38 to ", _address, " (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
+	pHandshake->lastTry.update();
 
 	// Write handshake
 	shared<Buffer> pBuffer;

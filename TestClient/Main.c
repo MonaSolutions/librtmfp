@@ -281,6 +281,7 @@ int main(int argc, char* argv[]) {
 	const char*			peerId = NULL, *tryUnicast = NULL, *netGroup = NULL;
 	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	const char			*logFile = NULL, *mediaFile = NULL;
+	const char			*swfUrl = NULL, *app = NULL, *pageUrl = NULL, *flashVer = NULL;
 	RTMFPConfig			config;
 	RTMFPGroupConfig	groupConfig;
 	char				availabilityUpdatePeriod = 0, dump = 0;
@@ -333,6 +334,14 @@ int main(int argc, char* argv[]) {
 			RTMFP_SetParameter("logLevel", argv[i] + 6);
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--peersFile=", 12) == 0) // p2p direct with multiple peers
 			loadPeers(argv[i] + 12);
+		else if (strlen(argv[i]) > 9 && strnicmp(argv[i], "--swfUrl=", 9) == 0)
+			swfUrl = argv[i] + 9; 
+		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--app=", 6) == 0)
+			app = argv[i] + 6;
+		else if (strlen(argv[i]) > 10 && strnicmp(argv[i], "--pageUrl=", 10) == 0)
+			pageUrl = argv[i] + 10;
+		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--flashVer=", 11) == 0)
+			flashVer = argv[i] + 11;
 		else {
 			printf("Unknown option '%s'\n", argv[i]);
 			exit(-1);
@@ -344,6 +353,10 @@ int main(int argc, char* argv[]) {
 	config.pOnSocketError = onSocketError;
 	config.pOnStatusEvent = onStatusEvent;
 	config.isBlocking = groupConfig.isBlocking = 1;
+	config.swfUrl = swfUrl;
+	config.app = app;
+	config.pageUrl = pageUrl;
+	config.flashVer = flashVer;
 
 	// update the parameters
 	if (_option == SYNC_READ)

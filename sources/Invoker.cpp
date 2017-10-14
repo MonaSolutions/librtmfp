@@ -444,7 +444,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	// Extract the port
 	size_t portPos = host.find_last_of(':'), ipv6End = host.find_last_of(']');
 	if ((portPos != string::npos) && (ipv6End != string::npos) && portPos < ipv6End)
-		portPos = 0;
+		portPos = string::npos;
 	string port = (portPos != string::npos) ? host.substr(portPos + 1) : "1935";
 	host = (portPos != string::npos) ? host.substr(0, portPos) : host;
 
@@ -465,7 +465,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	if (!address && addresses.empty()) {
 		ERROR("Unable to resolve host address : ", ex)
 		return 0;
-	}
+	}	
 
 	// Create the session
 	bool ready(false);
@@ -473,6 +473,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	{
 		lock_guard<mutex> lock(_mutexConnections);
 		shared_ptr<RTMFPSession> pConn(new RTMFPSession(idConn = ++_lastIndex, *this, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
+		pConn->setFlashProperties(parameters->swfUrl, parameters->app, parameters->pageUrl, parameters->flashVer);
 		if (parameters->isBlocking) {
 			pConn->onConnectSucceed = [this, &ready]() {
 				ready = true;

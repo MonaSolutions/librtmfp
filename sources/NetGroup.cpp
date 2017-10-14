@@ -149,7 +149,6 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 			WARN("Group report received from unknown peer ", pPeer->peerId) // should not happen
 			return;
 		}
-		itNode->second.lastGroupReport = Time::Now(); // Record the time of last Group Report received to build our Group Report
 
 		// Read the Group Report & try to update the Best List if new peers are found
 		if (readGroupReport(itNode, packet) && (!_bestList.size() || _lastBestCalculation.isElapsed(NETGROUP_BEST_LIST_DELAY))) // Wait at least 5s before calculating again the Best List
@@ -205,10 +204,9 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		removePeer(peerId);
 	};
 	_onGroupAskClose = [this](const string& peerId) {
-		if (_bestList.empty())
-			return false; // do not disconnect peer if we have not calculated the best list
 
-		return _bestList.find(peerId) == _bestList.end(); // if peer is not in the Best list return True to close the main flow, otherwise keep connection open
+		// We refuse all disconnection until reaching the best list size, then only disconnect peers not in the best list
+		return !_bestList.empty() && (_mapPeers.size() > _bestList.size()) && (_bestList.find(peerId) == _bestList.end());
 	};
 
 	GetGroupAddressFromPeerId(_conn.rawId().c_str(), _myGroupAddress);
@@ -297,7 +295,7 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 
 	auto itHeardList = _mapHeardList.find(peerId);
 	if (itHeardList == _mapHeardList.end()) {
-		ERROR("Unknown peer to add : ", peerId)
+		ERROR("Unknown peer to add : ", peerId) // implementation error
 		return false;
 	}
 
@@ -383,9 +381,7 @@ void NetGroup::manage() {
 				DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Heard List...")
 
 				// Close the peer if we are connected to it
-				auto itPeer = _mapPeers.find(itHeardList->first);
-				if (itPeer != _mapPeers.end())
-					itPeer->second->close(true);
+				_conn.removePeer(itHeardList->first);
 
 				// Delete from the Heard List
 				auto itGroupAddress = _mapGroupAddress.find(itHeardList->second.groupAddress);
@@ -544,7 +540,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 
 	const SocketAddress& hostAddress(_conn.address()), peerAddress(pPeer->address());
 
-	// Calculate the total size to allocate sufficient memory
+	// Calculate the total size to allocate sufficient memory (TODO: see if allocating progressively is better)
 	UInt32 sizeTotal = (UInt32)(peerAddress.host().size() + 8 + AddressesSize(hostAddress, _myAddresses));
 	Int64 timeNow(Time::Now());
 	for (auto& it1 : bestList) {
@@ -619,7 +615,7 @@ void NetGroup::manageBestConnections(const set<string>& oldList) {
 			auto itNode = _mapHeardList.find(*it2Connect);
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", *it2Connect, " to start connecting") // implementation error, should not happen
-			else if (!itNode->second.died && _conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress)) {
+			else if (!itNode->second.died && _conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress, true)) { // rendezvous service delayed of 5s
 				if (++_countP2P == ULLONG_MAX) { // reset p2p count
 					_countP2PSuccess = _countP2P = 0;
 					_p2pRateTime.update();
@@ -709,6 +705,10 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	SocketAddress myAddress, serverAddress;
 	RTMFP::AddressType addressType;
 	PEER_LIST_ADDRESS_TYPE listAddresses;
+	Int64 now = Time::Now();
+
+	// Record the time of last Group Report received to build our Group Report
+	itNode->second.lastGroupReport = now;
 
 	UInt8 size = packet.read8();
 	while (size == 1) { // TODO: check what this means
@@ -777,12 +777,17 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 				RTMFP::ReadAddresses(addressReader, listAddresses, hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 				newPeers = true;
 				addPeer2HeardList(newPeerId.c_str(), rawId.data(), listAddresses, hostAddress, time);  // To avoid memory sharing we use c_str() (copy-on-write implementation on linux)
-			} 
-			// Else update the addresses
-			else // TODO: if a new address is found, should we update an existing Handshake?
+			}
+			// Else update time & addresses
+			else {
+				Int64 nodeTime = now - (time * 1000);
+				if (nodeTime > itHeardList->second.lastGroupReport)
+					itHeardList->second.lastGroupReport = nodeTime;
+
 				RTMFP::ReadAddresses(addressReader, itHeardList->second.addresses, itHeardList->second.hostAddress, [this, newPeerId](const SocketAddress& address, RTMFP::AddressType type) {
 					_conn.updatePeerAddress(newPeerId, address, type);
 				});
+			}
 				
 		}
 		packet.next(size);

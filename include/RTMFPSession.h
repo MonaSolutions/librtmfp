@@ -45,6 +45,9 @@ struct RTMFPSession : public FlowManager {
 
 	~RTMFPSession();
 
+	// Initialize the flash properties for connection request
+	void setFlashProperties(const char* swfUrl, const char* app, const char* pageUrl, const char* flashVer);
+
 	// Close the session (safe-threaded)
 	void closeSession();
 
@@ -63,7 +66,7 @@ struct RTMFPSession : public FlowManager {
 
 	// Connect to a peer (main function)
 	// param delayed: if True we first try to connect directly to addresses and after 5s we start to contact the rendezvous service, if False we connect to all addresses
-	bool connect2Peer(const std::string& peerId, const std::string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, Base::UInt16 mediaId=0);
+	bool connect2Peer(const std::string& peerId, const std::string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const Base::SocketAddress& hostAddress, bool delay, Base::UInt16 mediaId=0);
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	// return : True if the group has been added
@@ -213,6 +216,11 @@ private:
 
 	std::string														_host; // server host name
 	std::map<std::string, std::shared_ptr<P2PSession>>				_mapPeersById; // P2P connections by Id
+
+	std::string														_swfUrl;
+	std::string														_app;
+	std::string														_pageUrl;
+	std::string														_flashVer;
 
 	std::string														_url; // RTMFP url of the application (base handshake)
 	std::shared_ptr<Base::Buffer>									_rawUrl; // Header (size + 0A) + Url to be sent in handshake 30

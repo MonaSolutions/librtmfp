@@ -51,6 +51,10 @@ LIBRTMFP_API typedef struct RTMFPConfig {
 	void	(*pOnSocketError)(const char* error); // Socket Error callback
 	void	(*pOnStatusEvent)(const char* code, const char* description); // RTMFP Status Event callback
 	void	(*pOnMedia)(unsigned short streamId, unsigned int time, const char* data, unsigned int size, unsigned int type); // In synchronous read mode this callback is called when receiving data
+	const char*		swfUrl; // swfUrl Flash connection parameter
+	const char*		app; // app Flash connection parameter
+	const char*		pageUrl; // pageUrl Flash connection parameter
+	const char*		flashVer; // flashVer Flash connection parameter
 } RTMFPConfig;
 
 // This function MUST be called before any other

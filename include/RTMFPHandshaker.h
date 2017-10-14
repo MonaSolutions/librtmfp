@@ -30,13 +30,11 @@ struct Invoker;
 struct RTMFPSession;
 struct FlowManager;
 
-#define	P2P_DELAY_RENDEZVOUS 5000	// Delay before starting to send the rendezvous service requests in a NetGroup
-
 // Waiting handshake request
 struct Handshake : virtual Base::Object {
 
-	Handshake(FlowManager* session, const Base::SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses, bool p2p) :
-		status(RTMFP::STOPPED), pCookie(NULL), pTag(NULL), attempt(0), hostAddress(host), addresses(addresses), pSession(session), isP2P(p2p) {}
+	Handshake(FlowManager* session, const Base::SocketAddress& host, const PEER_LIST_ADDRESS_TYPE& addresses, bool p2p, bool delayed) :
+		status(RTMFP::STOPPED), pCookie(NULL), pTag(NULL), attempt(0), hostAddress(host), addresses(addresses), pSession(session), isP2P(p2p), rdvDelayed(delayed) {}
 
 	bool					isP2P; // True if it is a p2p handshake
 	const std::string*		pCookie; // pointer to the cookie buffer
@@ -51,6 +49,8 @@ struct Handshake : virtual Base::Object {
 
 	Base::UInt8				attempt; // Counter of attempt
 	Base::Time				lastTry; // Last attempt
+
+	bool					rdvDelayed; // If true we wait 5s before starting requests to rendezvous service
 
 	// Coding keys
 	std::shared_ptr<Base::Buffer>		farKey; // Far public key
@@ -74,7 +74,7 @@ struct RTMFPHandshaker : BandWriter  {
 	// Start a new Handshake if possible and add it to the map of tags
 	// param delayed: if True we first try to connect directly to addresses and after 5s we start to contact the rendezvous service, if False we connect to all addresses
 	// return True if the connection is created
-	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p);
+	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p, bool delay);
 	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Base::SocketAddress& address, FlowManager* pSession, bool p2p);
 
 	// Create the handshake object if needed and send a handshake 70 to address
@@ -99,6 +99,10 @@ struct RTMFPHandshaker : BandWriter  {
 	virtual void						receive(const Base::SocketAddress& address, const Base::Packet& packet);
 
 private:
+	enum {
+		P2P_DELAY_RENDEZVOUS = 5000, // Delay before starting to send the rendezvous service requests in a NetGroup
+		DELAY_MANAGE = 500	// Delay between each manage
+	};
 
 	// Send the first handshake message (with rtmfp url/peerId + tag)
 	void								sendHandshake30(const Base::SocketAddress& address, const Base::Binary& epd, const std::string& tag);
@@ -131,6 +135,9 @@ private:
 	const std::string					_name; // name of the session (handshaker)
 	Base::Packet						_publicKey; // Our public key (fixed for the session) TODO: see if we move it into RTMFPSession
 
-	Base::UInt64						_countP2PHandshakes;
-	Base::Time							_lastStats;
+	Base::Time							_lastManage; // last Time manage has been executed
+	bool								_first; // True if it is the 1st manage call
+
+	Base::UInt64						_countP2PHandshakes; // count of p2p handshakes to rendezvous service
+	Base::Time							_lastStats; // last Time we print the handshakes statistics
 };

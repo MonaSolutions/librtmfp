@@ -42,7 +42,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_MIN_PEERS_TIMEOUT		6		// number of p2p connections tries to reach before saying that a peer is p2p unable
 #define NETGROUP_TIMEOUT_P2PABLE		100000	// number of msec since the 6th connection try before closing the connection when it's p2p unable
 #define NETGROUP_STATS_DELAY			5000	// delay between each print of statistics (in msec)
-#define NETGROUP_CLEAN_DELAY			10000	// delay betwen each Heard List clean (in msec)
+#define NETGROUP_CLEAN_DELAY			19000	// delay betwen each Heard List clean (in msec)
 #define NETGROUP_TIMEOUT_P2PRATE		30000	// delay before disconnecting if p2p connection rate is too low (in msec)
 #define NETGROUP_RATE_MIN				5		// minimum rate of p2p connection to keep connection open
 

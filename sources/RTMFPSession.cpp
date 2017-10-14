@@ -36,8 +36,9 @@ using namespace std;
 
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
-RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) : _id(id), _rawId(PEER_ID_SIZE + 2, '\0'),
-	_handshaker(this), _threadRcv(0), FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
+RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
+	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(this), _threadRcv(0), 
+	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
 
 	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
 		if (status > RTMFP::NEAR_CLOSED)
@@ -148,6 +149,17 @@ RTMFPSession::~RTMFPSession() {
 	closeSession();
 }
 
+void RTMFPSession::setFlashProperties(const char* swfUrl, const char* app, const char* pageUrl, const char* flashVer) {
+	if (swfUrl)
+		_swfUrl = swfUrl;
+	if (app)
+		_app = app;
+	if (pageUrl)
+		_pageUrl = pageUrl;
+	if (flashVer)
+		_flashVer = flashVer;
+}
+
 void RTMFPSession::closeSession() {
 
 	// Unsubscribing to socket : we don't want to receive packets anymore
@@ -235,7 +247,7 @@ bool RTMFPSession::connect(const string& url, const string& host, const SocketAd
 	if (address)
 		_handshaker.startHandshake(_pHandshake, address, this, false);
 	else
-		_handshaker.startHandshake(_pHandshake, address, addresses, this, false);
+		_handshaker.startHandshake(_pHandshake, address, addresses, this, false, false);
 	return true;
 }
 
@@ -243,10 +255,10 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 
 	PEER_LIST_ADDRESS_TYPE emptyAddresses;
 	SocketAddress emptyHost; // We don't know the peer's host address
-	return connect2Peer(peerId, streamName, emptyAddresses, emptyHost, mediaCount);
+	return connect2Peer(peerId, streamName, emptyAddresses, emptyHost, false, mediaCount); // direct P2P => no delay
 }
 
-bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, UInt16 mediaId) {
+bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, bool delay, UInt16 mediaId) {
 	if (status != RTMFP::CONNECTED) {
 		ERROR("Cannot start a P2P connection before being connected to the server")
 		onConnected2Peer(); // to exit from the parent loop 
@@ -255,7 +267,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 
 	auto itPeer = _mapPeersById.lower_bound(peerId);
 	if (itPeer != _mapPeersById.end() && itPeer->first == peerId) {
-		DEBUG("Unable to create the P2P session to ", peerId, ", we are already connecting/connected to it")
+		TRACE("Unable to create the P2P session to ", peerId, ", we are already connecting/connected to it")
 		onConnected2Peer(); // to exit from the parent loop
 		return false;
 	}
@@ -270,7 +282,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 	if (!streamName.empty()) 
 		pPeer->setStreamName(streamName);
 
-	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress? hostAddress : _address, addresses, (FlowManager*)itPeer->second.get(), true);
+	_handshaker.startHandshake(itPeer->second->handshake(), hostAddress? hostAddress : _address, addresses, (FlowManager*)itPeer->second.get(), true, delay);
 	return true;
 }
 
@@ -631,16 +643,16 @@ void RTMFPSession::onConnection() {
 	bool amf = amfWriter.amf0;
 	amfWriter.amf0 = true;
 	amfWriter.beginObject();
-	amfWriter.writeStringProperty("app", "live");
-	amfWriter.writeStringProperty("flashVer", EXPAND("WIN 20,0,0,286")); // TODO: change at least this
-	amfWriter.writeStringProperty("swfUrl", "");
+	amfWriter.writeStringProperty("app", _app);
+	amfWriter.writeStringProperty("flashVer", _flashVer);
+	amfWriter.writeStringProperty("swfUrl", _swfUrl);
 	amfWriter.writeStringProperty("tcUrl", _url);
 	amfWriter.writeBooleanProperty("fpad", false);
 	amfWriter.writeNumberProperty("capabilities", 235);
 	amfWriter.writeNumberProperty("audioCodecs", 3575);
 	amfWriter.writeNumberProperty("videoCodecs", 252);
 	amfWriter.writeNumberProperty("videoFunction", 1);
-	amfWriter.writeStringProperty("pageUrl", "");
+	amfWriter.writeStringProperty("pageUrl", _pageUrl);
 	amfWriter.writeNumberProperty("objectEncoding", 3);
 	amfWriter.endObject();
 	amfWriter.amf0 = amf;
@@ -676,8 +688,16 @@ void RTMFPSession::removePeer(const string& peerId) {
 	if (itPeer == _mapPeersById.end())
 		return;
 
+	bool remove = itPeer->second->status < RTMFP::CONNECTED;
+
 	// Close the peer session (and remove the handshake)
 	itPeer->second->close(true);
+
+	// If the peer was not connected we delete it, no need to wait
+	if (remove) {
+		_mapSessions.erase(itPeer->second->sessionId());
+		_mapPeersById.erase(itPeer);
+	}
 }
 
 void RTMFPSession::updatePeerAddress(const std::string& peerId, const Base::SocketAddress& address, RTMFP::AddressType type) {

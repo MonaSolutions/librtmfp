@@ -612,7 +612,11 @@ void FlowManager::setPing(UInt16 time, UInt16 timeEcho) {
 void FlowManager::sendConnect(BinaryReader& reader) {
 
 	if (status > RTMFP::HANDSHAKE38) {
-		DEBUG("Handshake 78 ignored, the session is already in ", status, " state")
+		DEBUG("Handshake 78 ignored, the session is already connected (state=", status, ")")
+		return;
+	}
+	else if (status < RTMFP::HANDSHAKE38) {
+		WARN("Handshake 78 ignored, the session is not in handshake 38 state (", status, ")")
 		return;
 	}
 
