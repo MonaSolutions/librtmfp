@@ -215,3 +215,32 @@ void RTMFP::WriteAMFState(AMFWriter& writer, const char* name, const char* code,
 	if (!withoutClosing)
 		writer.endObject();
 }
+
+const char* RTMFP::Reason2String(Base::UInt8 reason) {
+
+	switch ((CLOSE_REASON)reason) {
+	case SESSION_CLOSED :
+		return "Session Closed (default)";
+		break;
+	case INPUT_CONGESTED :
+		return "Input Congested";
+		break;
+	case OUTPUT_CONGESTED :
+		return "Output Congested";
+		break;
+	case KEEPALIVE_ATTEMPT :
+		return "Keepalive Attempt";
+		break;
+	case P2P_ESTABLISHMENT :
+		return "P2P Establishment Error";
+		break;
+	case P2P_RATE :
+		return "P2P Low Rate";
+		break;
+	case OTHER_EXCEPTION :
+		return "Other Exception";
+		break;
+	}	
+
+	return "Unknown";
+}

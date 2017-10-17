@@ -222,6 +222,9 @@ void GroupMedia::closePublisher() {
 void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, UInt8 marker, UInt64 id, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet, bool flush) {
 	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(id), forward_as_tuple(new GroupFragment(packet, time, (AMF::Type)mediaType, id, marker, splitedNumber)));
 
+	if ((marker == GroupStream::GROUP_MEDIA_DATA || marker == GroupStream::GROUP_MEDIA_START) && (_mapTime2Fragment.empty() || id > _mapTime2Fragment.rbegin()->second))
+		_mapTime2Fragment[Time::Now()] = id;
+
 	// Send fragment to peers (push mode) in order of priority
 	UInt8 nbPush = groupParameters->pushLimit + 1;
 	for (auto& it : _listPeers) {
@@ -230,9 +233,6 @@ void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, 
 			break;
 		}
 	}
-
-	if ((marker == GroupStream::GROUP_MEDIA_DATA || marker == GroupStream::GROUP_MEDIA_START) && (_mapTime2Fragment.empty() || id > _mapTime2Fragment.rbegin()->second))
-		_mapTime2Fragment[Time::Now()] = id;
 }
 
 bool GroupMedia::manage() {
@@ -356,11 +356,11 @@ void GroupMedia::eraseOldFragments() {
 
 	// Get the first fragment before the itTime reference
 	auto itFragment = _fragments.find(itTime->second);
-	if (itFragment != _fragments.begin())
+	if (itFragment != _fragments.begin() && itFragment != _fragments.end())
 		--itFragment;
 
 	if (itFragment == _fragments.end()) {
-		FATAL_ERROR("Unable to find the reference fragment with time ", itTime->second)
+		FATAL_ERROR("Unable to find the reference fragment with time ", itTime->second) // implementation error
 		return;
 	}
 
@@ -544,7 +544,8 @@ void GroupMedia::sendPushRequests() {
 }
 
 void GroupMedia::sendPullRequests() {
-	if (_mapPullTime2Fragment.empty() || _pullPaused) // not started yet
+	// Do not send pull requests if no fragments map received since fetch period or if no fragments received since window duration + relay margin
+	if (_mapPullTime2Fragment.empty() || _pullPaused || _lastFragment.isElapsed(groupParameters->windowDuration + groupParameters->relayMargin))
 		return;
 
 	Int64 timeNow(Time::Now());

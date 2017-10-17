@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02080000	// (2.8.0)
+#define RTMFP_LIB_VERSION	0x02080001	// (2.8.1)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -95,6 +95,19 @@ struct RTMFP : virtual Base::Static {
 		NEAR_CLOSED,
 		FAILED
 	};
+
+	// Custom message sent to know the target close reason
+	enum CLOSE_REASON {
+		SESSION_CLOSED, // default
+		INPUT_CONGESTED, // Input was congested
+		OUTPUT_CONGESTED, // Output was congested
+		KEEPALIVE_ATTEMPT, // Keepalive attempt
+		P2P_ESTABLISHMENT, // P2P Establishmend timeout
+		P2P_RATE, // P2P rate was too low
+		OTHER_EXCEPTION // Exception occurs
+	};
+
+	static const char* Reason2String(Base::UInt8 reason);
 
 	struct Engine : virtual Base::Object {
 		Engine(const Base::UInt8* key) {

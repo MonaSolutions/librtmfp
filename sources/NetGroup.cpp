@@ -355,7 +355,7 @@ void NetGroup::manage() {
 	// P2P unable, we reset the connection
 	if (!groupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
 		ERROR(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...")
-		_conn.handleNetGroupException();
+		_conn.handleNetGroupException(RTMFP::P2P_ESTABLISHMENT);
 		return;
 	}
 	
@@ -364,7 +364,7 @@ void NetGroup::manage() {
 		// Count > 10 to be sure that we have sufficient tries
 		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
 			ERROR("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...")
-			_conn.handleNetGroupException();
+			_conn.handleNetGroupException(RTMFP::P2P_RATE);
 			return;
 		}
 		_p2pRateTime.update();
@@ -744,6 +744,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	while (packet.available() > 4) {
 		if ((tmpMarker = packet.read8()) != 00) {
 			ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 00")
+			Logs::Dump("TEST", packet.data(), packet.size(), "Position : ", packet.position());
 			break;
 		}
 		size = packet.read8();

@@ -137,7 +137,4 @@ private:
 
 	Base::Time							_lastManage; // last Time manage has been executed
 	bool								_first; // True if it is the 1st manage call
-
-	Base::UInt64						_countP2PHandshakes; // count of p2p handshakes to rendezvous service
-	Base::Time							_lastStats; // last Time we print the handshakes statistics
 };

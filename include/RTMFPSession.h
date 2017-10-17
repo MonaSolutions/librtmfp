@@ -151,7 +151,7 @@ struct RTMFPSession : public FlowManager {
 	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
 
 	// Close the session properly or abruptly if parameter is true
-	virtual void					close(bool abrupt);
+	virtual void					close(bool abrupt, RTMFP::CLOSE_REASON reason);
 	
 	// Return the diffie hellman object (related to main session)
 	virtual Base::DiffieHellman&	diffieHellman() { return _diffieHellman; }
@@ -169,7 +169,7 @@ struct RTMFPSession : public FlowManager {
 	void							handleConcurrentSwitch();
 
 	// Called by NetGroup when an exception occurs, it notify the client and close the session
-	void							handleNetGroupException();
+	void							handleNetGroupException(RTMFP::CLOSE_REASON reason);
 
 	// Called by Handshaker when receiving an empty address from the server rendezvous service (peer not found)
 	void							handlePeerDisconnection(const std::string& peerId);

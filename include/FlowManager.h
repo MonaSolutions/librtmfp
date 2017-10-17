@@ -85,7 +85,7 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	const std::shared_ptr<Base::Buffer>&	getNonce();
 
 	// Close the session properly or abruptly if parameter is true
-	virtual void					close(bool abrupt);
+	virtual void					close(bool abrupt, RTMFP::CLOSE_REASON reason);
 
 	// Add host or address when receiving address (p2p only)
 	virtual void					addAddress(const Base::SocketAddress& address, RTMFP::AddressType type) {}
@@ -103,7 +103,7 @@ struct FlowManager : RTMFP::Output, BandWriter {
 	Base::UInt32							rto() const { return _rto; }
 	// Send function used by RTMFPWriter to send packet with header
 	void									send(const std::shared_ptr<RTMFPSender>& pSender);
-	virtual Base::UInt64					queueing() const { return 0; } // TODO: see if we keep this
+	virtual Base::UInt64					queueing() const { return 0; }
 
 protected:
 

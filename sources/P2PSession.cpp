@@ -149,7 +149,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSock
 
 P2PSession::~P2PSession() {
 	DEBUG("Deletion of P2PSession ", peerId)
-	close(true);
+	close(true, RTMFP::SESSION_CLOSED);
 
 	_pMainStream->onMedia = nullptr;
 	_pMainStream->onGroupMedia = nullptr;
@@ -164,7 +164,7 @@ P2PSession::~P2PSession() {
 	_parent = NULL;
 }
 
-void P2PSession::close(bool abrupt) {
+void P2PSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 	if ((abrupt && (status == RTMFP::FAILED)) || (!abrupt && (status == RTMFP::NEAR_CLOSED)))
 		return;
 
@@ -189,7 +189,7 @@ void P2PSession::close(bool abrupt) {
 		_pListener = NULL;
 	}
 
-	FlowManager::close(abrupt);
+	FlowManager::close(abrupt, reason);
 }
 
 RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
@@ -298,7 +298,7 @@ void P2PSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
 	if (pWriter == _pReportWriter) {
 		DEBUG(peerId, " want to close the report writer ", pWriter->id, " we close the session")
 		_pReportWriter.reset();
-		close(false);
+		close(false, RTMFP::OTHER_EXCEPTION);
 	}
 	else if (pWriter == _pNetStreamWriter)
 		_pNetStreamWriter.reset();
@@ -406,7 +406,7 @@ void P2PSession::onConnection() {
 			if (!_responder) // TODO: not sure, I think initiator must do the peer connect first
 				sendGroupPeerConnect();
 		} else
-			close(false);
+			close(false, RTMFP::OTHER_EXCEPTION);
 	// Start playing
 	} else if (!_parent->isPublisher()) {
 		INFO("Sending play request to peer for stream '", _streamName, "'")

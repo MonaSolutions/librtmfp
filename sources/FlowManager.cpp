@@ -45,7 +45,7 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSock
 		else if (code == "NetStream.Publish.Start")
 			onPublished(streamId);
 		else if (code == "NetConnection.Connect.Closed" || code == "NetConnection.Connect.Rejected" || code == "NetStream.Publish.BadName") {
-			close(false);
+			close(false, RTMFP::SESSION_CLOSED);
 			return false; // close the flow
 		}
 		return true;
@@ -115,7 +115,7 @@ void FlowManager::sendCloseChunk(bool abrupt) {
 	_lastClose.update();
 }
 
-void FlowManager::close(bool abrupt) {
+void FlowManager::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 	if (status == RTMFP::FAILED)
 		return;
 
@@ -124,8 +124,14 @@ void FlowManager::close(bool abrupt) {
 		removeHandshake(_pHandshake);
 
 	// Send the close message
-	if (status >= RTMFP::CONNECTED)
+	if (status >= RTMFP::CONNECTED) {
+		// Trick do know the close reason
+		if (reason != RTMFP::SESSION_CLOSED) {
+			BinaryWriter(write(0x4d, 1)).write8(reason);
+			RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
+		}
 		sendCloseChunk(abrupt);
+	}
 
 	// Close writers
 	if (!_flowWriters.empty()) {
@@ -183,12 +189,20 @@ void FlowManager::receive(const Packet& packet) {
 			if (status == RTMFP::FAILED)
 				sendCloseChunk(true); // send back 4C message anyway
 			else
-				close(true);
+				close(true, RTMFP::SESSION_CLOSED);
 			break;
 		case 0x4c : // Closing session abruptly
-			INFO("Session ", name(), " is closing abruptly")
-			close(true);
+			if (status != RTMFP::FAILED) {
+				INFO("Session ", name(), " is closing abruptly (", _address, ")")
+				close(true, RTMFP::SESSION_CLOSED);
+			}
 			return;
+		case 0x4d : // Custom closing session message
+			if (status != RTMFP::FAILED) {
+				UInt8	reason = message.read8();
+				INFO("Session ", name(), " closure reason : ", reason, " - ", RTMFP::Reason2String(reason))
+			}
+			break;
 		case 0x01: // KeepAlive
 			if (status == RTMFP::CONNECTED)
 				send(make_shared<RTMFPCmdSender>(0x41, (status >= RTMFP::CONNECTED) ? (0x89 + _responder) : 0x0B));
@@ -213,7 +227,7 @@ void FlowManager::receive(const Packet& packet) {
 			// I don't unsertand the usefulness...
 			// For the moment, we considerate it like an exception
 			WARN("Ack negative from ", name()); // send fail message immediatly
-			close(true);
+			close(true, RTMFP::SESSION_CLOSED);
 			break;
 		case 0x50:
 		case 0x51: {
@@ -248,7 +262,7 @@ void FlowManager::receive(const Packet& packet) {
 				else if (!pWriter->closed()) {
 					// no more place to write, reliability broken
 					WARN("RTMFPWriter ", id, " can't deliver its data, buffer full on session ", name());
-					close(false);
+					close(false, RTMFP::SESSION_CLOSED);
 					return;
 				} // else ack on a closed writer, ignored
 			}
@@ -321,7 +335,7 @@ void FlowManager::receive(const Packet& packet) {
 				if (pFlow->fragmentation > Net::GetRecvBufferSize()) {
 					if (status < RTMFP::NEAR_CLOSED) {
 						WARN("Session ", name(), " input is congested (", pFlow->fragmentation, " > ", Net::GetRecvBufferSize(),")")
-						close(false);
+						close(false, RTMFP::INPUT_CONGESTED);
 					}
 					return;
 				}
@@ -439,13 +453,13 @@ bool FlowManager::manage() {
 
 		// Close the session if congestion
 		if (_waitClose) {
-			close(false);
+			close(false, RTMFP::OUTPUT_CONGESTED);
 			_waitClose = false;
 		}
 		// After 6 mn without any message we can considerate that the session has failed
 		else if (_recvTime.isElapsed(360000)) {
 			WARN(name(), " failed, reception timeout");
-			close(true);
+			close(true, RTMFP::KEEPALIVE_ATTEMPT);
 			return false;
 		}
 
@@ -473,7 +487,7 @@ void FlowManager::removeFlow(RTMFPFlow* pFlow) {
 			clearWriters(); // without connection, nothing must be sent!
 		_mainFlowId = 0;
 		if (status <= RTMFP::CONNECTED)
-			close(false);
+			close(false, RTMFP::SESSION_CLOSED);
 	}
 	DEBUG("RTMFPFlow ", pFlow->id, " of session ", name(), " consumed")
 	_flows.erase(pFlow->id);

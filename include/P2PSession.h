@@ -59,7 +59,7 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	virtual RTMFPFlow*				createSpecialFlow(Base::Exception& ex, Base::UInt64 id, const std::string& signature, Base::UInt64 idWriterRef);
 
 	// Close the group writers but keep the connection open if full is false
-	virtual void					close(bool abrupt);
+	virtual void					close(bool abrupt, RTMFP::CLOSE_REASON reason);
 
 	// Return the name of the session
 	virtual const std::string&		name() { return peerId; }

@@ -168,10 +168,10 @@ void RTMFPSession::closeSession() {
 	socketIPV6.onPacket = nullptr;
 	socketIPV6.onError = nullptr;
 
-	close(true);
+	close(true, RTMFP::SESSION_CLOSED);
 }
 
-void RTMFPSession::close(bool abrupt) {
+void RTMFPSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 	if (status == RTMFP::FAILED)
 		return;
 
@@ -189,7 +189,7 @@ void RTMFPSession::close(bool abrupt) {
 	// Close the session & writers
 	_pGroupWriter.reset();
 	_pMainWriter.reset();
-	FlowManager::close(abrupt);
+	FlowManager::close(abrupt, RTMFP::SESSION_CLOSED);
 
 	if (abrupt) {
 		// Close the NetGroup
@@ -201,7 +201,7 @@ void RTMFPSession::close(bool abrupt) {
 
 		// Close peers
 		for (auto& it : _mapPeersById)
-			it.second->close(true);
+			it.second->close(true, RTMFP::SESSION_CLOSED);
 		_mapPeersById.clear();
 		_mapSessions.clear();
 
@@ -631,7 +631,7 @@ bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshak
 }
 
 void RTMFPSession::onConnection() {
-	INFO("RTMFPSession ", _id, " is now connected to ", name())
+	INFO("RTMFPSession ", _id, " is now connected to ", name(), " (", _address, ")")
 	removeHandshake(_pHandshake);
 	status = RTMFP::CONNECTED;
 	_pMainWriter = createWriter(Packet(EXPAND("\x00\x54\x43\x04\x00")), 0);
@@ -691,7 +691,7 @@ void RTMFPSession::removePeer(const string& peerId) {
 	bool remove = itPeer->second->status < RTMFP::CONNECTED;
 
 	// Close the peer session (and remove the handshake)
-	itPeer->second->close(true);
+	itPeer->second->close(true, RTMFP::OTHER_EXCEPTION);
 
 	// If the peer was not connected we delete it, no need to wait
 	if (remove) {
@@ -714,8 +714,8 @@ void RTMFPSession::handleConcurrentSwitch() {
 		_group->handleConcurrentSwitch();
 }
 
-void RTMFPSession::handleNetGroupException() {
-	close(true);
+void RTMFPSession::handleNetGroupException(RTMFP::CLOSE_REASON reason) {
+	close(true, reason);
 	onNetGroupException(_id);
 }
 
@@ -725,7 +725,7 @@ void RTMFPSession::handlePeerDisconnection(const string& peerId) {
 		return;
 
 	DEBUG("Address empty found, the peer ", peerId, " has been deleted")
-	itPeer->second->close(true);
+	itPeer->second->close(true, RTMFP::OTHER_EXCEPTION);
 
 	if (_group)
 		_group->handlePeerDisconnection(peerId);

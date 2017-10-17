@@ -27,7 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _countP2PHandshakes(0), _first(true) {
+RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _first(true) {
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
@@ -137,11 +137,8 @@ void RTMFPHandshaker::manage() {
 					// Send to host Address
 					if (pHandshake->hostAddress) {
 
-						if (!pHandshake->rdvDelayed) {
+						if (!pHandshake->rdvDelayed)
 							sendHandshake30(pHandshake->hostAddress, pHandshake->pSession->epd(), itHandshake->first);
-							if (pHandshake->isP2P)
-								++_countP2PHandshakes;
-						}
 						// If it is the 3rd attempt without rendezvous service we disable the delay, in 0.5s there will be the first request with rendezvous service
 						else if (pHandshake->attempt == 2) {
 							
@@ -180,13 +177,6 @@ void RTMFPHandshaker::manage() {
 		}
 		++itHandshake;
 	}
-
-#if defined(_DEBUG)
-	if (_lastStats.isElapsed(5000)) {
-		INFO("P2P Handshakes 30 sent : ", _countP2PHandshakes, " ; handshakes remaining : ", _mapTags.size())
-		_lastStats.update();
-	}
-#endif
 
 	// Release cookies after 95s
 	auto itCookie = _mapCookies.begin(); 
@@ -529,7 +519,7 @@ void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake> pHandshake, boo
 	// Set the session to closed state
 	if (close && pHandshake->pSession) {
 		// Session p2p : 90s before retrying (avoid p2p rendez-vous overload), otherwise 19s is sufficient
-		pHandshake->pSession->close(pHandshake->isP2P? false : true);
+		pHandshake->pSession->close(pHandshake->isP2P? false : true, RTMFP::OTHER_EXCEPTION);
 		pHandshake->pSession = NULL;
 	}
 
