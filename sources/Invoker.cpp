@@ -308,10 +308,10 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 #endif
 	{ // Encapsulate sessions!
 
-		onManage = ([&](UInt32 count) {
+		onManage = [&](UInt32 count) {
 			manage(); // client manage (script, etc..)
 			return DELAY_CONNECTIONS_MANAGER;
-		}); // manage every 2 seconds!
+		}; // manage every 2 seconds!
 		_timer.set(onManage, DELAY_CONNECTIONS_MANAGER);
 		while (!stopping) {
 			if (wakeUp.wait(_timer.raise()))
@@ -842,9 +842,9 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 			break; // we will wait for further data
 
 		if (type == AMF::TYPE_AUDIO)
-			_handler.queue(onPushAudio, RTMFPcontext, Packet(reader.current(), bodySize), time);
+			_handler.queue(onPushAudio, RTMFPcontext, Packet(reader.current(), bodySize), time, AMF::TYPE_AUDIO);
 		else if (type == AMF::TYPE_VIDEO)
-			_handler.queue(onPushVideo, RTMFPcontext, Packet(reader.current(), bodySize), time);
+			_handler.queue(onPushVideo, RTMFPcontext, Packet(reader.current(), bodySize), time, AMF::TYPE_VIDEO);
 		else
 			WARN("Unhandled packet type : ", type)
 			reader.next(bodySize);

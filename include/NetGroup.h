@@ -26,6 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFPSession.h"
 #include "GroupListener.h"
 #include "GroupMedia.h"
+#include "GroupBuffer.h"
 #include <set>
 
 #define NETGROUP_MAX_REPORT_SIZE		20000 // max size used for NetGroup Report messages
@@ -63,7 +64,8 @@ public:
 		FETCH_PERIOD = 7
 	};
 
-	NetGroup(Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable);
+	NetGroup(const Base::Timer& timer, Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
+		bool audioReliable, bool videoReliable);
 	virtual ~NetGroup() {}
 
 	// Close the NetGroup
@@ -149,6 +151,9 @@ private:
 	// Connect and disconnect peers to fit the best list
 	void						manageBestConnections(const std::set<std::string>& oldList);
 
+	// Clean the Heard List
+	void						cleanHeardList();
+
 	// Peer instance in the heard list
 	struct GroupNode : virtual Base::Object {
 		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& host, Base::UInt64 timeElapsed) :
@@ -171,7 +176,15 @@ private:
 	P2PSession::OnPeerGroupBegin							_onGroupBegin; // called when receiving a Group Begin message from the peer
 	P2PSession::OnPeerClose									_onPeerClose; // called when the peer is closing
 	P2PSession::OnPeerGroupAskClose							_onGroupAskClose;
-	GroupMedia::OnGroupPacket								_onGroupPacket; // called by GroupMedia when receiving a packet to distribute it
+	GroupMedia::OnNewFragment								_onNewFragment; // called when receiving a fragment to push it to the GroupBuffer
+	GroupMedia::OnRemovedFragments							_onRemovedFragments; // called when fragments have been removed
+	GroupMedia::OnStartProcessing							_onStartProcessing; // called when receiving the first pull fragment, processing can start
+	
+	Base::Timer::OnTimer									_onCleanHeardList; // clean the Heard List from old peers
+	Base::Timer::OnTimer									_onBestList; // update the Best List
+	const Base::Timer&										_timer; // timer for all time events
+
+	std::unique_ptr<GroupBuffer>							_pGroupBuffer; // Group fragments buffer, order all fragment in a thread and forward them
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 	PEER_LIST_ADDRESS_TYPE									_myAddresses; // Our public ip addresses for Group Report
@@ -186,10 +199,9 @@ private:
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPSession&											_conn; // RTMFPSession related to
 	Base::Buffer											_reportBuffer; // Buffer for reporting messages
-	Base::Time												_lastBestCalculation; // last Best list calculation
+
 	Base::Time												_lastReport; // last Report Message calculation
 	Base::Time												_lastStats; // last Statistics print
-	Base::Time												_lastClean; // last NetGroup clean
 
 	bool													_p2pAble; // True if at least 1 connection has succeed
 	Base::Time												_p2pAbleTime; // Time since p2pExchanges reaches 6 to detect a p2p unable error

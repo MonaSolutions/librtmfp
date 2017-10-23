@@ -55,7 +55,7 @@ struct RTMFPSession : public FlowManager {
 	const Base::SocketAddress&					address() { return _address; }
 
 	// Return the socket object of the session
-	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family) { return ((family == Base::IPAddress::IPv4) ? socketIPV4 : socketIPV6).socket(); }
+	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family) { return ((family == Base::IPAddress::IPv4) ? socketIPV4 : socketIPV6); }
 
 	// Connect to the specified url, return true if the command succeed
 	bool connect(const std::string& url, const std::string& host, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, std::shared_ptr<Base::Buffer>& rawUrl);

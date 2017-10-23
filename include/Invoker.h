@@ -99,6 +99,9 @@ struct Invoker : private Base::Thread {
 	// Called by a connection to push a media packet
 	void			pushMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
 
+	// Bufferize an input packet from a stream/session pair (Thread-safe)
+	void			bufferizeMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
+
 	// Called by a connection to start decoding a packet from target
 	void			decode(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pEngine, std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt16& threadRcv);
 
@@ -118,9 +121,9 @@ public:
 	const Base::Handler&				handler;
 private:
 	// Safe-Threaded structure to publish packets
-	struct WritePacket : virtual Base::Object, Base::Packet {
-		WritePacket(Base::UInt32 index, const Base::Packet& packet, Base::UInt32 time) : index(index), time(time), Base::Packet(std::move(packet)) {}
-		const Base::UInt32 time;
+	struct WritePacket : RTMFP::MediaPacket {
+		WritePacket(Base::UInt32 index, const Base::Packet& packet, Base::UInt32 time, AMF::Type type) : index(index), RTMFP::MediaPacket(packet, time, type) {}
+
 		const Base::UInt32 index;
 	};
 	typedef Base::Event<void(WritePacket&)>			ON(PushAudio);
@@ -282,9 +285,9 @@ private:
 	std::mutex														_mutexRead; // mutex for read
 
 	/* MediaPacket temporary structure waiting buffering */
-	struct ReadPacket : Base::Runner, Base::Packet, virtual Object {
+	struct ReadPacket : Base::Runner, RTMFP::MediaPacket {
 		ReadPacket(Invoker& invoker, Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type) :
-			invoker(invoker), idConn(RTMFPcontext), idMedia(mediaId), time(time), Packet(std::move(packet)), lostRate(lostRate), type(type), Base::Runner("MediaPacket") {}
+			invoker(invoker), idConn(RTMFPcontext), idMedia(mediaId), lostRate(lostRate), Base::Runner("ReadPacket"), RTMFP::MediaPacket(packet, time, type) {}
 
 		bool run(Base::Exception& ex) {
 			invoker.bufferizeMedia(idConn, idMedia, time, *this, lostRate, type);
@@ -293,12 +296,8 @@ private:
 
 		Base::UInt32 idConn;
 		Base::UInt16 idMedia;
-		Base::UInt32 time;
 		const double lostRate;
-		const AMF::Type type;
 		Invoker& invoker;
 	};
-	// Bufferize an input packet from a stream/session pair (Threaded)
-	void bufferizeMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
 	Base::UInt16 _threadPush;
 };

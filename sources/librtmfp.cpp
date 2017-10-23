@@ -91,7 +91,7 @@ unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId,
 		return 0;
 	}
 
-	return GlobalInvoker->connect2Peer(RTMFPcontext, peerId, streamName, blocking);
+	return GlobalInvoker->connect2Peer(RTMFPcontext, peerId, streamName, blocking>0);
 }
 
 unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, unsigned short audioReliable, unsigned short videoReliable, const char* fallbackUrl) {
@@ -100,7 +100,7 @@ unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* stream
 		return 0;
 	}
 
-	UInt16 mediaId = GlobalInvoker->connect2Group(RTMFPcontext, streamName, parameters, groupParameters, audioReliable, videoReliable);
+	UInt16 mediaId = GlobalInvoker->connect2Group(RTMFPcontext, streamName, parameters, groupParameters, audioReliable>0, videoReliable>0);
 
 	if (mediaId && fallbackUrl)
 		GlobalInvoker->connect2FallbackUrl(RTMFPcontext, parameters, fallbackUrl, mediaId);
@@ -123,7 +123,7 @@ unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, 
 		return 0;
 	}
 
-	return GlobalInvoker->addStream(RTMFPcontext, true, streamName, audioReliable>0, videoReliable>0, blocking);
+	return GlobalInvoker->addStream(RTMFPcontext, true, streamName, audioReliable>0, videoReliable>0, blocking>0);
 }
 
 unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {

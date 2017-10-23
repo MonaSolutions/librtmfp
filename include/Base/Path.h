@@ -26,8 +26,9 @@ namespace Base {
 Powerfull feature to manipulate a path to File or Folder
 /!\ Path is a folder if ends with '/'
 /!\ No move or copy constructor because a shared<Path> usage is a lot more faster */
-struct Path : virtual NullableObject {
+struct Path : virtual Object {
 	CONST_STRING(_pImpl ? _pImpl->path() : String::Empty());
+	NULLABLE
 
 	Path() {}
 	/*!
@@ -54,9 +55,9 @@ struct Path : virtual NullableObject {
 
 	// physical disk file
 	bool		exists(bool refresh = false) const { return _pImpl ? _pImpl->exists(refresh) : false; }
-	UInt64		size(bool refresh = false) const { return _pImpl ? _pImpl->size(refresh) : false; }
-	Int64		lastModified(bool refresh = false) const { return _pImpl ? _pImpl->lastModified(refresh) : false; }
-	UInt8		device() const { return _pImpl ? _pImpl->device() : false; }
+	UInt64		size(bool refresh = false) const { return _pImpl ? _pImpl->size(refresh) : 0; }
+	Int64		lastModified(bool refresh = false) const { return _pImpl ? _pImpl->lastModified(refresh) : 0; }
+	UInt8		device() const { return _pImpl ? _pImpl->device() : 0; }
 
 	// setters
 	template <typename ...Args>

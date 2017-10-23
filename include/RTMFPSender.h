@@ -137,7 +137,9 @@ struct RTMFPMessenger : RTMFPSender, virtual Base::Object {
 	AMFWriter&	newMessage(bool reliable, const Base::Packet& packet) { _messages.emplace_back(reliable, packet); return _messages.back().writer; }
 
 private:
-	struct Message : private std::shared_ptr<Base::Buffer>, virtual Base::NullableObject {
+	struct Message : private std::shared_ptr<Base::Buffer>, virtual Base::Object {
+		NULLABLE
+
 		Message(bool reliable, const Base::Packet& packet) : reliable(reliable), packet(std::move(packet)), writer(*new Base::Buffer(RTMFP_MAX_PACKET_SIZE)) { reset(&writer->buffer()); }
 		bool				reliable;
 		AMFWriter			writer; // data

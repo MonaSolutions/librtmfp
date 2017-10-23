@@ -141,6 +141,9 @@
     <ClCompile Include="sources\Base\Congestion.cpp">
       <Filter>Base</Filter>
     </ClCompile>
+    <ClCompile Include="sources\GroupBuffer.cpp">
+      <Filter>NetGroup</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BandWriter.h" />
@@ -329,6 +332,9 @@
     </ClInclude>
     <ClInclude Include="include\Base\Congestion.h">
       <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GroupBuffer.h">
+      <Filter>NetGroup</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

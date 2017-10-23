@@ -29,14 +29,39 @@ bool ThreadQueue::run(Exception&, const volatile bool& stopping) {
 	_PCurrent = this;
 
 	for (;;) {
+		bool timeout = !wakeUp.wait(120000); // 2 mn of timeout
+		for(;;) {
+			deque<shared<Runner>> runners;
+			{
+				lock_guard<mutex> lock(_mutex);
+				if (_runners.empty()) {
+					if (timeout)
+						stop(); // to set _stop immediatly!
+					if (stopping)
+						return true;
+					break;
+				}
+				runners = move(_runners);
+			}
+			Exception ex;
+			for (shared<Runner>& pRunner : runners) {
+				setName(pRunner->name);
+				AUTO_ERROR(pRunner->run(ex = nullptr), pRunner->name);
+				pRunner.reset(); // release resources
+			}
+		}
+	}
+	
+	/*
+	for (;;) {
 
 		bool timeout = !wakeUp.wait(120000); // 2 mn of timeout
-		
+
 		for (;;) {
 			shared<Runner> pRunner;
 			{
 				std::lock_guard<std::mutex> lock(_mutex);
-				if(_runners.empty()) {
+				if (_runners.empty()) {
 					if (timeout)
 						stop(); // to set _stop immediatly!
 					if (stopping)
@@ -52,7 +77,7 @@ bool ThreadQueue::run(Exception&, const volatile bool& stopping) {
 			AUTO_ERROR(pRunner->run(ex), pRunner->name);
 		}
 	}
-	return true;
+	*/
 }
 
 } // namespace Base

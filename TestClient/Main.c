@@ -284,7 +284,7 @@ int main(int argc, char* argv[]) {
 	const char			*swfUrl = NULL, *app = NULL, *pageUrl = NULL, *flashVer = NULL;
 	RTMFPConfig			config;
 	RTMFPGroupConfig	groupConfig;
-	char				availabilityUpdatePeriod = 0, dump = 0;
+	char				availabilityUpdatePeriod = 0, dump = 0, disableRateControl = 0;
 	unsigned int		windowDuration = 0, fetchPeriod = 0, pushLimit = 0, availabilitySendToAll = 0;
 	snprintf(url, 1024, "rtmfp://127.0.0.1/test123");
 
@@ -320,6 +320,8 @@ int main(int argc, char* argv[]) {
 			fetchPeriod = atoi(argv[i] + 14);
 		else if (strlen(argv[i]) > 12 && strnicmp(argv[i], "--pushLimit=", 12) == 0) // for NetGroup mode (multicastPushNeighborLimit)
 			pushLimit = atoi(argv[i] + 12);
+		else if (stricmp(argv[i], "--disableRateControl") == 0) // for NetGroup mode
+			disableRateControl = 1;
 		else if (stricmp(argv[i], "--sendToAll") == 0) // for NetGroup mode (multicastAvailabilitySendToAll)
 			availabilitySendToAll = 1;
 		else if (strlen(argv[i]) > 6 && strnicmp(argv[i], "--url=", 6) == 0)
@@ -373,6 +375,8 @@ int main(int argc, char* argv[]) {
 		groupConfig.fetchPeriod = fetchPeriod; 
 	if (pushLimit)
 		groupConfig.pushLimit = pushLimit;
+	if (disableRateControl)
+		groupConfig.disableRateControl = 1;
 	if (availabilitySendToAll)
 		availabilitySendToAll = 1;
 	if (dump) {

@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x02080001	// (2.8.1)
+#define RTMFP_LIB_VERSION	0x02090000	// (2.9.0)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -108,6 +108,14 @@ struct RTMFP : virtual Base::Static {
 	};
 
 	static const char* Reason2String(Base::UInt8 reason);
+
+	// Media packet base structure
+	struct MediaPacket : Base::Packet, virtual Base::Object {
+		MediaPacket(const Base::Packet& packet, Base::UInt32 time, AMF::Type type) : Base::Packet(std::move(packet)), type(type), time(time) {}
+
+		const Base::UInt32 time;
+		const AMF::Type type;
+	};
 
 	struct Engine : virtual Base::Object {
 		Engine(const Base::UInt8* key) {

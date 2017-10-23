@@ -32,9 +32,11 @@ GroupMedia is the class that manage a stream
 from a NetGroup connection
 */
 struct GroupMedia : virtual Base::Object {
-	typedef Base::Event<bool(Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type)> ON(GroupPacket); // called when a new packet is ready (complete & ordered)
-	
-	GroupMedia(const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable);
+	typedef Base::Event<void(Base::UInt32 groupMediaId, const std::shared_ptr<GroupFragment>& pFragment)>	ON(NewFragment); // called on reception of a new fragment
+	typedef Base::Event<void(Base::UInt32 groupMediaId, Base::UInt64 fragmentId)>							ON(RemovedFragments); // called when removing a group of fragments
+	typedef Base::Event<void(Base::UInt32 groupMediaId)>													ON(StartProcessing); // called when the first pull fragment is received, we can start processing fragments
+
+	GroupMedia(const Base::Timer& timer, const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable);
 	virtual ~GroupMedia();
 
 	void						printStats();
@@ -68,20 +70,12 @@ struct GroupMedia : virtual Base::Object {
 	std::shared_ptr<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream
 	
 private:
-	#define MAP_PEERS_INFO_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>
 	#define LIST_PEERS_INFO_TYPE std::list<std::shared_ptr<PeerMedia>>
+	#define MAP_PEERS_INFO_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>
 	#define MAP_PEERS_INFO_ITERATOR_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>::iterator
-	#define MAP_FRAGMENTS_ITERATOR std::map<Base::UInt64, std::unique_ptr<GroupFragment>>::iterator
 
 	// Add a new fragment to the map _fragments
-	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, Base::UInt8 marker, Base::UInt64 id, Base::UInt8 splitedNumber, Base::UInt8 mediaType, Base::UInt32 time, const Base::Packet& packet, bool flush);
-
-	// Try to push a fragment (to the parent) and following fragments until finding a hole or reaching timeout
-	void						processFragments(MAP_FRAGMENTS_ITERATOR& itFragment);
-
-	// Try to push the fragment to the parent
-	// return true if the fragment has been processed, otherwise false
-	bool						processFragment(MAP_FRAGMENTS_ITERATOR& itFragment);
+	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, Base::UInt8 marker, Base::UInt64 fragmentId, Base::UInt8 splitedNumber, Base::UInt8 mediaType, Base::UInt32 time, const Base::Packet& packet, bool flush);
 
 	// Update the fragment map
 	// Return 0 if there is no fragments, otherwise the last fragment number
@@ -110,24 +104,25 @@ private:
 	// Remove the peer from the map
 	void						removePeer(MAP_PEERS_INFO_ITERATOR_TYPE itPeer);
 
-	PeerMedia::OnPeerClose										_onPeerClose; // notify parent that the peer is closing (update the NetGroup push flags)
+	PeerMedia::OnPeerClose										_onPeerClose; // update the NetGroup push flags when a peer disconnect
 	PeerMedia::OnPlayPull										_onPlayPull; // called when we receive a pull request
 	PeerMedia::OnFragmentsMap									_onFragmentsMap; // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
 	PeerMedia::OnFragment										_onFragment;
 
+	Base::Timer::OnTimer										_onPullRequests;
+	Base::Timer::OnTimer										_onPushRequests;
+	Base::Timer::OnTimer										_onSendFragmentsMap;
+	const Base::Timer&											_timer; // timer for pull & push events
+
 	const std::string&											_stream; // stream name
 	const std::string											_streamKey; // stream key
 
-	Base::Time													_lastPushUpdate; // last Play Push calculation
-	Base::Time													_lastPullUpdate; // last Play Pull calculation
-	Base::Time													_lastFragmentsMap; // last Fragments Map Message calculation
 	Base::Time													_lastFragment; // last time we received a fragment
-	Base::Time													_lastProcessFragment; // last time we have tried to process fragments
 	bool														_pullPaused; // True if no fragments have been received since fetch period
 
-	std::map<Base::UInt64, std::unique_ptr<GroupFragment>>		_fragments;
+	MAP_FRAGMENTS												_fragments;
 	std::map<Base::Int64, Base::UInt64>							_mapTime2Fragment; // Map of time to fragment (only START and DATA fragments are referenced)
-	Base::UInt64												_fragmentCounter; // Current fragment counter of writed fragments (fragments sent to application)
+	Base::UInt64												_fragmentCounter; // Current fragment counter (only for publisher)
 
 	Base::Buffer												_fragmentsMapBuffer; // General buffer for fragments map
 	static Base::UInt32											GroupMediaCounter; // static counter of GroupMedia for id assignment

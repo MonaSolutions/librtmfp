@@ -118,18 +118,17 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnSocketError pOnSocketE
 	_pMainStream->onNewPeer = [this](const string& rawId, const string& peerId) {
 		handleNewGroupPeer(rawId, peerId);
 	};
-	onMediaPlay = _pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
+	_pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 		if (!packet.size())
 			return;
 
 		// Synchronous read
-		if (_pOnMedia) {
+		if (_pOnMedia)
 			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
-			return;
-		}
-		
-		_invoker.pushMedia(_id, mediaId, time, packet, lostRate, type);
+		else 
+			_invoker.pushMedia(_id, mediaId, time, packet, lostRate, type);
 	};
+
 
 	_sessionId = RTMFPSessionCounter++;
 
@@ -304,9 +303,18 @@ bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* par
 		_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
 	}
 
-	_group.reset(new NetGroup(mediaCount, groupHex.c_str(), groupTxt.c_str(), streamName, *this, parameters, audioReliable, videoReliable));
-	_group->onMedia = onMediaPlay;
-	_group->onStatus = _pMainStream->onStatus;
+	_group.reset(new NetGroup(_invoker.timer, mediaCount, groupHex.c_str(), groupTxt.c_str(), streamName, *this, parameters, audioReliable, videoReliable));
+	_group->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) { // Executed in a thread
+		if (!packet.size())
+			return;
+
+		// Synchronous read
+		if (_pOnMedia)
+			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
+		else
+			_invoker.bufferizeMedia(_id, mediaId, time, packet, lostRate, type);
+	};
+	//_group->onStatus = _pMainStream->onStatus; (Commented, onStatus is not thread safe)
 	sendGroupConnection(groupHex);
 	return true;
 }
@@ -457,8 +465,8 @@ void RTMFPSession::onNetConnectionSuccess() {
 		return;
 	}
 
-	UInt16 port = socketIPV4.socket()->address().port();
-	UInt16 portIPv6 = socketIPV6.socket()->address().port();
+	UInt16 port = socketIPV4->address().port();
+	UInt16 portIPv6 = socketIPV6->address().port();
 	INFO("Sending peer info (port : ", port, " - port ipv6 : ", portIPv6,")")
 	AMFWriter& amfWriter = _pMainWriter->writeInvocation("setPeerInfo", false);
 	amfWriter.amf0 = true; // Cirrus wants amf0

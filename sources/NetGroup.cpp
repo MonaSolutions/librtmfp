@@ -75,10 +75,10 @@ double NetGroup::estimatedPeersCount() {
 	}
 	else {
 
-		if (itFirst->first > _myGroupAddress)  // Current == N+1?
+		if (itFirst->first > _myGroupAddress)  // Current == N+1
 			RTMFP::GetPreviousIt(_mapGroupAddress, itFirst);
 		else
-			RTMFP::GetNextIt(_mapGroupAddress, itLast); // Current == N-1
+			RTMFP::GetNextIt(_mapGroupAddress, itLast); // Current == N-1 (TODO: can it happen?)
 
 		RTMFP::GetPreviousIt(_mapGroupAddress, itFirst);
 		RTMFP::GetNextIt(_mapGroupAddress, itLast);
@@ -87,7 +87,7 @@ double NetGroup::estimatedPeersCount() {
 	TRACE("First peer (N-2) = ", itFirst->first)
 	TRACE("Last peer (N+2) = ", itLast->first)
 
-	long long valFirst = 0, valLast = 0;
+	unsigned long long valFirst = 0, valLast = 0;
 	sscanf(itFirst->first.substr(0, 16).c_str(), "%llx", &valFirst);
 	sscanf(itLast->first.substr(0, 16).c_str(), "%llx", &valLast);
 
@@ -98,9 +98,9 @@ double NetGroup::estimatedPeersCount() {
 		return (MAX_PEER_COUNT / (double(valLast - valFirst + MAX_PEER_COUNT) / 4)) + 1;
 }
 
-NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable) : groupParameters(parameters), 
-	_p2pAble(false), idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0),
-	FlashHandler(0, mediaId), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE) {
+NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
+	bool audioReliable, bool videoReliable) : groupParameters(parameters), _p2pAble(false), idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer),
+	_groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE), FlashHandler(0, mediaId) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		if (streamName != stream) {
@@ -119,8 +119,10 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 				DEBUG("New GroupMedia ignored, we are the publisher")
 				return false;
 			}
-			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable));
-			itGroupMedia->second.onGroupPacket = _onGroupPacket;
+			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_timer, stream, streamKey, pParameters, _audioReliable, _videoReliable));
+			itGroupMedia->second.onNewFragment = _onNewFragment;
+			itGroupMedia->second.onRemovedFragments = _onRemovedFragments;
+			itGroupMedia->second.onStartProcessing = _onStartProcessing;
 			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
 
 			// Send the group media infos to each other peers
@@ -137,10 +139,12 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		return true;
 	};
 	_onClosedMedia = [this](const string& streamKey, UInt64 lastFragment) {
-		// TODO: not sure we need to do something here (GroupMedia close message is not received by all peers)
+		// (GroupMedia close message is not received by all peers)
 		auto itGroupMedia = _mapGroupMedias.find(streamKey);
-		if (itGroupMedia != _mapGroupMedias.end())
+		if (itGroupMedia != _mapGroupMedias.end()) {
 			DEBUG("GroupMedia ", itGroupMedia->second.id, " is closing (last fragment : ", lastFragment, ")")
+			itGroupMedia->second.close(lastFragment);
+		}
 	};
 	_onGroupReport = [this](P2PSession* pPeer, BinaryReader& packet, bool sendMediaSubscription) {
 		
@@ -151,8 +155,10 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		}
 
 		// Read the Group Report & try to update the Best List if new peers are found
-		if (readGroupReport(itNode, packet) && (!_bestList.size() || _lastBestCalculation.isElapsed(NETGROUP_BEST_LIST_DELAY))) // Wait at least 5s before calculating again the Best List
-			updateBestList();
+		if (readGroupReport(itNode, packet) && !_bestList.size()) { 
+			updateBestList(); // Note: if we don't receive any group report we don't update the best list
+			_timer.set(_onBestList, NETGROUP_BEST_LIST_DELAY);
+		}
 
 		// First Viewer = > create listener
 		if (_groupMediaPublisher != _mapGroupMedias.end() && !_pListener) {
@@ -196,11 +202,8 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		sendGroupReport(pPeer, true);
 		_lastReport.update();
 	};
-	_onGroupPacket = [this](UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
-		// Go back to Flash handler
-		return FlashHandler::process(type, time, packet, 0, 0, lostRate, false);
-	};
 	_onPeerClose = [this](const string& peerId) {
+
 		removePeer(peerId);
 	};
 	_onGroupAskClose = [this](const string& peerId) {
@@ -208,6 +211,15 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 		// We refuse all disconnection until reaching the best list size, then only disconnect peers not in the best list
 		return !_bestList.empty() && (_mapPeers.size() > _bestList.size()) && (_bestList.find(peerId) == _bestList.end());
 	};
+	_onCleanHeardList = [this](UInt32 count) {
+		cleanHeardList();
+		return NETGROUP_CLEAN_DELAY;
+	};
+	_onBestList = [this](UInt32 count) {
+		updateBestList();
+		return NETGROUP_BEST_LIST_DELAY;
+	};
+	_timer.set(_onCleanHeardList, NETGROUP_CLEAN_DELAY);
 
 	GetGroupAddressFromPeerId(_conn.rawId().c_str(), _myGroupAddress);
 
@@ -221,8 +233,29 @@ NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
 		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
-		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable)).first;
-		_groupMediaPublisher->second.onGroupPacket = nullptr; // we do not need to follow the packet
+		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_timer, stream, streamKey, pParameters, _audioReliable, _videoReliable)).first;
+	}
+	// Else it's a player, create the fragment controler
+	else {
+		_pGroupBuffer.reset(new GroupBuffer());
+		_pGroupBuffer->onNextPacket = [this](GroupBuffer::Result& result) { // Executed in the GroupBuffer Thread
+			// Use Flash handler to process the packets (TODO: delete the group if return false?)
+			for (RTMFP::MediaPacket& mediaPacket : result)
+				FlashHandler::process(mediaPacket.type, mediaPacket.time, mediaPacket, 0, 0, 0, false);
+		};
+
+		_onNewFragment = [this](UInt32 groupMediaId, const shared_ptr<GroupFragment>& pFragment) {
+			Exception ex;
+			AUTO_ERROR(_pGroupBuffer->add(ex, groupMediaId, pFragment), "GroupBuffer ", groupMediaId, " add fragment")
+		};
+		_onRemovedFragments = [this](UInt32 groupMediaId, UInt64 fragmentId) {
+			Exception ex;
+			AUTO_ERROR(_pGroupBuffer->removeFragments(ex, groupMediaId, fragmentId), "GroupBuffer ", groupMediaId, " remove fragments")
+		};
+		_onStartProcessing = [this](UInt32 groupMediaId) {
+			Exception ex;
+			AUTO_ERROR(_pGroupBuffer->startProcessing(ex, groupMediaId), " GroupBuffer ", groupMediaId, " start processing")
+		};
 	}
 }
 
@@ -256,10 +289,21 @@ void NetGroup::close() {
 
 	DEBUG("Closing group ", idTxt, "...")
 
+	_timer.set(_onCleanHeardList, 0);
+	_timer.set(_onBestList, 0);
+
+	if (_pGroupBuffer) {
+		_pGroupBuffer->onNextPacket = nullptr;
+		_pGroupBuffer.reset();
+	}
+
 	stopListener();
 
-	for (auto& itGroupMedia : _mapGroupMedias)
-		itGroupMedia.second.onGroupPacket = nullptr;
+	for (auto& itGroupMedia : _mapGroupMedias) {
+		itGroupMedia.second.onNewFragment = nullptr;
+		itGroupMedia.second.onRemovedFragments = nullptr;
+		itGroupMedia.second.onStartProcessing = nullptr;
+	}
 	_mapGroupMedias.clear();
 
 	MAP_PEERS_ITERATOR_TYPE itPeer = _mapPeers.begin();
@@ -360,7 +404,7 @@ void NetGroup::manage() {
 	}
 	
 	// P2P rate too low, we reset the connection
-	if (!groupParameters->isPublisher && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
+	if (!groupParameters->isPublisher && !groupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
 		// Count > 10 to be sure that we have sufficient tries
 		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
 			ERROR("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...")
@@ -369,34 +413,6 @@ void NetGroup::manage() {
 		}
 		_p2pRateTime.update();
 	}
-
-	// Clean the Heard List from old peers (can take time!)
-	if (_lastClean.isElapsed(NETGROUP_CLEAN_DELAY)) {
-		Int64 now = Time::Now();
-		auto itHeardList = _mapHeardList.begin();
-		while (itHeardList != _mapHeardList.end()) {
-
-			// No Group Report since 5min?
-			if (now > itHeardList->second.lastGroupReport && ((now - itHeardList->second.lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
-				DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Heard List...")
-
-				// Close the peer if we are connected to it
-				_conn.removePeer(itHeardList->first);
-
-				// Delete from the Heard List
-				auto itGroupAddress = _mapGroupAddress.find(itHeardList->second.groupAddress);
-				FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
-				_mapGroupAddress.erase(itGroupAddress);
-				_mapHeardList.erase(itHeardList++);
-				continue;
-			}
-			++itHeardList;
-		}
-	}
-
-	// Manage the Best List
-	if (_lastBestCalculation.isElapsed(NETGROUP_BEST_LIST_DELAY))
-		updateBestList();
 
 	// Send the Group Report message (0A) to a random connected peer
 	if (_lastReport.isElapsed(NETGROUP_REPORT_DELAY)) {
@@ -417,6 +433,10 @@ void NetGroup::manage() {
 			DEBUG("Deletion of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream)
 			if (_groupMediaPublisher == itGroupMedia)
 				_groupMediaPublisher = _mapGroupMedias.end();
+			if (_pGroupBuffer) {
+				Exception ex;
+				AUTO_ERROR(_pGroupBuffer->removeBuffer(ex, itGroupMedia->second.id), "GroupBuffer remove buffer", itGroupMedia->second.id)
+			}
 			_mapGroupMedias.erase(itGroupMedia++);
 		}
 		else
@@ -443,8 +463,6 @@ void NetGroup::updateBestList() {
 
 	// Send new connection requests and close the old ones
 	manageBestConnections(oldList);
-
-	_lastBestCalculation.update();
 }
 
 void NetGroup::buildBestList(const string& groupAddress, const string& peerId, set<string>& bestList) {
@@ -515,8 +533,8 @@ void NetGroup::buildBestList(const string& groupAddress, const string& peerId, s
 			auto& itNode = itTarget;
 
 			// Advance from x + 1/2^i
-			int step = _mapGroupAddress.size() / pow(2, missing);
-			for (int i = 0; i < step; ++i)
+			UInt32 step = _mapGroupAddress.size() / (UInt32)pow(2, missing);
+			for (UInt32 i = 0; i < step; ++i)
 				RTMFP::GetNextIt(_mapGroupAddress, itNode);
 
 			while (itNode->first == groupAddress || !bestList.emplace(itNode->second).second) // If not added go to next
@@ -599,7 +617,7 @@ void NetGroup::manageBestConnections(const set<string>& oldList) {
 		if (_bestList.find(peerId) == _bestList.end()) {
 			const auto& it2Close = _mapPeers.find(peerId);
 			if (it2Close != _mapPeers.end()) {
-				if (nbDisconnect && it2Close->second->askPeer2Disconnect()) // ask far peer to disconnect (if we are not in its Best List)
+				if (nbDisconnect > 0 && it2Close->second->askPeer2Disconnect()) // ask far peer to disconnect (if we are not in its Best List)
 					--nbDisconnect;
 			} else
 				_conn.removePeer(peerId); // Ask parent to close the session and handshake
@@ -623,6 +641,30 @@ void NetGroup::manageBestConnections(const set<string>& oldList) {
 				--nbConnect;
 			}
 		}
+	}
+}
+
+void NetGroup::cleanHeardList() {
+
+	Int64 now = Time::Now();
+	auto itHeardList = _mapHeardList.begin();
+	while (itHeardList != _mapHeardList.end()) {
+
+		// No Group Report since 5min?
+		if (now > itHeardList->second.lastGroupReport && ((now - itHeardList->second.lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
+			DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Heard List...")
+
+			// Close the peer if we are connected to it
+			_conn.removePeer(itHeardList->first);
+
+			// Delete from the Heard List
+			auto itGroupAddress = _mapGroupAddress.find(itHeardList->second.groupAddress);
+			FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
+			_mapGroupAddress.erase(itGroupAddress);
+			_mapHeardList.erase(itHeardList++);
+			continue;
+		}
+		++itHeardList;
 	}
 }
 
@@ -763,7 +805,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 			TRACE("Empty parameter...")
 
 		UInt64 time = packet.read7BitLongValue();
-		TRACE("Group Report - Time elapsed : ", time) // TODO: do we have to update the heard list node time?
+		TRACE("Group Report - Time elapsed : ", time)
 		size = packet.read8(); // Addresses size
 
 		// New peer, read its addresses if no timeout reached

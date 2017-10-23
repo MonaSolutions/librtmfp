@@ -26,7 +26,9 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Date.h"
 #include "Base/Exceptions.h"
 
-struct DataWriter : virtual Base::NullableObject {
+struct DataWriter : virtual Base::Object {
+	NULLABLE
+
 	////  TO DEFINE ////
 	virtual Base::UInt64 beginObject(const char* type = NULL) = 0;
 	virtual void   writePropertyName(const char* value) = 0;

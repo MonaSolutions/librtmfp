@@ -411,6 +411,7 @@
     <ClInclude Include="include\FlashStream.h" />
     <ClInclude Include="include\FlashWriter.h" />
     <ClInclude Include="include\FlowManager.h" />
+    <ClInclude Include="include\GroupBuffer.h" />
     <ClInclude Include="include\GroupListener.h" />
     <ClInclude Include="include\GroupMedia.h" />
     <ClInclude Include="include\GroupStream.h" />
@@ -473,6 +474,7 @@
     <ClCompile Include="sources\FlashStream.cpp" />
     <ClCompile Include="sources\FlashWriter.cpp" />
     <ClCompile Include="sources\FlowManager.cpp" />
+    <ClCompile Include="sources\GroupBuffer.cpp" />
     <ClCompile Include="sources\GroupListener.cpp" />
     <ClCompile Include="sources\GroupMedia.cpp" />
     <ClCompile Include="sources\GroupStream.cpp" />

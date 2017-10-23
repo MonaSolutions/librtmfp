@@ -25,6 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Event.h"
 #include "Base/Packet.h"
 #include "AMF.h"
+#include "RTMFP.h"
 #include <set>
 
 #define MAX_FRAGMENT_MAP_SIZE			1024 // TODO: check this
@@ -34,16 +35,16 @@ struct RTMFPWriter;
 struct RTMFPGroupConfig;
 
 // Fragment instance
-struct GroupFragment : Base::Packet, virtual Base::Object {
+struct GroupFragment : RTMFP::MediaPacket {
 	GroupFragment(const Base::Packet& packet, Base::UInt32 time, AMF::Type mediaType, Base::UInt64 fragmentId, Base::UInt8 groupMarker, Base::UInt8 splitId) :
-		id(fragmentId), splittedId(splitId), type(mediaType), marker(groupMarker), time(time), Packet(std::move(packet)) {}
+		id(fragmentId), splittedId(splitId), marker(groupMarker), RTMFP::MediaPacket(packet, time, mediaType) {}
 
-	Base::UInt32		time;
-	AMF::Type			type;
 	Base::UInt8			marker;
 	Base::UInt64		id;
 	Base::UInt8			splittedId;
 };
+#define MAP_FRAGMENTS std::map<Base::UInt64, std::shared_ptr<GroupFragment>>
+#define MAP_FRAGMENTS_ITERATOR std::map<Base::UInt64, std::shared_ptr<GroupFragment>>::iterator
 
 /***************************************************
 Class used to save group media infos for

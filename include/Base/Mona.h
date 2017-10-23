@@ -30,6 +30,9 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 /////  Usefull macros and patchs   //////
 
+#define self    (*this)
+#define NULLABLE explicit operator void() { static_assert(std::is_constructible<bool, decltype(*this)>::value || std::is_convertible<decltype(*this), bool>::value, "Missing nullable operator"); }
+
 #define BIN		(Base::UInt8*)
 #define STR		(char*)
 
@@ -74,7 +77,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 //
 
 #if defined(_DEBUG) && defined(_WIN32)
-	//#include <map> // A cause d'un pb avec le nouveau new debug! TODO enlever?
 	#define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
 #endif
 
@@ -122,14 +124,6 @@ private:
 	Object& operator=(const Object& other) = delete;
 	Object(Object&& other) = delete;
 	Object& operator=(Object&& other) = delete;
-};
-
-struct NullableObject : virtual Object {
-	explicit operator bool() const { return false; }
-	// => No virtual for performance and to allow parent object to keep its methods (see SocketAddress => IPAddress inheritance)
-	// => explicit to avoid confusion with string operator override for example
-protected:
-	NullableObject() {}
 };
 
 ////// ASCII ////////

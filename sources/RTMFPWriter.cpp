@@ -160,7 +160,7 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* da
 
 	Packet emptyPacket;
 	AMFWriter& writer = newMessage(reliable, emptyPacket);
-	writer->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitEncoded(streamName.size() + 1).write8(0).write(streamName);
+	writer->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitLongValue(streamName.size() + 1).write8(0).write(streamName);
 	writer->write(data, size);
 	writer->write("\x01\x02");
 	if (groupConfig->availabilitySendToAll)

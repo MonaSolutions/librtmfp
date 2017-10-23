@@ -25,7 +25,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/BinaryReader.h"
 #include "DataWriter.h"
 
-struct DataReader : virtual Base::NullableObject {
+struct DataReader : virtual Base::Object {
 	enum {
 		END = 0, // keep equal to 0!
 		NIL,
