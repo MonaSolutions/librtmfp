@@ -45,7 +45,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_STATS_DELAY			5000	// delay between each print of statistics (in msec)
 #define NETGROUP_CLEAN_DELAY			19000	// delay betwen each Heard List clean (in msec)
 #define NETGROUP_TIMEOUT_P2PRATE		30000	// delay before disconnecting if p2p connection rate is too low (in msec)
-#define NETGROUP_RATE_MIN				5		// minimum rate of p2p connection to keep connection open
+#define NETGROUP_RATE_MIN				3		// minimum rate of p2p connection to keep connection open
 
 /**************************************
 NetGroup is the class that manage

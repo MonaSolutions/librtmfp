@@ -27,7 +27,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _first(true) {
+RTMFPHandshaker::RTMFPHandshaker(const Timer& timer, RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _first(true), _timer(timer) {
+	_onManage = [this](UInt32 count) {
+		processManage();
+		return DELAY_MANAGE;
+	};
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
@@ -36,6 +40,7 @@ RTMFPHandshaker::~RTMFPHandshaker() {
 
 void RTMFPHandshaker::close() {
 
+	_timer.set(_onManage, 0);
 	_mapTags.clear();
 	_mapCookies.clear();
 }
@@ -110,10 +115,15 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 }
 
 void RTMFPHandshaker::manage() {
-	if (_first)
+
+	if (_first) {
+		processManage();
+		_timer.set(_onManage, DELAY_MANAGE);
 		_first = false;
-	else if (!_lastManage.isElapsed(DELAY_MANAGE))
-		return;
+	}
+}
+
+void RTMFPHandshaker::processManage() {
 
 	// Ask server to send p2p (or host) addresses
 	auto itHandshake = _mapTags.begin();
@@ -141,7 +151,7 @@ void RTMFPHandshaker::manage() {
 							sendHandshake30(pHandshake->hostAddress, pHandshake->pSession->epd(), itHandshake->first);
 						// If it is the 3rd attempt without rendezvous service we disable the delay, in 0.5s there will be the first request with rendezvous service
 						else if (pHandshake->attempt == 2) {
-							
+
 							pHandshake->rdvDelayed = false;
 							pHandshake->attempt = 0;
 						}
@@ -179,15 +189,13 @@ void RTMFPHandshaker::manage() {
 	}
 
 	// Release cookies after 95s
-	auto itCookie = _mapCookies.begin(); 
+	auto itCookie = _mapCookies.begin();
 	while (itCookie != _mapCookies.end()) {
 		if (itCookie->second->cookieCreation.isElapsed(95000))
 			removeHandshake((itCookie++)->second, true);
 		else
 			++itCookie;
 	}
-
-	_lastManage.update();
 }
 
 void RTMFPHandshaker::sendHandshake30(const SocketAddress& address, const Binary& epd, const string& tag) {

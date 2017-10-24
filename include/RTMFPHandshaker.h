@@ -64,7 +64,7 @@ It is the entry point for all IO
 */
 struct RTMFPHandshaker : BandWriter  {
 
-	RTMFPHandshaker(RTMFPSession* pSession);
+	RTMFPHandshaker(const Base::Timer& timer, RTMFPSession* pSession);
 
 	virtual ~RTMFPHandshaker();
 
@@ -128,6 +128,9 @@ private:
 	// Compute the public key if not already done
 	bool								computePublicKey();
 
+	// Process current handshakes & manage cookies
+	void								processManage();
+
 	std::map<std::string, std::shared_ptr<Handshake>>		_mapTags; // map of Tag to waiting handshake
 	std::map<std::string, std::shared_ptr<Handshake>>		_mapCookies; // map of Cookies to waiting handshake
 
@@ -135,6 +138,7 @@ private:
 	const std::string					_name; // name of the session (handshaker)
 	Base::Packet						_publicKey; // Our public key (fixed for the session) TODO: see if we move it into RTMFPSession
 
-	Base::Time							_lastManage; // last Time manage has been executed
-	bool								_first; // True if it is the 1st manage call
+	bool								_first; // is first manage run?
+	Base::Timer::OnTimer				_onManage; // time event to send handshakes and manage cookies
+	const Base::Timer&					_timer; // timer for manage() events
 };

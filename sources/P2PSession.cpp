@@ -168,7 +168,7 @@ void P2PSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 	if ((abrupt && (status == RTMFP::FAILED)) || (!abrupt && (status == RTMFP::NEAR_CLOSED)))
 		return;
 
-	DEBUG("Closing P2PSession ", peerId, " (abrupt=",abrupt,")")
+	DEBUG("Closing P2PSession ", peerId, " (abrupt : ", abrupt, ", status : ", status, ")")
 
 	// NetGroup 
 	if (abrupt) {

@@ -37,7 +37,7 @@ using namespace std;
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
-	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(this), _threadRcv(0), 
+	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(invoker.timer, this), _threadRcv(0), 
 	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
 
 	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
