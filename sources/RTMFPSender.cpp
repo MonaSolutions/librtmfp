@@ -30,8 +30,6 @@ bool RTMFPSender::run(Exception&) {
 	if (!pQueue)
 		return true;
 
-	INFO("RTMFPSender::run() queue : ", pQueue->size(), " ; sending : ", pQueue->sending.size())
-
 	// Flush Queue!
 	while (pSession->sendable && !pQueue->empty()) {
 		TRACE("Stage ", pQueue->stageSending + 1, " sent on writer ", pQueue->id);

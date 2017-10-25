@@ -66,7 +66,7 @@ public:
 
 	NetGroup(const Base::Timer& timer, Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
 		bool audioReliable, bool videoReliable);
-	virtual ~NetGroup() {}
+	virtual ~NetGroup();
 
 	// Close the NetGroup
 	void			close();

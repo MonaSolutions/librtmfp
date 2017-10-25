@@ -259,6 +259,10 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 	}
 }
 
+NetGroup::~NetGroup() {
+	close();
+}
+
 bool NetGroup::messageHandler(const string& name, AMFReader& message, UInt64 flowId, UInt64 writerId, double callbackHandler) {
 
 	/*** NetGroup Player ***/
