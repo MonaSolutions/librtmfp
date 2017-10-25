@@ -631,11 +631,10 @@ bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshak
 
 		if (_group)
 			_group->addPeer2HeardList(itPeer->second->peerId, STR itPeer->second->rawId.data(), itPeer->second->addresses(), itPeer->second->hostAddress, true);
+		return true;
 	}
-	else
-		return itPeer->second->onHandshake38(address, pHandshake);
 	
-	return true;
+	return itPeer->second->onHandshake38(address, pHandshake);
 }
 
 void RTMFPSession::onConnection() {

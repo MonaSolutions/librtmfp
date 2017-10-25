@@ -433,29 +433,31 @@ bool P2PSession::askPeer2Disconnect() {
 bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshake>& pHandshake) {
 	// This is an existing peer, is it already connected?
 	if (status > RTMFP::HANDSHAKE78) {
-		DEBUG("Handshake 38 ignored, session is already in state ", status)
+		DEBUG("Handshake 38 from ", address, " ignored, session is already in state ", status)
 		return false;
 	}
 	// is it a concurrent connection ?
 	else if (!_responder) {
 		if (status < RTMFP::HANDSHAKE38)
-			DEBUG("Concurrent handshake, initiator has not received any answer, continuing")
+			DEBUG("Concurrent handshake from ", address, ", initiator has not received any answer, continuing")
 		else if (_parent->peerId() > peerId) {
-			DEBUG("Concurrent handshake, our ID is bigger than peer, ignoring the handshake 38")
+			DEBUG("Concurrent handshake from ", address, ", our ID is bigger than peer, ignoring the handshake 38")
 			return false;
 		} else 
-			DEBUG("Concurrent handshake, our ID is smaller than peer, continuing") // TODO: check how Flash manage concurrent connection
+			DEBUG("Concurrent handshake from ", address, ", our ID is smaller than peer, continuing") // TODO: check how Flash manage concurrent connection
 		// First remove the other handshake
 		removeHandshake(_pHandshake);
 
-		// Then reset parameters
-		_pHandshake = pHandshake;
-		_pHandshake->pSession = this;
 		_responder = true;
-		_nonce.reset(); // reset the nonce to avoid handshake error
-		_address.set(address);
 		_parent->handleConcurrentSwitch();
-	}
+	} else
+		DEBUG("Handshake 38 received from ", address, " sending handshake 78...")
+
+	// Reset parameters (concurrent connection or old handshake)
+	_pHandshake = pHandshake;
+	_pHandshake->pSession = this;
+	_nonce.reset(); // reset the nonce to avoid handshake error
+	_address.set(address);
 	return true;
 }
 

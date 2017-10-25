@@ -101,7 +101,7 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
 		PEER_LIST_ADDRESS_TYPE addresses;
 		addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str()), forward_as_tuple(new Handshake(NULL, host, addresses, true, false)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.data(), tag.size()), forward_as_tuple(new Handshake(NULL, host, addresses, true, false)));
 		itHandshake->second->pTag = &itHandshake->first;
 		TRACE("Creating handshake for tag ", String::Hex(BIN itHandshake->second->pTag->c_str(), itHandshake->second->pTag->size()))
 	}
@@ -247,7 +247,7 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& 
 		string cookie(COOKIE_SIZE, '\0');
 		Util::Random(BIN cookie.data(), COOKIE_SIZE);
 		TRACE(_address, " - Creating cookie ", String::Hex(BIN cookie.data(), cookie.size()))
-		auto itCookie = _mapCookies.emplace(piecewise_construct, forward_as_tuple(cookie), forward_as_tuple(pHandshake)).first;
+		auto itCookie = _mapCookies.emplace(piecewise_construct, forward_as_tuple(cookie.data(), cookie.size()), forward_as_tuple(pHandshake)).first;
 		pHandshake->pCookie = &itCookie->first;
 		pHandshake->cookieCreation.update();
 	}	
