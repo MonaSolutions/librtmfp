@@ -99,7 +99,7 @@ double NetGroup::estimatedPeersCount() {
 }
 
 NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
-	bool audioReliable, bool videoReliable) : groupParameters(parameters), _p2pAble(false), idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer),
+	bool audioReliable, bool videoReliable) : _p2pAble(false), idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer), _pGroupParameters(new RTMFPGroupConfig()), _pullTimeout(false),
 	_groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE), FlashHandler(0, mediaId) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
@@ -109,13 +109,13 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		}
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
-		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
+		memcpy(pParameters.get(), _pGroupParameters.get(), sizeof(RTMFPGroupConfig)); // TODO: make a initializer
 		ReadGroupConfig(pParameters, packet);  // TODO: check groupParameters
 
 		// Create the Group Media if it does not exists
 		auto itGroupMedia = _mapGroupMedias.lower_bound(streamKey);
 		if (itGroupMedia == _mapGroupMedias.end() || itGroupMedia->first != streamKey) {
-			if (groupParameters->isPublisher) {
+			if (_pGroupParameters->isPublisher) {
 				DEBUG("New GroupMedia ignored, we are the publisher")
 				return false;
 			}
@@ -123,6 +123,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 			itGroupMedia->second.onNewFragment = _onNewFragment;
 			itGroupMedia->second.onRemovedFragments = _onRemovedFragments;
 			itGroupMedia->second.onStartProcessing = _onStartProcessing;
+			itGroupMedia->second.onPullTimeout = _onPullTimeout;
 			DEBUG("Creation of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream, " :\n", String::Hex(BIN streamKey.data(), streamKey.size()))
 
 			// Send the group media infos to each other peers
@@ -155,7 +156,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		}
 
 		// Read the Group Report & try to update the Best List if new peers are found
-		if (readGroupReport(itNode, packet) && !_bestList.size()) { 
+		if (readGroupReport(itNode, packet) && !_bestList.size() && _onBestList) {
 			updateBestList(); // Note: if we don't receive any group report we don't update the best list
 			_timer.set(_onBestList, NETGROUP_BEST_LIST_DELAY);
 		}
@@ -183,7 +184,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 
 		// Send the Group Media Subscriptions if not already sent
 		if (sendMediaSubscription) {
-			DEBUG("Sending GroupMedia subscription (", _mapGroupMedias.size(), ") to peer ", pPeer->name(), " (publisher: ", groupParameters->isPublisher>0, ")")
+			DEBUG("Sending GroupMedia subscription (", _mapGroupMedias.size(), ") to peer ", pPeer->name(), " (publisher: ", _pGroupParameters->isPublisher>0, ")")
 			for (auto& itGroupMedia : _mapGroupMedias) {
 				if (itGroupMedia.second.groupParameters->isPublisher || itGroupMedia.second.hasFragments()) {
 					auto pPeerMedia = pPeer->getPeerMedia(itGroupMedia.first);
@@ -221,10 +222,14 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 	};
 	_timer.set(_onCleanHeardList, NETGROUP_CLEAN_DELAY);
 
+	// Generate our Group Address
 	GetGroupAddressFromPeerId(_conn.rawId().c_str(), _myGroupAddress);
 
+	// Copy the group parameters
+	memcpy(_pGroupParameters.get(), parameters, sizeof(RTMFPGroupConfig));
+
 	// If Publisher create a new GroupMedia
-	if (groupParameters->isPublisher) {
+	if (_pGroupParameters->isPublisher) {
 
 		// Generate the stream key
 		string streamKey("\x21\x01");
@@ -232,7 +237,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		Util::Random(BIN streamKey.data() + 2, 0x20); // random serie of 32 bytes
 
 		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
-		memcpy(pParameters.get(), groupParameters, sizeof(RTMFPGroupConfig)); // TODO: make a initializer
+		memcpy(pParameters.get(), _pGroupParameters.get(), sizeof(RTMFPGroupConfig)); // TODO: make a initializer
 		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_timer, stream, streamKey, pParameters, _audioReliable, _videoReliable)).first;
 	}
 	// Else it's a player, create the fragment controler
@@ -254,7 +259,11 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		};
 		_onStartProcessing = [this](UInt32 groupMediaId) {
 			Exception ex;
-			AUTO_ERROR(_pGroupBuffer->startProcessing(ex, groupMediaId), " GroupBuffer ", groupMediaId, " start processing")
+			AUTO_ERROR(_pGroupBuffer->startProcessing(ex, groupMediaId), "GroupBuffer ", groupMediaId, " start processing")
+		};
+		_onPullTimeout = [this](UInt32 groupMediaId) {
+			_pullTimeout = true; // wait the next manage to disconnect
+			ERROR("GroupMedia ", groupMediaId, " pull timeout reached, we close the session...")
 		};
 	}
 }
@@ -295,11 +304,8 @@ void NetGroup::close() {
 
 	_timer.set(_onCleanHeardList, 0);
 	_timer.set(_onBestList, 0);
-
-	if (_pGroupBuffer) {
-		_pGroupBuffer->onNextPacket = nullptr;
-		_pGroupBuffer.reset();
-	}
+	_onCleanHeardList = nullptr;
+	_onBestList = nullptr;
 
 	stopListener();
 
@@ -307,12 +313,18 @@ void NetGroup::close() {
 		itGroupMedia.second.onNewFragment = nullptr;
 		itGroupMedia.second.onRemovedFragments = nullptr;
 		itGroupMedia.second.onStartProcessing = nullptr;
+		itGroupMedia.second.onPullTimeout = nullptr;
 	}
 	_mapGroupMedias.clear();
 
 	MAP_PEERS_ITERATOR_TYPE itPeer = _mapPeers.begin();
 	while (itPeer != _mapPeers.end())
 		removePeer(itPeer++); // (doesn't delete peer from the heard list but we don't care)
+
+	if (_pGroupBuffer) {
+		_pGroupBuffer->onNextPacket = nullptr;
+		_pGroupBuffer.reset();
+	}
 }
 
 void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const SocketAddress& hostAddress, UInt64 timeElapsed) {
@@ -401,14 +413,14 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 void NetGroup::manage() {
 
 	// P2P unable, we reset the connection
-	if (!groupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
+	if (!_pGroupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
 		ERROR(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...")
 		_conn.handleNetGroupException(RTMFP::P2P_ESTABLISHMENT);
 		return;
 	}
 	
 	// P2P rate too low, we reset the connection
-	if (!groupParameters->isPublisher && !groupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
+	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
 		// Count > 10 to be sure that we have sufficient tries
 		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
 			ERROR("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...")
@@ -416,6 +428,12 @@ void NetGroup::manage() {
 			return;
 		}
 		_p2pRateTime.update();
+	}
+
+	// Pull Congestion timeout reached, we reset the connection
+	if (_pullTimeout) {
+		_conn.handleNetGroupException(RTMFP::P2P_PULL_TIMEOUT);
+		return;
 	}
 
 	// Send the Group Report message (0A) to a random connected peer

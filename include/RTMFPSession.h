@@ -34,14 +34,14 @@ RTMFP Server
 */
 struct NetGroup;
 struct RTMFPSession : public FlowManager {
-	typedef Base::Event<void()>					ON(ConnectSucceed);
-	typedef Base::Event<void(bool)>				ON(PublishP2P);
-	typedef Base::Event<void()>					ON(Connected2Peer);
-	typedef Base::Event<void()>					ON(StreamPublished);
-	typedef Base::Event<void()>					ON(Connected2Group);
-	typedef Base::Event<void(Base::UInt32)>		ON(NetGroupException);
+	typedef Base::Event<void()>					ON(ConnectSucceed); // Session's connection succeed or an error occured (unlock parent if blocking)
+	typedef Base::Event<void(bool)>				ON(PublishP2P); // P2P Publication is connected or an error occured (unlock parent if blocking)
+	typedef Base::Event<void()>					ON(Connected2Peer); // P2P Connection succeed or an error occured (unlock parent if blocking)
+	typedef Base::Event<void()>					ON(StreamPublished); // NetStream is published or an error occured (unlock parent if blocking)
+	typedef Base::Event<void()>					ON(Connected2Group); // NetGroup Connection succeed or an error occured (unlock parent if blocking)
+	typedef Base::Event<void(Base::UInt32)>		ON(NetGroupException); // NetGroup error happened
 
-	RTMFPSession(Base::UInt32 id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
+	RTMFPSession(Base::UInt32 id, Invoker& invoker, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
 
 	~RTMFPSession();
 

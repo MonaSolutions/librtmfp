@@ -46,11 +46,11 @@ LIBRTMFP_API typedef struct RTMFPGroupConfig {
 	unsigned short	pushLimit; // 4 by default, it is the number of neighbors (-1) to which we want to push fragments (cannot be changed)
 
 	char			disableRateControl; // False by default, if True the p2p rate control is disabled (no disconnection if rate is < to 5% of P2P connection success)
+	char			disablePullTimeout; // False by default, if True the pull congestion timeout is disabled
 } RTMFPGroupConfig;
 
 LIBRTMFP_API typedef struct RTMFPConfig {
 	short	isBlocking; // False by default, if True the function will return only when we are connected
-	void	(*pOnSocketError)(const char* error); // Socket Error callback
 	void	(*pOnStatusEvent)(const char* code, const char* description); // RTMFP Status Event callback
 	void	(*pOnMedia)(unsigned short streamId, unsigned int time, const char* data, unsigned int size, unsigned int type); // In synchronous read mode this callback is called when receiving data
 	const char*		swfUrl; // swfUrl Flash connection parameter

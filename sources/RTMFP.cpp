@@ -240,6 +240,9 @@ const char* RTMFP::Reason2String(Base::UInt8 reason) {
 	case OTHER_EXCEPTION :
 		return "Other Exception";
 		break;
+	case P2P_PULL_TIMEOUT :
+		return "Pull Congestion timeout";
+		break;
 	}	
 
 	return "Unknown";

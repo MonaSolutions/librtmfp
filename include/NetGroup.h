@@ -46,6 +46,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_CLEAN_DELAY			19000	// delay betwen each Heard List clean (in msec)
 #define NETGROUP_TIMEOUT_P2PRATE		30000	// delay before disconnecting if p2p connection rate is too low (in msec)
 #define NETGROUP_RATE_MIN				3		// minimum rate of p2p connection to keep connection open
+#define NETGROUP_PULL_TIMEOUT			30000	// delay before disconnecting if a pull congestion is detected (in msec)
+#define NETGROUP_PULL_LIMIT				300		// maximum number of pull request after which we start the pull timeout count
 
 /**************************************
 NetGroup is the class that manage
@@ -110,7 +112,6 @@ public:
 	const std::string					idHex;	// Group ID in hex format
 	const std::string					idTxt;	// Group ID in plain text (without final zeroes)
 	const std::string					stream;	// Stream name
-	RTMFPGroupConfig*					groupParameters; // NetGroup parameters
 
 protected:
 	// FlashHandler messageHandler implementation
@@ -179,12 +180,14 @@ private:
 	GroupMedia::OnNewFragment								_onNewFragment; // called when receiving a fragment to push it to the GroupBuffer
 	GroupMedia::OnRemovedFragments							_onRemovedFragments; // called when fragments have been removed
 	GroupMedia::OnStartProcessing							_onStartProcessing; // called when receiving the first pull fragment, processing can start
+	GroupMedia::OnPullTimeout								_onPullTimeout; // called when a pull congestion is detected
 	
 	Base::Timer::OnTimer									_onCleanHeardList; // clean the Heard List from old peers
 	Base::Timer::OnTimer									_onBestList; // update the Best List
 	const Base::Timer&										_timer; // timer for all time events
 
 	std::unique_ptr<GroupBuffer>							_pGroupBuffer; // Group fragments buffer, order all fragment in a thread and forward them
+	std::unique_ptr<RTMFPGroupConfig>						_pGroupParameters; // NetGroup parameters
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 	PEER_LIST_ADDRESS_TYPE									_myAddresses; // Our public ip addresses for Group Report
@@ -211,6 +214,8 @@ private:
 	Base::UInt64											_countP2P; // Count of p2p attempt
 	Base::UInt64											_countP2PSuccess; // Count of p2p success
 	Base::Time												_p2pRateTime; // last Time we check the p2p rate
+
+	bool													_pullTimeout; // True if the pull congestion timeout has been reached
 
 	std::map<std::string, GroupMedia>						_mapGroupMedias; // map of stream key to GroupMedia
 	std::map<std::string, GroupMedia>::iterator				_groupMediaPublisher; // iterator to the GroupMedia publisher

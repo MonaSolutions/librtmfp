@@ -35,9 +35,9 @@ using namespace std;
 UInt32 P2PSession::P2PSessionCounter = 0x03000000; // Notice that Flash uses incremental values from 3 and do a left align
 
 
-P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, 
+P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnStatusEvent pOnStatusEvent, 
 		const Base::SocketAddress& host, bool responder, bool group, UInt16 mediaId) : peerId(id), hostAddress(host), _parent(parent), _groupBeginSent(false), _peerMediaId(mediaId),
-		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnSocketError, pOnStatusEvent) {
+		groupReportInitiator(false), _groupConnectSent(false), _isGroup(group), groupFirstReportSent(false), FlowManager(responder, invoker, pOnStatusEvent) {
 	_pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 		return _parent->onMediaPlay(_peerMediaId, time, packet, lostRate, type);
 	};
@@ -449,6 +449,7 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 		removeHandshake(_pHandshake);
 
 		_responder = true;
+		_nonce.reset(); // reset the nonce to avoid handshake error
 		_parent->handleConcurrentSwitch();
 	} else
 		DEBUG("Handshake 38 received from ", address, " sending handshake 78...")
@@ -456,7 +457,6 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 	// Reset parameters (concurrent connection or old handshake)
 	_pHandshake = pHandshake;
 	_pHandshake->pSession = this;
-	_nonce.reset(); // reset the nonce to avoid handshake error
 	_address.set(address);
 	return true;
 }

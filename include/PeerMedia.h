@@ -54,7 +54,7 @@ media messages to the peer
 struct PeerMedia : public virtual Base::Object {
 	typedef Base::Event<void(const std::string& peerId, Base::UInt8 mask)>	ON(PeerClose); // notify parent that the peer is closing (update the NetGroup push flags)
 	typedef Base::Event<void(PeerMedia*, Base::UInt64, bool)>				ON(PlayPull); // called when we receive a pull request
-	typedef Base::Event<bool(Base::UInt64)>									ON(FragmentsMap); // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
+	typedef Base::Event<bool(Base::UInt64 id)>								ON(FragmentsMap); // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
 	typedef Base::Event<void(PeerMedia*, const std::string&, Base::UInt8, Base::UInt64, Base::UInt8, Base::UInt8, Base::UInt32, const Base::Packet&, double)> ON(Fragment); // called when receiving a fragment
 
 	PeerMedia(P2PSession* pSession, std::shared_ptr<RTMFPWriter>& pMediaReportWriter);

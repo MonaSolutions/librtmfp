@@ -31,7 +31,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 // Callback typedef definitions
 typedef void(*OnStatusEvent)(const char* code, const char* description);
 typedef void(*OnMediaEvent)(unsigned short streamId, unsigned int time, const char* data, unsigned int size, unsigned int type);
-typedef void(*OnSocketError)(const char* error);
 
 class RTMFPFlow;
 struct RTMFPWriter;
@@ -42,7 +41,7 @@ lists of RTMFPFlow and RTMFPWriter
 It is the base class of RTMFPSession and P2PSession
 */
 struct FlowManager : RTMFP::Output, BandWriter {
-	FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent);
+	FlowManager(bool responder, Invoker& invoker, OnStatusEvent pOnStatusEvent);
 
 	virtual ~FlowManager();
 
@@ -154,7 +153,6 @@ protected:
 
 	// External Callbacks to link with parent
 	OnStatusEvent										_pOnStatusEvent;
-	OnSocketError										_pOnSocketError;
 
 	// Job Members
 	std::shared_ptr<FlashConnection>					_pMainStream; // Main Stream (NetConnection or P2P Connection Handler)

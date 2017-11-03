@@ -32,7 +32,8 @@ UInt32	GroupMedia::GroupMediaCounter = 0;
 
 GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _currentPushMask(0),
 	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false), _fragmentsMapBuffer(MAX_FRAGMENT_MAP_SIZE*4),
-	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable), _timer(timer) {
+	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable), _timer(timer), 
+	_pullLimitReached(false) {
 
 	_onPeerClose = [this](const string& peerId, UInt8 mask) {
 		// unset push masks
@@ -61,7 +62,7 @@ GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const strin
 		if (groupParameters->isPublisher)
 			return false; // ignore the request
 
-		// Record the identifier for future pull requests
+		// Record the fragment id for future pull requests
 		if (_lastFragmentMapId < counter) {
 			_mapPullTime2Fragment.emplace(Time::Now(), counter);
 			_lastFragmentMapId = counter;
@@ -74,7 +75,7 @@ GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const strin
 		}
 
 		// Start push mode (Note: we never start the push requests if we don't receive any fragments map)
-		if (!_currentPushMask && !groupParameters->isPublisher) {
+		if (!_currentPushMask && !groupParameters->isPublisher && _onPushRequests) {
 			sendPushRequests();
 			_timer.set(_onPushRequests, NETGROUP_PUSH_DELAY);
 		}
@@ -177,7 +178,7 @@ GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const strin
 	};
 	_onPullRequests = [this](UInt32 count) {
 		sendPullRequests();
-		return NETGROUP_PULL_DELAY; // TODO: deduct the time of the last pulls?
+		return NETGROUP_PULL_DELAY;
 	};
 	_onPushRequests = [this](UInt32 count) {
 		sendPushRequests();
@@ -211,6 +212,9 @@ GroupMedia::~GroupMedia() {
 	_timer.set(_onSendFragmentsMap, 0);
 	_timer.set(_onPullRequests, 0);
 	_timer.set(_onPushRequests, 0);
+	_onSendFragmentsMap = nullptr;
+	_onPullRequests = nullptr;
+	_onPushRequests = nullptr;
 
 	DEBUG("Destruction of the GroupMedia ", id)
 	MAP_PEERS_INFO_ITERATOR_TYPE itPeer = _mapPeers.begin();
@@ -529,6 +533,23 @@ void GroupMedia::sendPullRequests() {
 				break; // we wait for the fragment to be available
 			_mapWaitingFragments.emplace(piecewise_construct, forward_as_tuple(_currentPullFragment + 1), forward_as_tuple());
 		}
+	}
+
+	// Is there a pull congestion?
+	if (!groupParameters->disablePullTimeout) {
+
+		if (_mapWaitingFragments.size() > NETGROUP_PULL_LIMIT) {
+
+			if (!_pullLimitReached) {
+				_pullLimitReached = true;
+				_pullTimeout.update();
+				INFO("GroupMedia ", id, " - There is more than ", NETGROUP_PULL_LIMIT," pull requests, pull timeout started")
+			}
+			else if (_pullTimeout.isElapsed(NETGROUP_PULL_TIMEOUT))
+				onPullTimeout(id); // close the session
+		}
+		else if (_pullLimitReached)
+			_pullLimitReached = false;
 	}
 
 	DEBUG("GroupMedia ", id, " - sendPullRequests - Pull requests done : ", _mapWaitingFragments.size(), " waiting fragments (current : ", _currentPullFragment, "; last Fragment : ", lastFragment, ")")

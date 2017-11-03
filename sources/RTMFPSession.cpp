@@ -36,9 +36,9 @@ using namespace std;
 
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
-RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
+RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
 	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(invoker.timer, this), _threadRcv(0), 
-	FlowManager(false, invoker, pOnSocketError, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
+	FlowManager(false, invoker, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
 
 	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
 		if (status > RTMFP::NEAR_CLOSED)
@@ -129,7 +129,6 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnSocketError pOnSocketE
 			_invoker.pushMedia(_id, mediaId, time, packet, lostRate, type);
 	};
 
-
 	_sessionId = RTMFPSessionCounter++;
 
 	Exception ex;
@@ -196,6 +195,7 @@ void RTMFPSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 			_group->onMedia = nullptr;
 			_group->onStatus = nullptr;
 			_group->close();
+			_group.reset();
 		}
 
 		// Close peers
@@ -212,6 +212,13 @@ void RTMFPSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 			_pMainStream->onNewPeer = nullptr;
 		}
 	}
+
+	// unlock all possible locking functions
+	onConnectSucceed();
+	onPublishP2P(false);
+	onConnected2Peer();
+	onStreamPublished();
+	onConnected2Group();
 }
 
 RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
@@ -273,7 +280,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 
 	DEBUG("Connecting to peer ", peerId, "...")
 	itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId), 
-		forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnSocketError, _pOnStatusEvent, hostAddress, false, (bool)_group, mediaId)));
+		forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnStatusEvent, hostAddress, false, (bool)_group, mediaId)));
 	_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 	shared_ptr<P2PSession> pPeer = itPeer->second;
@@ -505,6 +512,7 @@ void RTMFPSession::onPublished(UInt16 streamId) {
 	if (!(_pListener = _pPublisher->addListener<FlashListener, shared_ptr<RTMFPWriter>&>(ex, name(), pDataWriter, pAudioWriter, pVideoWriter)))
 		WARN(ex)
 
+	// Stream published : unlock the possible blocking RTMFP_Publish function
 	onStreamPublished();
 }
 
@@ -621,7 +629,7 @@ bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshak
 	if (itPeer == _mapPeersById.end() || itPeer->first != peerId) {
 		SocketAddress emptyHost; // We don't know the peer's host address
 		itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId),
-			forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnSocketError, _pOnStatusEvent, emptyHost, true, (bool)_group)));
+			forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnStatusEvent, emptyHost, true, (bool)_group)));
 		_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 		// associate the handshake & session
@@ -683,7 +691,7 @@ void RTMFPSession::receive(RTMFPDecoder::Decoded& decoded) {
 		auto itSession = _mapSessions.find(decoded.idSession);
 		if (itSession == _mapSessions.end()) {
 			WARN("Unknown session ", String::Format<UInt32>("0x%.8x", decoded.idSession), ", possibly deleted (", decoded.address, ")")
-				return;
+			return;
 		}
 		itSession->second->receive(decoded.address, decoded);
 	}

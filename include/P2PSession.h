@@ -40,7 +40,7 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	typedef Base::Event<void(const std::string&)>																							ON(PeerClose); // called when the peer is closing
 	typedef Base::Event<bool(const std::string&)>																							ON(PeerGroupAskClose); // called when a peer ask to close its session (return True to accept closing)
 
-	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent, 
+	P2PSession(RTMFPSession* parent, std::string id, Invoker& invoker, OnStatusEvent pOnStatusEvent, 
 		const Base::SocketAddress& host, bool responder, bool group, Base::UInt16 mediaId=0);
 
 	virtual ~P2PSession();

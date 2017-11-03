@@ -31,7 +31,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-FlowManager::FlowManager(bool responder, Invoker& invoker, OnSocketError pOnSocketError, OnStatusEvent pOnStatusEvent) : _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), _pOnSocketError(pOnSocketError),
+FlowManager::FlowManager(bool responder, Invoker& invoker, OnStatusEvent pOnStatusEvent) : _invoker(invoker), _pOnStatusEvent(pOnStatusEvent), 
 	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0), _ping(0), _waitClose(false),
 	_rttvar(0), _rto(Net::RTO_INIT) {
 
@@ -125,7 +125,7 @@ void FlowManager::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 
 	// Send the close message
 	if (status >= RTMFP::CONNECTED) {
-		// Trick do know the close reason
+		// Trick to know the close reason
 		if (reason != RTMFP::SESSION_CLOSED) {
 			BinaryWriter(write(0x4d, 1)).write8(reason);
 			RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
@@ -154,6 +154,8 @@ void FlowManager::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 }
 
 void FlowManager::receive(const Packet& packet) {
+	if (status == RTMFP::FAILED)
+		return;
 
 	// Variables for request (0x10 and 0x11)
 	UInt64 flowId;
@@ -277,9 +279,6 @@ void FlowManager::receive(const Packet& packet) {
 			stage = message.read7BitLongValue() - 1;
 			message.read7BitLongValue(); //deltaNAck
 
-			if (status == RTMFP::FAILED)
-				break;
-
 			map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(flowId);
 			pFlow = it == _flows.end() ? NULL : it->second;
 
@@ -310,8 +309,12 @@ void FlowManager::receive(const Packet& packet) {
 					}
 				}
 
-				if (!pFlow)
-					pFlow = createFlow(flowId, signature, idWriterRef);
+				if (!pFlow) {
+					if (status == RTMFP::NEAR_CLOSED)
+						closeFlow(flowId); // do not accept flow creation in the near_closed status
+					else
+						pFlow = createFlow(flowId, signature, idWriterRef);
+				}
 			}
 
 			if (!pFlow) {
@@ -699,7 +702,7 @@ const shared_ptr<Buffer>& FlowManager::getNonce() {
 }
 
 void FlowManager::closeFlow(UInt64 flowId) {
-	if (status != RTMFP::CONNECTED)
+	if (status < RTMFP::CONNECTED)
 		return;
 
 	BinaryWriter(write(0x5e, 1 + Binary::Get7BitValueSize(flowId))).write7BitLongValue(flowId).write8(0);

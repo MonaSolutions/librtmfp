@@ -35,6 +35,7 @@ struct GroupMedia : virtual Base::Object {
 	typedef Base::Event<void(Base::UInt32 groupMediaId, const std::shared_ptr<GroupFragment>& pFragment)>	ON(NewFragment); // called on reception of a new fragment
 	typedef Base::Event<void(Base::UInt32 groupMediaId, Base::UInt64 fragmentId)>							ON(RemovedFragments); // called when removing a group of fragments
 	typedef Base::Event<void(Base::UInt32 groupMediaId)>													ON(StartProcessing); // called when the first pull fragment is received, we can start processing fragments
+	typedef Base::Event<void(Base::UInt32 groupMediaId)>													ON(PullTimeout); // called when the pull congestion timeout is reached
 
 	GroupMedia(const Base::Timer& timer, const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable);
 	virtual ~GroupMedia();
@@ -66,7 +67,7 @@ struct GroupMedia : virtual Base::Object {
 	GroupListener::OnMedia						onMedia; // Create a new fragment from a media packet
 	GroupListener::OnFlush						onFlush; // Flush the listeners
 
-	const Base::UInt32								id; // id of the GroupMedia (incremental)
+	const Base::UInt32							id; // id of the GroupMedia (incremental)
 	std::shared_ptr<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream
 	
 private:
@@ -148,4 +149,7 @@ private:
 	Base::UInt64												_lastFragmentMapId; // Last Fragments map Id received (used for pull requests)
 	Base::UInt64												_currentPullFragment; // Current pull fragment index
 	bool														_firstPullReceived; // True if we have received the first pull fragment => we can start writing
+
+	bool														_pullLimitReached; // True if the netgroup pull limit has been reached
+	Base::Time													_pullTimeout; // time of the pull limit reached event, used to release the onPullTimeout event
 };

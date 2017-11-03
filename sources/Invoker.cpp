@@ -472,7 +472,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	int idConn(0); // 
 	{
 		lock_guard<mutex> lock(_mutexConnections);
-		shared_ptr<RTMFPSession> pConn(new RTMFPSession(idConn = ++_lastIndex, *this, parameters->pOnSocketError, parameters->pOnStatusEvent, parameters->pOnMedia));
+		shared_ptr<RTMFPSession> pConn(new RTMFPSession(idConn = ++_lastIndex, *this, parameters->pOnStatusEvent, parameters->pOnMedia));
 		pConn->setFlashProperties(parameters->swfUrl, parameters->app, parameters->pageUrl, parameters->flashVer);
 		if (parameters->isBlocking) {
 			pConn->onConnectSucceed = [this, &ready]() {

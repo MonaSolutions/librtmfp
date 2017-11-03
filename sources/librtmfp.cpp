@@ -73,7 +73,7 @@ int RTMFP_LibVersion() {
 }
 
 unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
-	if (!parameters->pOnSocketError || !parameters->pOnStatusEvent) {
+	if (!parameters->pOnStatusEvent) {
 		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
 		return 0;
 	}
