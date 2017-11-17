@@ -451,7 +451,7 @@ void RTMFPSession::startP2PPublisher(const string& streamName, bool audioReliabl
 bool RTMFPSession::closePublication(const char* streamName) {
 
 	INFO("Unpublishing stream ", streamName, "...")
-	if (!_pPublisher && _pPublisher->name() == streamName) {
+	if (!_pPublisher || _pPublisher->name() != streamName) {
 		WARN("Unable to find the publisher ", streamName)
 		return false;
 	}

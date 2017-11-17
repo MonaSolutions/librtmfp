@@ -55,7 +55,7 @@ struct Invoker : private Base::Thread {
 	int				read(Base::UInt32 RTMFPcontext, Base::UInt16 streamId, Base::UInt8 *buf, Base::UInt32 size);
 
 	// Write media (netstream must be published)
-	// return -1 if an error occurs
+	// return -1 if an error occurs, otherwise the size of data treated
 	int				write(unsigned int RTMFPcontext, const Base::UInt8* data, Base::UInt32 size);
 
 	// Connect to the server from url
@@ -279,9 +279,15 @@ private:
 
 	std::map<Base::UInt32, FallbackConnection>						_waitingFallback; // map of waiting connection ID to fallback connection
 
+	/* Members for Writting functions */
+	enum { MAX_WRITE_BUFFER_SIZE = 0xFFFFFF }; // increase this at your own risks to handle bigger packets
+	struct WriteBuffer;
+	std::map<Base::UInt32, WriteBuffer>								_writeBuffers; // map of connection ID to writting buffer
+	std::mutex														_mutexWrite; // mutex for write
+
 	/* Data buffers for Readding */
 	struct ConnectionBuffer;
-	std::map <Base::UInt32, ConnectionBuffer>						_connection2Buffer; // map of connection ID to media buffers
+	std::map<Base::UInt32, ConnectionBuffer>						_connection2Buffer; // map of connection ID to readding media buffers
 	std::mutex														_mutexRead; // mutex for read
 
 	/* MediaPacket temporary structure waiting buffering */

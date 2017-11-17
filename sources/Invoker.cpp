@@ -48,7 +48,7 @@ struct Invoker::FallbackConnection : virtual Base::Object {
 	const Base::Time	timeCreation; // time when the fallback connection has been created
 };
 
-// Connection Buffer structure, contains the input media buffers from 1 session
+// Reading Connection Buffer structure, contains the input media buffers from 1 session
 struct Invoker::ConnectionBuffer : virtual Object {
 	ConnectionBuffer() : mediaCount(0) {}
 	virtual ~ConnectionBuffer() {
@@ -77,6 +77,19 @@ struct Invoker::ConnectionBuffer : virtual Object {
 	};
 	map<UInt16, MediaBuffer>					mapMedias; // Map of media players
 	UInt16										mediaCount; // Counter of media streams (publisher/player) id
+};
+
+// Writing Connection buffer structure, contains current packet buffer from 1 session
+struct Invoker::WriteBuffer : virtual Object {
+	WriteBuffer() : started(false), type(0), size(0), time(0) {}
+	~WriteBuffer() {}
+
+	shared_ptr<Buffer>			buffer; // bufferize input data to wait for the end of a packet 
+	unique_ptr<BinaryWriter>	writer; // Input writer pointing to the current writing buffer
+	bool						started; // True if we have already read the FLV header
+	UInt8						type; // current packet type
+	UInt32						size; // current packet size
+	UInt32						time; // current packet time
 };
 
 /** Invoker **/
@@ -414,10 +427,16 @@ void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, 
 		_waitingFallback.erase(itWait);
 	}
 
-	// Erase saved data
+	// Erase possible saved data
 	{
 		lock_guard<mutex> lock(_mutexRead);
 		_connection2Buffer.erase(it->first);
+	}
+
+	// Erase possible writing buffer
+	{
+		lock_guard<mutex> lock(_mutexWrite);
+		_writeBuffers.erase(it->first);
 	}
 
 	it->second->onPublishP2P = nullptr;
@@ -808,55 +827,80 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 
 		auto it = _mapConnections.find(RTMFPcontext);
 		if (it == _mapConnections.end()) {
-			ERROR("Unable to find the connection ", RTMFPcontext)
+			ERROR("Invoker::write() - Unable to find the connection ", RTMFPcontext)
 			return -1;
 		}
 		else if (it->second->status >= RTMFP::NEAR_CLOSED)
 			return -1; // to stop the caller loop
 	}
 
-	int pos = 0;
-	BinaryReader reader(data, size);
-	if (reader.available()<14) {
-		DEBUG("Packet too small")
-		return -1;
-	}
+	// Find the writing buffer for current session
+	lock_guard<mutex> lock(_mutexWrite);
+	auto itBuffer = _writeBuffers.lower_bound(RTMFPcontext);
+	if (itBuffer == _writeBuffers.end() || itBuffer->first != RTMFPcontext)
+		itBuffer = _writeBuffers.emplace_hint(itBuffer);
+	WriteBuffer& writeBuffer = itBuffer->second;
 
-	const UInt8* cur = reader.current();
-	if (*cur == 'F' && *(++cur) == 'L' && *(++cur) == 'V') { // header (TODO: do the check only once)
+	// FLV header
+	BinaryReader reader(data, size);
+	if (!writeBuffer.started) {
+		if (size < 13 || data[0] != 'F' || data[1] != 'L' || data[2] != 'V') {
+			ERROR("Invoker::write() - FLV Header not found or size < 13 (", size, ")")
+			return -1;
+		}
 		reader.next(13);
-		pos = 13;
+		writeBuffer.started = true;
 	}
 
 	// Send all packets
+	bool flush(false);
 	while (reader.available()) {
-		if (reader.available() < 11) // smaller than flv header
-			break;
 
-		UInt8 type = reader.read8();
-		UInt32 bodySize = reader.read24();
-		UInt32 time = reader.read24();
-		reader.next(4); // ignored
+		// Packet Header
+		if (!writeBuffer.buffer) {
+			if (reader.available() < 11)
+				break; // wait for at least the header part
 
-		if (reader.available() < bodySize + 4)
-			break; // we will wait for further data
+			writeBuffer.type = reader.read8();
+			if ((writeBuffer.size = reader.read24()) > MAX_WRITE_BUFFER_SIZE) {
+				ERROR("Invoker::write() - Packet size is too big : ", MAX_WRITE_BUFFER_SIZE, " not supported")
+				return -1;
+			}
+			writeBuffer.time = reader.read24() | (reader.read8() << 24);
+			reader.next(3); // ignored (Stream ID)
 
-		if (type == AMF::TYPE_AUDIO)
-			_handler.queue(onPushAudio, RTMFPcontext, Packet(reader.current(), bodySize), time, AMF::TYPE_AUDIO);
-		else if (type == AMF::TYPE_VIDEO)
-			_handler.queue(onPushVideo, RTMFPcontext, Packet(reader.current(), bodySize), time, AMF::TYPE_VIDEO);
-		else
-			WARN("Unhandled packet type : ", type)
-			reader.next(bodySize);
-		UInt32 sizeBis = reader.read32();
-		pos += bodySize + 15;
-		if (sizeBis != bodySize + 11) {
-			ERROR("Unexpected size found after payload : ", sizeBis, " (expected: ", bodySize + 11, ")")
-			break;
+			writeBuffer.buffer.reset(new Buffer(writeBuffer.size));
+			writeBuffer.writer.reset(new BinaryWriter(writeBuffer.buffer->data(), writeBuffer.buffer->size()));
 		}
+
+		// Read current part
+		UInt32 toRead = min(writeBuffer.size, reader.available()); 
+		if (toRead) {
+			writeBuffer.writer->write(reader.current(), toRead);
+			writeBuffer.size -= toRead;
+			reader.next(toRead);
+		}
+
+		// Packet splitted or missing previous size bytes?
+		if (writeBuffer.size || reader.available() < 4)
+			break; // wait for the end of the packet
+
+		// Packet complete, send it to the session
+		if (writeBuffer.type == AMF::TYPE_AUDIO)
+			_handler.queue(onPushAudio, RTMFPcontext, Packet(writeBuffer.buffer), writeBuffer.time, AMF::TYPE_AUDIO);
+		else if (writeBuffer.type == AMF::TYPE_VIDEO)
+			_handler.queue(onPushVideo, RTMFPcontext, Packet(writeBuffer.buffer), writeBuffer.time, AMF::TYPE_VIDEO);
+		else
+			WARN("Invoker::write() - Unhandled packet type : ", writeBuffer.type)
+
+		flush = true;
+		reader.next(4); // packet end + previous size
+		writeBuffer.writer.reset(); writeBuffer.buffer.reset();
 	}
-	_handler.queue(onFlushPublisher, RTMFPcontext);
-	return pos;
+
+	if (flush)
+		_handler.queue(onFlushPublisher, RTMFPcontext);
+	return reader.position();
 }
 
 int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) {

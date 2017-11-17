@@ -807,8 +807,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	bool newPeers = false;
 	while (packet.available() > 4) {
 		if ((tmpMarker = packet.read8()) != 00) {
-			ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 00")
-			Logs::Dump("TEST", packet.data(), packet.size(), "Position : ", packet.position());
+			ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 00 (size=", packet.size(), ")")
 			break;
 		}
 		size = packet.read8();

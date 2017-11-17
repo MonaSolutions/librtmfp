@@ -185,11 +185,6 @@ void resizeBuffer(int read) {
 	// Something has been read, we need to move the remaining data
 	cursor = bufferSize - read;
 	memcpy(buf, buf + read, cursor); // Move remaining data to the start of the buffer
-
-	// Resize the buffer to keep max remaining data + MIN_BUFFER_SIZE
-	ratio = ((bufferSize - cursor) / MIN_BUFFER_SIZE);
-	if (ratio > 0)
-		bufferSize -= ratio * MIN_BUFFER_SIZE;
 }
 
 void onSocketError(const char* error) {

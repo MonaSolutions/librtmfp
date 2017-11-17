@@ -165,13 +165,15 @@ void GroupBuffer::processRemoveFragments(const map<UInt32, MediaBuffer>::iterato
 	auto itBegin = itBuffer->second.begin();
 	if (itBegin != itBuffer->second.end() && request.fragmentId > itBegin->first) {
 
+		UInt64 firstId = itBegin->first;
 		auto itCurrent = itBuffer->second.lower_bound(request.fragmentId); // lower_bound because fragment splitted can be deleted in processFragment()
 		TRACE("GroupMedia ", request.groupMediaId, " - Deletion of fragments ", itBegin->first, " to ", request.fragmentId)
 		itBuffer->second.erase(itBegin, itCurrent);
 
 		// Reset current fragment id if needed
 		if (itBuffer->second.currentId < request.fragmentId) {
-			WARN("GroupMedia ", request.groupMediaId, " - Deleting unread fragments to keep the window duration... (", request.fragmentId - itBuffer->second.currentId, " fragments ignored)")
+			WARN("GroupMedia ", request.groupMediaId, " - Deleting unread fragments to keep the window duration... (", 
+				request.fragmentId - ((itBuffer->second.currentId>0)? itBuffer->second.currentId : firstId), " fragments ignored)")
 			itBuffer->second.currentId = 0; // reset the current fragment Id
 
 			// Try to process again the fragments
