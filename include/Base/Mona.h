@@ -42,8 +42,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #define STRINGIZE2(x) #x
 #define LINE_STRING STRINGIZE(__LINE__)
 
-#define NUMNAME(NAME) typename = typename std::enable_if<std::is_arithmetic<NAME>::value, NAME>::type
-
 #if defined(_WIN32)
 #define _WINSOCKAPI_    // stops windows.h including winsock.h
 #define NOMINMAX
@@ -72,17 +70,17 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #endif
 #endif
 
-//
-// Memory Leak
-//
-
-#if defined(_DEBUG) && defined(_WIN32)
-	#define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
-#endif
 
 namespace Base {
 
+
+#if defined(_DEBUG) && defined(_WIN32)
+#define new new(_NORMAL_BLOCK, __FILE__, __LINE__)
 void DetectMemoryLeak();
+#else
+void DetectMemoryLeak();
+#endif
+
 
 
 ///// TYPES /////
@@ -102,6 +100,7 @@ typedef int32_t         Int32;
 typedef uint32_t        UInt32;
 typedef int64_t			Int64;
 typedef uint64_t		UInt64;
+
 
 
 //////  No copy, no move, objet nullable  //////
@@ -235,6 +234,47 @@ inline typename MapType::iterator lower_bound(MapType& map, const typename MapTy
 	}
 	return result;
 }
+
+/*!
+enum mathematics constant (base and others) */
+enum Math {
+	BASE_1 = 1,
+	BASE_2 = 2,
+	BASE_3 = 3,
+	BASE_4 = 4,
+	BASE_5 = 5,
+	BASE_6 = 6,
+	BASE_7 = 7,
+	BASE_8 = 8,
+	BASE_9 = 9,
+	BASE_10 = 10,
+	BASE_11 = 11,
+	BASE_12 = 12,
+	BASE_13 = 13,
+	BASE_14 = 14,
+	BASE_15 = 15,
+	BASE_16 = 16,
+	BASE_17 = 17,
+	BASE_18 = 18,
+	BASE_19 = 19,
+	BASE_20 = 20,
+	BASE_21 = 21,
+	BASE_22 = 22,
+	BASE_23 = 23,
+	BASE_24 = 24,
+	BASE_25 = 25,
+	BASE_26 = 26,
+	BASE_27 = 27,
+	BASE_28 = 28,
+	BASE_29 = 29,
+	BASE_30 = 30,
+	BASE_31 = 31,
+	BASE_32 = 32,
+	BASE_33 = 33,
+	BASE_34 = 34,
+	BASE_35 = 35,
+	BASE_36 = 36
+};
 
 
 

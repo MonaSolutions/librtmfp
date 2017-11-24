@@ -57,6 +57,8 @@ LIBRTMFP_API typedef struct RTMFPConfig {
 	const char*		app; // app Flash connection parameter
 	const char*		pageUrl; // pageUrl Flash connection parameter
 	const char*		flashVer; // flashVer Flash connection parameter
+	const char*		host; // IPv4 host address to bind to (use this if you ave multiple interfaces)
+	const char*		hostIPv6; // IPv6 host address to bind to (use this if you ave multiple interfaces)
 } RTMFPConfig;
 
 // This function MUST be called before any other

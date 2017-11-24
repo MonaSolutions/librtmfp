@@ -66,7 +66,7 @@ public:
 		FETCH_PERIOD = 7
 	};
 
-	NetGroup(const Base::Timer& timer, Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
+	NetGroup(const Base::Timer& timer, Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& groupName, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
 		bool audioReliable, bool videoReliable);
 	virtual ~NetGroup();
 
@@ -201,6 +201,7 @@ private:
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPSession&											_conn; // RTMFPSession related to
+	std::string												_groupName;
 	Base::Buffer											_reportBuffer; // Buffer for reporting messages
 
 	Base::Time												_lastReport; // last Report Message calculation

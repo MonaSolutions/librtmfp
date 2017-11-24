@@ -233,8 +233,9 @@ private:
 
 	// Safe-Threaded structure to connect to a NetGroup
 	struct Connect2Group : virtual Base::Object {
-		Connect2Group(Base::UInt32 index, const char* streamName, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, bool blocking, std::atomic<bool>& ready, std::atomic<Base::UInt16>& mediaId) :
-			index(index), streamName(streamName), groupParameters(groupParameters), audioReliable(audioReliable), videoReliable(videoReliable), groupHex(groupHex), groupTxt(groupTxt), blocking(blocking), ready(ready), mediaId(mediaId) {}
+		Connect2Group(Base::UInt32 index, const char* streamName, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, const std::string& groupName, 
+			bool blocking, std::atomic<bool>& ready, std::atomic<Base::UInt16>& mediaId) : index(index), streamName(streamName), groupParameters(groupParameters), audioReliable(audioReliable), videoReliable(videoReliable), 
+			groupHex(groupHex), groupTxt(groupTxt), groupName(groupName), blocking(blocking), ready(ready), mediaId(mediaId) {}
 
 		const Base::UInt32 index;
 		const std::string streamName;
@@ -243,6 +244,7 @@ private:
 		const bool videoReliable;
 		const std::string& groupHex;
 		const std::string& groupTxt;
+		const std::string& groupName;
 		const bool blocking;
 		std::atomic<bool>& ready;
 		std::atomic<Base::UInt16>& mediaId;

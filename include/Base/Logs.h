@@ -102,6 +102,14 @@ private:
 #undef DEBUG
 #undef TRACE
 
+#define DUMP(NAME,...) { if(Base::Logs::IsDumping()) Base::Logs::Dump(NAME,__VA_ARGS__); }
+
+#define DUMP_REQUEST(NAME, DATA, SIZE, ADDRESS) { if(Base::Logs::IsDumping()) Base::Logs::DumpRequest(NAME, DATA, SIZE, NAME, " <= ", ADDRESS); }
+#define DUMP_REQUEST_DEBUG(NAME, DATA, SIZE, ADDRESS) if(Logs::GetLevel() >= Base::LOG_DEBUG) DUMP_REQUEST(NAME, DATA, SIZE, ADDRESS)
+
+#define DUMP_RESPONSE(NAME, DATA, SIZE, ADDRESS) { if(Base::Logs::IsDumping()) Base::Logs::DumpResponse(NAME, DATA, SIZE, NAME, " => ", ADDRESS); }
+#define DUMP_RESPONSE_DEBUG(NAME, DATA, SIZE, ADDRESS) if(Logs::GetLevel() >= Base::LOG_DEBUG) DUMP_RESPONSE(NAME, DATA, SIZE, ADDRESS)
+
 #define LOG(LEVEL, ...)  { if(Base::Logs::GetLevel()>=LEVEL) { Base::Logs::Log(LEVEL, __FILE__,__LINE__, __VA_ARGS__); } }
 
 #define FATAL(...)	LOG(Base::LOG_FATAL, __VA_ARGS__)
@@ -113,17 +121,10 @@ private:
 #define DEBUG(...)	LOG(Base::LOG_DEBUG, __VA_ARGS__)
 #define TRACE(...)	LOG(Base::LOG_TRACE, __VA_ARGS__)
 
-#define DUMP(NAME,...) { if(Base::Logs::IsDumping()) Base::Logs::Dump(NAME,__VA_ARGS__); }
-
-#define DUMP_REQUEST(NAME, DATA, SIZE, ADDRESS) { if(Base::Logs::IsDumping()) Base::Logs::DumpRequest(NAME, DATA, SIZE, NAME, " <= ", ADDRESS); }
-#define DUMP_REQUEST_DEBUG(NAME, DATA, SIZE, ADDRESS) if(Logs::GetLevel() >= Base::LOG_DEBUG) DUMP_REQUEST(NAME, DATA, SIZE, ADDRESS)
-
-#define DUMP_RESPONSE(NAME, DATA, SIZE, ADDRESS) { if(Base::Logs::IsDumping()) Base::Logs::DumpResponse(NAME, DATA, SIZE, NAME, " => ", ADDRESS); }
-#define DUMP_RESPONSE_DEBUG(NAME, DATA, SIZE, ADDRESS) if(Logs::GetLevel() >= Base::LOG_DEBUG) DUMP_RESPONSE(NAME, DATA, SIZE, ADDRESS)
-
 #define AUTO_CRITIC(FUNCTION,...) { if((FUNCTION)) { if(ex)  WARN( __VA_ARGS__,", ", ex); } else { CRITIC( __VA_ARGS__,", ", ex) } }
 #define AUTO_ERROR(FUNCTION,...) { if((FUNCTION)) { if(ex)  WARN( __VA_ARGS__,", ", ex); } else { ERROR( __VA_ARGS__,", ", ex) } }
 #define AUTO_WARN(FUNCTION,...) { if((FUNCTION)) { if(ex)  WARN( __VA_ARGS__,", ", ex); } else { WARN( __VA_ARGS__,", ", ex) } }
+
 
 
 } // namespace Base

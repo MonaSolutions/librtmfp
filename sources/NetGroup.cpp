@@ -98,13 +98,13 @@ double NetGroup::estimatedPeersCount() {
 		return (MAX_PEER_COUNT / (double(valLast - valFirst + MAX_PEER_COUNT) / 4)) + 1;
 }
 
-NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& groupId, const string& groupTxt, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
-	bool audioReliable, bool videoReliable) : _p2pAble(false), idHex(groupId), idTxt(groupTxt), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer), _pGroupParameters(new RTMFPGroupConfig()), _pullTimeout(false),
+NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& groupId, const string& groupTxt, const string& groupName, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters,
+	bool audioReliable, bool videoReliable) : _p2pAble(false), idHex(groupId), idTxt(groupTxt), _groupName(groupName), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer), _pGroupParameters(new RTMFPGroupConfig()), _pullTimeout(false),
 	_groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE), FlashHandler(0, mediaId) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		if (streamName != stream) {
-			INFO("New stream available in the group but not registered : ", streamName)
+			INFO("New stream available in the group but not registered : ", streamName, " (expected : ", stream)
 			return false;
 		}
 
@@ -452,7 +452,7 @@ void NetGroup::manage() {
 	auto itGroupMedia = _mapGroupMedias.begin();
 	while (itGroupMedia != _mapGroupMedias.end()) {
 		if (!itGroupMedia->second.manage()) {
-			DEBUG("Deletion of GroupMedia ", itGroupMedia->second.id, " for the stream ", stream)
+			DEBUG("Deletion of GroupMedia ", itGroupMedia->second.id, " for the group ", _groupName)
 			if (_groupMediaPublisher == itGroupMedia)
 				_groupMediaPublisher = _mapGroupMedias.end();
 			if (_pGroupBuffer) {
@@ -468,7 +468,7 @@ void NetGroup::manage() {
 	// Print statistics
 	if (_lastStats.isElapsed(NETGROUP_STATS_DELAY)) {
 		double peersCount = estimatedPeersCount();
-		INFO("Peers connected to stream ", stream, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), "/", TargetNeighborsCount(peersCount), "/", (UInt64)peersCount,
+		INFO("Peers connected to group ", _groupName, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), "/", TargetNeighborsCount(peersCount), "/", (UInt64)peersCount,
 			" ; P2P success : ", _countP2PSuccess, "/", _countP2P, " ; GroupMedia count : ", _mapGroupMedias.size())
 			for (auto& itGroup : _mapGroupMedias)
 				itGroup.second.printStats();

@@ -118,14 +118,19 @@ size_t String::TrimRight(const char* value, size_t size) {
 	return size;
 }
 
-template<typename Type, typename>
-bool String::ToNumber(const char* value, size_t size, Type& result)  {
+template<typename Type>
+bool String::ToNumber(const char* value, size_t size, Type& result, Math base)  {
 	Exception ex;
-	return ToNumber<Type>(ex, value, size, result);
+	return ToNumber<Type>(ex, value, size, result, base);
 }
 
-template<typename Type, typename>
-bool String::ToNumber(Exception& ex, const char* value, size_t size, Type& result) {
+template<typename Type>
+bool String::ToNumber(Exception& ex, const char* value, size_t size, Type& result, Math base) {
+	FATAL_ASSERT(is_arithmetic<Type>::value);
+	if (base > 36) {
+		ex.set<Ex::Format>(base, " is impossible to represent with ascii table, maximum base is 36");
+		return false;
+	}
 	bool beginning = true, negative = false;
 	long double number(0);
 	UInt64 comma(0);
@@ -172,13 +177,25 @@ bool String::ToNumber(Exception& ex, const char* value, size_t size, Type& resul
 		if (beginning)
 			beginning = false;
 
-		if (isdigit(*current) == 0) {
-			ex.set<Ex::Format>(value, " is not a correct number");
+		Int8 value = *current - '0';
+		if (value > 9) {
+			// is letter!
+			if (value >= 49)
+				value -= 39; // is lower letter
+			else if(value>=17)
+				value -= 7; // is upper letter
+			else {
+				ex.set<Ex::Format>(*current, " is not a correct digit");
+				return false;
+			}
+		}
+		if(value>=base) {
+			ex.set<Ex::Format>(*current, " is not a correct digit in base ", base);
 			return false;
 		}
 
-		number = number * 10 + (*current - '0');
-		comma *= 10;
+		number = number * base + value;
+		comma *= base;
 		++current;
 	}
 
@@ -245,29 +262,29 @@ bool String::ToUTF8(char value, char (&buffer)[2]) {
 	return false;
 }
 
-template bool  String::ToNumber(const char*, size_t, float&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, float&);
-template bool  String::ToNumber(const char*, size_t, double&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, double&);
-template bool  String::ToNumber(const char*, size_t, unsigned char&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned char&);
-template bool  String::ToNumber(const char*, size_t, char&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, char&);
-template bool  String::ToNumber(const char*, size_t, short&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, short&);
-template bool  String::ToNumber(const char*, size_t, unsigned short&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned short&);
-template bool  String::ToNumber(const char*, size_t, int&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, int&);
-template bool  String::ToNumber(const char*, size_t, unsigned int&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned int&);
-template bool  String::ToNumber(const char*, size_t, long&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, long&);
-template bool  String::ToNumber(const char*, size_t, unsigned long&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned long&);
-template bool  String::ToNumber(const char*, size_t, long long&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, long long&);
-template bool  String::ToNumber(const char*, size_t, unsigned long long&);
-template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned long long&);
+template bool  String::ToNumber(const char*, size_t, float&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, float&, Math base);
+template bool  String::ToNumber(const char*, size_t, double&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, double&, Math base);
+template bool  String::ToNumber(const char*, size_t, unsigned char&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned char&, Math base);
+template bool  String::ToNumber(const char*, size_t, char&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, char&, Math base);
+template bool  String::ToNumber(const char*, size_t, short&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, short&, Math base);
+template bool  String::ToNumber(const char*, size_t, unsigned short&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned short&, Math base);
+template bool  String::ToNumber(const char*, size_t, int&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, int&, Math base);
+template bool  String::ToNumber(const char*, size_t, unsigned int&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned int&, Math base);
+template bool  String::ToNumber(const char*, size_t, long&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, long&, Math base);
+template bool  String::ToNumber(const char*, size_t, unsigned long&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned long&, Math base);
+template bool  String::ToNumber(const char*, size_t, long long&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, long long&, Math base);
+template bool  String::ToNumber(const char*, size_t, unsigned long long&, Math base);
+template bool  String::ToNumber(Exception& ex, const char*, size_t, unsigned long long&, Math base);
 
 } // namespace Base

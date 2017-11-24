@@ -32,6 +32,56 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
+// GroupSpecifier reader
+struct GroupSpecReader : Parameters {
+	GroupSpecReader() {}
+
+	bool parse(Exception& ex,  const char* groupspec) {
+
+		if (strncmp("G:", groupspec, 2) != 0) {
+			ex.set<Ex::Format>("Group ID not well formated, it must begin with 'G:'");
+			return false;
+		}
+
+		const char* endMarker = NULL;
+
+		// Create the reader of NetGroup ID
+		Buffer buff;
+		String::ToHex(groupspec + 2, buff);
+		BinaryReader reader(buff.data(), buff.size());
+
+		// Read each NetGroup parameters and save group version + end marker
+		while (reader.available() > 0) {
+			UInt8 size = reader.read8();
+			if (size == 0) {
+				endMarker = groupspec + 2 * reader.position();
+				break;
+			}
+			else if (reader.available() < size) {
+				ex.set<Ex::Format>("Unexpected end of group specifier");
+				break;
+			}
+			
+			string value;
+			UInt8 type = reader.read8();
+			if (size > 1)
+				reader.read(size - 1, value);
+			setString(String(String::Format<UInt8>("%02x", type)), value);
+		}
+
+		// Keep the meanful part of the group ID (before end marker)
+		if (!endMarker) {
+			ex.set<Ex::Format>("Group ID not well formated");
+			return false;
+		}
+		
+		groupTxt.assign(groupspec, endMarker);
+		return true;
+	}
+
+	string groupTxt; // group specifier meanful part
+};
+
 // RTMFP Fallback connection wrapper from NetGroup to unicast
 struct Invoker::FallbackConnection : virtual Base::Object {
 	FallbackConnection(Base::UInt32 idConnection, Base::UInt32 idFallback, Base::UInt16 mediaId, const char* streamName) :
@@ -81,7 +131,7 @@ struct Invoker::ConnectionBuffer : virtual Object {
 
 // Writing Connection buffer structure, contains current packet buffer from 1 session
 struct Invoker::WriteBuffer : virtual Object {
-	WriteBuffer() : started(false), type(0), size(0), time(0) {}
+	WriteBuffer() : started(false), type(0), size(0), time(0), total(0) {}
 	~WriteBuffer() {}
 
 	shared_ptr<Buffer>			buffer; // bufferize input data to wait for the end of a packet 
@@ -90,6 +140,7 @@ struct Invoker::WriteBuffer : virtual Object {
 	UInt8						type; // current packet type
 	UInt32						size; // current packet size
 	UInt32						time; // current packet time
+	UInt64						total; // total size since last flush
 };
 
 /** Invoker **/
@@ -202,7 +253,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		if (itConn != _mapConnections.end()) {
 			// Start connecting to the group and create the media buffer for this stream
 			obj.mediaId = createMediaBuffer(obj.index, [&itConn, &obj](UInt16 mediaCount) {
-				return itConn->second->connect2Group(obj.streamName, obj.groupParameters, obj.audioReliable, obj.videoReliable, obj.groupHex, obj.groupTxt, mediaCount);
+				return itConn->second->connect2Group(obj.streamName, obj.groupParameters, obj.audioReliable, obj.videoReliable, obj.groupHex, obj.groupTxt, obj.groupName, mediaCount);
 			});
 		}
 
@@ -491,7 +542,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	int idConn(0); // 
 	{
 		lock_guard<mutex> lock(_mutexConnections);
-		shared_ptr<RTMFPSession> pConn(new RTMFPSession(idConn = ++_lastIndex, *this, parameters->pOnStatusEvent, parameters->pOnMedia));
+		shared_ptr<RTMFPSession> pConn(new RTMFPSession(idConn = ++_lastIndex, *this, *parameters));
 		pConn->setFlashProperties(parameters->swfUrl, parameters->app, parameters->pageUrl, parameters->flashVer);
 		if (parameters->isBlocking) {
 			pConn->onConnectSucceed = [this, &ready]() {
@@ -623,46 +674,18 @@ void Invoker::startFallback(FallbackConnection& fallback) {
 
 UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable) {
 
-	if (strncmp("G:", groupParameters->netGroup, 2) != 0) {
-		ERROR("Group ID not well formated, it must begin with 'G:'")
+	Exception ex;
+	GroupSpecReader groupReader;
+	if (!groupReader.parse(ex, groupParameters->netGroup)) {
+		ERROR("Error during connection to group : ", ex)
 		return 0;
 	}
-
-	string value;
-	bool groupV2 = false;
-	const char* endMarker = NULL;
-
-	// Create the reader of NetGroup ID
-	Buffer buff;
-	String::ToHex(groupParameters->netGroup + 2, buff);
-	BinaryReader reader(buff.data(), buff.size());
-
-	// Read each NetGroup parameters and save group version + end marker
-	while (reader.available() > 0) {
-		UInt8 size = reader.read8();
-		if (size == 0) {
-			endMarker = groupParameters->netGroup + 2 * reader.position();
-			break;
-		}
-		else if (reader.available() < size)
-			break;
-
-		reader.read(size, value);
-		if (!groupV2 && value == "\x7f\x02")
-			groupV2 = true;
-	}
-
-	// Keep the meanful part of the group ID (before end marker)
-	if (!endMarker) {
-		ERROR("Group ID not well formated")
-		return 0;
-	}
-	string groupTxt(groupParameters->netGroup, endMarker);
+	string groupName = groupReader.getString("0e", "");
 
 	// Compute the encrypted group specifier ID (2 consecutive sha256)
 	UInt8 encryptedGroup[32];
-	EVP_Digest(groupTxt.data(), groupTxt.size(), (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
-	if (groupV2)
+	EVP_Digest(groupReader.groupTxt.data(), groupReader.groupTxt.size(), (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL);
+	if (String::ICompare(groupReader.getString("7f"), "\x2")==0) // group v2?
 		EVP_Digest(encryptedGroup, 32, (unsigned char *)encryptedGroup, NULL, EVP_sha256(), NULL); // v2 groupspec needs 2 sha256s
 	String groupHex(String::Hex(encryptedGroup, 32));
 	DEBUG("Encrypted Group Id : ", groupHex)
@@ -684,7 +707,7 @@ UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFP
 			};
 	}
 
-	_handler.queue(onConnect2Group, RTMFPcontext, streamName, groupParameters, audioReliable, videoReliable, groupHex, groupTxt, parameters->isBlocking && groupParameters->isPublisher, ready, mediaId);
+	_handler.queue(onConnect2Group, RTMFPcontext, streamName, groupParameters, audioReliable, videoReliable, groupHex, groupReader.groupTxt, groupName, parameters->isBlocking && groupParameters->isPublisher, ready, mediaId);
 
 	// Wait for the connection to happen
 	while (!ready && !isInterrupted())
@@ -853,7 +876,6 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 	}
 
 	// Send all packets
-	bool flush(false);
 	while (reader.available()) {
 
 		// Packet Header
@@ -877,6 +899,7 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 		UInt32 toRead = min(writeBuffer.size, reader.available()); 
 		if (toRead) {
 			writeBuffer.writer->write(reader.current(), toRead);
+			writeBuffer.total += toRead;
 			writeBuffer.size -= toRead;
 			reader.next(toRead);
 		}
@@ -885,6 +908,10 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 		if (writeBuffer.size || reader.available() < 4)
 			break; // wait for the end of the packet
 
+		UInt32 previousSize = reader.read32();
+		if (previousSize != (writeBuffer.buffer->size() + 11))
+			WARN("Invoker::write() - Unexpected previous size found for session ", RTMFPcontext, " : ", previousSize, ", expected : ", writeBuffer.buffer->size() + 11)
+
 		// Packet complete, send it to the session
 		if (writeBuffer.type == AMF::TYPE_AUDIO)
 			_handler.queue(onPushAudio, RTMFPcontext, Packet(writeBuffer.buffer), writeBuffer.time, AMF::TYPE_AUDIO);
@@ -892,14 +919,15 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 			_handler.queue(onPushVideo, RTMFPcontext, Packet(writeBuffer.buffer), writeBuffer.time, AMF::TYPE_VIDEO);
 		else
 			WARN("Invoker::write() - Unhandled packet type : ", writeBuffer.type)
-
-		flush = true;
-		reader.next(4); // packet end + previous size
+		
 		writeBuffer.writer.reset(); writeBuffer.buffer.reset();
 	}
 
-	if (flush)
+	// Flush if size >= RTMFP packet size
+	if (writeBuffer.total >= RTMFP::SIZE_PACKET - 11) {
 		_handler.queue(onFlushPublisher, RTMFPcontext);
+		writeBuffer.total = 0;
+	}
 	return reader.position();
 }
 

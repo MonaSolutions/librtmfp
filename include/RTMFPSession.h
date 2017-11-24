@@ -33,6 +33,7 @@ RTMFPSession represents a connection to the
 RTMFP Server
 */
 struct NetGroup;
+struct RTMFPConfig;
 struct RTMFPSession : public FlowManager {
 	typedef Base::Event<void()>					ON(ConnectSucceed); // Session's connection succeed or an error occured (unlock parent if blocking)
 	typedef Base::Event<void(bool)>				ON(PublishP2P); // P2P Publication is connected or an error occured (unlock parent if blocking)
@@ -41,7 +42,7 @@ struct RTMFPSession : public FlowManager {
 	typedef Base::Event<void()>					ON(Connected2Group); // NetGroup Connection succeed or an error occured (unlock parent if blocking)
 	typedef Base::Event<void(Base::UInt32)>		ON(NetGroupException); // NetGroup error happened
 
-	RTMFPSession(Base::UInt32 id, Invoker& invoker, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent);
+	RTMFPSession(Base::UInt32 id, Invoker& invoker, RTMFPConfig config);
 
 	~RTMFPSession();
 
@@ -70,7 +71,7 @@ struct RTMFPSession : public FlowManager {
 
 	// Connect to the NetGroup with netGroup ID (in the form G:...)
 	// return : True if the group has been added
-	bool connect2Group(const std::string& streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, Base::UInt16 mediaCount);
+	bool connect2Group(const std::string& streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, const std::string& groupName, Base::UInt16 mediaCount);
 
 	// Create a stream (play/publish) in the main stream 
 	// return : True if the stream has been added

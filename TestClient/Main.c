@@ -273,7 +273,7 @@ int main(int argc, char* argv[]) {
 	char 				url[1024];
 	int					i = 1, version = 0;
 	unsigned int		indexPeer = 0;
-	const char*			peerId = NULL, *tryUnicast = NULL, *netGroup = NULL;
+	const char*			peerId = NULL, *tryUnicast = NULL, *netGroup = NULL, *host = NULL, *hostIPv6 = NULL;
 	unsigned short		audioReliable = 1, videoReliable = 1, p2pPlay = 1;
 	const char			*logFile = NULL, *mediaFile = NULL;
 	const char			*swfUrl = NULL, *app = NULL, *pageUrl = NULL, *flashVer = NULL;
@@ -341,6 +341,10 @@ int main(int argc, char* argv[]) {
 			pageUrl = argv[i] + 10;
 		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--flashVer=", 11) == 0)
 			flashVer = argv[i] + 11;
+		else if (strlen(argv[i]) > 7 && strnicmp(argv[i], "--host=", 7) == 0)
+			host = argv[i] + 7;
+		else if (strlen(argv[i]) > 11 && strnicmp(argv[i], "--hostIPv6=", 11) == 0)
+			hostIPv6 = argv[i] + 11;
 		else {
 			printf("Unknown option '%s'\n", argv[i]);
 			exit(-1);
@@ -355,6 +359,8 @@ int main(int argc, char* argv[]) {
 	config.app = app;
 	config.pageUrl = pageUrl;
 	config.flashVer = flashVer;
+	config.host = host;
+	config.hostIPv6 = hostIPv6;
 
 	// update the parameters
 	if (_option == SYNC_READ)

@@ -192,6 +192,9 @@ private:
 	// Send the close message (0C if normal, 4C if abrupt)
 	void												sendCloseChunk(bool abrupt);
 
+	// Handle handshake 79, cookie has change message from Flash
+	void												handleCookieChange(Base::BinaryReader& reader);
+
 	bool																		_waitClose; // Set to true when a congestion is detected during writing, we must wait the next manage to close the session
 	Base::Time																	_closeTime; // Time since closure
 	Base::Time																	_lastPing; // Time since last ping sent

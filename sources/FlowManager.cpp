@@ -562,7 +562,10 @@ void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
 			sendConnect(reader);
 			return;
 		case 0x79:
-			WARN("Handshake 79 received, we have sent wrong cookie to far peer"); // TODO: handle?
+			if (reader.available() < 0x81)
+				WARN("Session ", name(), " - Unexpected size received from handshake 79 : ", reader.available())
+			else
+				handleCookieChange(reader);
 			return;
 		default:
 			WARN("Unexpected Handshake marker : ", String::Format<UInt8>("%02X", type));
@@ -591,6 +594,24 @@ void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
 	default:
 		WARN("Unexpected RTMFP marker : ", String::Format<UInt8>("%02x", marker));
 	}
+}
+
+void FlowManager::handleCookieChange(BinaryReader& reader) {
+
+	DEBUG("Handshake 79 received, we have sent wrong cookie to far peer");
+	UInt8 byte40 = reader.read8();
+	if (byte40 != 0x40) {
+		WARN("Session ", name(), " - Unexpected first byte in handshake 79 : ", String::Format<UInt8>("%2x", byte40), ", expected 40")
+		return;
+	}
+	string cookie, theirCookie;
+	reader.read(0x40, cookie);
+	if (cookie != _pHandshake->cookieReceived) {
+		WARN("Session ", name(), " - Unexpected cookie received in handshake 79")
+		return;
+	}
+	INFO("Session ", name(), " - Cookie has changed")
+	reader.read(0x40, _pHandshake->cookieReceived);
 }
 
 void FlowManager::setPing(UInt16 time, UInt16 timeEcho) {

@@ -15,8 +15,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 */
 
 #include "Base/Parameters.h"
-#include "Base/String.h"
-#include "Base/Exceptions.h"
 
 using namespace std;
 

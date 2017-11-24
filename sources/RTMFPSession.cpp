@@ -36,9 +36,9 @@ using namespace std;
 
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
-RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnStatusEvent pOnStatusEvent, OnMediaEvent pOnMediaEvent) :
+RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(invoker.timer, this), _threadRcv(0), 
-	FlowManager(false, invoker, pOnStatusEvent), _pOnMedia(pOnMediaEvent), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
+	FlowManager(false, invoker, config.pOnStatusEvent), _pOnMedia(config.pOnMedia), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
 
 	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
 		if (status > RTMFP::NEAR_CLOSED)
@@ -131,10 +131,19 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, OnStatusEvent pOnStatusE
 
 	_sessionId = RTMFPSessionCounter++;
 
+	// Bind addresses
 	Exception ex;
-	if (!socketIPV6.bind(ex, SocketAddress::Wildcard(IPAddress::IPv6)))
+	SocketAddress hostAddress(IPAddress::IPv6);
+	if (config.hostIPv6 && !hostAddress.set(ex, config.hostIPv6, (UInt16)0))
+		WARN("Unable to set IPv6 host address : ", ex)
+	if (!socketIPV6.bind(ex, hostAddress))
 		WARN("Unable to bind [::], ipv6 will not work : ", ex)
-	if (!socketIPV4.bind(ex, SocketAddress::Wildcard(IPAddress::IPv4)))
+
+	// IPv4
+	hostAddress.set(SocketAddress::Wildcard());
+	if (config.host && !hostAddress.set(ex, config.host, (UInt16)0))
+		WARN("Unable to set IP4 host address : ", ex)
+	if (!socketIPV4.bind(ex, hostAddress))
 		WARN("Unable to bind localhost, ipv4 will not work : ", ex)
 
 	// Add the session ID to the map
@@ -292,7 +301,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 	return true;
 }
 
-bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, const string& groupHex, const string& groupTxt, UInt16 mediaCount) {
+bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, const string& groupHex, const string& groupTxt, const string& groupName, UInt16 mediaCount) {
 	INFO("Connecting to group ", parameters->netGroup, " (mediaId=", mediaCount, " ; audioReliable=", audioReliable, " ; videoReliable=", videoReliable, ")...")
 
 	if (status != RTMFP::CONNECTED) {
@@ -310,7 +319,7 @@ bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* par
 		_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
 	}
 
-	_group.reset(new NetGroup(_invoker.timer, mediaCount, groupHex.c_str(), groupTxt.c_str(), streamName, *this, parameters, audioReliable, videoReliable));
+	_group.reset(new NetGroup(_invoker.timer, mediaCount, groupHex.c_str(), groupTxt.c_str(), groupName.c_str(), streamName, *this, parameters, audioReliable, videoReliable));
 	_group->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) { // Executed in a thread
 		if (!packet.size())
 			return;
