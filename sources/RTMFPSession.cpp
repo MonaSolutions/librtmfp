@@ -483,7 +483,7 @@ void RTMFPSession::onNetConnectionSuccess() {
 
 	UInt16 port = socketIPV4->address().port();
 	UInt16 portIPv6 = socketIPV6->address().port();
-	INFO("Sending peer info (port : ", port, " - port ipv6 : ", portIPv6,")")
+	INFO("Sending peer info (ipv4: ", socketIPV4->address(), " - ipv6 : ", socketIPV6->address(),")")
 	AMFWriter& amfWriter = _pMainWriter->writeInvocation("setPeerInfo", false);
 	amfWriter.amf0 = true; // Cirrus wants amf0
 

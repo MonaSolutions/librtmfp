@@ -861,7 +861,7 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 	lock_guard<mutex> lock(_mutexWrite);
 	auto itBuffer = _writeBuffers.lower_bound(RTMFPcontext);
 	if (itBuffer == _writeBuffers.end() || itBuffer->first != RTMFPcontext)
-		itBuffer = _writeBuffers.emplace_hint(itBuffer);
+		itBuffer = _writeBuffers.emplace_hint(itBuffer, piecewise_construct, forward_as_tuple(RTMFPcontext), forward_as_tuple());
 	WriteBuffer& writeBuffer = itBuffer->second;
 
 	// FLV header
