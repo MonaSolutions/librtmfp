@@ -169,6 +169,8 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 		switch (addressType & 0x0F) {
 		case RTMFP::ADDRESS_LOCAL:
 		case RTMFP::ADDRESS_PUBLIC: {
+			if (addresses.size() >= RTMFP_MAX_ADDRESSES)
+				break; // max size reached
 			auto itAddress = addresses.lower_bound(address);
 			if (itAddress == addresses.end() || itAddress->first != address) { // new address?
 				addresses.emplace_hint(itAddress, address, addressType);

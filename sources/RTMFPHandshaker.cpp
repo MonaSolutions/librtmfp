@@ -503,7 +503,7 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		// Add address to session and handshake (TODO: can be redundant)
 		pHandshake->pSession->addAddress(address, type);
 
-		if (type != RTMFP::ADDRESS_REDIRECTION)
+		if ((type & 0x0f) != RTMFP::ADDRESS_REDIRECTION)
 			sendHandshake30(address, pHandshake->pSession->epd(), tag);
 	});
 

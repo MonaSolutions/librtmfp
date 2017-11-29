@@ -474,9 +474,9 @@ DiffieHellman&	P2PSession::diffieHellman() {
 }
 
 void P2PSession::addAddress(const SocketAddress& address, RTMFP::AddressType type) {
-	if (type == RTMFP::ADDRESS_REDIRECTION)
+	if ((type & 0x0f) == RTMFP::ADDRESS_REDIRECTION)
 		hostAddress = address;
-	else {
+	else if (_knownAddresses.size() < RTMFP_MAX_ADDRESSES) {
 		_knownAddresses.emplace(address, type);
 
 		if (_pHandshake) {

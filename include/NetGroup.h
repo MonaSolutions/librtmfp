@@ -202,7 +202,6 @@ private:
 	GroupListener*											_pListener; // Listener of the main publication (only one by intance)
 	RTMFPSession&											_conn; // RTMFPSession related to
 	std::string												_groupName;
-	Base::Buffer											_reportBuffer; // Buffer for reporting messages
 
 	Base::Time												_lastReport; // last Report Message calculation
 	Base::Time												_lastStats; // last Statistics print

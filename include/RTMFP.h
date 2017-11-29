@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x020b0001	// (2.11.1)
+#define RTMFP_LIB_VERSION	0x020b0002	// (2.11.2)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -43,6 +43,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define RTMFP_HEADER_SIZE		11
 #define RTMFP_MIN_PACKET_SIZE	(RTMFP_HEADER_SIZE+1)
 #define RTMFP_MAX_PACKET_SIZE	1192
+#define RTMFP_MAX_ADDRESSES		7 // maximum number of public addresses to save
 
 #define PEER_ID_SIZE			0x20
 #define COOKIE_SIZE				0x40

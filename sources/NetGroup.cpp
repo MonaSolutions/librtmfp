@@ -100,7 +100,7 @@ double NetGroup::estimatedPeersCount() {
 
 NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& groupId, const string& groupTxt, const string& groupName, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters,
 	bool audioReliable, bool videoReliable) : _p2pAble(false), idHex(groupId), idTxt(groupTxt), _groupName(groupName), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer), _pGroupParameters(new RTMFPGroupConfig()), _pullTimeout(false),
-	_groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0), _audioReliable(audioReliable), _videoReliable(videoReliable), _reportBuffer(NETGROUP_MAX_REPORT_SIZE), FlashHandler(0, mediaId) {
+	_groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0), _audioReliable(audioReliable), _videoReliable(videoReliable), FlashHandler(0, mediaId) {
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		if (streamName != stream) {
@@ -374,7 +374,7 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 	// Update the heard list addresses
 	itHeardList->second.hostAddress = pPeer->hostAddress;
 	for (auto& itAddress : pPeer->addresses())
-		if (itAddress.second & RTMFP::ADDRESS_PUBLIC) // In Netgroup report we just save the public addresses
+		if ((itAddress.second & 0x0f) == RTMFP::ADDRESS_PUBLIC) // In Netgroup report we just save the public addresses
 			itHeardList->second.addresses.emplace(itAddress.first, itAddress.second);
 
 	_mapPeers.emplace_hint(it, peerId, pPeer);
@@ -578,19 +578,10 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	set<string> bestList;
 	buildBestList(itNode->second.groupAddress, itNode->first, bestList);
 
-	const SocketAddress& hostAddress(_conn.address()), peerAddress(pPeer->address());
-
-	// Calculate the total size to allocate sufficient memory (TODO: see if allocating progressively is better)
-	UInt32 sizeTotal = (UInt32)(peerAddress.host().size() + 8 + AddressesSize(hostAddress, _myAddresses));
 	Int64 timeNow(Time::Now());
-	for (auto& it1 : bestList) {
-		itNode = _mapHeardList.find(it1);
-		if (itNode != _mapHeardList.end() && !itNode->second.died)
-			sizeTotal += AddressesSize(itNode->second.hostAddress, itNode->second.addresses) + PEER_ID_SIZE + 5 + ((itNode->second.lastGroupReport > 0) ? Binary::Get7BitValueSize((UInt32)((timeNow - itNode->second.lastGroupReport) / 1000)) : 1);
-	}
-	_reportBuffer.resize(sizeTotal, false);
-
-	BinaryWriter writer(_reportBuffer.data(), _reportBuffer.size());
+	const SocketAddress& hostAddress(_conn.address()), peerAddress(pPeer->address());
+	shared_ptr<Buffer> pBuffer(new Buffer());
+	BinaryWriter writer(*pBuffer);
 
 	// Group far address
 	writer.write8(0x0A);
@@ -600,7 +591,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	TRACE("Group far peer address : ", peerAddress)
 
 	// My addresses
-	writer.write8(AddressesSize(hostAddress, _myAddresses));
+	writer.write7BitLongValue(AddressesSize(hostAddress, _myAddresses));
 	writer.write8(0x0A);
 	RTMFP::WriteAddress(writer, hostAddress, RTMFP::ADDRESS_REDIRECTION); // my host address
 	for (auto& itAddress : _myAddresses)
@@ -616,7 +607,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 			TRACE("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed)
 			writer.write8(0x22).write(itNode->second.rawId.data(), PEER_ID_SIZE+2);
 			writer.write7BitLongValue(timeElapsed);
-			writer.write8(AddressesSize(itNode->second.hostAddress, itNode->second.addresses));
+			writer.write7BitLongValue(AddressesSize(itNode->second.hostAddress, itNode->second.addresses));
 			writer.write8(0x0A);
 			if (itNode->second.hostAddress)
 				RTMFP::WriteAddress(writer, itNode->second.hostAddress, RTMFP::ADDRESS_REDIRECTION);
@@ -628,7 +619,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 
 	DEBUG("Sending the group report to ", pPeer->peerId)
 	pPeer->groupReportInitiator = initiator;
-	pPeer->sendGroupReport(_reportBuffer.data(), _reportBuffer.size());
+	pPeer->sendGroupReport(pBuffer->data(), pBuffer->size());
 }
 
 void NetGroup::manageBestConnections(const set<string>& oldList) {
@@ -774,11 +765,8 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	// Record the time of last Group Report received to build our Group Report
 	itNode->second.lastGroupReport = now;
 
-	UInt8 size = packet.read8();
-	while (size == 1) { // TODO: check what this means
+	while (packet.read8() == 1) // TODO: check what this means
 		packet.next();
-		size = packet.read8();
-	}
 
 	// Read my address & the far peer addresses
 	UInt8 tmpMarker = packet.read8();
@@ -792,7 +780,11 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	if (itAddress == _myAddresses.end() || itAddress->first != myAddress)
 		_myAddresses.emplace_hint(itAddress, myAddress, addressType); // New address => save it
 	
-	size = packet.read8();
+	UInt64 size = packet.read7BitLongValue();
+	if (!packet.available() || size > packet.available()) {
+		ERROR("Unexpected size received : ", size, " (available : ", packet.available(),")")
+		return false;
+	}
 	tmpMarker = packet.read8();
 	if (tmpMarker != 0x0A) {
 		ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 0A")
@@ -826,8 +818,12 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 			TRACE("Empty parameter...")
 
 		UInt64 time = packet.read7BitLongValue();
-		TRACE("Group Report - Time elapsed : ", time)
-		size = packet.read8(); // Addresses size
+		size = packet.read7BitLongValue(); // Addresses size
+		if (!packet.available() || size > packet.available()) {
+			ERROR("Unexpected size received : ", size, " (available : ", packet.available(), ")")
+			break;
+		}
+		TRACE("Group Report - Time elapsed : ", time, " ; addresses size : ", size)
 
 		// New peer, read its addresses if no timeout reached
 		if (newPeerId != _conn.peerId() && *packet.current() == 0x0A && (time < (NETGROUP_PEER_TIMEOUT/1000))) {
