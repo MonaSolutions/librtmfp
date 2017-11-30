@@ -138,7 +138,7 @@ void RTMFPHandshaker::processManage() {
 				if (!pHandshake->attempt || pHandshake->lastTry.isElapsed(pHandshake->attempt * 1500)) {
 					if (pHandshake->attempt++ >= 11) {
 						DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 attempt without answer, closing...")
-						removeHandshake((itHandshake++)->second, true);
+						removeHandshake((itHandshake++)->second);
 						continue;
 					}
 
@@ -172,7 +172,7 @@ void RTMFPHandshaker::processManage() {
 				if (pHandshake->lastTry.isElapsed(pHandshake->attempt * 1500)) {
 					if (pHandshake->attempt++ == 11) {
 						DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 handshake 38 without answer, closing...")
-						removeHandshake((itHandshake++)->second, true);
+						removeHandshake((itHandshake++)->second);
 						continue;
 					}
 
@@ -192,7 +192,7 @@ void RTMFPHandshaker::processManage() {
 	auto itCookie = _mapCookies.begin();
 	while (itCookie != _mapCookies.end()) {
 		if (itCookie->second->cookieCreation.isElapsed(95000))
-			removeHandshake((itCookie++)->second, true);
+			removeHandshake((itCookie++)->second);
 		else
 			++itCookie;
 	}
@@ -402,7 +402,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	UInt16 signature = reader.read16();
 	if (signature != 0x1D02) {
 		ERROR(_address, " - Expected signature 1D02 but found : ", String::Format<UInt16>("%.4x", signature))
-		removeHandshake(pHandshake, true);
+		removeHandshake(pHandshake);
 		return;
 	}
 	pHandshake->farKey.reset(new Buffer(publicKeySize-2));
@@ -411,7 +411,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	UInt32 nonceSize = reader.read7BitValue();
 	if (nonceSize != 0x4C) {
 		ERROR(_address, " - Responder Nonce size should be 76 bytes but found : ", nonceSize)
-		removeHandshake(pHandshake, true);
+		removeHandshake(pHandshake);
 		return;
 	}
 	pHandshake->farNonce.reset(new Buffer(nonceSize));
@@ -420,7 +420,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	UInt8 endByte;
 	if ((endByte = reader.read8()) != 0x58) {
 		ERROR(_address, " - Unexpected end byte : ", endByte, " (expected 0x58)")
-		removeHandshake(pHandshake, true);
+		removeHandshake(pHandshake);
 		return;
 	}
 
@@ -434,7 +434,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 
 	// Create the session, if already exists and connected we ignore the request
 	if (!_pSession->onNewPeerId(_address, pHandshake, farId, peerId)) {
-		removeHandshake(pHandshake, true);
+		removeHandshake(pHandshake);
 		return;
 	}
 	FlowManager* pSession = pHandshake->pSession;
@@ -521,15 +521,17 @@ bool RTMFPHandshaker::failed() {
 }
 
 // Remove the handshake properly
-void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake> pHandshake, bool close) {
+void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake> pHandshake) {
 	TRACE("Deleting ", pHandshake->isP2P ? "P2P" : "", " handshake to ", pHandshake->pSession ? pHandshake->pSession->name() : "unknown session")
 
-	// Set the session to closed state
-	if (close && pHandshake->pSession) {
+	// Close the session if needed
+	if (pHandshake->pSession) {
+		FlowManager* pSession = pHandshake->pSession;
+		pHandshake->pSession = NULL; // reset pSession pointer to not loop
 		// Session p2p : 90s before retrying (avoid p2p rendez-vous overload), otherwise 19s is sufficient
-		pHandshake->pSession->close(pHandshake->isP2P? false : true, RTMFP::OTHER_EXCEPTION);
-		pHandshake->pSession = NULL;
+		pSession->close(pHandshake->isP2P? false : true, RTMFP::OTHER_EXCEPTION);
 	}
+	
 
 	// We can now erase the handshake object
 	if (pHandshake->pCookie)

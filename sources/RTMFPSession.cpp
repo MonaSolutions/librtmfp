@@ -686,8 +686,11 @@ void RTMFPSession::onConnection() {
 
 void RTMFPSession::removeHandshake(shared_ptr<Handshake>& pHandshake) { 
 
-	_handshaker.removeHandshake(pHandshake, false); 
-	pHandshake.reset(); 
+	if (pHandshake->pSession) {
+		pHandshake->pSession = NULL;
+		_handshaker.removeHandshake(pHandshake);
+		pHandshake.reset();
+	} // else already deleted
 }
 
 void RTMFPSession::receive(RTMFPDecoder::Decoded& decoded) {

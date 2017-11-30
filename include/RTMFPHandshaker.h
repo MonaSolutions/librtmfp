@@ -93,7 +93,7 @@ struct RTMFPHandshaker : BandWriter  {
 	virtual bool						failed();
 
 	// Remove the handshake properly
-	void								removeHandshake(std::shared_ptr<Handshake> pHandshake, bool close);
+	void								removeHandshake(std::shared_ptr<Handshake> pHandshake);
 
 	// Treat decoded message
 	virtual void						receive(const Base::SocketAddress& address, const Base::Packet& packet);
