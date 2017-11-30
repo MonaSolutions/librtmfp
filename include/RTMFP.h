@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x020b0003	// (2.11.3)
+#define RTMFP_LIB_VERSION	0x020b0004	// (2.11.4)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -168,7 +168,7 @@ struct RTMFP : virtual Base::Static {
 		virtual Base::UInt64	queueing() const = 0;
 	};
 
-	static bool						ReadAddress(Base::BinaryReader& reader, Base::SocketAddress& address, AddressType& addressType);
+	static AddressType				ReadAddress(Base::BinaryReader& reader, Base::SocketAddress& address);
 	static Base::BinaryWriter&		WriteAddress(Base::BinaryWriter& writer, const Base::SocketAddress& address, AddressType type=ADDRESS_UNSPECIFIED);
 
 	static Base::UInt32				Unpack(Base::BinaryReader& reader);

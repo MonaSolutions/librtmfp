@@ -758,7 +758,6 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryR
 bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, BinaryReader& packet) {
 	string tmp, newPeerId, rawId;
 	SocketAddress myAddress, serverAddress;
-	RTMFP::AddressType addressType;
 	PEER_LIST_ADDRESS_TYPE listAddresses;
 	Int64 now = Time::Now();
 
@@ -774,7 +773,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 		ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " - Expected 0D")
 		return false;
 	}
-	RTMFP::ReadAddress(packet, myAddress, addressType);
+	RTMFP::AddressType addressType = RTMFP::ReadAddress(packet, myAddress);
 	TRACE("Group Report - My address : ", myAddress) // Address seen by the far peer
 	auto itAddress = _myAddresses.lower_bound(myAddress);
 	if (itAddress == _myAddresses.end() || itAddress->first != myAddress)

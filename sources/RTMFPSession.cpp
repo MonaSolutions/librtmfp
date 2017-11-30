@@ -574,8 +574,7 @@ void RTMFPSession::handleP2PAddressExchange(BinaryReader& reader) {
 	string buff;
 	reader.read(PEER_ID_SIZE, buff);
 	SocketAddress address;
-	RTMFP::AddressType addressType;
-	RTMFP::ReadAddress(reader, address, addressType);
+	RTMFP::AddressType addressType = RTMFP::ReadAddress(reader, address);
 
 	Exception ex;
 	string tag;

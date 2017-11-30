@@ -26,23 +26,27 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Base;
 
-bool RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address, AddressType& addressType) {
-	string data;
-	addressType = (AddressType)reader.read8();
-	reader.read<string>((addressType & 0x80) ? sizeof(in6_addr) : sizeof(in_addr), data);
-	in_addr addrV4;
-	in6_addr addrV6;
-	IPAddress addr;
-	if (addressType & 0x80) {
-		memcpy(&addrV6, data.data(), sizeof(in6_addr));
-		addr.set(addrV6);
+template<typename AddrType>
+static AddrType& ReadAddr(BinaryReader& reader, AddrType& addr) {
+	if (reader.available() < (sizeof(addr) + 2))
+		memset(&addr, 0, sizeof(addr));
+	else
+		memcpy(&addr, reader.current(), sizeof(addr));
+	reader.next(sizeof(addr));
+	return addr;
+}
+
+RTMFP::AddressType RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& address) {
+	UInt8 type = reader.read8();
+	if (type & 0x80) {
+		in6_addr addr;
+		address.set(ReadAddr(reader, addr), reader.read16());
 	}
 	else {
-		memcpy(&addrV4, data.data(), sizeof(in_addr));
-		addr.set(addrV4);
+		in_addr addr;
+		address.set(ReadAddr(reader, addr), reader.read16());
 	}
-	address.set(addr, reader.read16());
-	return true;
+	return address ? AddressType(type & 0x7F) : AddressType::ADDRESS_UNSPECIFIED;
 }
 
 BinaryWriter& RTMFP::WriteAddress(BinaryWriter& writer,const SocketAddress& address,AddressType type) {
@@ -165,7 +169,7 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 	AddressType addressType;
 	while (reader.available()) {
 
-		RTMFP::ReadAddress(reader, address, addressType);
+		addressType = RTMFP::ReadAddress(reader, address);
 		switch (addressType & 0x0F) {
 		case RTMFP::ADDRESS_LOCAL:
 		case RTMFP::ADDRESS_PUBLIC: {
