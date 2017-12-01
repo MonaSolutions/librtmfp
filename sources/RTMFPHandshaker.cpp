@@ -168,7 +168,7 @@ void RTMFPHandshaker::processManage() {
 
 				break;
 			case RTMFP::HANDSHAKE38:
-			{
+
 				if (pHandshake->lastTry.isElapsed(pHandshake->attempt * 1500)) {
 					if (pHandshake->attempt++ == 11) {
 						DEBUG("Connection to ", pHandshake->pSession->name(), " has reached 11 handshake 38 without answer, closing...")
@@ -180,7 +180,6 @@ void RTMFPHandshaker::processManage() {
 					sendHandshake38(pHandshake, pHandshake->cookieReceived);
 				}
 				break;
-			}
 			default:
 				break;
 			}
@@ -247,8 +246,12 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& 
 		string cookie(COOKIE_SIZE, '\0');
 		Util::Random(BIN cookie.data(), COOKIE_SIZE);
 		TRACE(_address, " - Creating cookie ", String::Hex(BIN cookie.data(), cookie.size()))
-		auto itCookie = _mapCookies.emplace(piecewise_construct, forward_as_tuple(cookie.data(), cookie.size()), forward_as_tuple(pHandshake)).first;
-		pHandshake->pCookie = &itCookie->first;
+		auto itCookie = _mapCookies.emplace(piecewise_construct, forward_as_tuple(cookie.data(), cookie.size()), forward_as_tuple(pHandshake));
+		if (!itCookie.second) {
+			WARN("Unable to add duplicate cookie ", String::Hex(BIN cookie.data(), cookie.size()))
+			return;
+		}
+		pHandshake->pCookie = &itCookie.first->first;
 		pHandshake->cookieCreation.update();
 	}	
 
@@ -339,7 +342,6 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 }
 
 void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, const string& cookie) {
-
 
 	DEBUG("Sending new handshake 38 to ", _address, " (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
 	pHandshake->lastTry.update();
@@ -530,8 +532,7 @@ void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake> pHandshake) {
 		pHandshake->pSession = NULL; // reset pSession pointer to not loop
 		// Session p2p : 90s before retrying (avoid p2p rendez-vous overload), otherwise 19s is sufficient
 		pSession->close(pHandshake->isP2P? false : true, RTMFP::OTHER_EXCEPTION);
-	}
-	
+	}	
 
 	// We can now erase the handshake object
 	if (pHandshake->pCookie)

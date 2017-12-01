@@ -40,11 +40,13 @@ RTMFP::AddressType RTMFP::ReadAddress(BinaryReader& reader, SocketAddress& addre
 	UInt8 type = reader.read8();
 	if (type & 0x80) {
 		in6_addr addr;
-		address.set(ReadAddr(reader, addr), reader.read16());
+		ReadAddr(reader, addr);
+		address.set(addr, reader.read16());
 	}
 	else {
 		in_addr addr;
-		address.set(ReadAddr(reader, addr), reader.read16());
+		ReadAddr(reader, addr);
+		address.set(addr, reader.read16());
 	}
 	return address ? AddressType(type & 0x7F) : AddressType::ADDRESS_UNSPECIFIED;
 }
