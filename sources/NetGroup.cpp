@@ -779,7 +779,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	if (itAddress == _myAddresses.end() || itAddress->first != myAddress)
 		_myAddresses.emplace_hint(itAddress, myAddress, addressType); // New address => save it
 	
-	UInt64 size = packet.read7BitLongValue();
+	UInt64 size = (*packet.current() > 0x81)? packet.read8() : packet.read7BitLongValue(); // protection for wrong 8bits sized addresses
 	if (!packet.available() || size > packet.available()) {
 		ERROR("Unexpected size received : ", size, " (available : ", packet.available(),")")
 		return false;
@@ -798,7 +798,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	bool newPeers = false;
 	while (packet.available() > 4) {
 		if ((tmpMarker = packet.read8()) != 00) {
-			ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " from ", itNode->first, " - Expected 00 (size=", packet.size(), ")")
+			ERROR("Unexpected marker : ", String::Format<UInt8>("%.2x", tmpMarker), " from ", itNode->first, " - Expected 00 (available=", packet.available(), ", lastSize=", size,")")
 			break;
 		}
 		size = packet.read8();
@@ -817,7 +817,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 			TRACE("Empty parameter...")
 
 		UInt64 time = packet.read7BitLongValue();
-		size = packet.read7BitLongValue(); // Addresses size
+		size = (*packet.current() > 0x81) ? packet.read8() : packet.read7BitLongValue(); // protection for wrong 8bits sized addresses
 		if (!packet.available() || size > packet.available()) {
 			ERROR("Unexpected size received : ", size, " (available : ", packet.available(), ")")
 			break;

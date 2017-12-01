@@ -187,7 +187,7 @@ void FlowManager::receive(const Packet& packet) {
 			INFO("CC message received (unknown for now) from connection ", name())
 			break;
 		case 0x0c:
-			INFO("Session ", name(), " is closing");
+			INFO("Session ", name(), " is closing (", _address, ")")
 			if (status == RTMFP::FAILED)
 				sendCloseChunk(true); // send back 4C message anyway
 			else
