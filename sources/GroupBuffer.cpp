@@ -80,7 +80,7 @@ bool GroupBuffer::run(Exception&, const volatile bool& requestStop) {
 		for (;;) {
 
 			// Get waiting fragments or handle stop
-			deque<WaitRequest> fragments;
+			deque<WaitRequest> requests;
 			{
 				lock_guard<mutex> lock(_mutex);
 				if (_waitingRequests.empty()) {
@@ -89,13 +89,13 @@ bool GroupBuffer::run(Exception&, const volatile bool& requestStop) {
 					stop(); // to set _stop immediatly!
 					return true;
 				}
-				fragments = move(_waitingRequests);
+				requests = move(_waitingRequests);
 			}
 
 			// Process requests
 			Result result;
-			for (WaitRequest& fragment : fragments)
-				processRequest(result, fragment);
+			for (WaitRequest& request : requests)
+				processRequest(result, request);
 
 			// Forward packets if the result queue is not empty
 			if (!result.empty())

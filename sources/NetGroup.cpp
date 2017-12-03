@@ -347,6 +347,7 @@ void NetGroup::handlePeerDisconnection(const string& peerId) {
 	if (itHeardList == _mapHeardList.end() || itHeardList->second.died)
 		return;
 
+	DEBUG("Peer ", itHeardList->first, " died, it is now disabled...")
 	itHeardList->second.died = true; // we don't delete the peer, just not send connection and group report with it anymore
 	--_countP2P; // this attempt was not a fail
 }
@@ -452,14 +453,15 @@ void NetGroup::manage() {
 	auto itGroupMedia = _mapGroupMedias.begin();
 	while (itGroupMedia != _mapGroupMedias.end()) {
 		if (!itGroupMedia->second.manage()) {
-			DEBUG("Deletion of GroupMedia ", itGroupMedia->second.id, " for the group ", _groupName)
+			UInt32 idMedia = itGroupMedia->second.id;
+			DEBUG("Deletion of GroupMedia ", idMedia, " for the group ", _groupName)
 			if (_groupMediaPublisher == itGroupMedia)
 				_groupMediaPublisher = _mapGroupMedias.end();
+			_mapGroupMedias.erase(itGroupMedia++);
 			if (_pGroupBuffer) {
 				Exception ex;
-				AUTO_ERROR(_pGroupBuffer->removeBuffer(ex, itGroupMedia->second.id), "GroupBuffer remove buffer", itGroupMedia->second.id)
+				AUTO_ERROR(_pGroupBuffer->removeBuffer(ex, idMedia), "GroupBuffer remove buffer", idMedia)
 			}
-			_mapGroupMedias.erase(itGroupMedia++);
 		}
 		else
 			++itGroupMedia;
@@ -780,7 +782,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 		_myAddresses.emplace_hint(itAddress, myAddress, addressType); // New address => save it
 	
 	UInt64 size = (*packet.current() > 0x81)? packet.read8() : packet.read7BitLongValue(); // protection for wrong 8bits sized addresses
-	if (!packet.available() || size > packet.available()) {
+	if (!size || !packet.available() || size > packet.available()) {
 		ERROR("Unexpected size received : ", size, " (available : ", packet.available(),")")
 		return false;
 	}
@@ -818,7 +820,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 
 		UInt64 time = packet.read7BitLongValue();
 		size = (*packet.current() > 0x81) ? packet.read8() : packet.read7BitLongValue(); // protection for wrong 8bits sized addresses
-		if (!packet.available() || size > packet.available()) {
+		if (!size || !packet.available() || size > packet.available()) {
 			ERROR("Unexpected size received : ", size, " (available : ", packet.available(), ")")
 			break;
 		}
