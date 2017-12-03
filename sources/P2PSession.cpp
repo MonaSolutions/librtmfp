@@ -456,7 +456,8 @@ bool P2PSession::onHandshake38(const SocketAddress& address, shared_ptr<Handshak
 		DEBUG("Handshake 38 received from ", address, " sending handshake 78...")
 
 	// Reset parameters (concurrent connection or old handshake)
-	_pHandshake->pSession = NULL;
+	if (_pHandshake && _pHandshake->pSession)
+		_pHandshake->pSession = NULL;
 	_pHandshake = pHandshake;
 	_pHandshake->pSession = this;
 	_address.set(address);
