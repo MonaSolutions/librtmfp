@@ -158,9 +158,8 @@ private:
 	// Peer instance in the heard list
 	struct GroupNode : virtual Base::Object {
 		GroupNode(const char* rawPeerId, const std::string& groupId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const Base::SocketAddress& host, Base::UInt64 timeElapsed) :
-			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - (timeElapsed * 1000)), died(false) {}
+			rawId(rawPeerId, PEER_ID_SIZE + 2), groupAddress(groupId), addresses(listAddresses), hostAddress(host), lastGroupReport(((Base::UInt64)Base::Time::Now()) - (timeElapsed * 1000)) {}
 
-		bool		died; // Trick to stop connexion to old peers faster
 		std::string rawId;
 		std::string groupAddress;
 		PEER_LIST_ADDRESS_TYPE addresses;
@@ -169,7 +168,7 @@ private:
 	};
 
 	// Read the group report and return true if at least a new peer has been found
-	bool						readGroupReport(const std::map<std::string, GroupNode>::iterator& itNode, Base::BinaryReader& packet);
+	bool						readGroupReport(const std::map<std::string, std::shared_ptr<GroupNode>>::iterator& itNode, Base::BinaryReader& packet);
 
 	P2PSession::OnPeerGroupReport							_onGroupReport; // called when receiving a Group Report message from the peer
 	P2PSession::OnNewMedia									_onNewMedia; // called when a new PeerMedia is called (new stream available for the peer)
@@ -195,7 +194,8 @@ private:
 	bool													_audioReliable; // if False we do not send back audio packets
 	bool													_videoReliable; // if False we do not send back video packets
 
-	std::map<std::string, GroupNode>						_mapHeardList; // Map of peer ID to Group address and info from Group Report
+	std::map<std::string, std::shared_ptr<GroupNode>>		_mapDiedPeers; // Map of peer ID to died Peers GroupNode
+	std::map<std::string, std::shared_ptr<GroupNode>>		_mapHeardList; // Map of peer ID to Group address and info from Group Report
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID (same as heard list)
 	std::set<std::string>									_bestList; // Last best list calculated
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections

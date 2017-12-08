@@ -1,0 +1,6 @@
+- Make one thread for each session to forbid one session being congested by another
+- Add support for mpegts container format
+- Add support for raw audio and video publishing (RTMFP_Write_Audio, RTMFP_Write_Video)
+- Add support for HEVC
+- Add support for data format
+- Try to improve RTMFP unreliable mode to not buffer any packet

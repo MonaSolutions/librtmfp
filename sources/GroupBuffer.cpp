@@ -131,8 +131,8 @@ void GroupBuffer::processRequest(deque<RTMFP::MediaPacket>& result, WaitRequest&
 		break;
 	case WaitRequest::REMOVE_BUFFER:
 
-		if (itBuffer != _mapGroupMedia2fragments.end()) {
-			DEBUG("Deleting GroupMedia from GroupBuffer")
+		if (itBuffer != _mapGroupMedia2fragments.end() && itBuffer->first == request.groupMediaId) {
+			DEBUG("Deleting GroupMedia ", request.groupMediaId, " from GroupBuffer")
 			_mapGroupMedia2fragments.erase(itBuffer);
 		}
 		break;

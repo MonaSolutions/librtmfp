@@ -158,8 +158,10 @@ void RTMFPHandshaker::processManage() {
 					}
 
 					// Send to all addresses
-					for (auto& itAddress : pHandshake->addresses)
-						sendHandshake30(itAddress.first, pHandshake->pSession->epd(), itHandshake->first);
+					for (auto& itAddress : pHandshake->addresses) {
+						if (!pHandshake->isP2P || pHandshake->rdvDelayed) // send server handshakes and p2p handshakes with rdv delayed
+							sendHandshake30(itAddress.first, pHandshake->pSession->epd(), itHandshake->first);
+					}
 
 					if (pHandshake->status == RTMFP::STOPPED)
 						pHandshake->status = RTMFP::HANDSHAKE30;
@@ -504,10 +506,13 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 
 		// Add address to session and handshake (TODO: can be redundant)
 		pHandshake->pSession->addAddress(address, type);
-
-		if ((type & 0x0f) != RTMFP::ADDRESS_REDIRECTION)
-			sendHandshake30(address, pHandshake->pSession->epd(), tag);
 	});
+
+	// Send to all addresses
+	for (auto& itAddress : pHandshake->addresses) {
+		if (pHandshake->isP2P) // send p2p handshakes
+			sendHandshake30(itAddress.first, pHandshake->pSession->epd(), itTag->first);
+	}
 
 	if (disconnected)
 		_pSession->handlePeerDisconnection(pHandshake->pSession->name());

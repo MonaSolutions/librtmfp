@@ -153,24 +153,25 @@ GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const strin
 				DEBUG("GroupMedia ", id, " - Unexpected fragment received from ", peerId, " : ", fragmentId, " ; mask : ", String::Format<UInt8>("%.2x", mask))
 		}
 
+		bool ignore(false);
 		auto itFragment = _fragments.lower_bound(fragmentId);
 		if (itFragment != _fragments.end() && itFragment->first == fragmentId) {
 			DEBUG("GroupMedia ", id, " - Fragment ", fragmentId, " already received, ignored")
-			return;
+			ignore = true;
 		}
-
 		// We must ignore fragments too old
-		if (_mapTime2Fragment.size() > 2) {
+		else if (_mapTime2Fragment.size() > 2) {
 			auto itBegin = _mapTime2Fragment.begin();
 			auto itEnd = _mapTime2Fragment.rbegin();
 			if (((itEnd->first - itBegin->first) > groupParameters->windowDuration) && itBegin->second > fragmentId) {
 				DEBUG("GroupMedia ", id, " - Fragment ", fragmentId, " too old (min : ", itBegin->second, "), ignored") // TODO: see if we must close the session in this case
-				return;
+				ignore = true;
 			}
 		}
 
 		// Add the fragment to the map and send it to pushers, always flush
-		addFragment(itFragment, (mediaType==AMF::TYPE_AUDIO)? _audioReliable : ((mediaType== AMF::TYPE_VIDEO)? _videoReliable : true), pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet, true);
+		if (!ignore)
+			addFragment(itFragment, (mediaType==AMF::TYPE_AUDIO)? _audioReliable : ((mediaType== AMF::TYPE_VIDEO)? _videoReliable : true), pPeer, marker, fragmentId, splitedNumber, mediaType, time, packet, true);
 
 		// Important, after receiving the first pull fragment we start processing fragments
 		if (startProcess)
@@ -467,7 +468,8 @@ void GroupMedia::sendPullRequests() {
 		if ((timeNow - _mapPullTime2Fragment.begin()->first) > groupParameters->fetchPeriod) {
 			DEBUG("GroupMedia ", id, " - sendPullRequests - No Fragments map received since Fectch period (", groupParameters->fetchPeriod, "ms), pull paused")
 			_pullPaused = true;
-			onStartProcessing(id); // start processing fragments
+			if (!_firstPullReceived)
+				onStartProcessing(id); // start processing fragments anyway (to handle peers with pull disabled)
 		}
 		// else we are waiting for fetch period before starting pull requests
 		return;

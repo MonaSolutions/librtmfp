@@ -329,6 +329,12 @@ void NetGroup::close() {
 
 void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const PEER_LIST_ADDRESS_TYPE& listAddresses, const SocketAddress& hostAddress, UInt64 timeElapsed) {
 
+	auto itDied = _mapDiedPeers.find(peerId);
+	if (itDied != _mapDiedPeers.end()) {
+		DEBUG("The peer ", peerId," is already died")
+		return;
+	}
+
 	auto it = _mapHeardList.lower_bound(peerId);
 	if (it != _mapHeardList.end() && it->first == peerId) {
 		DEBUG("The peer ", peerId, " is already known")
@@ -337,18 +343,28 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 
 	string groupAddress;
 	_mapGroupAddress.emplace(piecewise_construct, forward_as_tuple(GetGroupAddressFromPeerId(rawId, groupAddress).c_str()), forward_as_tuple(peerId.c_str()));
-	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(rawId, groupAddress, listAddresses, hostAddress, timeElapsed));
+	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(new GroupNode(rawId, groupAddress, listAddresses, hostAddress, timeElapsed)));
 	DEBUG("Peer ", it->first, " added to heard list")
 }
 
 void NetGroup::handlePeerDisconnection(const string& peerId) {
 
 	auto itHeardList = _mapHeardList.find(peerId);
-	if (itHeardList == _mapHeardList.end() || itHeardList->second.died)
-		return;
+	if (itHeardList == _mapHeardList.end())
+		return; // peer not found
 
-	DEBUG("Peer ", itHeardList->first, " died, it is now disabled...")
-	itHeardList->second.died = true; // we don't delete the peer, just not send connection and group report with it anymore
+	auto itDied = _mapDiedPeers.lower_bound(peerId);
+	if (itDied != _mapDiedPeers.end() && itDied->first == peerId)
+		return; // peer already died
+
+	INFO("Peer ", peerId, " died, it is now disabled...")
+	_mapDiedPeers.emplace_hint(itDied, peerId, itHeardList->second); // we keep the peer for max. 5min
+
+	// Delete peer from heard list
+	auto itGroupAddress = _mapGroupAddress.find(itHeardList->second->groupAddress);
+	FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
+	_mapGroupAddress.erase(itGroupAddress);
+	_mapHeardList.erase(itHeardList);
 	--_countP2P; // this attempt was not a fail
 }
 
@@ -373,10 +389,10 @@ bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
 		++_countP2PSuccess;
 
 	// Update the heard list addresses
-	itHeardList->second.hostAddress = pPeer->hostAddress;
+	itHeardList->second->hostAddress = pPeer->hostAddress;
 	for (auto& itAddress : pPeer->addresses())
 		if ((itAddress.second & 0x0f) == RTMFP::ADDRESS_PUBLIC) // In Netgroup report we just save the public addresses
-			itHeardList->second.addresses.emplace(itAddress.first, itAddress.second);
+			itHeardList->second->addresses.emplace(itAddress.first, itAddress.second);
 
 	_mapPeers.emplace_hint(it, peerId, pPeer);
 
@@ -453,15 +469,14 @@ void NetGroup::manage() {
 	auto itGroupMedia = _mapGroupMedias.begin();
 	while (itGroupMedia != _mapGroupMedias.end()) {
 		if (!itGroupMedia->second.manage()) {
-			UInt32 idMedia = itGroupMedia->second.id;
-			DEBUG("Deletion of GroupMedia ", idMedia, " for the group ", _groupName)
+			INFO("Deletion of GroupMedia ", itGroupMedia->second.id, " for the group ", _groupName)
 			if (_groupMediaPublisher == itGroupMedia)
 				_groupMediaPublisher = _mapGroupMedias.end();
-			_mapGroupMedias.erase(itGroupMedia++);
 			if (_pGroupBuffer) {
 				Exception ex;
-				AUTO_ERROR(_pGroupBuffer->removeBuffer(ex, idMedia), "GroupBuffer remove buffer", idMedia)
+				AUTO_ERROR(_pGroupBuffer->removeBuffer(ex, itGroupMedia->second.id), "GroupBuffer remove buffer", itGroupMedia->second.id)
 			}
+			_mapGroupMedias.erase(itGroupMedia++);
 		}
 		else
 			++itGroupMedia;
@@ -578,7 +593,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 
 	// Build the Best list for far peer
 	set<string> bestList;
-	buildBestList(itNode->second.groupAddress, itNode->first, bestList);
+	buildBestList(itNode->second->groupAddress, itNode->first, bestList);
 
 	Int64 timeNow(Time::Now());
 	const SocketAddress& hostAddress(_conn.address()), peerAddress(pPeer->address());
@@ -603,17 +618,17 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	// Peers ID, addresses and time
 	for (auto& it2 : bestList) {
 		itNode = _mapHeardList.find(it2);
-		if (itNode != _mapHeardList.end() && !itNode->second.died) {
+		if (itNode != _mapHeardList.end()) {
 
-			UInt64 timeElapsed = (UInt64)((itNode->second.lastGroupReport > 0) ? ((timeNow - itNode->second.lastGroupReport) / 1000) : 0);
+			UInt64 timeElapsed = (UInt64)((itNode->second->lastGroupReport > 0) ? ((timeNow - itNode->second->lastGroupReport) / 1000) : 0);
 			TRACE("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed)
-			writer.write8(0x22).write(itNode->second.rawId.data(), PEER_ID_SIZE+2);
+			writer.write8(0x22).write(itNode->second->rawId.data(), PEER_ID_SIZE+2);
 			writer.write7BitLongValue(timeElapsed);
-			writer.write7BitLongValue(AddressesSize(itNode->second.hostAddress, itNode->second.addresses));
+			writer.write7BitLongValue(AddressesSize(itNode->second->hostAddress, itNode->second->addresses));
 			writer.write8(0x0A);
-			if (itNode->second.hostAddress)
-				RTMFP::WriteAddress(writer, itNode->second.hostAddress, RTMFP::ADDRESS_REDIRECTION);
-			for (auto& itAddress : itNode->second.addresses)
+			if (itNode->second->hostAddress)
+				RTMFP::WriteAddress(writer, itNode->second->hostAddress, RTMFP::ADDRESS_REDIRECTION);
+			for (auto& itAddress : itNode->second->addresses)
 				RTMFP::WriteAddress(writer, itAddress.first, itAddress.second);
 			writer.write8(0);
 		}
@@ -648,7 +663,7 @@ void NetGroup::manageBestConnections(const set<string>& oldList) {
 			auto itNode = _mapHeardList.find(*it2Connect);
 			if (itNode == _mapHeardList.end())
 				WARN("Unable to find the peer ", *it2Connect, " to start connecting") // implementation error, should not happen
-			else if (!itNode->second.died && _conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second.addresses, itNode->second.hostAddress, true)) { // rendezvous service delayed of 5s
+			else if (_conn.connect2Peer(it2Connect->c_str(), stream.c_str(), itNode->second->addresses, itNode->second->hostAddress, true)) { // rendezvous service delayed of 5s
 				if (++_countP2P == ULLONG_MAX) { // reset p2p count
 					_countP2PSuccess = _countP2P = 0;
 					_p2pRateTime.update();
@@ -666,20 +681,37 @@ void NetGroup::cleanHeardList() {
 	while (itHeardList != _mapHeardList.end()) {
 
 		// No Group Report since 5min?
-		if (now > itHeardList->second.lastGroupReport && ((now - itHeardList->second.lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
-			DEBUG("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Heard List...")
+		if (now > itHeardList->second->lastGroupReport && ((now - itHeardList->second->lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
+			INFO("Peer ", itHeardList->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Heard List...")
 
 			// Close the peer if we are connected to it
 			_conn.removePeer(itHeardList->first);
 
 			// Delete from the Heard List
-			auto itGroupAddress = _mapGroupAddress.find(itHeardList->second.groupAddress);
+			auto itGroupAddress = _mapGroupAddress.find(itHeardList->second->groupAddress);
 			FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
 			_mapGroupAddress.erase(itGroupAddress);
 			_mapHeardList.erase(itHeardList++);
 			continue;
 		}
 		++itHeardList;
+	}
+
+	// Remove died peers too
+	auto itDiedPeer = _mapDiedPeers.begin();
+	while (itDiedPeer != _mapDiedPeers.end()) {
+
+		// No Group Report since 5min?
+		if (now > itDiedPeer->second->lastGroupReport && ((now - itDiedPeer->second->lastGroupReport) > NETGROUP_PEER_TIMEOUT)) {
+			INFO("Peer ", itDiedPeer->first, " timeout (", NETGROUP_PEER_TIMEOUT, "ms elapsed) - deleting from the Died List...")
+
+			// Close the peer if we are connected to it
+			_conn.removePeer(itDiedPeer->first);
+			_mapDiedPeers.erase(itDiedPeer++);
+			continue;
+
+		}
+		++itDiedPeer;
 	}
 }
 
@@ -757,14 +789,14 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryR
 	}
 }
 
-bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, BinaryReader& packet) {
+bool NetGroup::readGroupReport(const map<string, shared_ptr<GroupNode>>::iterator& itNode, BinaryReader& packet) {
 	string tmp, newPeerId, rawId;
 	SocketAddress myAddress, serverAddress;
 	PEER_LIST_ADDRESS_TYPE listAddresses;
 	Int64 now = Time::Now();
 
 	// Record the time of last Group Report received to build our Group Report
-	itNode->second.lastGroupReport = now;
+	itNode->second->lastGroupReport = now;
 
 	while (packet.read8() == 1) // TODO: check what this means
 		packet.next();
@@ -793,7 +825,7 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 	}
 	// Update the far peer addresses
 	BinaryReader peerAddressReader(packet.current(), size - 1);
-	RTMFP::ReadAddresses(peerAddressReader, itNode->second.addresses, itNode->second.hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
+	RTMFP::ReadAddresses(peerAddressReader, itNode->second->addresses, itNode->second->hostAddress, [](const SocketAddress&, RTMFP::AddressType) {});
 	packet.next(size - 1);
 
 	// Loop on each peer of the NetGroup
@@ -842,10 +874,10 @@ bool NetGroup::readGroupReport(const map<string, GroupNode>::iterator& itNode, B
 			// Else update time & addresses
 			else {
 				Int64 nodeTime = now - (time * 1000);
-				if (nodeTime > itHeardList->second.lastGroupReport)
-					itHeardList->second.lastGroupReport = nodeTime;
+				if (nodeTime > itHeardList->second->lastGroupReport)
+					itHeardList->second->lastGroupReport = nodeTime;
 
-				RTMFP::ReadAddresses(addressReader, itHeardList->second.addresses, itHeardList->second.hostAddress, [this, newPeerId](const SocketAddress& address, RTMFP::AddressType type) {
+				RTMFP::ReadAddresses(addressReader, itHeardList->second->addresses, itHeardList->second->hostAddress, [this, newPeerId](const SocketAddress& address, RTMFP::AddressType type) {
 					_conn.updatePeerAddress(newPeerId, address, type);
 				});
 			}
