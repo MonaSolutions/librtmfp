@@ -37,7 +37,7 @@ using namespace std;
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
-	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(invoker.timer, this), _threadRcv(0), 
+	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(invoker.timer, this), _threadRcv(0), flags(0),
 	FlowManager(false, invoker, config.pOnStatusEvent), _pOnMedia(config.pOnMedia), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
 
 	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
@@ -118,7 +118,7 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 	_pMainStream->onNewPeer = [this](const string& rawId, const string& peerId) {
 		handleNewGroupPeer(rawId, peerId);
 	};
-	_pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
+	onMediaPlay = _pMainStream->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 		if (!packet.size())
 			return;
 
@@ -126,7 +126,7 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 		if (_pOnMedia)
 			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
 		else 
-			_invoker.pushMedia(_id, mediaId, time, packet, lostRate, type);
+			_invoker.pushMedia(_id, mediaId, time, packet, lostRate, type); // asynchronous read, create a runner to save the packet
 	};
 
 	_sessionId = RTMFPSessionCounter++;
@@ -222,12 +222,8 @@ void RTMFPSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 		}
 	}
 
-	// unlock all possible locking functions
-	onConnectSucceed();
-	onPublishP2P(false);
-	onConnected2Peer();
-	onStreamPublished();
-	onConnected2Group();
+	// reset state flags
+	flags = 0;
 }
 
 RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
@@ -252,7 +248,6 @@ bool RTMFPSession::connect(const string& url, const string& host, const SocketAd
 
 	if (_rawUrl) {
 		ERROR("You cannot call connect 2 times on the same session")
-		onConnectSucceed(); // to exit from the parent loop
 		return false;
 	}
 	_url = url;
@@ -276,14 +271,12 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, const PEER_LIST_ADDRESS_TYPE& addresses, const SocketAddress& hostAddress, bool delay, UInt16 mediaId) {
 	if (status != RTMFP::CONNECTED) {
 		ERROR("Cannot start a P2P connection before being connected to the server")
-		onConnected2Peer(); // to exit from the parent loop 
 		return false;
 	}
 
 	auto itPeer = _mapPeersById.lower_bound(peerId);
 	if (itPeer != _mapPeersById.end() && itPeer->first == peerId) {
 		TRACE("Unable to create the P2P session to ", peerId, ", we are already connecting/connected to it")
-		onConnected2Peer(); // to exit from the parent loop
 		return false;
 	}
 
@@ -305,31 +298,20 @@ bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* par
 	INFO("Connecting to group ", parameters->netGroup, " (mediaId=", mediaCount, " ; audioReliable=", audioReliable, " ; videoReliable=", videoReliable, ")...")
 
 	if (status != RTMFP::CONNECTED) {
-		ERROR("Cannot start a NetGroup connection before being connected to the server")
-		onConnected2Group(); // to exit from the parent loop 
+		ERROR("Cannot start a NetGroup connection before being connected to the server") 
 		return false;
 	}
 
 	if (parameters->isPublisher) {
 		if (_pPublisher) {
 			WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
-			onConnected2Group(); // to exit from the parent loop 
 			return false;
 		}
 		_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
 	}
 
 	_group.reset(new NetGroup(_invoker.timer, mediaCount, groupHex.c_str(), groupTxt.c_str(), groupName.c_str(), streamName, *this, parameters, audioReliable, videoReliable));
-	_group->onMedia = [this](UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) { // Executed in a thread
-		if (!packet.size())
-			return;
-
-		// Synchronous read
-		if (_pOnMedia)
-			_pOnMedia(mediaId, time, STR packet.data(), packet.size(), type);
-		else
-			_invoker.bufferizeMedia(_id, mediaId, time, packet, lostRate, type);
-	};
+	_group->onMedia = onMediaPlay;
 	//_group->onStatus = _pMainStream->onStatus; (Commented, onStatus is not thread safe)
 	sendGroupConnection(groupHex);
 	return true;
@@ -408,9 +390,9 @@ bool RTMFPSession::manage() {
 	return !failed();
 }
 
-bool RTMFPSession::addStream(bool publisher, const string& streamName, bool audioReliable, bool videoReliable, UInt16 mediaCount) {
+bool RTMFPSession::addStream(UInt8 mask, const string& streamName, bool audioReliable, bool videoReliable, UInt16 mediaCount) {
 
-	if (publisher && _pPublisher) { // TODO: handle multiple publishers
+	if (_pPublisher && (mask & RTMFP_PUBLISHED)) { // TODO: handle multiple publishers
 		WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
 		return false;
 	}
@@ -425,12 +407,17 @@ bool RTMFPSession::addStream(bool publisher, const string& streamName, bool audi
 		return false;
 	}
 
-	_pMainStream->createStream();
-	_pMainWriter->writeInvocation("createStream");
-	_pMainWriter->flush();
-
-	_waitingStreams.emplace(publisher, streamName, mediaCount, audioReliable, videoReliable);
-	INFO("Creation of the ", publisher? "publisher" : "player", " stream ", mediaCount)
+	// If p2p publisher create directly the publisher
+	if (mask & RTMFP_P2P_PUBLISHED)
+		_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
+	// Otherwise create flash stream
+	else {
+		_pMainStream->createStream();
+		_pMainWriter->writeInvocation("createStream");
+		_pMainWriter->flush();
+		_waitingStreams.emplace((mask & RTMFP_PUBLISHED), streamName, mediaCount, audioReliable, videoReliable);
+	}
+	INFO("Creation of the ", (mask & RTMFP_PUBLISHED) ? "publisher" : ((mask & RTMFP_P2P_PUBLISHED) ? "p2p publisher" : "player"), " stream ", mediaCount)
 	return true;
 }
 
@@ -443,18 +430,6 @@ bool RTMFPSession::closeStream(UInt16 mediaCount) {
 	itWriter->second->writeInvocation("closeStream", true);
 	itWriter->second->close();
 	return true;
-}
-
-
-void RTMFPSession::startP2PPublisher(const string& streamName, bool audioReliable, bool videoReliable) {
-
-	INFO("Creating publisher for stream ", streamName, "...")
-	if (_pPublisher) {
-		WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
-		onPublishP2P(false);
-	}
-	else
-		_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
 }
 
 bool RTMFPSession::closePublication(const char* streamName) {
@@ -503,8 +478,9 @@ void RTMFPSession::onNetConnectionSuccess() {
 	}
 	_pMainWriter->flush();
 
-	// We are connected : unlock the possible blocking RTMFP_Connect function
-	onConnectSucceed();
+	// We are connected : unlock the possible blocking function
+	flags |= RTMFP_CONNECTED;
+	onConnectionEvent(_id, RTMFP_CONNECTED);
 }
 
 void RTMFPSession::onPublished(UInt16 streamId) {
@@ -521,8 +497,9 @@ void RTMFPSession::onPublished(UInt16 streamId) {
 	if (!(_pListener = _pPublisher->addListener<FlashListener, shared_ptr<RTMFPWriter>&>(ex, name(), pDataWriter, pAudioWriter, pVideoWriter)))
 		WARN(ex)
 
-	// Stream published : unlock the possible blocking RTMFP_Publish function
-	onStreamPublished();
+	// Stream published : unlock the possible blocking function
+	flags |= RTMFP_PUBLISHED;
+	onConnectionEvent(_id, RTMFP_PUBLISHED);
 }
 
 void RTMFPSession::stopListening(const string& peerId) {
@@ -755,4 +732,25 @@ void RTMFPSession::handlePeerDisconnection(const string& peerId) {
 
 	if (_group)
 		_group->handlePeerDisconnection(peerId);
+}
+
+void RTMFPSession::setP2pPublisherReady() {
+
+	// P2P Viewer connected : unlock the possible blocking function
+	flags |= RTMFP_P2P_PUBLISHED;
+	onConnectionEvent(_id, RTMFP_P2P_PUBLISHED);
+}
+
+void RTMFPSession::handleFirstPeer() {
+
+	// First peer connected : unlock the possible blocking function
+	flags |= RTMFP_GROUP_CONNECTED;
+	onConnectionEvent(_id, RTMFP_GROUP_CONNECTED);
+}
+
+void RTMFPSession::setP2PPlayReady() {
+
+	// Connected to peer publisher : unlock the possible blocking function
+	flags |= RTMFP_PEER_CONNECTED;
+	onConnectionEvent(_id, RTMFP_PEER_CONNECTED);
 }

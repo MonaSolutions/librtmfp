@@ -91,7 +91,14 @@ unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId,
 		return 0;
 	}
 
-	return GlobalInvoker->connect2Peer(RTMFPcontext, peerId, streamName, blocking>0);
+	UInt16 mediaId = GlobalInvoker->connect2Peer(RTMFPcontext, peerId, streamName);
+
+	// Non blocking or error occured
+	if (!mediaId || !blocking)
+		return mediaId;
+
+	// Blocking
+	return (GlobalInvoker->waitForEvent(RTMFPcontext, RTMFP_PEER_CONNECTED)) ? mediaId : 0;
 }
 
 unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, unsigned short audioReliable, unsigned short videoReliable, const char* fallbackUrl) {
@@ -100,12 +107,14 @@ unsigned short RTMFP_Connect2Group(unsigned int RTMFPcontext, const char* stream
 		return 0;
 	}
 
-	UInt16 mediaId = GlobalInvoker->connect2Group(RTMFPcontext, streamName, parameters, groupParameters, audioReliable>0, videoReliable>0);
+	UInt16 mediaId = GlobalInvoker->connect2Group(RTMFPcontext, streamName, parameters, groupParameters, audioReliable>0, videoReliable>0, fallbackUrl);
 
-	if (mediaId && fallbackUrl)
-		GlobalInvoker->connect2FallbackUrl(RTMFPcontext, parameters, fallbackUrl, mediaId);
+	// Non blocking or error occured
+	if (!mediaId || !groupParameters->isPublisher || !groupParameters->isBlocking)
+		return mediaId;
 
-	return mediaId;
+	// Blocking
+	return (GlobalInvoker->waitForEvent(RTMFPcontext, RTMFP_GROUP_CONNECTED)) ? mediaId : 0;
 }
 
 unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
@@ -114,7 +123,7 @@ unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* streamName) {
 		return 0;
 	}
 
-	return GlobalInvoker->addStream(RTMFPcontext, false, streamName, true, true, false);
+	return GlobalInvoker->addStream(RTMFPcontext, 0, streamName, true, true);
 }
 
 unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
@@ -123,7 +132,14 @@ unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, 
 		return 0;
 	}
 
-	return GlobalInvoker->addStream(RTMFPcontext, true, streamName, audioReliable>0, videoReliable>0, blocking>0);
+	UInt16 mediaId = GlobalInvoker->addStream(RTMFPcontext, RTMFP_PUBLISHED, streamName, audioReliable>0, videoReliable>0);
+
+	// Non blocking or error occured
+	if (!mediaId || !blocking)
+		return mediaId;
+
+	// Blocking
+	return (GlobalInvoker->waitForEvent(RTMFPcontext, RTMFP_PUBLISHED)) ? mediaId : 0;
 }
 
 unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking) {
@@ -132,7 +148,14 @@ unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamNam
 		return 0;
 	}
 
-	return GlobalInvoker->publishP2P(RTMFPcontext, streamName, audioReliable, videoReliable, blocking);
+	UInt16 mediaId = GlobalInvoker->addStream(RTMFPcontext, RTMFP_P2P_PUBLISHED, streamName, audioReliable>0, videoReliable>0);
+
+	// Non blocking or error occured
+	if (!mediaId || !blocking)
+		return mediaId;
+
+	// Blocking
+	return (GlobalInvoker->waitForEvent(RTMFPcontext, RTMFP_P2P_PUBLISHED)) ? mediaId : 0;
 }
 
 unsigned short RTMFP_ClosePublication(unsigned int RTMFPcontext,const char* streamName) {
@@ -190,6 +213,15 @@ unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function,
 	}
 
 	return GlobalInvoker->callFunction(RTMFPcontext, function, nbArgs, args, peerId);
+}
+
+LIBRTMFP_API char RTMFP_WaitForEvent(unsigned int RTMFPcontext, RTMFPMask mask) {
+	if (!GlobalInvoker) {
+		ERROR("RTMFP_Init() has not been called, please call it first")
+		return false;
+	}
+
+	return GlobalInvoker->waitForEvent(RTMFPcontext, mask);
 }
 
 void RTMFP_LogSetCallback(void(* onLog)(unsigned int, const char*, long, const char*)) {

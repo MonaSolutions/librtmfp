@@ -32,7 +32,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define NETGROUP_MAX_REPORT_SIZE		20000 // max size used for NetGroup Report messages
 #define NETGROUP_MAX_PACKET_SIZE		959
 #define MAX_PEER_COUNT					0xFFFFFFFFFFFFFFFF
-#define NETGROUP_BEST_LIST_DELAY		5000	// delay between each best list calculation (in msec)
+#define NETGROUP_BEST_LIST_DELAY		10000	// delay between each best list calculation (in msec)
 #define NETGROUP_REPORT_DELAY			10000	// delay between each NetGroup Report (in msec)
 #define NETGROUP_PUSH_DELAY				2000	// delay between each push request (in msec)
 #define NETGROUP_PULL_DELAY				100		// delay between each pull request (in msec)

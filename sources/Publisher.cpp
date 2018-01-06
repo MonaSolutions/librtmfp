@@ -62,7 +62,7 @@ Publisher::Publisher(const string& name, Invoker& invoker, bool audioReliable, b
 Publisher::~Publisher() {
 	// delete listeners
 	if (!_listeners.empty()) {
-		ERROR("Publication ",_name," with subscribers is deleting")
+		WARN("Publication ",_name," with subscribers is deleting")
 		while (!_listeners.empty())
 			removeListener(_listeners.begin()->first);
 	}

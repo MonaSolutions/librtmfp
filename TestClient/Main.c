@@ -404,41 +404,45 @@ int main(int argc, char* argv[]) {
 
 	printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));
 	if (context = RTMFP_Connect(url, &config)) {
-		if (peerId != NULL) {
-			nbPeers = 1;
-			listPeers[0] = (char*)peerId;
-			listStreams[0] = publication;
-			listFileNames[0] = (char*)mediaFile;
-			listStreamIds[0] = 0;
-		}
 
-		// Open IO files and start the streaming
-		if (!mediaFile || initFiles(mediaFile)) {
+		if (!config.isBlocking || RTMFP_WaitForEvent(context, RTMFP_CONNECTED)>0) {
 
-			if (groupConfig.netGroup)
-				streamId = RTMFP_Connect2Group(context, publication, &config, &groupConfig, audioReliable, videoReliable, tryUnicast);
-			else if (_option == WRITE)
-				streamId = RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
-			else if (_option == P2P_WRITE)
-				RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
-			else if (nbPeers > 0) { // P2p Play
-				for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
-					listStreamIds[indexPeer] = RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer], 1);
-			}
-			else if (_option == SYNC_READ || _option == ASYNC_READ)
-				streamId = RTMFP_Play(context, publication);
-
-			// Main Loop
-			while (!IsInterrupted(NULL)) {
-				if (!onManage())
-					break;
+			if (peerId != NULL) {
+				nbPeers = 1;
+				listPeers[0] = (char*)peerId;
+				listStreams[0] = publication;
+				listFileNames[0] = (char*)mediaFile;
+				listStreamIds[0] = 0;
 			}
 
-			// close the stream if needed
-			if (streamId && (_option == WRITE || _option == SYNC_READ || _option == ASYNC_READ)) {
-				if (_option == WRITE)
-					RTMFP_ClosePublication(context, publication);
-				RTMFP_CloseStream(context, streamId);
+			// Open IO files and start the streaming
+			if (!mediaFile || initFiles(mediaFile)) {
+
+				if (groupConfig.netGroup)
+					streamId = RTMFP_Connect2Group(context, publication, &config, &groupConfig, audioReliable, videoReliable, tryUnicast);
+				else if (_option == WRITE)
+					streamId = RTMFP_Publish(context, publication, audioReliable, videoReliable, 1);
+				else if (_option == P2P_WRITE)
+					RTMFP_PublishP2P(context, publication, audioReliable, videoReliable, 1);
+				else if (nbPeers > 0) { // P2p Play
+					for (indexPeer = 0; indexPeer < nbPeers; indexPeer++)
+						listStreamIds[indexPeer] = RTMFP_Connect2Peer(context, listPeers[indexPeer], listStreams[indexPeer], 1);
+				}
+				else if (_option == SYNC_READ || _option == ASYNC_READ)
+					streamId = RTMFP_Play(context, publication);
+
+				// Main Loop
+				while (!IsInterrupted(NULL)) {
+					if (!onManage())
+						break;
+				}
+
+				// close the stream if needed
+				if (streamId && (_option == WRITE || _option == SYNC_READ || _option == ASYNC_READ)) {
+					if (_option == WRITE)
+						RTMFP_ClosePublication(context, publication);
+					RTMFP_CloseStream(context, streamId);
+				}
 			}
 		}
 

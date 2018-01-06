@@ -35,12 +35,8 @@ RTMFP Server
 struct NetGroup;
 struct RTMFPConfig;
 struct RTMFPSession : public FlowManager {
-	typedef Base::Event<void()>					ON(ConnectSucceed); // Session's connection succeed or an error occured (unlock parent if blocking)
-	typedef Base::Event<void(bool)>				ON(PublishP2P); // P2P Publication is connected or an error occured (unlock parent if blocking)
-	typedef Base::Event<void()>					ON(Connected2Peer); // P2P Connection succeed or an error occured (unlock parent if blocking)
-	typedef Base::Event<void()>					ON(StreamPublished); // NetStream is published or an error occured (unlock parent if blocking)
-	typedef Base::Event<void()>					ON(Connected2Group); // NetGroup Connection succeed or an error occured (unlock parent if blocking)
-	typedef Base::Event<void(Base::UInt32)>		ON(NetGroupException); // NetGroup error happened
+	typedef Base::Event<void(Base::UInt32 id, Base::UInt8 mask)>	ON(ConnectionEvent); // Connection event happened (unlock parent if blocking)
+	typedef Base::Event<void(Base::UInt32)>							ON(NetGroupException); // NetGroup error happened
 
 	RTMFPSession(Base::UInt32 id, Invoker& invoker, RTMFPConfig config);
 
@@ -73,9 +69,9 @@ struct RTMFPSession : public FlowManager {
 	// return : True if the group has been added
 	bool connect2Group(const std::string& streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, const std::string& groupName, Base::UInt16 mediaCount);
 
-	// Create a stream (play/publish) in the main stream 
+	// Create a stream (play/publish/p2pPublish) in the main stream
 	// return : True if the stream has been added
-	bool addStream(bool publisher, const std::string& streamName, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
+	bool addStream(Base::UInt8 mask, const std::string& streamName, bool audioReliable, bool videoReliable, Base::UInt16 mediaCount);
 
 	// Close a stream
 	// return : True if the stream has been closed
@@ -85,10 +81,6 @@ struct RTMFPSession : public FlowManager {
 	// param peerId If set to 0 the call we be done to the server, if set to "all" to all the peers of a NetGroup, and to a peer otherwise
 	// return 1 if the call succeed, 0 otherwise
 	unsigned int callFunction(const std::string& function, std::queue<std::string>& arguments, const std::string& peerId);
-
-	// Start a P2P publisher with name
-	// return : True if the creation succeed, false otherwise (there is already a publisher)
-	void startP2PPublisher(const std::string& streamName, bool audioReliable, bool videoReliable);
 
 	// Close the publication
 	// return : True if the publication has been closed, false otherwise (publication not found)
@@ -114,10 +106,10 @@ struct RTMFPSession : public FlowManager {
 	void stopListening(const std::string& peerId);
 
 	// Set the p2p publisher as ready (used for blocking mode)
-	void setP2pPublisherReady() { onPublishP2P(true); }
+	void setP2pPublisherReady();
 
 	// Set the p2p player as ready (used for blocking mode)
-	void setP2PPlayReady() { onConnected2Peer(); }
+	void setP2PPlayReady();
 
 	// Called by P2PSession when we are connected to the peer
 	bool addPeer2Group(const std::string& peerId);
@@ -175,12 +167,17 @@ struct RTMFPSession : public FlowManager {
 	// Called by Handshaker when receiving an empty address from the server rendezvous service (peer not found)
 	void							handlePeerDisconnection(const std::string& peerId);
 
+	// Called by NetGroup when the first peer connect to us, we must call the onConnectionEvent
+	void							handleFirstPeer();
+
 	/* Write functions */
 	void writeAudio(const Base::Packet& packet, Base::UInt32 time);
 	void writeVideo(const Base::Packet& packet, Base::UInt32 time);
 	void writeFlush();
 
 	FlashStream::OnMedia			onMediaPlay; // received when a packet from any media stream is ready for reading
+
+	Base::UInt8						flags; // Events flags reflecting state of the connection (succeed, group succeed, published ...)
 
 protected:
 
@@ -212,7 +209,7 @@ private:
 
 	static Base::UInt32												RTMFPSessionCounter; // Global counter for generating incremental sessions id
 
-	int																_id; // RTMFPSession ID set by the Invoker
+	const Base::UInt32												_id; // RTMFPSession ID set by the Invoker
 	RTMFPHandshaker													_handshaker; // Handshake manager
 
 	std::string														_host; // server host name

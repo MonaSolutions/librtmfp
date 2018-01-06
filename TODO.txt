@@ -4,3 +4,4 @@
 - Add support for HEVC
 - Add support for data format
 - Try to improve RTMFP unreliable mode to not buffer any packet
+- Support multiple publishers on a single connection

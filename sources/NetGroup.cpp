@@ -104,7 +104,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		if (streamName != stream) {
-			INFO("New stream available in the group but not registered : ", streamName, " (expected : ", stream)
+			INFO("New stream available in the group but not registered : ", streamName, " (expected : ", stream, ")")
 			return false;
 		}
 
@@ -171,7 +171,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 			INFO("First viewer play request, starting to play Stream ", stream)
 			_pListener->onMedia = _groupMediaPublisher->second.onMedia;
 			_pListener->onFlush = _groupMediaPublisher->second.onFlush;
-			_conn.onConnected2Group(); // A peer is connected : unlock the possible blocking RTMFP_PublishP2P function
+			_conn.handleFirstPeer(); // A peer is connected : unlock the possible blocking function
 		}
 
 		// Group Report response?
@@ -244,7 +244,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 	else {
 		_pGroupBuffer.reset(new GroupBuffer());
 		_pGroupBuffer->onNextPacket = [this](GroupBuffer::Result& result) { // Executed in the GroupBuffer Thread
-			// Use Flash handler to process the packets (TODO: delete the group if return false?)
+			// Use Flash handler to process the packets
 			for (RTMFP::MediaPacket& mediaPacket : result)
 				FlashHandler::process(mediaPacket.type, mediaPacket.time, mediaPacket, 0, 0, 0, false);
 		};

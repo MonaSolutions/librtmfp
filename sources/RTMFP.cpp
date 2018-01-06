@@ -22,6 +22,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "RTMFP.h"
 #include "Base/Util.h"
 #include "AMF.h"
+#include "Base/DNS.h"
 
 using namespace std;
 using namespace Base;
@@ -198,6 +199,43 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 		TRACE("IP Address : ", address, " - type : ", addressType)
 	}
 	return !addresses.empty() || hostAddress;
+}
+
+bool RTMFP::ReadUrl(const char* url, string& host, SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, shared<Buffer>& rawUrl) {
+
+	// Get hostname, port and publication name
+	string publication, query;
+	Util::UnpackUrl(url, host, publication, query);
+
+	// Generate the raw url
+	BinaryWriter urlWriter(*rawUrl);
+	urlWriter.write7BitValue(strlen(url) + 1);
+	urlWriter.write8('\x0A').write(url);
+
+	// Extract the port
+	size_t portPos = host.find_last_of(':'), ipv6End = host.find_last_of(']');
+	if ((portPos != string::npos) && (ipv6End != string::npos) && portPos < ipv6End)
+		portPos = string::npos;
+	string port = (portPos != string::npos) ? host.substr(portPos + 1) : "1935";
+	host = (portPos != string::npos) ? host.substr(0, portPos) : host;
+
+	DEBUG("Trying to resolve the host address...")
+	HostEntry hostEntry;
+	Exception ex;
+	if (!address.set(ex, host, port)) {
+		if (DNS::Resolve(ex, host, hostEntry)) { // list of addresses
+			for (auto& itAddress : hostEntry.addresses()) {
+				if (address.set(ex, itAddress, port))
+					addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
+			}
+			address.reset();
+		}
+	}
+	if (!address && addresses.empty()) {
+		ERROR("Unable to resolve host address from url ", url, " : ", ex)
+		return false;
+	}
+	return true;
 }
 
 void RTMFP::WriteInvocation(AMFWriter& writer, const char* name, double callback, bool amf3) {

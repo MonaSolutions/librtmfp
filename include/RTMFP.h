@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x020b0009	// (2.11.9)
+#define RTMFP_LIB_VERSION	0x020C0000	// (2.12.0)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -189,8 +189,12 @@ struct RTMFP : virtual Base::Static {
 	static bool						IsVideoCodecInfos(const Base::UInt8* data, Base::UInt32 size) { return size>1 && ((*data|0x0F) == 0x1F) && data[1] == 0; }
 
 	// Read addresses from the buffer reader
-	// return : True if at least an address has been read
+	// return: True if at least an address has been read
 	static bool	ReadAddresses(Base::BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresses, Base::SocketAddress& hostAddress, std::function<void(const Base::SocketAddress&, AddressType)> onNewAddress);
+
+	// Extract host name, raw url and addresses of the given RTMFP url
+	// return: True if the operation succeed, False otherwise
+	static bool ReadUrl(const char* url, std::string& host, Base::SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, Base::shared<Base::Buffer>& rawUrl);
 
 	/* AMF Utility functions */
 	static void WriteInvocation(AMFWriter& writer, const char* name, double callback, bool amf3);

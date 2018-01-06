@@ -61,6 +61,15 @@ LIBRTMFP_API typedef struct RTMFPConfig {
 	const char*		hostIPv6; // IPv6 host address to bind to (use this if you ave multiple interfaces)
 } RTMFPConfig;
 
+LIBRTMFP_API typedef enum {
+	RTMFP_UNDEFINED			= 0x00,
+	RTMFP_CONNECTED			= 0x01,
+	RTMFP_PUBLISHED			= 0x02,
+	RTMFP_GROUP_CONNECTED	= 0x04,
+	RTMFP_PEER_CONNECTED	= 0x08,
+	RTMFP_P2P_PUBLISHED		= 0x10
+} RTMFPMask;
+
 // This function MUST be called before any other
 // Initialize the RTMFP parameters with default values
 // config : CANNOT be null, it is the main configuration parameter
@@ -99,13 +108,14 @@ LIBRTMFP_API unsigned short RTMFP_Play(unsigned int RTMFPcontext, const char* st
 // RTMFP NetStream Publish function
 // param audioReliable if True all audio packets losts are repeated, otherwise audio packets are not repeated
 // param videoReliable if True all video packets losts are repeated, otherwise video packets are not repeated
+// NOTE: For now librtmfp only support 1 publisher, ask us if you need to support more
 // return the id of the stream or 0 if an error occurs 
 LIBRTMFP_API unsigned short RTMFP_Publish(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
 
 // RTMFP P2P NetStream Publish function (equivalent of NetStream.DIRECT_CONNECTIONS)
 // param audioReliable if True all audio packets losts are repeated, otherwise audio packets are not repeated
 // param videoReliable if True all video packets losts are repeated, otherwise video packets are not repeated
-// return : 1 if the request succeed, 0 otherwise
+// return the id of the stream or 0 if an error occurs
 LIBRTMFP_API unsigned short RTMFP_PublishP2P(unsigned int RTMFPcontext, const char* streamName, unsigned short audioReliable, unsigned short videoReliable, int blocking);
 
 // RTMFP NetStream Unpublish function
@@ -135,6 +145,10 @@ LIBRTMFP_API int RTMFP_Write(unsigned int RTMFPcontext, const char *buf, int siz
 // return 1 if the call succeed, 0 otherwise
 // TODO: add callback
 LIBRTMFP_API unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId);
+
+// Wait for an event to happend on a specified connection
+// return: True if the event happened, False if an error occurs
+LIBRTMFP_API char RTMFP_WaitForEvent(unsigned int RTMFPcontext, RTMFPMask mask);
 
 // Set log callback
 LIBRTMFP_API void RTMFP_LogSetCallback(void (* onLog)(unsigned int, const char*, long, const char*));
