@@ -41,8 +41,8 @@ private:
 public:
 
 	Parameters() {}
-	Parameters(Parameters&& other) { operator=(std::move(other));  }
-	Parameters& operator=(Parameters&& other);
+	Parameters(Parameters&& other) { setParams(std::move(other));  }
+	Parameters& setParams(Parameters&& other);
 
 	const_iterator	begin() const { return _pMap ? _pMap->begin() : Null().begin(); }
 	const_iterator	end() const { return _pMap ? _pMap->end() : Null().end(); }
@@ -87,6 +87,10 @@ public:
 
 	bool setBoolean(const std::string& key, bool value) { setParameter(key, value ? "true" : "false");  return value; }
 
+	/*!
+	Emplace key-value
+	you can use it with String constructor to concat multiple chunk in key and value => emplace(String(pre, key), String(pre,value))
+	or use it with piecewise_construct to prefer "multiple argument" to build string (to cut a string with size argument for example) => emplace(piecewise_construct, forward_as_tuple(key), std::forward_as_tuple(forward<Args>(args)...)) */
 	template<typename ...Args>
 	const std::string& emplace(Args&& ...args) {
 		std::pair<std::string, std::string> item(std::forward<Args>(args)...);

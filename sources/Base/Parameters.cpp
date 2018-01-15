@@ -20,7 +20,7 @@ using namespace std;
 
 namespace Base {
 
-Parameters& Parameters::operator=(Parameters&& other) {
+Parameters& Parameters::setParams(Parameters&& other) {
 	if (!other.count()) {
 		clear();
 		return *this;
