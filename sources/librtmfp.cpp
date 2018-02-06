@@ -276,15 +276,14 @@ void RTMFP_ActiveDump() {
 
 void RTMFP_SetIntParameter(const char* parameter, int value) {
 
-	if (String::ICompare(parameter, "logLevel") == 0) {
+	if (String::ICompare(parameter, "logLevel") == 0)
 		Logs::SetLevel(value);
-	}
-	else if (String::ICompare(parameter, "socketReceiveSize") == 0) {
+	else if (String::ICompare(parameter, "socketReceiveSize") == 0)
 		Net::SetRecvBufferSize(value);
-	}
-	else if (String::ICompare(parameter, "socketSendSize") == 0) {
+	else if (String::ICompare(parameter, "socketSendSize") == 0)
 		Net::SetSendBufferSize(value);
-	}
+	else if (String::ICompare(parameter, "timeoutFallback") == 0)
+		RTMFP::Parameters().setNumber(parameter, value);
 	else
 		FATAL_ERROR("Unknown parameter ", parameter)
 }

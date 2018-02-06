@@ -29,7 +29,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include <queue>
 
 #define DELAY_CONNECTIONS_MANAGER	75 // Delay between each onManage (in msec)
-#define TIMEOUT_FALLBACK_CONNECTION	8000 // time to wait before connecting to fallback connection (Netgroup=>Unicast switch)
 #define DELAY_SIGNAL_READ			100 // time to wait before each read request
 #define DELAY_BLOCKING_SIGNALS		200 // time to wait before checking interrupted status in each waiting signals
 

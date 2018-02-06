@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x020C0001	// (2.12.1)
+#define RTMFP_LIB_VERSION	0x020C0002	// (2.12.2)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -52,6 +52,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 struct RTMFPSender;
 struct RTMFP : virtual Base::Static {
+
 	enum AddressType {
 		ADDRESS_UNSPECIFIED=0,
 		ADDRESS_LOCAL=1,
@@ -238,5 +239,15 @@ struct RTMFP : virtual Base::Static {
 
 		return it;
 	}
+
+private:
+	struct Config : virtual Base::Object, Base::Parameters {
+		Config() {
+			setNumber("timeoutFallback", 8000); // time to wait before connecting to fallback connection (Netgroup=>Unicast switch)
+		}
+	};
+
+public:
+	static Config& Parameters() { static Config parameters; return parameters; }// global parameter
 };
 

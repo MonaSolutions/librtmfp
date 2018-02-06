@@ -328,17 +328,21 @@ void Invoker::manage() {
 	
 	_mutexConnections.lock();
 
-	// Start waiting fallback connections
-	auto itWait = _waitingFallback.begin();
-	while (itWait != _waitingFallback.end()) {
-		// If timeout reached we create the connection
-		if (!itWait->second.idFallback && !itWait->second.switched && !itWait->second.running && itWait->second.timeCreation.isElapsed(TIMEOUT_FALLBACK_CONNECTION)) {
+	if (!_waitingFallback.empty()) {
 
-			INFO(TIMEOUT_FALLBACK_CONNECTION, "ms without data, starting fallback connection from ", itWait->first)
-			startFallback(itWait->second);
-			continue;
+		// Start waiting fallback connections
+		int timeoutFb = RTMFP::Parameters().getNumber<int>("timeoutFallback");
+		auto itWait = _waitingFallback.begin();
+		while (itWait != _waitingFallback.end()) {
+			// If timeout reached we create the connection
+			if (!itWait->second.idFallback && !itWait->second.switched && !itWait->second.running && itWait->second.timeCreation.isElapsed(timeoutFb)) {
+
+				INFO(timeoutFb, "ms without data, starting fallback connection from ", itWait->first);
+				startFallback(itWait->second);
+				continue;
+			}
+			++itWait;
 		}
-		++itWait;
 	}
 
 	// Manage connections

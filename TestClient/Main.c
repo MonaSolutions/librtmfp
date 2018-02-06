@@ -307,6 +307,8 @@ int main(int argc, char* argv[]) {
 			RTMFP_SetParameter("socketReceiveSize", argv[i] + 20);
 		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--socketSendSize=", 17) == 0) // set the socketSendSize value
 			RTMFP_SetParameter("socketSendSize", argv[i] + 17);
+		else if (strlen(argv[i]) > 18 && strnicmp(argv[i], "--timeoutFallback=", 18) == 0) // for NetGroup mode, set the timeout for the unicast fallback
+			RTMFP_SetParameter("timeoutFallback", argv[i] + 18);
 		else if (strlen(argv[i]) > 15 && strnicmp(argv[i], "--updatePeriod=", 15) == 0) // for NetGroup mode (multicastAvailabilityUpdatePeriod)
 			availabilityUpdatePeriod = atoi(argv[i] + 15);
 		else if (strlen(argv[i]) > 17 && strnicmp(argv[i], "--windowDuration=", 17) == 0) // for NetGroup mode (multicastWindowDuration)
