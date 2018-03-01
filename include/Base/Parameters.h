@@ -96,7 +96,6 @@ public:
 		std::pair<std::string, std::string> item(std::forward<Args>(args)...);
 		return setParameter(item.first, std::move(item.second));
 	}
-
 	static const Parameters& Null() { static Parameters Null(nullptr); return Null; }
 
 protected:

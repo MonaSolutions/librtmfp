@@ -144,6 +144,9 @@
     <ClCompile Include="sources\GroupBuffer.cpp">
       <Filter>NetGroup</Filter>
     </ClCompile>
+    <ClCompile Include="sources\Base\ThreadPool.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="include\BandWriter.h" />

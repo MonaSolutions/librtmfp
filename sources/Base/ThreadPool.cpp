@@ -14,22 +14,28 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 */
 
-#include "Base/Congestion.h"
+#include "Base/ThreadPool.h"
 
 using namespace std;
 
+
 namespace Base {
 
-Congestion& Congestion::operator=(UInt64 queueing) {
-	bool congested(queueing && queueing>_lastQueueing);
-	_lastQueueing = queueing;
-	if (congested) {
-		if (!_congested)
-			_congested.update();
-	} else
-		_congested = 0;
-	return self;
+void ThreadPool::init(UInt16 threads, Thread::Priority priority) {
+	_threads.resize(_size = threads ? threads : Thread::ProcessorCount());
+	for (UInt16 i = 0; i < _size; ++i)
+		_threads[i].reset(new ThreadQueue("ThreadPool", priority));
 }
 
+UInt16 ThreadPool::join() {
+	UInt16 count(0);
+	for (unique<ThreadQueue>& pThread : _threads) {
+		if (!pThread->running())
+			continue;
+		++count;
+		pThread->stop();
+	}
+	return count;
+}
 
 } // namespace Base

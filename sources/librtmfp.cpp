@@ -42,10 +42,7 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLo
 	// Init global invoker (+logger)
 	if (!GlobalInvoker) {
 		GlobalInvoker = new Invoker(createLogger>0);
-		if (!GlobalInvoker->start()) {
-			RTMFP_Terminate();
-			return;
-		}
+		GlobalInvoker->start();
 	}
 
 	memset(config, 0, sizeof(RTMFPConfig));

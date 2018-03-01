@@ -54,7 +54,7 @@ struct RTMFPSender : Base::Runner, virtual Base::Object {
 			Base::UInt32 bufferSize(socket.sendBufferSize());
 			// superior to buffer size to limit onFlush usage!
 			queueSize = queueSize > bufferSize ? queueSize - bufferSize : 0;
-			return queueSize && _congestion(queueSize, Base::Net::RTO_MAX);
+			return queueSize && _congestion(Base::Net::RTO_MAX);
 		}
 
 		Base::UInt32					farId;

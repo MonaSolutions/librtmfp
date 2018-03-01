@@ -464,6 +464,7 @@
     <ClCompile Include="sources\Base\SocketAddress.cpp" />
     <ClCompile Include="sources\Base\String.cpp" />
     <ClCompile Include="sources\Base\Thread.cpp" />
+    <ClCompile Include="sources\Base\ThreadPool.cpp" />
     <ClCompile Include="sources\Base\ThreadQueue.cpp" />
     <ClCompile Include="sources\Base\Timer.cpp" />
     <ClCompile Include="sources\Base\Timezone.cpp" />

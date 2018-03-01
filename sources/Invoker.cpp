@@ -314,14 +314,13 @@ Invoker::~Invoker() {
 }
 
 // Start the socket manager if not started
-bool Invoker::start() {
+void Invoker::start() {
 	if(running()) {
 		ERROR("Invoker is already running, call stop method before");
-		return false;
+		return;
 	}
 	
-	Exception ex;
-	return Thread::start(ex);
+	Thread::start();
 }
 
 void Invoker::manage() {
@@ -923,9 +922,8 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) 
 
 void Invoker::pushMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 
-	Exception ex;
 	shared_ptr<ReadPacket> pPacket(new ReadPacket(*this, RTMFPcontext, mediaId, time, packet, lostRate, type));
-	AUTO_ERROR(threadPool.queue(ex, pPacket, _threadPush), "Invoker PushMedia")
+	threadPool.queue(pPacket, _threadPush);
 }
 
 void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
@@ -1015,6 +1013,5 @@ void Invoker::decode(int idConnection, UInt32 idSession, const SocketAddress& ad
 
 	shared_ptr<RTMFPDecoder> pDecoder(new RTMFPDecoder(idConnection, idSession, address, pEngine, pBuffer, handler));
 	pDecoder->onDecoded = _onDecoded;
-	Exception ex;
-	AUTO_ERROR(threadPool.queue(ex, pDecoder, threadRcv), "RTMFP Decode")
+	threadPool.queue(pDecoder, threadRcv);
 }

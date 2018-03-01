@@ -393,8 +393,7 @@ void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
 	// continue even on _killing to repeat writers messages to flush it (reliable)
 	pSender->address = _address;
 	pSender->pSession = _pSendSession;
-	Exception ex;
-	AUTO_ERROR(_invoker.threadPool.queue(ex, pSender, _threadSend), name());
+	_invoker.threadPool.queue(pSender, _threadSend);
 }
 
 Buffer& FlowManager::write(UInt8 type, UInt16 size) {

@@ -35,8 +35,8 @@ GroupBuffer::~GroupBuffer() {
 
 bool GroupBuffer::add(Exception& ex, UInt32 groupMediaId, const shared_ptr<GroupFragment>& pFragment) {
 	std::lock_guard<std::mutex> lock(_mutex);
-	if (!start(ex))
-		return false;
+	if (!running())
+		start();
 
 	_waitingRequests.emplace_back(WaitRequest::ADD_FRAGMENT, groupMediaId, pFragment);
 	wakeUp.set();
@@ -45,8 +45,8 @@ bool GroupBuffer::add(Exception& ex, UInt32 groupMediaId, const shared_ptr<Group
 
 bool GroupBuffer::removeBuffer(Exception& ex, UInt32 groupMediaId) {
 	std::lock_guard<std::mutex> lock(_mutex);
-	if (!start(ex))
-		return false;
+	if (!running())
+		start();
 
 	_waitingRequests.emplace_back(WaitRequest::REMOVE_BUFFER, groupMediaId);
 	wakeUp.set();
@@ -55,8 +55,8 @@ bool GroupBuffer::removeBuffer(Exception& ex, UInt32 groupMediaId) {
 
 bool GroupBuffer::removeFragments(Exception& ex, UInt32 groupMediaId, UInt64 fragmentId) {
 	std::lock_guard<std::mutex> lock(_mutex);
-	if (!start(ex))
-		return false;
+	if (!running())
+		start();
 
 	_waitingRequests.emplace_back(WaitRequest::REMOVE_FRAGMENTS, groupMediaId, nullptr, fragmentId);
 	wakeUp.set();
@@ -65,8 +65,8 @@ bool GroupBuffer::removeFragments(Exception& ex, UInt32 groupMediaId, UInt64 fra
 
 bool GroupBuffer::startProcessing(Exception& ex, UInt32 groupMediaId) {
 	std::lock_guard<std::mutex> lock(_mutex);
-	if (!start(ex))
-		return false;
+	if (!running())
+		start();
 
 	_waitingRequests.emplace_back(WaitRequest::START_PROCESSING, groupMediaId);
 	wakeUp.set();

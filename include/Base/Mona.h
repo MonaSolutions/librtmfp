@@ -22,10 +22,10 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include <cstdint>
 #include <string>
 #include <cstring>
-#include <complex>
 #include <limits>
 #include <memory>
 #include <functional>
+#include <cmath> // C++ version of math.h to solve abs ambiguity over linux
 
 
 /////  Usefull macros and patchs   //////
@@ -213,6 +213,7 @@ inline const std::string& typeof() {
 template<typename MapType>
 inline typename MapType::iterator lower_bound(MapType& map, const typename MapType::key_type& key, const std::function<bool(const typename MapType::key_type&, typename MapType::iterator&)>& validate) {
 	typename MapType::iterator it, result(map.begin());
+	typename MapType::key_compare less = map.key_comp();
 	UInt32 count(map.size()), step;
 	while (count) {
 		if (!validate(key, result)) {
@@ -223,7 +224,7 @@ inline typename MapType::iterator lower_bound(MapType& map, const typename MapTy
 		it = result;
 		step = count / 2;
 		std::advance(it, step);
-		if (it->first < key) {
+		if (less(it->first, key)) {
 			result = ++it;
 			count -= step + 1;
 		} else

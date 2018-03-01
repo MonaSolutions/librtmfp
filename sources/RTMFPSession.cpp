@@ -415,7 +415,7 @@ bool RTMFPSession::addStream(UInt8 mask, const string& streamName, bool audioRel
 		_pMainStream->createStream();
 		_pMainWriter->writeInvocation("createStream");
 		_pMainWriter->flush();
-		_waitingStreams.emplace((mask & RTMFP_PUBLISHED), streamName, mediaCount, audioReliable, videoReliable);
+		_waitingStreams.emplace((mask & RTMFP_PUBLISHED) > 0, streamName, mediaCount, audioReliable, videoReliable);
 	}
 	INFO("Creation of the ", (mask & RTMFP_PUBLISHED) ? "publisher" : ((mask & RTMFP_P2P_PUBLISHED) ? "p2p publisher" : "player"), " stream ", mediaCount)
 	return true;

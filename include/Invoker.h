@@ -44,7 +44,7 @@ struct Invoker : private Base::Thread {
 	virtual ~Invoker();
 
 	// Start the socket manager if not started
-	bool			start();
+	void			start();
 
 	// Delete the RTMFP session at index (safe threaded)
 	void			removeConnection(unsigned int index, bool blocking);
