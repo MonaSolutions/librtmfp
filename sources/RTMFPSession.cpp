@@ -203,7 +203,6 @@ void RTMFPSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 		if (_group) {
 			_group->onMedia = nullptr;
 			_group->onStatus = nullptr;
-			_group->close();
 			_group.reset();
 		}
 

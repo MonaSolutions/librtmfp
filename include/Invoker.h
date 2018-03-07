@@ -248,7 +248,9 @@ private:
 	virtual void		manage();
 	bool				run(Base::Exception& exc, const volatile bool& stopping);
 
-	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it, bool abrupt);
+	// Remove the session pointed by the iterator, if this session has a fallback, delete it too
+	// \param terminating : if true we are closing the Invoker so we do not delete the fallback recursively
+	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it, bool abrupt, bool terminating = false);
 
 	// return True if the application is interrupted, otherwise False
 	bool				isInterrupted();

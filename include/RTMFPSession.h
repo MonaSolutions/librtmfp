@@ -45,7 +45,7 @@ struct RTMFPSession : public FlowManager {
 	// Initialize the flash properties for connection request
 	void setFlashProperties(const char* swfUrl, const char* app, const char* pageUrl, const char* flashVer);
 
-	// Close the session (safe-threaded)
+	// Close the session
 	void closeSession();
 
 	// Return address of the server (cleared if not connected)

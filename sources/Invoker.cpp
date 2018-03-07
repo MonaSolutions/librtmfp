@@ -411,7 +411,7 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 
 		auto it = _mapConnections.begin();
 		while (it != _mapConnections.end())
-			removeConnection(it++, false);
+			removeConnection(it++, false, true);
 	}
 
 	// stop socket sending (it waits the end of sending last session messages)
@@ -470,7 +470,7 @@ void Invoker::removeConnection(unsigned int index, bool blocking) {
 	}
 }
 
-void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt) {
+void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt, bool terminating) {
 
 	INFO("Deleting connection ", it->first, "...")
 
@@ -481,28 +481,33 @@ void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, 
 	it->second->onConnectionEvent = nullptr;
 	it->second->onNetGroupException = nullptr;
 
+	// Save the id and delete the connection
+	int id = it->first;
+	_mapConnections.erase(it);
+
 	// Close possible fallback connection
-	auto itWait = _waitingFallback.find(it->first);
+	auto itWait = _waitingFallback.find(id);
 	if (itWait != _waitingFallback.end()) {
-		auto itConn = _mapConnections.find(itWait->second.idFallback);
-		if (itConn != _mapConnections.end()) // can be deleted if an error occurs
-			removeConnection(itConn, abrupt);
+		if (!terminating) { // to avoid corrupting the closing loop
+			auto itConn = _mapConnections.find(itWait->second.idFallback);
+			if (itConn != _mapConnections.end()) // can be deleted if an error occurs
+				removeConnection(itConn, abrupt);
+		}
 		_waitingFallback.erase(itWait);
 	}
 
 	// Erase possible saved data
 	{
 		lock_guard<mutex> lock(_mutexRead);
-		_connection2Buffer.erase(it->first);
+		_connection2Buffer.erase(id);
 	}
 
 	// Erase possible writing buffer
 	{
 		lock_guard<mutex> lock(_mutexWrite);
-		_writeBuffers.erase(it->first);
+		_writeBuffers.erase(id);
 	}
 
-	_mapConnections.erase(it);
 	_waitSignal.set(); // can release from waiting event
 }
 
@@ -583,7 +588,7 @@ void Invoker::startFallback(FallbackConnection& fallback) {
 	pConn->setFlashProperties(fallback.parameters.swfUrl, fallback.parameters.app, fallback.parameters.pageUrl, fallback.parameters.flashVer);
 	pConn->onConnectionEvent = [this, &fallback](UInt32 index, UInt8 mask) {
 
-		// Whan fallback connection is connected we start playing
+		// When fallback connection is connected we start playing
 		if (mask & RTMFP_CONNECTED) {
 			lock_guard<mutex> lock(_mutexConnections);
 			auto itFb = _mapConnections.find(index);
@@ -599,7 +604,7 @@ void Invoker::startFallback(FallbackConnection& fallback) {
 
 	// Connect & add the fallback connection to map of connections
 	if (pConn->connect(fallback.url.c_str(), fallback.host, fallback.address, fallback.addresses, fallback.rawUrl))
-		_mapConnections.emplace(fallback.idFallback, pConn);
+		_mapConnections.emplace(fallback.idFallback, pConn); // Note: mutex is already locked here
 }
 
 UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const char* fallbackUrl) {
