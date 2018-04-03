@@ -36,10 +36,14 @@ struct FlashConnection : FlashStream, virtual Base::Object {
 	virtual ~FlashConnection();
 
 	// Add a new stream to the Main stream with an incremental id
-	FlashStream* addStream(std::shared_ptr<FlashStream>& pStream, bool group=false);
+	template <typename StreamType>
+	void addStream(std::shared_ptr<FlashStream>& pStream) {
+		addStream<StreamType>((Base::UInt16)_streams.size(), pStream);
+	}
 
 	// Add a new stream to the Main stream
-	FlashStream* addStream(Base::UInt16 id, std::shared_ptr<FlashStream>& pStream, bool group=false);
+	template <typename StreamType>
+	void addStream(Base::UInt16 id, std::shared_ptr<FlashStream>& pStream);
 
 	FlashStream* getStream(Base::UInt16 id, std::shared_ptr<FlashStream>& pStream);
 

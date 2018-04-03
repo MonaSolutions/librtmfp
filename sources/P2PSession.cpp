@@ -27,6 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Listener.h"
 #include "RTMFPSession.h"
 #include "RTMFPWriter.h"
+#include "GroupStream.h"
 
 using namespace Base;
 using namespace std;
@@ -141,6 +142,18 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnStat
 		DEBUG("NetGroup close message received from peer ", peerId, " : ", accepted ? "accepted" : "refused")
 		return !accepted; // return False if accepted to close the session
 	};
+	_pMainStream->onGroupPost = [this](const string& message) {
+		if (message.size())
+			INFO("Netgroup Post message received from peer ", peerId, " : ", message);
+
+		// TODO: Save the message and send it to all neighbors
+	};
+	_pMainStream->onGroupPostKey = [this](UInt8 type, string& key) {
+		INFO("Netgroup Post key message received from peer ", peerId);
+
+		// TODO: Save the group post key & send it to every neighbor each 100ms + ask for the value with 0x3A message
+		// if (type == 0x30) ... else if (type == 0x3A)
+	};
 
 	_sessionId = P2PSessionCounter++;
 	rawId.append("\x21\x0f", 2);
@@ -161,6 +174,8 @@ P2PSession::~P2PSession() {
 	_pMainStream->onFragment = nullptr;
 	_pMainStream->onGroupHandshake = nullptr;
 	_pMainStream->onGroupAskClose = nullptr;
+	_pMainStream->onGroupPost = nullptr;
+	_pMainStream->onGroupPostKey = nullptr;
 	_parent = NULL;
 }
 
@@ -194,34 +209,40 @@ void P2PSession::close(bool abrupt, RTMFP::CLOSE_REASON reason) {
 
 RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string& signature, UInt64 idWriterRef) {
 
+	shared_ptr<FlashStream> pStream;
 	if (signature.size()>6 && signature.compare(0, 6, "\x00\x54\x43\x04\xFA\x89", 6) == 0) { // Direct P2P NetStream
-		shared_ptr<FlashStream> pStream;
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
 		DEBUG("Creating new Flow (2) for P2PSession ", name())
-		_pMainStream->addStream(idSession, pStream);
-		return new RTMFPFlow(id, pStream, *this, idWriterRef);
+		_pMainStream->addStream<FlashStream>(idSession, pStream);
 	}
 	else if (signature.size() > 3 && ((signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)  // NetGroup Report stream (main flow)
-		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)  // NetGroup Data stream
 		|| (signature.compare(0, 4, "\x00\x47\x52\x1D", 4) == 0)  // NetGroup Message stream
 		|| (signature.compare(0, 4, "\x00\x47\x52\x11", 4) == 0)  // NetGroup Media Report stream (fragments Map & Media Subscription)
 		|| (signature.compare(0, 4, "\x00\x47\x52\x12", 4) == 0))) {  // NetGroup Media stream
-		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(pStream, true);
+		_pMainStream->addStream<GroupStream>(pStream);
 
 		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
 			_mainFlowId = id;
-		return new RTMFPFlow(id, pStream, *this,  idWriterRef);
 	}
-	ex.set<Ex::Protocol>("Unhandled signature type : ", String::Hex((const UInt8*)signature.data(), signature.size()), " , cannot create RTMFPFlow");
-	return NULL;
+	else if (signature.size() > 3 && (signature.compare(0, 4, "\x00\x47\x52\x18", 4) == 0)  // NetGroup Post key stream
+		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)) { // NetGroup Post Value stream
+
+		_pMainStream->addStream<GroupPostStream>(pStream);
+		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
+	}
+	else {
+		ex.set<Ex::Protocol>("Unhandled signature type : ", String::Hex((const UInt8*)signature.data(), signature.size()), " , cannot create RTMFPFlow");
+		return NULL;
+	}
+
+	return new RTMFPFlow(id, pStream, *this, idWriterRef);
 }
 
 unsigned int P2PSession::callFunction(const string& function, queue<string>& arguments) {
 
 	if (!_pNetStreamWriter)
-		_pNetStreamWriter = createWriter(Packet(EXPAND("\x00\x54\x43\x04\xFA\x89\x01")), 0);  // stream id = 1
+		_pNetStreamWriter = createWriter(Packet(EXPAND("\x00\x54\x43\x04\xFA\x89\x01")), _mainFlowId);  // stream id = 1
 
 	AMFWriter& amfWriter = _pNetStreamWriter->writeInvocation(function.c_str(), true);
 	while (!arguments.empty()) {

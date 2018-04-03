@@ -56,7 +56,7 @@ void GroupListener::pushVideo(UInt32 time, const Packet& packet, bool reliable) 
 
 	if (!_codecInfosSent) {
 		if (!pushVideoInfos(time, packet)) {
-			DEBUG("Video frame dropped to wait first key frame");
+			DEBUG("Video frame dropped to wait first key frame on grouplistener ", identifier);
 			return;
 		}
 	}
@@ -81,7 +81,7 @@ bool GroupListener::pushVideoInfos(UInt32 time, const Packet& packet) {
 	if (RTMFP::IsKeyFrame(packet.data(), packet.size())) {
 		_codecInfosSent = true;
 		_lastVideoCodecs.update();
-		INFO("Video codec infos sent to one listener of ", publication.name(), " publication")
+		INFO("Video codec infos sent to grouplistener of ", publication.name(), " from ", identifier)
 		if (publication.videoCodecBuffer() && !RTMFP::IsVideoCodecInfos(packet.data(), packet.size())) 
 			pushVideo(time, publication.videoCodecBuffer(), true);
 		return true;
@@ -109,7 +109,7 @@ bool GroupListener::pushAudioInfos(UInt32 time) {
 	if (!publication.audioCodecBuffer())
 		return false;
 	_lastAACCodecs.update();
-	INFO("AAC codec infos sent to one listener of ", publication.name(), " publication")
+	INFO("AAC codec infos sent to one listener of ", publication.name(), " from ", identifier)
 	pushAudio(time, publication.audioCodecBuffer(), true);
 	return true;
 }

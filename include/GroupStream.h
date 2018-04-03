@@ -26,12 +26,11 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 /**************************************************************
 GroupStream is a Group NetStream
 */
-class GroupStream : public FlashStream {
-public:
+struct GroupStream : FlashStream, virtual Base::Object {
 	enum ContentType {
 		GROUP_MEDIA_END		= 0x00, // End of a NetGroup splitted media data
 		GROUP_INIT			= 0x01, // Init a Group session with a peer
-		GROUP_DATA			= 0x02, // NetGroup data message
+		GROUP_DATA			= 0x02, // TODO: not sure it is a type
 		GROUP_REPORT		= 0x0A, // NetGroup Report
 		GROUP_MEMBER		= 0x0B, // NetGroup member
 		GROUP_ASK_CLOSE		= 0x0C, // Group Disconnect request (must close main writer if the peer is not in the best list)
@@ -48,6 +47,18 @@ public:
 
 	GroupStream(Base::UInt16 id);
 	virtual ~GroupStream();
+
+	// return flase if writer is closed!
+	virtual bool	process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate, bool lastFragment);
+};
+
+/**
+ * GroupPostStream is a FlashStream used to read NetGroup Post messages
+ */
+struct GroupPostStream : FlashStream, virtual Base::Object {
+
+	GroupPostStream(Base::UInt16 id);
+	virtual ~GroupPostStream();
 
 	// return flase if writer is closed!
 	virtual bool	process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate, bool lastFragment);

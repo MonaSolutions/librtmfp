@@ -65,7 +65,7 @@ void onLog(unsigned int level, const char* fileName, long line, const char* mess
 	if (pLogFile) {
 		struct timeb msec;
 		ftime(&msec);
-		fprintf(pLogFile, "%.2d/%.2d %.2d:%.2d:%.2d.%d\t%s %s[%ld] %s\n", tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, msec.millitm / 100, logType, fileName, line, message);
+		fprintf(pLogFile, "%.2d/%.2d %.2d:%.2d:%.2d.%03d\t%s %s[%ld] %s\n", tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, msec.millitm, logType, fileName, line, message);
 		fflush(pLogFile);
 	}
 }

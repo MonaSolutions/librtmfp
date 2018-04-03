@@ -66,6 +66,8 @@ struct FlashStream : FlashHandler, virtual Base::Object {
 	typedef Base::Event<void(Base::UInt8 type, Base::UInt64 id, Base::UInt8 splitNumber, Base::UInt8 mediaType, Base::UInt32 time, 
 		const Base::Packet& packet, double lostRate, Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>								ON(Fragment);
 	typedef Base::Event<bool(Base::UInt16 streamId, Base::UInt64 flowId, Base::UInt64 writerId)>														ON(GroupAskClose); // Receiver when the peer want us to close the connection (if we accept we must close the current flow)
+	typedef Base::Event<void(const std::string& message)>																								ON(GroupPost); // Group Post message received from a peer
+	typedef Base::Event<void(Base::UInt8 type, std::string& reader)>																					ON(GroupPostKey); // Group Post key received from a peer
 
 	FlashStream(Base::UInt16 id);
 	virtual ~FlashStream();

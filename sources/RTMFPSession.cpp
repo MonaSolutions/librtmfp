@@ -30,6 +30,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include "librtmfp.h"
 #include "Base/Util.h"
+#include "GroupStream.h"
 
 using namespace Base;
 using namespace std;
@@ -234,7 +235,7 @@ RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const strin
 	}
 	else if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
 		shared_ptr<FlashStream> pStream;
-		_pMainStream->addStream(pStream, true); // TODO: see if it is really a GroupStream
+		_pMainStream->addStream<GroupStream>(pStream); // TODO: see if it is really a GroupStream
 		return new RTMFPFlow(id,  pStream, *this, idWriterRef);
 	}
 	else {

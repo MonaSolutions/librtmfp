@@ -164,11 +164,11 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		// First Viewer = > create listener
 		if (_groupMediaPublisher != _mapGroupMedias.end() && !_pListener) {
 			Exception ex;
-			if (!(_pListener = _conn.startListening<GroupListener>(ex, stream, idTxt))) {
+			if (!(_pListener = _conn.startListening<GroupListener>(ex, stream, _groupName))) {
 				WARN(ex) // TODO : See if we can send a specific answer
 				return;
 			}
-			INFO("First viewer play request, starting to play Stream ", stream)
+			INFO("First viewer play request, starting to play Stream ", stream, " from ", _groupName)
 			_pListener->onMedia = _groupMediaPublisher->second.onMedia;
 			_pListener->onFlush = _groupMediaPublisher->second.onFlush;
 			_conn.handleFirstPeer(); // A peer is connected : unlock the possible blocking function
@@ -276,7 +276,7 @@ bool NetGroup::messageHandler(const string& name, AMFReader& message, UInt64 flo
 
 	/*** NetGroup Player ***/
 	if (name == "closeStream") {
-		INFO("Stream ", streamId, " is closing...")
+		INFO("Stream ", streamId, " from ", _groupName, " is closing...")
 		return false;
 	}
 	return FlashHandler::messageHandler(name, message, flowId, writerId, callbackHandler);

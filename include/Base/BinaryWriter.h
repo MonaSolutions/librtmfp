@@ -42,8 +42,8 @@ struct BinaryWriter : Binary, virtual Object {
 	BinaryWriter& write64(UInt64 value);
 	BinaryWriter& writeDouble(double value);
 	BinaryWriter& writeFloat(float value);
-	BinaryWriter& writeString(const std::string& value) { write7BitValue(value.size()); return write(value); }
-	BinaryWriter& writeString(const char* value) { UInt32 size(strlen(value)); write7BitValue(size); return write(value, size); }
+	BinaryWriter& writeString(const std::string& value) { write7BitEncoded(value.size()); return write(value); }
+	BinaryWriter& writeString(const char* value) { UInt32 size(strlen(value)); write7BitEncoded(size); return write(value, size); }
 	BinaryWriter& write7BitEncoded(UInt32 value);
 	BinaryWriter& write7BitValue(UInt32 value);
 	BinaryWriter& write7BitLongValue(UInt64 value);

@@ -76,11 +76,9 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 		}
 		case GroupStream::GROUP_DATA: {
 			string value;
-			if (reader.available()) {
-				UInt16 size = reader.read16();
-				reader.read(size, value);
-			}
-			DEBUG("GroupStream ", streamId, " - NetGroup data message type : ", value)
+			if (reader.available())
+				reader.readString(value);
+			DEBUG("GroupStream ", streamId, " - Group data message received : ", value);
 			return true;
 		}
 		case GroupStream::GROUP_ASK_CLOSE:
@@ -144,7 +142,59 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 		}
 
 		default:
-			ERROR("GroupStream ", streamId, ", Unpacking type '", String::Format<UInt8>("%02X",(UInt8)type), "' unknown")
+			ERROR("GroupStream ", streamId, ", Unpacking type '", String::Format<UInt8>("%02X", (UInt8)type), "' unknown");
+	}
+
+	return false;
+}
+
+GroupPostStream::GroupPostStream(UInt16 id) : FlashStream(id) {
+	DEBUG("GroupPostStream ", streamId, " created")
+}
+
+GroupPostStream::~GroupPostStream() {
+	DEBUG("GroupPostStream ", streamId, " deleted")
+}
+
+bool GroupPostStream::process(const Base::Packet& packet, Base::UInt64 flowId, Base::UInt64 writerId, double lostRate, bool lastFragment) {
+	if (!packet)
+		return true; // Flow is closing
+
+	if (*packet.data() == 0x30 || *packet.data() == 0x3A) {
+		BinaryReader reader(packet.data(), packet.size());
+		UInt8 type = reader.read8();
+		string key;
+		onGroupPostKey(type, reader.read(8, key));
+		return true;
+	}
+
+	UInt32 time(0);
+	AMFReader reader(packet.data(), packet.size());
+
+	switch (reader.nextType()) {
+	case DataReader::NUMBER: {
+			string value;
+			if (reader.available()) {
+				double number;
+				if (reader.readNumber(number))
+					value = std::to_string(number);
+			}
+			onGroupPost(value);
+			return true;
+		}
+		case DataReader::STRING: {
+			string value;
+			if (reader.available())
+				reader.readString(value);
+			onGroupPost(value);
+			return true;
+		}
+		case DataReader::OTHER: {
+			// TODO
+			return true;
+		}
+		default:
+			ERROR("GroupPostStream ", streamId, ", Unpacking type '", String::Format<UInt8>("%02X", reader.nextType()), "' unknown");
 	}
 
 	return false;
