@@ -225,8 +225,8 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 		if (signature.compare(0, 4, "\x00\x47\x52\x1C", 4) == 0)
 			_mainFlowId = id;
 	}
-	else if (signature.size() > 3 && (signature.compare(0, 4, "\x00\x47\x52\x18", 4) == 0)  // NetGroup Post key stream
-		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0)) { // NetGroup Post Value stream
+	else if (signature.size() > 3 && ((signature.compare(0, 4, "\x00\x47\x52\x18", 4) == 0)  // NetGroup Post key stream
+		|| (signature.compare(0, 4, "\x00\x47\x52\x19", 4) == 0))) { // NetGroup Post Value stream
 
 		_pMainStream->addStream<GroupPostStream>(pStream);
 		DEBUG("Creating new flow (", id, ") for P2PSession ", peerId)
