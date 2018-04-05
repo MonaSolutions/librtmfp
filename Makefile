@@ -2,9 +2,13 @@ VERSION=0.1
 
 prefix=/usr
 
-LIBDIR=$(prefix)/lib
+LIBDIR=$(prefix)/lib/
 ifeq ($(shell uname -m), x86_64)
-	LIBDIR = $(prefix)/lib64
+	ifneq "$(wildcard $(prefix)/lib64)" ""
+		LIBDIR="$(prefix)/lib64/"
+	else ifneq "$(wildcard $(prefix)/lib/x86_64-linux-gnu)" ""
+		LIBDIR="$(prefix)/lib/x86_64-linux-gnu/"
+	endif
 endif
 PKGCONFIGPATH=$(shell pkg-config --variable pc_path pkg-config | cut -d ':' -f 1)
 ifeq ($(PKGCONFIGPATH), )
@@ -26,7 +30,7 @@ ifeq ($(OS),FreeBSD)
 	CFLAGS+=-D_GLIBCXX_USE_C99
 endif
 override INCLUDES+=-I./include/
-LIBS+=-Wl,-Bdynamic -lcrypto -lssl
+LIBS+=-Wl,-Bdynamic -lcrypto -lssl -lpthread
 
 INCDIR=/usr/include/librtmfp/
 
@@ -61,6 +65,7 @@ debug:
 	@$(GPP) -g -D_DEBUG $(CFLAGS) $(LIBDIRS) -fPIC $(SHARED) -o $(LIB) $(OBJECTD) $(LIBS)
 
 librtmfp.pc: librtmfp.pc.in Makefile
+	@echo "compiling librtmfp.pc.in"
 	sed -e "s;@prefix@;$(prefix);" -e "s;@libdir@;$(LIBDIR);" \
 	    -e "s;@VERSION@;$(VERSION);" \
 	    -e "s;@CRYPTO_REQ@;$(CRYPTO_REQ);" \
@@ -71,7 +76,7 @@ install: librtmfp.pc
 	-mkdir -p $(INCDIR)
 	cp ./include/librtmfp.h $(INCDIR)
 	cp $(LIB) $(LIBDIR)
-	cp librtmfp.pc $(PKGCONFIGPATH)
+	test -d "$(PKGCONFIGPATH)" || mkdir -p "$(PKGCONFIGPATH)" && cp librtmfp.pc $(PKGCONFIGPATH)
 
 $(OBJECT): tmp/Release/%.o: sources/%.cpp
 	@echo compiling $(@:tmp/Release/%.o=sources/%.cpp)
