@@ -401,13 +401,14 @@ UInt64 GroupMedia::updateFragmentMap() {
 	// First we erase old fragments
 	eraseOldFragments();
 
-	// Generate the report message
+	// Generate the Fragments map message
 	UInt64 firstFragment = _fragments.empty() ? _endFragment : _fragments.begin()->first;
 	UInt64 lastFragment = _fragments.empty() ? _endFragment : _fragments.rbegin()->first;
+
 	UInt64 nbFragments = lastFragment - firstFragment; // number of fragments - the first one
-	_fragmentsMapBuffer.resize((UInt32)((nbFragments / 8) + ((nbFragments % 8) > 0)) + Binary::Get7BitValueSize(lastFragment) + 1, false);
+	_fragmentsMapBuffer.resize((UInt32)((nbFragments / 8) + ((nbFragments % 8) > 0)) + Binary::Get7BitSize<UInt64>(lastFragment) + 1, false);
 	BinaryWriter writer(_fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
-	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7BitLongValue(_endFragment? _endFragment : lastFragment);
+	writer.write8(GroupStream::GROUP_FRAGMENTS_MAP).write7Bit<UInt64>(_endFragment? _endFragment : lastFragment);
 
 	// If there is only one fragment we just write its counter
 	if (!nbFragments)

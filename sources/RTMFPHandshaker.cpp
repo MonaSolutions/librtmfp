@@ -206,7 +206,7 @@ void RTMFPHandshaker::sendHandshake30(const SocketAddress& address, const Binary
 	BinaryWriter writer(*pBuffer);
 
 	writer.write8(0x30).next(2); // header type and size
-	writer.write7BitLongValue(epd.size());
+	writer.write7Bit<UInt64>(epd.size());
 	writer.write(epd.data(), epd.size());
 	writer.write(tag);
 
@@ -219,10 +219,10 @@ void RTMFPHandshaker::sendHandshake30(const SocketAddress& address, const Binary
 
 void RTMFPHandshaker::handleHandshake30(BinaryReader& reader) {
 
-	UInt64 peerIdSize = reader.read7BitLongValue();
+	UInt64 peerIdSize = reader.read7Bit<UInt64>();
 	if (peerIdSize != 0x22)
 		ERROR(_address, " - Unexpected peer id size : ", peerIdSize, " (expected 34)")
-	else if ((peerIdSize = reader.read7BitLongValue()) != 0x21)
+	else if ((peerIdSize = reader.read7Bit<UInt64>()) != 0x21)
 		ERROR(_address, " - Unexpected peer id size : ", peerIdSize, " (expected 33)")
 	else if (reader.read8() != 0x0F)
 		ERROR(_address, " - Unexpected marker : ", *reader.current(), " (expected 0x0F)")
@@ -270,7 +270,7 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& 
 	if (!computePublicKey())
 		return;
 	
-	writer.write7BitValue(_publicKey.size() + 2);
+	writer.write7Bit<UInt64>(_publicKey.size() + 2);
 	writer.write16(0x1D02); // (signature)
 	writer.write(_publicKey);
 
@@ -315,7 +315,7 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 		DEBUG(_address, " - Server Certificate : ", String::Hex(BIN certificat.data(), 77))
 	}
 	else {
-		UInt32 keySize = (UInt32)reader.read7BitLongValue() - 2;
+		UInt32 keySize = (UInt32)reader.read7Bit<UInt64>() - 2;
 		if (keySize != 0x80 && keySize != 0x7F) {
 			ERROR(_address, " - Unexpected responder key size : ", keySize)
 			return;
@@ -355,15 +355,15 @@ void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, c
 
 	writer.write8(0x38).next(2); // header type and size
 	writer.write32(pHandshake->pSession->sessionId()); // id
-	writer.write7BitLongValue(cookie.size());
+	writer.write7Bit<UInt64>(cookie.size());
 	writer.write(cookie); // Resend cookie
 
 	if (!computePublicKey())
 		return;
 
-	writer.write7BitLongValue(_publicKey.size() + 4);
+	writer.write7Bit<UInt64>(_publicKey.size() + 4);
 	UInt32 idPos = writer.size();
-	writer.write7BitValue(_publicKey.size() + 2);
+	writer.write7Bit<UInt64>(_publicKey.size() + 2);
 	writer.write16(0x1D02); // (signature)
 	writer.write(_publicKey);
 
@@ -371,7 +371,7 @@ void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, c
 	pHandshake->pSession->buildPeerID(writer.data() + idPos, writer.size() - idPos);
 
 	const shared_ptr<Buffer>& nonce = pHandshake->pSession->getNonce();
-	writer.write7BitValue(nonce->size());
+	writer.write7Bit<UInt64>(nonce->size());
 	writer.write(*nonce);
 	writer.write8(0x58);
 
@@ -397,11 +397,11 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	}
 	shared_ptr<Handshake> pHandshake = itHandshake->second;
 
-	UInt32 publicKeySize = reader.read7BitValue();
+	UInt32 publicKeySize = reader.read7Bit<UInt64>();
 	if (publicKeySize != 0x84)
 		DEBUG(_address, " - Public key size should be 132 bytes but found : ", publicKeySize)
 	UInt32 idPos = reader.position(); // record position for peer ID determination
-	if ((publicKeySize = reader.read7BitValue()) != 0x82)
+	if ((publicKeySize = reader.read7Bit<UInt64>()) != 0x82)
 		DEBUG(_address, " - Public key size should be 130 bytes but found : ", publicKeySize)
 	UInt16 signature = reader.read16();
 	if (signature != 0x1D02) {
@@ -412,7 +412,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	pHandshake->farKey.reset(new Buffer(publicKeySize-2));
 	reader.read(publicKeySize - 2, *pHandshake->farKey);
 
-	UInt32 nonceSize = reader.read7BitValue();
+	UInt32 nonceSize = reader.read7Bit<UInt64>();
 	if (nonceSize != 0x4C) {
 		ERROR(_address, " - Responder Nonce size should be 76 bytes but found : ", nonceSize)
 		removeHandshake(pHandshake);

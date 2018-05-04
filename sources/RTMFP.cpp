@@ -209,7 +209,7 @@ bool RTMFP::ReadUrl(const char* url, string& host, SocketAddress& address, PEER_
 
 	// Generate the raw url
 	BinaryWriter urlWriter(*rawUrl);
-	urlWriter.write7BitValue(strlen(url) + 1);
+	urlWriter.write7Bit<UInt32>(strlen(url) + 1);
 	urlWriter.write8('\x0A').write(url);
 
 	// Extract the port

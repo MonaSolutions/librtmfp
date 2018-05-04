@@ -113,17 +113,17 @@ void RTMFPRepeater::run() {
 void RTMFPRepeater::sendAbandon(UInt64 stage) {
 	shared<Buffer> pBuffer;
 	BinaryWriter writer(RTMFP::InitBuffer(pBuffer, pSession->initiatorTime, _marker));
-	writer.write8(0x10).write16(2 + Binary::Get7BitValueSize(pQueue->id) + Binary::Get7BitValueSize(stage));
-	writer.write8(RTMFP::MESSAGE_ABANDON).write7BitLongValue(pQueue->id).write7BitLongValue(stage).write8(0);
+	writer.write8(0x10).write16(2 + Binary::Get7BitSize<UInt64>(pQueue->id) + Binary::Get7BitSize<UInt64>(stage));
+	writer.write8(RTMFP::MESSAGE_ABANDON).write7Bit<UInt64>(pQueue->id).write7Bit<UInt64>(stage).write8(0);
 	RTMFP::Send(pSession->socket, Base::Packet(pSession->pEncoder->encode(pBuffer, pSession->farId, address)), address);
 }
 
 
 UInt32 RTMFPMessenger::headerSize() { // max size header = 50
-	UInt32 size = Binary::Get7BitValueSize(pQueue->id);
-	size += Binary::Get7BitValueSize(pQueue->stage);
-	size += Binary::Get7BitValueSize(pQueue->stage - pQueue->stageAck);
-	size += pQueue->stageAck ? 0 : (pQueue->signature.size() + (pQueue->flowId ? (4 + Binary::Get7BitValueSize(pQueue->flowId)) : 2));
+	UInt32 size = Binary::Get7BitSize<UInt64>(pQueue->id);
+	size += Binary::Get7BitSize<UInt64>(pQueue->stage);
+	size += Binary::Get7BitSize<UInt64>(pQueue->stage - pQueue->stageAck);
+	size += pQueue->stageAck ? 0 : (pQueue->signature.size() + (pQueue->flowId ? (4 + Binary::Get7BitSize<UInt64>(pQueue->flowId)) : 2));
 	return size;
 }
 
@@ -212,18 +212,18 @@ void RTMFPMessenger::write(const Message& message) {
 			_flags |= RTMFP::MESSAGE_RELIABLE;
 
 		if (header) {
-			writer.write7BitLongValue(pQueue->id);
-			writer.write7BitLongValue(pQueue->stage);
-			writer.write7BitLongValue(pQueue->stage - pQueue->stageAck);
+			writer.write7Bit<UInt64>(pQueue->id);
+			writer.write7Bit<UInt64>(pQueue->stage);
+			writer.write7Bit<UInt64>(pQueue->stage - pQueue->stageAck);
 			header = false;
 			// signature
 			if (!pQueue->stageAck) {
 				writer.write8(UInt8(pQueue->signature.size())).write(pQueue->signature);
 				// No write this in the case where it's a new flow (create on server side)
 				if (pQueue->flowId) {
-					writer.write8(1 + Binary::Get7BitValueSize(pQueue->flowId)); // following size
+					writer.write8(1 + Binary::Get7BitSize<UInt64>(pQueue->flowId)); // following size
 					writer.write8(0x0a); // Unknown!
-					writer.write7BitLongValue(pQueue->flowId);
+					writer.write7Bit<UInt64>(pQueue->flowId);
 				}
 				writer.write8(0); // marker of end for this part
 			}

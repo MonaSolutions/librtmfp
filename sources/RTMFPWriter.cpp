@@ -160,20 +160,20 @@ void RTMFPWriter::writeGroupMedia(const std::string& streamName, const UInt8* da
 
 	Packet emptyPacket;
 	AMFWriter& writer = newMessage(reliable, emptyPacket);
-	writer->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitLongValue(streamName.size() + 1).write8(0).write(streamName);
+	writer->write8(GroupStream::GROUP_MEDIA_INFOS).write7Bit<UInt64>(streamName.size() + 1).write8(0).write(streamName);
 	writer->write(data, size);
 	writer->write("\x01\x02");
 	if (groupConfig->availabilitySendToAll)
 		writer->write("\x01\x06");
-	writer->write8(1 + Binary::Get7BitValueSize(UInt32(groupConfig->windowDuration))).write8('\x03').write7BitLongValue(groupConfig->windowDuration);
+	writer->write8(1 + Binary::Get7BitSize<UInt64>(UInt32(groupConfig->windowDuration))).write8('\x03').write7Bit<UInt64>(groupConfig->windowDuration);
 	writer->write("\x04\x04\x92\xA7\x60"); // Object encoding?
-	writer->write8(1 + Binary::Get7BitValueSize(groupConfig->availabilityUpdatePeriod)).write8('\x05').write7BitLongValue(groupConfig->availabilityUpdatePeriod);
-	writer->write8(1 + Binary::Get7BitValueSize(UInt32(groupConfig->fetchPeriod))).write8('\x07').write7BitLongValue(groupConfig->fetchPeriod);
+	writer->write8(1 + Binary::Get7BitSize<UInt64>(groupConfig->availabilityUpdatePeriod)).write8('\x05').write7Bit<UInt64>(groupConfig->availabilityUpdatePeriod);
+	writer->write8(1 + Binary::Get7BitSize<UInt64>(UInt32(groupConfig->fetchPeriod))).write8('\x07').write7Bit<UInt64>(groupConfig->fetchPeriod);
 }
 
 void RTMFPWriter::writeGroupEndMedia(UInt64 lastFragment) {
 	Packet emptyPacket;
-	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_MEDIA_INFOS).write7BitLongValue(lastFragment);
+	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_MEDIA_INFOS).write7Bit<UInt64>(lastFragment);
 	flush();
 }
 
@@ -184,7 +184,7 @@ void RTMFPWriter::writeGroupPlay(UInt8 mode) {
 
 void RTMFPWriter::writeGroupPull(UInt64 index) {
 	Packet emptyPacket;
-	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_PLAY_PULL).write7BitLongValue(index);
+	newMessage(reliable, emptyPacket)->write8(GroupStream::GROUP_PLAY_PULL).write7Bit<UInt64>(index);
 }
 
 void RTMFPWriter::writeRaw(const UInt8* data,UInt32 size) {
@@ -200,7 +200,7 @@ void RTMFPWriter::writeGroupFragment(const GroupFragment& fragment, bool fragmen
 	// AMF Group marker
 	writer->write8(fragment.marker);
 	// Fragment Id
-	writer->write7BitLongValue(fragment.id);
+	writer->write7Bit<UInt64>(fragment.id);
 	// Splitted sequence number
 	if (fragment.splittedId > 0)
 		writer->write8(fragment.splittedId);

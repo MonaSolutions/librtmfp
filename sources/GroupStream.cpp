@@ -105,7 +105,7 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 			return true;
 		case GroupStream::GROUP_MEDIA_DATA: {
 
-			UInt64 counter = reader.read7BitLongValue();
+			UInt64 counter = reader.read7Bit<UInt64>();
 			
 			UInt8 mediaType = reader.read8();
 			time = reader.read32();
@@ -114,7 +114,7 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 			return true;
 		} case GroupStream::GROUP_MEDIA_START: { // Start a splitted media sequence
 
-			UInt64 counter = reader.read7BitLongValue();
+			UInt64 counter = reader.read7Bit<UInt64>();
 			UInt8 splitNumber = reader.read8(); // counter of the splitted sequence
 			UInt8 mediaType = splitNumber; // In rare case the splitNumber is not written so it is the media type
 			if ((*reader.current()) == AMF::TYPE_AUDIO || (*reader.current()) == AMF::TYPE_VIDEO)
@@ -127,7 +127,7 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 		}
 		case GroupStream::GROUP_MEDIA_NEXT: { // Continue a splitted media sequence
 
-			UInt64 counter = reader.read7BitLongValue();
+			UInt64 counter = reader.read7Bit<UInt64>();
 			UInt8 splitNumber = reader.read8(); // counter of the splitted sequence
 			DEBUG("GroupStream ", streamId, " - Group media next : counter=", counter, ", splitNumber=", splitNumber)
 			onFragment(type, counter, splitNumber, 0, 0, Packet(packet, reader.current(), reader.available()), lostRate, streamId, flowId, writerId);
@@ -135,7 +135,7 @@ bool GroupStream::process(const Packet& packet, UInt64 flowId, UInt64 writerId, 
 		}
 		case GroupStream::GROUP_MEDIA_END: { // End of a splitted media sequence
 
-			UInt64 counter = reader.read7BitLongValue();
+			UInt64 counter = reader.read7Bit<UInt64>();
 			DEBUG("GroupStream ", streamId, " - Group media end : counter=", counter)
 			onFragment(type, counter, 0, 0, 0, Packet(packet, reader.current(), reader.available()), lostRate, streamId, flowId, writerId);
 			return true;

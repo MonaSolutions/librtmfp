@@ -94,7 +94,7 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 
 		// Stream created, now we create the writer before sending another request
 		shared_ptr<Buffer> pSignature(new Buffer(4, "\x00\x54\x43\x04"));
-		BinaryWriter(*pSignature).write7BitValue(idStream);
+		BinaryWriter(*pSignature).write7Bit<UInt32>(idStream);
 		shared_ptr<RTMFPWriter> pWriter = createWriter(Packet(pSignature), _mainFlowId);
 
 		// Send command and remove command type from waiting commands
@@ -488,7 +488,7 @@ void RTMFPSession::onPublished(UInt16 streamId) {
 	_pPublisher->start();
 
 	shared_ptr<Buffer> pSignature(new Buffer(4, "\x00\x54\x43\x04"));
-	BinaryWriter(*pSignature).write7BitValue(streamId);
+	BinaryWriter(*pSignature).write7Bit<UInt32>(streamId);
 	Packet signature(pSignature);
 	shared_ptr<RTMFPWriter> pDataWriter = createWriter(signature,_mainFlowId);
 	shared_ptr<RTMFPWriter> pAudioWriter = createWriter(signature, _mainFlowId);

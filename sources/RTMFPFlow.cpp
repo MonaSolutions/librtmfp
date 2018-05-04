@@ -52,13 +52,13 @@ UInt64 RTMFPFlow::buildAck(vector<UInt64>& losts, UInt16& size) {
 	auto it = _fragments.begin();
 	while (it != _fragments.end()) {
 		stage = it->first - stage - 2;
-		size += Binary::Get7BitValueSize(stage);
+		size += Binary::Get7BitSize<UInt64>(stage);
 		losts.emplace_back(stage); // lost count
 		UInt32 buffered(0);
 		stage = it->first;
 		while (++it != _fragments.end() && it->first == (++stage))
 			++buffered;
-		size += Binary::Get7BitValueSize(buffered);
+		size += Binary::Get7BitSize<UInt64>(buffered);
 		losts.emplace_back(buffered);
 		--stage;
 	}

@@ -215,7 +215,7 @@ void FlowManager::receive(const Packet& packet) {
 
 		case 0x5e : {
 			// RTMFPWriter exception!
-			UInt64 id = message.read7BitLongValue();
+			UInt64 id = message.read7Bit<UInt64>();
 			shared_ptr<RTMFPWriter> pWriter;
 			if (writer(id, pWriter))
 				handleWriterException(pWriter);
@@ -234,12 +234,12 @@ void FlowManager::receive(const Packet& packet) {
 		case 0x50:
 		case 0x51: {
 			/// Acknowledgment
-			UInt64 id = message.read7BitLongValue();
-			UInt64 bufferSize = message.read7BitLongValue();
+			UInt64 id = message.read7Bit<UInt64>();
+			UInt64 bufferSize = message.read7Bit<UInt64>();
 			shared_ptr<RTMFPWriter> pWriter;
 			if (writer(id, pWriter)) {
 				if (bufferSize) {
-					UInt64 ackStage(message.read7BitLongValue());
+					UInt64 ackStage(message.read7Bit<UInt64>());
 					UInt32 lostCount(0);
 					if (message.available()) {
 						++lostCount;
@@ -257,7 +257,7 @@ void FlowManager::receive(const Packet& packet) {
 							} while (i == 8 && message.available());
 						}
 						else
-							lostCount += UInt32(message.read7BitLongValue());
+							lostCount += UInt32(message.read7Bit<UInt64>());
 					}
 					pWriter->acquit(ackStage, lostCount);
 				}
@@ -275,9 +275,9 @@ void FlowManager::receive(const Packet& packet) {
 		// 0x11 special request, in repeat case (following stage request)
 		case 0x10: {
 			flags = message.read8();
-			flowId = message.read7BitLongValue();
-			stage = message.read7BitLongValue() - 1;
-			message.read7BitLongValue(); //deltaNAck
+			flowId = message.read7Bit<UInt64>();
+			stage = message.read7Bit<UInt64>() - 1;
+			message.read7Bit<UInt64>(); //deltaNAck
 
 			map<UInt64, RTMFPFlow*>::const_iterator it = _flows.find(flowId);
 			pFlow = it == _flows.end() ? NULL : it->second;
@@ -294,7 +294,7 @@ void FlowManager::receive(const Packet& packet) {
 					if (message.read8() != 0x0A)
 						WARN("Unknown fullduplex header part for the flow ", flowId)
 					else
-						idWriterRef = message.read7BitLongValue(); // RTMFPWriter ID related to this flow
+						idWriterRef = message.read7Bit<UInt64>(); // RTMFPWriter ID related to this flow
 
 					// Useless header part 
 					UInt8 length = message.read8();
@@ -358,17 +358,17 @@ void FlowManager::receive(const Packet& packet) {
 			if (pFlow) {
 				vector<UInt64> losts;
 				stage = pFlow->buildAck(losts, size = 0);
-				size += Binary::Get7BitValueSize(pFlow->id) + Binary::Get7BitValueSize(0xFF7Fu) + Binary::Get7BitValueSize(stage);
+				size += Binary::Get7BitSize<UInt64>(pFlow->id) + Binary::Get7BitSize<UInt64>(0xFF7Fu) + Binary::Get7BitSize<UInt64>(stage);
 				BinaryWriter writer(write(0x51, size));
-				writer.write7BitLongValue(pFlow->id).write7BitValue(0xFF7F).write7BitLongValue(stage);
+				writer.write7Bit<UInt64>(pFlow->id).write7Bit<UInt64>(0xFF7F).write7Bit<UInt64>(stage);
 				for (UInt64 lost : losts)
-					writer.write7BitLongValue(lost);
+					writer.write7Bit<UInt64>(lost);
 				if (pFlow->consumed())
 					removeFlow(pFlow);
 				pFlow = NULL;
 			}
 			else // commit everything (flow unknown)
-				BinaryWriter(write(0x51, 1 + Binary::Get7BitValueSize(flowId) + Binary::Get7BitValueSize(stage))).write7BitLongValue(flowId).write7BitValue(0).write7BitLongValue(stage);
+				BinaryWriter(write(0x51, 1 + Binary::Get7BitSize<UInt64>(flowId) + Binary::Get7BitSize<UInt64>(stage))).write7Bit<UInt64>(flowId).write7Bit<UInt64>(0).write7Bit<UInt64>(stage);
 			if (_pBuffer) {
 				TRACE("Sending ack ", stage)
 				RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
@@ -423,7 +423,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 	RTMFPFlow* pFlow = createSpecialFlow(ex, id, signature, idWriterRef);
 	if (!pFlow && signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream (P2P or normal)
 		shared_ptr<FlashStream> pStream;
-		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7BitValue());
+		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7Bit<UInt64>());
 		DEBUG("Creating new Flow (", id, ") for NetStream ", idSession)
 
 		// Search in mainstream
@@ -658,7 +658,7 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 	}
 
 	UInt32 farId = reader.read32(); // id session
-	UInt32 nonceSize = (UInt32)reader.read7BitLongValue();
+	UInt32 nonceSize = (UInt32)reader.read7Bit<UInt64>();
 	if ((_pHandshake->isP2P && nonceSize != 73) || (!_pHandshake->isP2P && nonceSize < 0x8A)) {
 		ERROR("Incorrect nonce size : ", nonceSize, " (expected ", _pHandshake->isP2P ? 73 : 138, " bytes)")
 		return;
@@ -725,6 +725,6 @@ void FlowManager::closeFlow(UInt64 flowId) {
 	if (status < RTMFP::CONNECTED)
 		return;
 
-	BinaryWriter(write(0x5e, 1 + Binary::Get7BitValueSize(flowId))).write7BitLongValue(flowId).write8(0);
+	BinaryWriter(write(0x5e, 1 + Binary::Get7BitSize<UInt64>(flowId))).write7Bit<UInt64>(flowId).write8(0);
 	RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
 }

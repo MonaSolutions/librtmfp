@@ -161,7 +161,16 @@ inline UInt8 abs(Int8 value) { return (UInt8)std::abs(value); }
 template<typename Type1, typename Type2, typename ResultType = typename std::make_signed<typename std::conditional<sizeof(Type1) >= sizeof(Type2), Type1, Type2>::type>::type>
 inline ResultType distance(Type1 value1, Type2 value2) {
 	ResultType result(value2 - value1);
-	return abs(result) > (std::numeric_limits<typename std::make_unsigned<ResultType>::type>::max() >> 1) ? (value1 - value2) : result;
+	return abs(result) > ceil(std::numeric_limits<typename std::make_unsigned<ResultType>::type>::max()/2.0) ? (value1 - value2) : result;
+}
+
+template<typename Type1, typename Type2, typename Type3, typename ResultType = typename std::make_signed<typename std::conditional<sizeof(Type1) >= sizeof(Type2), Type1, Type2>::type>::type>
+inline ResultType distance(Type1 value1, Type2 value2, Type3 max, Type3 min=0) {
+	ResultType result(value2 - value1);
+	max = max - min;
+	if (abs(result) <= ceil(max / 2.0))
+		return result;
+	return result>0 ? (result - max) : (max + result);
 }
 
 inline bool isalnum(char value) { return ASCII::Is(value, ASCII::ALPHA | ASCII::DIGIT); }
@@ -208,29 +217,6 @@ template<typename ObjectType>
 inline const std::string& typeof() {
 	static struct Type : std::string { Type() : std::string(typeof(typeid(ObjectType))) {} } Type;
 	return Type;
-}
-
-template<typename MapType>
-inline typename MapType::iterator lower_bound(MapType& map, const typename MapType::key_type& key, const std::function<bool(const typename MapType::key_type&, typename MapType::iterator&)>& validate) {
-	typename MapType::iterator it, result(map.begin());
-	typename MapType::key_compare less = map.key_comp();
-	UInt32 count(map.size()), step;
-	while (count) {
-		if (!validate(key, result)) {
-			result = map.erase(result);
-			if (!--count)
-				return result;
-		}
-		it = result;
-		step = count / 2;
-		std::advance(it, step);
-		if (less(it->first, key)) {
-			result = ++it;
-			count -= step + 1;
-		} else
-			count = step;
-	}
-	return result;
 }
 
 template <typename Type>

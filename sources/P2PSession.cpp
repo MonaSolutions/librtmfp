@@ -48,7 +48,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnStat
 	_pMainStream->onGroupMedia = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
 
 		if (packet.available() < 0x24) {
-			UInt64 lastFragment = packet.read7BitLongValue();
+			UInt64 lastFragment = packet.read7Bit<UInt64>();
 			DEBUG("GroupMedia Closure message received from ", peerId)
 			auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
 			if (itPeerMedia != _mapFlow2PeerMedia.end())
@@ -111,7 +111,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnStat
 			itPeerMedia->second->setPushMode(packet.read8());
 	};
 	_pMainStream->onGroupPlayPull = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId, bool flush) {
-		UInt64 fragment = packet.read7BitLongValue();
+		UInt64 fragment = packet.read7Bit<UInt64>();
 		TRACE("Group Pull message received from peer ", peerId, " - fragment : ", fragment)
 
 		auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
@@ -119,7 +119,7 @@ P2PSession::P2PSession(RTMFPSession* parent, string id, Invoker& invoker, OnStat
 			itPeerMedia->second->handlePlayPull(fragment, flush);
 	};
 	_pMainStream->onFragmentsMap = [this](BinaryReader& packet, UInt16 streamId, UInt64 flowId, UInt64 writerId) {
-		UInt64 counter = packet.read7BitLongValue();
+		UInt64 counter = packet.read7Bit<UInt64>();
 		DEBUG("Group Fragments map (type 22) received from ", peerId, " : ", counter)
 
 		auto itPeerMedia = _mapFlow2PeerMedia.find(flowId);
@@ -211,7 +211,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 
 	shared_ptr<FlashStream> pStream;
 	if (signature.size()>6 && signature.compare(0, 6, "\x00\x54\x43\x04\xFA\x89", 6) == 0) { // Direct P2P NetStream
-		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7BitValue());
+		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7Bit<UInt64>());
 		DEBUG("Creating new Flow (2) for P2PSession ", name())
 		_pMainStream->addStream<FlashStream>(idSession, pStream);
 	}
@@ -260,7 +260,7 @@ bool P2PSession::handlePlay(const string& streamName, UInt16 streamId, UInt64 fl
 
 	// Create the writers, signature is same as flow/stream and flowId must be set to flow id
 	shared_ptr<Buffer> pSignature(new Buffer(6, "\x00\x54\x43\x04\xFA\x89"));
-	BinaryWriter(*pSignature).write7BitValue(streamId);
+	BinaryWriter(*pSignature).write7Bit<UInt16>(streamId);
 	Packet signature(pSignature);
 	shared_ptr<RTMFPWriter> pDataWriter = createWriter(signature, flowId);
 	shared_ptr<RTMFPWriter> pAudioWriter = createWriter(signature, flowId);

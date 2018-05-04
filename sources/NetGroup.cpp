@@ -608,7 +608,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 	TRACE("Group far peer address : ", peerAddress)
 
 	// My addresses
-	writer.write7BitLongValue(AddressesSize(hostAddress, _myAddresses));
+	writer.write7Bit<UInt64>(AddressesSize(hostAddress, _myAddresses));
 	writer.write8(0x0A);
 	RTMFP::WriteAddress(writer, hostAddress, RTMFP::ADDRESS_REDIRECTION); // my host address
 	for (auto& itAddress : _myAddresses)
@@ -623,8 +623,8 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 			UInt64 timeElapsed = (UInt64)((itNode->second->lastGroupReport > 0) ? ((timeNow - itNode->second->lastGroupReport) / 1000) : 0);
 			TRACE("Group 0A argument - Peer ", itNode->first, " - elapsed : ", timeElapsed)
 			writer.write8(0x22).write(itNode->second->rawId.data(), PEER_ID_SIZE+2);
-			writer.write7BitLongValue(timeElapsed);
-			writer.write7BitLongValue(AddressesSize(itNode->second->hostAddress, itNode->second->addresses));
+			writer.write7Bit<UInt64>(timeElapsed);
+			writer.write7Bit<UInt64>(AddressesSize(itNode->second->hostAddress, itNode->second->addresses));
 			writer.write8(0x0A);
 			if (itNode->second->hostAddress)
 				RTMFP::WriteAddress(writer, itNode->second->hostAddress, RTMFP::ADDRESS_REDIRECTION);
@@ -759,7 +759,7 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryR
 		if ((size = packet.read8()) == 0)
 			continue;
 		id = packet.read8();
-		value = (size > 1) ? (unsigned int)packet.read7BitLongValue() : 0;
+		value = (size > 1) ? (unsigned int)packet.read7Bit<UInt64>() : 0;
 		switch (id) {
 		case NetGroup::UNKNWON_PARAMETER:
 			break;
@@ -813,7 +813,7 @@ bool NetGroup::readGroupReport(const map<string, shared_ptr<GroupNode>>::iterato
 	if (itAddress == _myAddresses.end() || itAddress->first != myAddress)
 		_myAddresses.emplace_hint(itAddress, myAddress, addressType); // New address => save it
 	
-	UInt64 size = (*packet.current() > 0x81)? packet.read8() : packet.read7BitLongValue(); // protection for wrong 8bits sized addresses
+	UInt64 size = (*packet.current() > 0x81)? packet.read8() : packet.read7Bit<UInt64>(); // protection for wrong 8bits sized addresses
 	if (!size || !packet.available() || size > packet.available()) {
 		ERROR("Unexpected size received : ", size, " (available : ", packet.available(),")")
 		return false;
@@ -850,8 +850,8 @@ bool NetGroup::readGroupReport(const map<string, shared_ptr<GroupNode>>::iterato
 		else
 			TRACE("Empty parameter...")
 
-		UInt64 time = packet.read7BitLongValue();
-		size = (*packet.current() > 0x81) ? packet.read8() : packet.read7BitLongValue(); // protection for wrong 8bits sized addresses
+		UInt64 time = packet.read7Bit<UInt64>();
+		size = (*packet.current() > 0x81) ? packet.read8() : packet.read7Bit<UInt64>(); // protection for wrong 8bits sized addresses
 		if (!size || !packet.available() || size > packet.available()) {
 			ERROR("Unexpected size received : ", size, " (available : ", packet.available(), ")")
 			break;

@@ -110,7 +110,7 @@ private:
 #define DUMP_RESPONSE(NAME, DATA, SIZE, ADDRESS) { if(Base::Logs::IsDumping()) Base::Logs::DumpResponse(NAME, DATA, SIZE, NAME, " => ", ADDRESS); }
 #define DUMP_RESPONSE_DEBUG(NAME, DATA, SIZE, ADDRESS) if(Logs::GetLevel() >= Base::LOG_DEBUG) DUMP_RESPONSE(NAME, DATA, SIZE, ADDRESS)
 
-#define LOG(LEVEL, ...)  { if(Base::Logs::GetLevel()>=LEVEL) { Base::Logs::Log(LEVEL, __FILE__,__LINE__, __VA_ARGS__); } }
+#define LOG(LEVEL, ...)  { if(Base::Logs::GetLevel()>=(LEVEL)) { Base::Logs::Log((LEVEL), __FILE__,__LINE__, __VA_ARGS__); } }
 
 #define FATAL(...)	LOG(Base::LOG_FATAL, __VA_ARGS__)
 #define CRITIC(...) LOG(Base::LOG_CRITIC, __VA_ARGS__)
