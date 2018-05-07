@@ -38,7 +38,7 @@ related to one.
 It manages acknowlegment and lost of packet sent
 */
 struct RTMFPWriter : FlashWriter, virtual Base::Object {
-	RTMFPWriter(Base::UInt8 marker, Base::UInt64 id, Base::UInt64 flowId, const Base::Binary& signature, RTMFP::Output& output);
+	RTMFPWriter(Base::UInt8 marker, Base::UInt64 id, Base::UInt64 flowId, const Base::Packet& signature, RTMFP::Output& output);
 
 	Base::UInt64		queueing() const { return _output.queueing(); }
 	void		acquit(Base::UInt64 stageAck, Base::UInt32 lostCount);

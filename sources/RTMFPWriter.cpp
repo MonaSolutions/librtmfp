@@ -29,7 +29,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Base;
 
-RTMFPWriter::RTMFPWriter(UInt8 marker, UInt64 id, UInt64 flowId, const Binary& signature, RTMFP::Output& output) :
+RTMFPWriter::RTMFPWriter(UInt8 marker, UInt64 id, UInt64 flowId, const Packet& signature, RTMFP::Output& output) :
 	_marker(marker), _repeatDelay(0), _output(output), _stageAck(0), _lostCount(0), id(id), flowId(flowId), signature(signature) {
 	_pQueue.reset(new RTMFPSender::Queue(id, flowId, signature));
 }
