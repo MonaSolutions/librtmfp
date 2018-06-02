@@ -397,11 +397,11 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	}
 	shared_ptr<Handshake> pHandshake = itHandshake->second;
 
-	UInt32 publicKeySize = reader.read7Bit<UInt64>();
+	UInt32 publicKeySize = reader.read7Bit<UInt32>();
 	if (publicKeySize != 0x84)
 		DEBUG(_address, " - Public key size should be 132 bytes but found : ", publicKeySize)
 	UInt32 idPos = reader.position(); // record position for peer ID determination
-	if ((publicKeySize = reader.read7Bit<UInt64>()) != 0x82)
+	if ((publicKeySize = reader.read7Bit<UInt32>()) != 0x82)
 		DEBUG(_address, " - Public key size should be 130 bytes but found : ", publicKeySize)
 	UInt16 signature = reader.read16();
 	if (signature != 0x1D02) {
@@ -412,7 +412,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	pHandshake->farKey.reset(new Buffer(publicKeySize-2));
 	reader.read(publicKeySize - 2, *pHandshake->farKey);
 
-	UInt32 nonceSize = reader.read7Bit<UInt64>();
+	UInt32 nonceSize = reader.read7Bit<UInt32>();
 	if (nonceSize != 0x4C) {
 		ERROR(_address, " - Responder Nonce size should be 76 bytes but found : ", nonceSize)
 		removeHandshake(pHandshake);

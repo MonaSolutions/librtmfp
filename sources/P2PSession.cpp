@@ -211,7 +211,7 @@ RTMFPFlow* P2PSession::createSpecialFlow(Exception& ex, UInt64 id, const string&
 
 	shared_ptr<FlashStream> pStream;
 	if (signature.size()>6 && signature.compare(0, 6, "\x00\x54\x43\x04\xFA\x89", 6) == 0) { // Direct P2P NetStream
-		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7Bit<UInt64>());
+		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 6, signature.length() - 6).read7Bit<UInt32>());
 		DEBUG("Creating new Flow (2) for P2PSession ", name())
 		_pMainStream->addStream<FlashStream>(idSession, pStream);
 	}

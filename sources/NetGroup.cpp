@@ -813,7 +813,7 @@ bool NetGroup::readGroupReport(const map<string, shared_ptr<GroupNode>>::iterato
 	if (itAddress == _myAddresses.end() || itAddress->first != myAddress)
 		_myAddresses.emplace_hint(itAddress, myAddress, addressType); // New address => save it
 	
-	UInt64 size = (*packet.current() > 0x81)? packet.read8() : packet.read7Bit<UInt64>(); // protection for wrong 8bits sized addresses
+	UInt32 size = (*packet.current() > 0x81)? packet.read8() : packet.read7Bit<UInt32>(); // protection for wrong 8bits sized addresses
 	if (!size || !packet.available() || size > packet.available()) {
 		ERROR("Unexpected size received : ", size, " (available : ", packet.available(),")")
 		return false;
@@ -851,7 +851,7 @@ bool NetGroup::readGroupReport(const map<string, shared_ptr<GroupNode>>::iterato
 			TRACE("Empty parameter...")
 
 		UInt64 time = packet.read7Bit<UInt64>();
-		size = (*packet.current() > 0x81) ? packet.read8() : packet.read7Bit<UInt64>(); // protection for wrong 8bits sized addresses
+		size = (*packet.current() > 0x81) ? packet.read8() : packet.read7Bit<UInt32>(); // protection for wrong 8bits sized addresses
 		if (!size || !packet.available() || size > packet.available()) {
 			ERROR("Unexpected size received : ", size, " (available : ", packet.available(), ")")
 			break;

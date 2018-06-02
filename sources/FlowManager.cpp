@@ -423,7 +423,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 	RTMFPFlow* pFlow = createSpecialFlow(ex, id, signature, idWriterRef);
 	if (!pFlow && signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream (P2P or normal)
 		shared_ptr<FlashStream> pStream;
-		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7Bit<UInt64>());
+		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7Bit<UInt32>());
 		DEBUG("Creating new Flow (", id, ") for NetStream ", idSession)
 
 		// Search in mainstream

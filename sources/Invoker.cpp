@@ -996,8 +996,8 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 				DEBUG("Video frame dropped to wait first key frame");
 				return;
 			}
-			INFO("Video codec infos found, starting to read")
-				itMedia->second.codecInfosRead = true;
+			INFO("Video codec infos found, starting to read");
+			itMedia->second.codecInfosRead = true;
 		}
 		// AAC : we wait for the sequence header packet 
 		else if (!itMedia->second.AACsequenceHeaderRead && type == AMF::TYPE_AUDIO && (packet.size() > 1 && (*packet.data() >> 4) == 0x0A)) { // TODO: save the codec type
@@ -1005,8 +1005,8 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 				DEBUG("AAC frame dropped to wait first key frame (sequence header)");
 				return;
 			}
-			INFO("AAC codec infos found, starting to read audio part")
-				itMedia->second.AACsequenceHeaderRead = true;
+			INFO("AAC codec infos found, starting to read audio part");
+			itMedia->second.AACsequenceHeaderRead = true;
 		}
 
 		itMedia->second.mediaPackets.emplace_back(packet, time + itMedia->second.timeOffset, type);

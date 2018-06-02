@@ -463,8 +463,8 @@ void RTMFPSession::onNetConnectionSuccess() {
 	amfWriter.amf0 = true; // Cirrus wants amf0
 
 	Exception ex;
-	vector<IPAddress> addresses = IPAddress::Locals(ex);
-	if (ex) {
+	vector<IPAddress> addresses;
+	if (!IPAddress::GetLocals(ex, addresses)) {
 		WARN("Error occurs while retrieving addresses : ", ex)
 		if (addresses.empty())
 			addresses.push_back(IPAddress::Loopback());
@@ -746,6 +746,9 @@ void RTMFPSession::handleFirstPeer() {
 	// First peer connected : unlock the possible blocking function
 	flags |= RTMFP_GROUP_CONNECTED;
 	onConnectionEvent(_id, RTMFP_GROUP_CONNECTED);
+
+	// Send an event
+	_pOnStatusEvent("NetGroup.Publish.Start", "First peer connected, starting to publish");
 }
 
 void RTMFPSession::setP2PPlayReady() {
