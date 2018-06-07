@@ -35,15 +35,16 @@ A temporary repository of FFmpeg is available with a wrapper to librtmfp : https
 
 **Prerequisites:**
 
-- You must install first libx264, librtmp and libspeex developer versions (see next point) to have h264, RTMP and speex working,
+- You must install first libx264, libx265, librtmp and libspeex developer versions (see next point) to have h264, HEVC, RTMP and speex working,
 - You can remove --enable-debug if you doesn't want to debug ffmpeg,
 - You can remove --enable-librtmp and libspeex if you don't need them,
-- You can also remove --enable-libx264 and --enable-gpl if you don't need h264 encoder,
+- You can remove --enable-libx265 if you don't need the HEVC encoder/decoder
+- You can also remove --enable-libx264 and --enable-gpl if you don't need the h264 encoder/decoder,
 - Install SDL2-devel (or libsdl2-dev) if you want to compile ffplay (on older linux distributions SDL is used instead).
 
-To use it just do a git clone and run the following command in FFmpeg directory :
+To compile it just do a git clone and run the following command in FFmpeg directory :
 
-	./configure --disable-x86asm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-libx264 --enable-debug --enable-gpl && make
+	./configure --disable-x86asm --enable-librtmp --enable-librtmfp --enable-libspeex --enable-libx264 --enable-libx265 --enable-debug --enable-gpl && make
 
 **Note:** ffmpeg_g is the debug version of ffmpeg with debugging symbolic links.
 	
@@ -57,13 +58,13 @@ Then you can install it with the following command as root :
 
     dnf install http://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm http://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
 
-Then just install it with dnf :
+Then just install the packages with dnf :
 
-    dnf install librtmp-devel && dnf install speex-devel && dnf install x264-devel
+    dnf install librtmp-devel speex-devel x264-devel x265-devel
 
 ### Installating FFmpeg with librtmfp on Windows
 
-Coming soon...
+This is not planned for now since it will need to support cygwin, contact us if you want this feature.
 	
 ## Usage
 

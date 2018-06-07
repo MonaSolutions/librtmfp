@@ -36,12 +36,13 @@ INCDIR=/usr/include/librtmfp/
 
 # Variables fixed
 ifeq ($(OS),Darwin)
-	LIB=lib/librtmfp.dylib
+	LIBNAME=librtmfp.dylib
 	SHARED=-dynamiclib -install_name ./../LibRTMFP/$(LIB)
 else
-	LIB=lib/librtmfp.so
+	LIBNAME=librtmfp.so
 	SHARED=-shared
 endif
+LIB=lib/$(LIBNAME)
 
 # Variables fixed
 SOURCES = $(wildcard sources/*.cpp sources/Base/*.cpp)
@@ -74,9 +75,9 @@ librtmfp.pc: librtmfp.pc.in Makefile
 
 install: librtmfp.pc
 	-mkdir -p $(INCDIR)
-	cp ./include/librtmfp.h $(INCDIR)
-	cp $(LIB) $(LIBDIR)
-	test -d "$(PKGCONFIGPATH)" || mkdir -p "$(PKGCONFIGPATH)" && cp librtmfp.pc $(PKGCONFIGPATH)
+	cp ./include/librtmfp.h $(INCDIR) && chmod 644 $(INCDIR)/librtmfp.h
+	cp $(LIB) $(LIBDIR) && chmod 755 $(LIBDIR)/$(LIBNAME)
+	test -d "$(PKGCONFIGPATH)" || mkdir -p "$(PKGCONFIGPATH)" && cp librtmfp.pc $(PKGCONFIGPATH) && chmod 644 $(PKGCONFIGPATH)/librtmfp.pc
 
 $(OBJECT): tmp/Release/%.o: sources/%.cpp
 	@echo compiling $(@:tmp/Release/%.o=sources/%.cpp)
