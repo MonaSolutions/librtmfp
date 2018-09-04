@@ -230,16 +230,16 @@ private:
 	struct Connect2Group : virtual Base::Object {
 		Connect2Group(Base::UInt32 index, const char* streamName, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const std::string& groupHex, const std::string& groupTxt, const std::string& groupName, 
 			std::atomic<bool>& ready, std::atomic<Base::UInt16>& mediaId) : index(index), streamName(streamName), groupParameters(groupParameters), audioReliable(audioReliable), videoReliable(videoReliable), 
-			groupHex(groupHex), groupTxt(groupTxt), groupName(groupName), ready(ready), mediaId(mediaId) {}
+			groupHex(groupHex.c_str()), groupTxt(groupTxt.c_str()), groupName(groupName.c_str()), ready(ready), mediaId(mediaId) {}
 
 		const Base::UInt32 index;
 		const std::string streamName;
 		RTMFPGroupConfig* groupParameters;
 		const bool audioReliable;
 		const bool videoReliable;
-		const std::string& groupHex;
-		const std::string& groupTxt;
-		const std::string& groupName;
+		const std::string groupHex;
+		const std::string groupTxt;
+		const std::string groupName;
 		std::atomic<bool>& ready;
 		std::atomic<Base::UInt16>& mediaId;
 	};
