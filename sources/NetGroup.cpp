@@ -294,7 +294,7 @@ void NetGroup::stopListener() {
 	}
 	_groupMediaPublisher = _mapGroupMedias.end();
 	_pListener->onMedia = nullptr;
-	_conn.stopListening(idTxt);
+	_conn.stopListening(_groupName);
 	_pListener = NULL;
 }
 
