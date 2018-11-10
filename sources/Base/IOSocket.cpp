@@ -37,7 +37,7 @@ using namespace std;
 namespace Base {
 
 struct IOSocket::Action : Runner, virtual Object {
-	Action(const char* name, int error, const shared<Socket>& pSocket) : Runner(name), _weakSocket(pSocket), _handler(*pSocket->_pHandler) {
+	Action(const char* name, int error, const shared<Socket>& pSocket) : Runner(name), _weakSocket(pSocket) {
 		if (error)
 			Socket::SetException(_ex, error);
 	}
@@ -66,7 +66,8 @@ protected:
 
 	template<typename HandleType, typename ...Args>
 	void handle(const shared<Socket>& pSocket, Args&&... args) {
-		_handler.queue(new HandleType(name, pSocket, _ex, std::forward<Args>(args)...));
+		if(!pSocket.unique())
+			pSocket->_pHandler->queue(new HandleType(name, pSocket, _ex, std::forward<Args>(args)...));
 		_ex = NULL;
 	}
 
@@ -86,7 +87,6 @@ private:
 	
 	weak<Socket>	_weakSocket;
 	Exception		_ex;
-	const Handler&  _handler;
 };
 
 
@@ -682,7 +682,7 @@ bool IOSocket::run(Exception& ex, const volatile bool& requestStop) {
 		if(i==-1)
 			break; // termination signal on IOSocket deletion
 
-		/*if (!_subscribers) {
+		if (!_subscribers) {
 			lock_guard<mutex> lock(_mutex);
 			// no more socket to manage?
 			if (!_subscribers) {
@@ -691,7 +691,7 @@ bool IOSocket::run(Exception& ex, const volatile bool& requestStop) {
 				stop(); // to set running=false!
 				return true;
 			}
-		}*/
+		}
 	}
 	::close(readFD);  // close reader pipe side
 	::close(_system); // close the system message

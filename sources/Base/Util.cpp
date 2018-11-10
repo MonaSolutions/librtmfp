@@ -15,7 +15,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 */
 
 #include "Base/Util.h"
-#include <fstream>
+#include "Base/File.h"
 #if !defined(_WIN32)
 #include <sys/times.h>
 	#include <unistd.h>
@@ -43,24 +43,22 @@ const char Util::_ReverseB64Table[128] = {
 };
 
 const UInt8 Util::UInt8Generators[] = {
-	0,   1,  1,  2,  1,  3,  5,  4,  5,  7,  7,  7,  7,  8,  9,  8,
-	11, 11, 11, 12, 11, 13, 15, 14, 17, 14, 15, 17, 17, 18, 19, 19,
-	21, 20, 21, 22, 23, 23, 23, 23, 27, 25, 25, 27, 27, 28, 27, 29,
-	31, 30, 31, 32, 31, 33, 31, 34, 37, 35, 37, 36, 37, 38, 37, 40,
-	41, 41, 41, 41, 41, 43, 43, 44, 43, 45, 47, 46, 47, 48, 47, 49,
-	49, 50, 51, 51, 53, 53, 53, 55, 53, 55, 53, 55, 57, 56, 57, 59,
-	59, 60, 61, 61, 63, 62, 61, 64, 63, 64, 67, 66, 67, 67, 69, 70,
-	69, 70, 71, 71, 73, 71, 73, 74, 73, 75, 75, 76, 77, 77, 79, 78,
-	79, 80, 79, 81, 83, 82, 83, 83, 83, 85, 85, 86, 87, 86, 89, 87,
-	89, 91, 89, 92, 91, 92, 91, 93, 93, 95, 95, 96, 95, 97, 99, 98,
-	99, 100, 101, 101, 101, 103, 103, 103, 103, 103, 103, 106, 105,
-	107, 109, 108, 109, 109, 109, 111, 109, 112, 111, 113, 113, 114,
-	115, 116, 115, 118, 117, 118, 119, 119, 121, 121, 121, 122, 125,
-	123, 123, 124, 125, 125, 125, 127, 127, 128, 129, 129, 131, 130,
-	131, 133, 131, 133, 133, 134, 135, 134, 137, 137, 137, 138, 137,
-	139, 141, 140, 139, 142, 141, 142, 143, 144, 145, 144, 147, 146,
-	149, 148, 149, 149, 151, 149, 151, 151, 151, 153, 153, 154, 153,
-	155, 157, 156, 157, 158
+	 0,   1,  1,  2,  1,  3,  5,  4,  5,  7,  7,  7,  7,  8,  9,  8,
+	 11, 11, 11, 12, 11, 13, 15, 14, 17, 14, 15, 17, 17, 18, 19, 19,
+	 21, 20, 21, 22, 23, 23, 23, 23, 27, 25, 25, 27, 27, 28, 27, 29,
+	 31, 30, 31, 32, 31, 33, 31, 34, 37, 35, 37, 36, 37, 38, 37, 40,
+	 41, 41, 41, 41, 41, 43, 43, 44, 43, 45, 47, 46, 47, 48, 47, 49,
+	 49, 50, 51, 51, 53, 53, 53, 55, 53, 55, 53, 55, 57, 56, 57, 59,
+	 59, 60, 61, 61, 63, 62, 61, 64, 63, 64, 67, 66, 67, 67, 69, 70,
+	 69, 70, 71, 71, 73, 71, 73, 74, 73, 75, 75, 76, 77, 77, 79, 78,
+	 79, 80, 79, 81, 83, 82, 83, 83, 83, 85, 85, 86, 87, 86, 89, 87,
+	 89, 91, 89, 92, 91, 92, 91, 93, 93, 95, 95, 96, 95, 97, 99, 98,
+	 99,100,101,101,101,103,103,103,103,103,103,106,105,107,109,108,
+	109,109,109,111,109,112,111,113,113,114,115,116,115,118,117,118,
+	119,119,121,121,121,122,125,123,123,124,125,125,125,127,127,128,
+	129,129,131,130,131,133,131,133,133,134,135,134,137,137,137,138,
+	137,139,141,140,139,142,141,142,143,144,145,144,147,146,149,148,
+	149,149,151,149,151,151,151,153,153,154,153,155,157,156,157,158
 };
 
 const Parameters& Util::Environment() {
@@ -220,13 +218,12 @@ UInt32 Util::UnpackQuery(const char* query, size_t count, const ForEachParameter
 				name.clear();
 				return true;
 			}
-			if (c == '=') {
-				if (isName) {
-					isName = false;
-					return true;
-				}
-			} else if (c == '+')
-				c = ' ';
+			if (c == '=' && isName) {
+				isName = false;
+				return true;
+			}
+			// not considerate '+' char to replace by ' ', because it affects Base64 value in query which includes '+',
+			// a space must be in a legal %20 format!
 		}
 		if (isName) {
 			if(countPairs || c != '?') // ignore first '?'!
@@ -346,16 +343,18 @@ void Util::Dump(const UInt8* data, UInt32 size, Buffer& buffer) {
 
 
 bool Util::ReadIniFile(const string& path, Parameters& parameters) {
-	ifstream ifile(path, ios::in | ios::binary | ios::ate);
-	if (!ifile.good())
+	Exception ex;
+	File file(path, File::MODE_READ);
+	if (!file.load(ex))
 		return false;
-	UInt32 size = (UInt32)ifile.tellg();
+	UInt32 size = range<UInt32>(file.size());
 	if (size == 0)
 		return true;
-	vector<char> buffer(size);
-	ifile.seekg(0);
-	ifile.read(buffer.data(), size);
-	char* cur = buffer.data();
+	Buffer buffer(size);
+	if (file.read(ex, buffer.data(), size) < 0)
+		return false;
+
+	char* cur = STR buffer.data();
 	const char* end = cur+size;
 	const char* key, *value;
 	string section;

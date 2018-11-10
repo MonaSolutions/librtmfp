@@ -21,6 +21,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include "Base/ByteRate.h"
 #include "Base/Packet.h"
 #include "Base/Handler.h"
+#include "Base/Parameters.h"
 #include <deque>
 
 namespace Base {
@@ -82,6 +83,8 @@ struct Socket : virtual Object, Net::Stats {
 	
 	const SocketAddress& address() const;
 	const SocketAddress& peerAddress() const { return _peerAddress; }
+
+	bool processParams(Exception& ex, const Parameters& parameter, const char* prefix = "net");
 
 	bool setSendBufferSize(Exception& ex, int size);
 	bool getSendBufferSize(Exception& ex, int& size) const { return getOption(ex,SOL_SOCKET, SO_SNDBUF, size); }
@@ -230,7 +233,7 @@ private:
 	UInt16						_threadReceive;
 	std::atomic<UInt32>			_receiving;
 	std::atomic<UInt8>			_reading;
-	const Handler*				_pHandler;
+	const Handler*				_pHandler; // to diminue size of Action+Handle
 	bool						_listening; // no need to protect this variable because listen() have to be called before IOSocket subscription!
 
 #if !defined(_WIN32)

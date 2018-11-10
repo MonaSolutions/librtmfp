@@ -40,6 +40,7 @@ ifeq ($(OS),Darwin)
 	SHARED=-dynamiclib -install_name ./../LibRTMFP/$(LIB)
 else
 	LIBNAME=librtmfp.so
+	AR=lib/librtmfp.ar
 	SHARED=-shared
 endif
 LIB=lib/$(LIBNAME)
@@ -57,6 +58,10 @@ release:
 	@$(MAKE) -k $(OBJECT)
 	@echo creating dynamic lib $(LIB)
 	@$(GPP) $(CFLAGS) $(LIBDIRS) -fPIC $(SHARED) -o $(LIB) $(OBJECT) $(LIBS)
+	@if [ "$(OS)" != "Darwin" ]; then\
+		echo "creating static lib $(AR)";\
+		ar rcs $(AR) $(OBJECT);\
+	fi
 
 debug:
 	mkdir -p tmp/Debug/Base
@@ -64,6 +69,10 @@ debug:
 	@$(MAKE) -k $(OBJECTD)
 	@echo creating dynamic debug lib $(LIB)
 	@$(GPP) -g -D_DEBUG $(CFLAGS) $(LIBDIRS) -fPIC $(SHARED) -o $(LIB) $(OBJECTD) $(LIBS)
+	@if [ "$(OS)" != "Darwin" ]; then\
+		echo "creating static lib $(AR)";\
+		ar rcs $(AR) $(OBJECTD);\
+	fi
 
 librtmfp.pc: librtmfp.pc.in Makefile
 	@echo "compiling librtmfp.pc.in"

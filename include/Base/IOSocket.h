@@ -21,7 +21,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include "Base/Thread.h"
 #include "Base/ThreadPool.h"
 #include "Base/Socket.h"
-#include "Base/Handler.h"
 
 namespace Base {
 

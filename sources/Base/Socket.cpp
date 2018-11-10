@@ -149,6 +149,24 @@ bool Socket::setSendBufferSize(Exception& ex, int size) {
 	return true;
 }
 
+bool Socket::processParams(Exception& ex, const Parameters& parameters, const char* prefix) {
+	UInt32 value;
+	bool result(true);
+	string superKey;
+	size_t prefixLen = prefix ? strlen(prefix) : 0;
+	// search always in priority with net. prefix to be prioritary on general common version (ex: search in Session params, then in [Protocol] params, and finally in general common where .net is prioritary!)
+	if ((prefixLen && parameters.getNumber(String::Assign(superKey, prefix, ".recvBufferSize"), value)) ||
+		parameters.getNumber("recvBufferSize", value) ||
+		parameters.getNumber("bufferSize", value))
+		result = setRecvBufferSize(ex, value);
+	superKey.resize(prefixLen);
+	if ((prefixLen && parameters.getNumber(superKey.append(".sendBufferSize"), value)) ||
+		parameters.getNumber("sendBufferSize", value) ||
+		parameters.getNumber("bufferSize", value))
+		result = setRecvBufferSize(ex = nullptr, value) && result;
+	return result;
+}
+
 const SocketAddress& Socket::address() const {
 	if (_address && !_address.port()) {
 		// computable!
@@ -274,10 +292,16 @@ bool Socket::connect(Exception& ex, const SocketAddress& address, UInt16 timeout
 
 	// Allow to call multiple time this method, it can help on windows target to etablish a connection instead of waiting the connection!
 	int rc;
-	if (type == Socket::TYPE_DATAGRAM && !address) { // fix a UDP disconnect problem (Wildcard IPv4-IPv6 mapping != sockaddr null!)
-		if (!_peerAddress)
-			return true; // no change, usefull to fix double disconnection issue (can not assign 0.0.0.0 address!)
-		rc = ::connect(_id, SocketAddress::Wildcard(IPAddress::IPv6).data(), SocketAddress::Wildcard(IPAddress::IPv6).size());
+	if (type == Socket::TYPE_DATAGRAM) {
+		if (_peerAddress) { // disconnect in first (required especially on linux)
+			SocketAddress wildcard(_peerAddress.family());
+			if(!::connect(_id, wildcard.data(), wildcard.size()))
+				_peerAddress = wildcard;
+		}
+		if (address)
+			rc = ::connect(_id, address.data(), address.size());
+		else
+			rc = ::connect(_id, SocketAddress::Wildcard(IPAddress::IPv6).data(), SocketAddress::Wildcard(IPAddress::IPv6).size());
 	} else
 		rc = ::connect(_id, address.data(), address.size());
 
