@@ -15,6 +15,7 @@ ifeq ($(PKGCONFIGPATH), )
 	PKGCONFIGPATH=$(LIBDIR)/pkgconfig
 endif
 
+# pkgconfig description variables
 CRYPTO_REQ=libssl,libcrypto
 PUBLIC_LIBS=
 PRIVATE_LIBS=
@@ -40,7 +41,7 @@ ifeq ($(OS),Darwin)
 	SHARED=-dynamiclib -install_name ./../LibRTMFP/$(LIB)
 else
 	LIBNAME=librtmfp.so
-	AR=lib/librtmfp.ar
+	AR=lib/librtmfp.a
 	SHARED=-shared
 endif
 LIB=lib/$(LIBNAME)
@@ -100,3 +101,4 @@ clean:
 	@echo cleaning project librtmfp
 	@rm -f $(OBJECT) $(LIB)
 	@rm -f $(OBJECTD) $(LIB)
+
