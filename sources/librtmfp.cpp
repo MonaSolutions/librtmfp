@@ -69,11 +69,7 @@ int RTMFP_LibVersion() {
 }
 
 unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
-	if (!parameters->pOnStatusEvent) {
-		ERROR("Callbacks onSocketError and onStatusEvent must be not null")
-		return 0;
-	}
-	else if (!GlobalInvoker) {
+	if (!GlobalInvoker) {
 		ERROR("RTMFP_Init() has not been called, please call it before trying to connect")
 		return 0;
 	}

@@ -80,8 +80,8 @@ debug:
 		ar rcs $(AR) $(OBJECTD);\
 	fi
 
-librtmfp.pc: librtmfp.pc.in Makefile
-	@echo "compiling librtmfp.pc.in"
+librtmfp.pc:
+	@echo "compiling librtmfp.pc.in with version $(VERSION)"
 	sed -e "s;@prefix@;$(prefix);" -e "s;@libdir@;$(LIBDIR);" \
 	    -e "s;@VERSION@;$(VERSION);" \
 	    -e "s;@CRYPTO_REQ@;$(CRYPTO_REQ);" \

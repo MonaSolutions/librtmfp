@@ -748,7 +748,8 @@ void RTMFPSession::handleFirstPeer() {
 	onConnectionEvent(_id, RTMFP_GROUP_CONNECTED);
 
 	// Send an event
-	_pOnStatusEvent("NetGroup.Publish.Start", "First peer connected, starting to publish");
+	if (_pOnStatusEvent)
+		_pOnStatusEvent("NetGroup.Publish.Start", "First peer connected, starting to publish");
 }
 
 void RTMFPSession::setP2PPlayReady() {
