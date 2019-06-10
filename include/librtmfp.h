@@ -38,12 +38,12 @@ LIBRTMFP_API typedef struct RTMFPGroupConfig {
 	const char*		netGroup; // [Required] netGroup identifier (groupspec)
 	char			isPublisher; // False by default, if True the stream will be published
 	char			isBlocking; // False by default, if True the function will return only when the first peer is connected
-	unsigned int	availabilityUpdatePeriod; // 100 by default, it is the time (in msec) between each fragments map messages (multicastAvailabilityUpdatePeriod)
-	char			availabilitySendToAll; // False by default, if True send the fragments map to all peer (multicastAvailabilitySendToAll)
-	unsigned int	windowDuration; // 8000 by default, it is the time (in msec) to bufferize and keep fragments available
-	unsigned int	relayMargin; // 2000 by default, it is additional time (in msec) to keep the fragments available (cannot be changed)
-	unsigned int	fetchPeriod; // 2500 by default, it is the time (in msec) before trying to fetch the missing fragments
-	unsigned short	pushLimit; // 4 by default, it is the number of neighbors (-1) to which we want to push fragments (cannot be changed)
+	unsigned int	availabilityUpdatePeriod; // 100 by default, it is the time (in msec) between each fragments map messages (set by the publisher)
+	char			availabilitySendToAll; // False by default, if True send the fragments map to all peer (set by the publisher)
+	unsigned int	windowDuration; // 8000 by default, it is the time (in msec) to bufferize and keep fragments available (set by the publisher)
+	unsigned int	relayMargin; // 2000 by default, it is additional time (in msec) to keep the fragments availabl
+	unsigned int	fetchPeriod; // 2500 by default, it is the time (in msec) before trying to fetch the missing fragments (set by the publisher)
+	unsigned short	pushLimit; // 4 by default, it is the number of neighbors minus one to which we want to push fragments
 
 	char			disableRateControl; // False by default, if True the p2p rate control is disabled (no disconnection if rate is < to 5% of P2P connection success)
 	char			disablePullTimeout; // False by default, if True the pull congestion timeout is disabled

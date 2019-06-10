@@ -29,7 +29,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-Invoker* GlobalInvoker = NULL;
+unique_ptr<Invoker> GlobalInvoker;
+atomic<UInt16>		ConnectionCount(0);
 
 extern "C" {
 
@@ -41,7 +42,7 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLo
 
 	// Init global invoker (+logger)
 	if (!GlobalInvoker) {
-		GlobalInvoker = new Invoker(createLogger>0);
+		GlobalInvoker.reset(new Invoker(createLogger>0));
 		GlobalInvoker->start();
 	}
 
@@ -59,10 +60,8 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLo
 }
 
 void RTMFP_Terminate() {
-	if (GlobalInvoker) {
-		delete GlobalInvoker;
-		GlobalInvoker = NULL;
-	}
+	if (GlobalInvoker)
+		GlobalInvoker.reset();
 }
 
 int RTMFP_LibVersion() {
@@ -79,7 +78,10 @@ unsigned int RTMFP_Connect(const char* url, RTMFPConfig* parameters) {
 		return 0;
 	}
 
-	return GlobalInvoker->connect(url, parameters);
+	UInt32 res = GlobalInvoker->connect(url, parameters);
+	if (res)
+		++ConnectionCount;
+	return res;
 }
 
 unsigned short RTMFP_Connect2Peer(unsigned int RTMFPcontext, const char* peerId, const char* streamName, int blocking) {
@@ -182,7 +184,9 @@ void RTMFP_Close(unsigned int RTMFPcontext, unsigned short blocking) {
 	if (!RTMFPcontext)
 		return;
 
-	GlobalInvoker->removeConnection(RTMFPcontext, blocking>0);
+	bool res = GlobalInvoker->removeConnection(RTMFPcontext, blocking>0);
+	if (res && (--ConnectionCount == 0))
+		GlobalInvoker.reset(); // delete the invoker when there is no more connection to free memory
 }
 
 int RTMFP_Read(unsigned short streamId, unsigned int RTMFPcontext, char *buf, unsigned int size) {

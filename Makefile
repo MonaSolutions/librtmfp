@@ -1,4 +1,9 @@
-VERSION=0.1
+# Generate version from RTMFP.h file
+TMP=$(shell printf "%d" $(shell grep RTMFP_LIB_VERSION include/RTMFP.h | grep -o '\b0x\w*'))
+MAJ=$(shell expr $(TMP) / 16777216)
+INTER=$(shell expr \( $(TMP) - $(MAJ) \* 16777216 \) / 65536)
+MIN=$(shell expr $(TMP) - $(MAJ) \* 16777216 - $(INTER) \* 65536)
+VERSION="$(MAJ).$(INTER).$(MIN)"
 
 prefix=/usr
 

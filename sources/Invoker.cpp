@@ -310,6 +310,15 @@ Invoker::~Invoker() {
 	onCreateStream = nullptr;
 	onConnect2Group = nullptr;
 	_onDecoded = nullptr;
+
+	// Release medias and events
+	{
+		lock_guard<mutex> lock(_mutexRead);
+		for (auto& it : _connection2Buffer)
+			for (auto& itMedia : it.second.mapMedias)
+				itMedia.second.readSignal.set();
+		_connection2Buffer.clear();
+	}
 	_waitSignal.set();
 }
 
@@ -451,12 +460,12 @@ bool Invoker::isInterrupted() {
 	return !Thread::running() || (_interruptCb && _interruptCb(_interruptArg) == 1);
 }
 
-void Invoker::removeConnection(unsigned int index, bool blocking) {
+bool Invoker::removeConnection(unsigned int index, bool blocking) {
 	{
 		lock_guard<mutex>	lock(_mutexConnections);
 		if (_mapConnections.find(index) == _mapConnections.end()) {
 			INFO("Connection at index ", index, " has already been removed")
-			return;
+			return false;
 		}
 	}
 
@@ -468,6 +477,7 @@ void Invoker::removeConnection(unsigned int index, bool blocking) {
 		while (!ready && !isInterrupted())
 			_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
 	}
+	return true;
 }
 
 void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt, bool terminating) {

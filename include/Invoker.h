@@ -47,7 +47,8 @@ struct Invoker : private Base::Thread {
 	void			start();
 
 	// Delete the RTMFP session at index (safe threaded)
-	void			removeConnection(unsigned int index, bool blocking);
+	// \return False if the connection was not found, True otherwise
+	bool			removeConnection(unsigned int index, bool blocking);
 
 	// Try to read data from the connection RTMFPcontext and the media ID streamId
 	// return : The number of bytes read
