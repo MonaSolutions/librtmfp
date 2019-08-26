@@ -34,6 +34,7 @@ struct GroupListener : Listener {
 
 	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet, bool reliable);
+	virtual void pushData(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 
 	virtual void flush();
 

@@ -114,6 +114,21 @@ bool GroupListener::pushAudioInfos(UInt32 time) {
 	return true;
 }
 
+void GroupListener::pushData(UInt32 time, const Packet& packet, bool reliable) {
+
+	if (_firstTime) {
+		_startTime = time;
+		_firstTime = false;
+
+		// for audio sync (audio is usually the reference track)
+		if (pushAudioInfos(time))
+			pushAudio(time, Packet::Null(), true); // push a empty audio packet to avoid a video which waits audio tracks!
+	}
+	time -= _startTime;
+
+	onMedia(RTMFP::IsKeyFrame(packet.data(), packet.size()) || reliable, AMF::TYPE_DATA, _lastTime = (time + _seekTime), packet);
+}
+
 void GroupListener::flush() {
 	onFlush();
 }

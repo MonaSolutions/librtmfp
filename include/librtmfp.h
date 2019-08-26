@@ -59,6 +59,8 @@ LIBRTMFP_API typedef struct RTMFPConfig {
 	const char*		flashVer; // flashVer Flash connection parameter
 	const char*		host; // IPv4 host address to bind to (use this if you ave multiple interfaces)
 	const char*		hostIPv6; // IPv6 host address to bind to (use this if you ave multiple interfaces)
+	int				(*interruptCb)(void*); // interrupt callback function (NULL by default)
+	void*			interruptArg; // interrupt callback argument for interrupt function
 } RTMFPConfig;
 
 LIBRTMFP_API typedef enum {
@@ -158,9 +160,6 @@ LIBRTMFP_API void RTMFP_DumpSetCallback(void (*onDump)(const char*, const void*,
 
 // Active RTMFP Dump
 LIBRTMFP_API void RTMFP_ActiveDump();
-
-// Set Interrupt callback (to check if caller need the hand)
-LIBRTMFP_API void RTMFP_InterruptSetCallback(int (* interruptCb)(void*), void* argument);
 
 // Retrieve publication name and url from original uri
 LIBRTMFP_API void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication);

@@ -168,6 +168,7 @@ bool FlashHandler::dataHandler(const Packet& packet, double lostRate) {
 		// TODO: make a callback function
 	} else
 		DEBUG("Data with type ", type, " received but not handled, type : ")
+	onMedia(_mediaId, 0, packet, lostRate, AMF::TYPE_DATA);
 	return true;
 }
 

@@ -32,6 +32,10 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #define DELAY_SIGNAL_READ			100 // time to wait before each read request
 #define DELAY_BLOCKING_SIGNALS		200 // time to wait before checking interrupted status in each waiting signals
 
+#define ERROR_APP_INTERRUPT			-1
+#define ERROR_CONN_INTERRUPT		-2
+#define ERROR_LAST_INTERRUPT		-3
+
 struct RTMFPSession;
 class RTMFPLogger;
 struct RTMFPGroupConfig;
@@ -47,11 +51,11 @@ struct Invoker : private Base::Thread {
 	void			start();
 
 	// Delete the RTMFP session at index (safe threaded)
-	// \return False if the connection was not found, True otherwise
-	bool			removeConnection(unsigned int index, bool blocking);
+	// \return 0 if the connection was not found, 1 otherwise, or an error code if an interruption happened
+	int			removeConnection(unsigned int index, bool blocking);
 
 	// Try to read data from the connection RTMFPcontext and the media ID streamId
-	// return : The number of bytes read
+	// return : The number of bytes read or an error code if an interruption happened
 	int				read(Base::UInt32 RTMFPcontext, Base::UInt16 streamId, Base::UInt8 *buf, Base::UInt32 size);
 
 	// Write media (netstream must be published)
@@ -63,17 +67,17 @@ struct Invoker : private Base::Thread {
 	Base::UInt32	connect(const char* url, RTMFPConfig* parameters);
 
 	// Connect to a peer and try to play the stream streamName
-	// return: the stream ID for this peer or 0 if an error occurs
-	Base::UInt16	connect2Peer(Base::UInt32 RTMFPcontext, const char* peerId, const char* streamName);
+	// return: the stream ID for this peer, or 0 if an error occurs, or an error code if an interruption happened
+	int				connect2Peer(Base::UInt32 RTMFPcontext, const char* peerId, const char* streamName);
 
 	// Connect to a netgroup and try to play the stream streamName
-	// return: the stream ID for this group or 0 if an error occurs
-	Base::UInt16	connect2Group(Base::UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const char* fallbackUrl);
+	// return: the stream ID for this group or 0 if an error occurs, or an error code if an interruption happened
+	int				connect2Group(Base::UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const char* fallbackUrl);
 
 	// Create the stream media and try to play/publish streamName
 	// param mask: 0 for player, otherwise publisher or p2p publisher mask
-	// return: the stream ID or 0 if an error occurs
-	Base::UInt16	addStream(Base::UInt32 RTMFPcontext, Base::UInt8 mask, const char* streamName, bool audioReliable, bool videoReliable);
+	// return: the stream ID or 0 if an error occurs, or an error code if an interruption happened
+	int				addStream(Base::UInt32 RTMFPcontext, Base::UInt8 mask, const char* streamName, bool audioReliable, bool videoReliable);
 
 	// Close a publication from a session
 	// return: True if succeed, False otherwise
@@ -85,11 +89,11 @@ struct Invoker : private Base::Thread {
 
 	// Call a remote function in session RTMFPcontext
 	// return: True if succeed, False otherwise
-	bool			callFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId);
+	bool			callFunction(Base::UInt32 RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId);
 
 	// Blocking function waiting for an event to callback
-	// return: True if the event happened, False if an error occurs during waiting
-	bool			waitForEvent(Base::UInt32 RTMFPcontext, Base::UInt8 mask);
+	// return: 1 if the event happened, or an error code if an interruption happened
+	int				waitForEvent(Base::UInt32 RTMFPcontext, Base::UInt8 mask);
 
 	// Called by a connection to push a media packet
 	void			pushMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
@@ -104,8 +108,6 @@ struct Invoker : private Base::Thread {
 	void			setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*));
 
 	void			setDumpCallback(void(*onDump)(const char*, const void*, unsigned int));
-
-	void			setInterruptCallback(int(*interruptCb)(void*), void* argument);
 
 private:
 	Base::Handler						_handler; // keep in first (must be build before sockets)
@@ -123,6 +125,7 @@ private:
 	};
 	typedef Base::Event<void(WritePacket&)>			ON(PushAudio);
 	typedef Base::Event<void(WritePacket&)>			ON(PushVideo);
+	typedef Base::Event<void(WritePacket&)>			ON(PushData);
 
 	// Safe-Threaded structure to flush the publisher after publishing some packets
 	struct WriteFlush : virtual Base::Object {
@@ -253,8 +256,9 @@ private:
 	// \param terminating : if true we are closing the Invoker so we do not delete the fallback recursively
 	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it, bool abrupt, bool terminating = false);
 
-	// return True if the application is interrupted, otherwise False
-	bool				isInterrupted();
+	// return 0 the connexion is always running, -1 if the application is interrupted, -2 if the connexion is interrupted, -3 if it was the last connexion and has been interrupted
+	// if the connexion has just been interrupted it will close and delete it
+	int					isInterrupted(Base::UInt32 RTMFPcontext);
 
 	// Create the media buffer for connection RTMFPcontext if the condition return true
 	// return: the media ID created or 0 if an error occurs
@@ -270,9 +274,6 @@ private:
 	std::map<int, std::shared_ptr<RTMFPSession>>					_mapConnections;
 	std::unique_ptr<RTMFPLogger>									_logger; // global logger for librtmfp
 	Base::Signal													_waitSignal; // signal for blocking functions (TODO: make a signal for each connection)
-
-	int																(*_interruptCb)(void*); // global interrupt callback function (NULL by default)
-	void*															_interruptArg; // global interrup callback argument for interrupt function
 
 	RTMFPDecoder::OnDecoded											_onDecoded; // Decoded callback
 

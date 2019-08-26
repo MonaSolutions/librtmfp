@@ -173,6 +173,20 @@ void Publisher::pushVideo(UInt32 time, const Packet& packet) {
 		(it++)->second->pushVideo(time, packet, _videoReliable); // listener can be removed in this call
 }
 
+void Publisher::pushData(UInt32 time, const Packet& packet) {
+	if (!_running) {
+		ERROR("Data packet pushed on '", _name, "' publication stopped");
+		return;
+	}
+
+	updateTime(AMF::TYPE_DATA, time, packet.size());
+
+	_new = true;
+	auto it = _listeners.begin();
+	while (it != _listeners.end())
+		(it++)->second->pushData(time, packet, true); // listener can be removed in this call
+}
+
 void Publisher::flush() {
 	if (!_new)
 		return;

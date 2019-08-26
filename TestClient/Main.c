@@ -363,6 +363,7 @@ int main(int argc, char* argv[]) {
 	config.flashVer = flashVer;
 	config.host = host;
 	config.hostIPv6 = hostIPv6;
+	config.interruptCb = IsInterrupted;
 
 	// update the parameters
 	if (_option == SYNC_READ)
@@ -401,7 +402,6 @@ int main(int argc, char* argv[]) {
 		openFile(&pLogFile, logFile, "w");
 
 	RTMFP_LogSetCallback(onLog);
-	RTMFP_InterruptSetCallback(IsInterrupted, NULL);
 	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 
 	printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));

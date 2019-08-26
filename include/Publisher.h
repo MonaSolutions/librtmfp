@@ -61,6 +61,7 @@ struct Publisher : virtual Base::Object {
 	// Functions called by RTMFPSession
 	void pushAudio(Base::UInt32 time, const Base::Packet& packet);
 	void pushVideo(Base::UInt32 time, const Base::Packet& packet);
+	void pushData(Base::UInt32 time, const Base::Packet& packet);
 	void flush();
 
 	bool	isP2P; // If true it is a p2p publisher

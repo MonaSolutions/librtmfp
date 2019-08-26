@@ -143,6 +143,26 @@ void FlashListener::pushVideo(UInt32 time, const Packet& packet, bool reliable) 
 		initWriters();
 }
 
+void FlashListener::pushData(UInt32 time, const Packet& packet, bool reliable) {
+	if (!_pDataWriter && !initWriters())
+		return;
+
+	if (_firstTime) {
+		_startTime = time;
+		_firstTime = false;
+
+		// for audio sync (audio is usually the reference track)
+		if (pushAudioInfos(time))
+			pushAudio(time, Packet::Null(), true); // push a empty audio packet to avoid a video which waits audio tracks!
+	}
+	time -= _startTime;
+
+	//TRACE("Data time(+seekTime) => ", time, "(+", _seekTime, "), size : ", size);
+
+	if (!writeMedia(*_pDataWriter, RTMFP::IsKeyFrame(packet.data(), packet.size()) || reliable, FlashWriter::DATA, _lastTime = (time + _seekTime), packet))
+		initWriters();
+}
+
 
 void FlashListener::pushAudio(UInt32 time, const Packet& packet, bool reliable) {
 	if (!receiveAudio && !RTMFP::IsAACCodecInfos(packet.data(), packet.size()))

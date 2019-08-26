@@ -170,9 +170,12 @@ struct RTMFPSession : public FlowManager {
 	// Called by NetGroup when the first peer connect to us, we must call the onConnectionEvent
 	void							handleFirstPeer();
 
+	bool							isInterrupted();
+
 	/* Write functions */
 	void writeAudio(const Base::Packet& packet, Base::UInt32 time);
 	void writeVideo(const Base::Packet& packet, Base::UInt32 time);
+	void writeData(const Base::Packet& packet, Base::UInt32 time);
 	void writeFlush();
 
 	FlashStream::OnMedia			onMediaPlay; // received when a packet from any media stream is ready for reading
@@ -242,6 +245,9 @@ private:
 	Base::UInt16													_threadRcv; // Thread used to decode last message
 		
 	OnMediaEvent													_pOnMedia; // External Callback to link with parent
+
+	int																(*_interruptCb)(void*); // interrupt callback function
+	void*															_interruptArg; // interrupt callback argument for interrupt function
 
 	// Publish/Play commands
 	struct StreamCommand : public Object {

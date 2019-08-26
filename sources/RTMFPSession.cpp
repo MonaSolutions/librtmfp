@@ -39,7 +39,8 @@ UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(invoker.timer, this), _threadRcv(0), flags(0),
-	FlowManager(false, invoker, config.pOnStatusEvent), _pOnMedia(config.pOnMedia), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets) {
+	FlowManager(false, invoker, config.pOnStatusEvent), _pOnMedia(config.pOnMedia), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets),
+	_interruptCb(config.interruptCb), _interruptArg(config.interruptArg) {
 
 	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
 		if (status > RTMFP::NEAR_CLOSED)
@@ -155,6 +156,10 @@ RTMFPSession::~RTMFPSession() {
 	DEBUG("Deletion of RTMFPSession ", name())
 
 	closeSession();
+}
+
+bool RTMFPSession::isInterrupted() {
+	return !_pMainStream || (_interruptCb && _interruptCb(_interruptArg) == 1);
 }
 
 void RTMFPSession::setFlashProperties(const char* swfUrl, const char* app, const char* pageUrl, const char* flashVer) {
@@ -353,13 +358,17 @@ void RTMFPSession::writeVideo(const Packet& packet, UInt32 time) {
 	if (_pPublisher)
 		_pPublisher->pushVideo(time, packet);
 }
+void RTMFPSession::writeData(const Packet& packet, UInt32 time) {
+	if (_pPublisher)
+		_pPublisher->pushData(time, packet);
+}
 void RTMFPSession::writeFlush() {
 	if (_pPublisher)
 		_pPublisher->flush();
 }
 
 bool RTMFPSession::manage() {
-	if (!_pMainStream)
+	if (isInterrupted())
 		return false;
 
 	// Release closed P2P connections

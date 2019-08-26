@@ -56,7 +56,7 @@ SOURCES = $(wildcard sources/*.cpp sources/Base/*.cpp)
 OBJECT = $(SOURCES:sources/%.cpp=tmp/Release/%.o)
 OBJECTD = $(SOURCES:sources/%.cpp=tmp/Debug/%.o)
 
-.PHONY: debug release
+.PHONY: debug release librtmfp.pc
 
 release:
 	mkdir -p tmp/Release/Base

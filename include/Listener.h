@@ -33,6 +33,7 @@ public:
 
 	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet, bool reliable) = 0;
 	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet, bool reliable) = 0;
+	virtual void pushData(Base::UInt32 time, const Base::Packet& packet, bool reliable) = 0;
 	//virtual void pushData(DataReader& packet) = 0;
 	//virtual void pushProperties(DataReader& packet) = 0;
 
@@ -53,6 +54,7 @@ public:
 
 	virtual void pushAudio(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 	virtual void pushVideo(Base::UInt32 time, const Base::Packet& packet, bool reliable);
+	virtual void pushData(Base::UInt32 time, const Base::Packet& packet, bool reliable);
 
 	virtual void flush();
 

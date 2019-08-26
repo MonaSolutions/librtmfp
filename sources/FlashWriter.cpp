@@ -77,25 +77,12 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time, const Packet& packet) {
 			write(AMF::TYPE_VIDEO, time, packet, reliable);
 			break;
 		case DATA: {
-			// convert to AMF ?
-			/*MIME::Type dataType((MIME::Type)(time >> 8));
-			if (dataType!=MIME::AMF) {
-				unique_ptr<DataReader> pReader;
-				if (!MIME::CreateDataReader(dataType, packet,poolBuffers, pReader)) {
-					ERROR("Impossible to convert streaming ", dataType, " data to AMF, data ignored")
-					break;
-				}
-				AMFWriter& writer(write(AMF::DATA, 0));
-				if (DataReader::STRING == pReader->nextType()) {
-					// Write the handler name in AMF0!
-					writer.amf0 = true;
-					pReader->read(writer, 1);
-					writer.amf0 = false;
-				}
-				pReader->read(writer); // to AMF
-				break;
-			}
-			write(AMF::DATA, 0, packet.current(),packet.available());*/
+			// Trick to forward Metadata
+			shared_ptr<Buffer>	pBuffer(new Buffer(packet.size()+16));
+			BinaryWriter writer(pBuffer->data(), pBuffer->size());
+			writer.write(EXPAND("\x2\x0\r@setDataFrame"));
+			writer.write(packet.data(), packet.size());
+			write(AMF::TYPE_DATA, time, Packet(pBuffer), reliable);
 			break;
 		}
 		default:

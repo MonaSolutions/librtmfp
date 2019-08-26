@@ -111,10 +111,7 @@ struct Invoker::FallbackConnection : virtual Object {
 // Reading Connection Buffer structure, contains the input media buffers from 1 session
 struct Invoker::ConnectionBuffer : virtual Object {
 	ConnectionBuffer() : mediaCount(0) {}
-	virtual ~ConnectionBuffer() {
-		for (auto &itBuffer : mapMedias)
-			itBuffer.second.readSignal.set();
-	}
+	virtual ~ConnectionBuffer() {}
 
 	// Media stream buffer
 	struct MediaBuffer : virtual Object {
@@ -133,7 +130,6 @@ struct Invoker::ConnectionBuffer : virtual Object {
 		bool									codecInfosRead; // Player : False until the video codec infos have been read
 		bool									AACsequenceHeaderRead; // False until the AAC sequence header infos have been read
 		UInt32									timeOffset; // time offset used when a fallback connection has started
-		Signal									readSignal; // set this when receiving data
 	};
 	map<UInt16, MediaBuffer>					mapMedias; // Map of media players
 	UInt16										mediaCount; // Counter of media streams (publisher/player) id
@@ -155,7 +151,7 @@ struct Invoker::WriteBuffer : virtual Object {
 
 /** Invoker **/
 
-Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _interruptArg(NULL), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp), _threadPush(0) {
+Invoker::Invoker(bool createLogger) : Thread("Invoker"), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp), _threadPush(0) {
 	onPushAudio = [this](WritePacket& packet) {
 		lock_guard<mutex> lock(_mutexConnections);
 
@@ -169,6 +165,13 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		auto it = _mapConnections.find(packet.index);
 		if (it != _mapConnections.end() && it->second->status < RTMFP::NEAR_CLOSED)
 			it->second->writeVideo(packet, packet.time);
+	};
+	onPushData = [this](WritePacket& packet) {
+		lock_guard<mutex> lock(_mutexConnections);
+
+		auto it = _mapConnections.find(packet.index);
+		if (it != _mapConnections.end() && it->second->status < RTMFP::NEAR_CLOSED)
+			it->second->writeData(packet, packet.time);
 	};
 	onFlushPublisher = [this](const WriteFlush& obj) {
 		lock_guard<mutex> lock(_mutexConnections);
@@ -213,7 +216,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 			removeConnection(it, false);
 
 		// To exit from the caller loop
-		if (obj.blocking && !isInterrupted())
+		if (obj.blocking && Thread::running())
 			obj.ready = true;
 		_waitSignal.set();
 	};
@@ -221,7 +224,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		lock_guard<mutex> lock(_mutexConnections);
 
 		auto itConn = _mapConnections.find(obj.index);
-		if (itConn != _mapConnections.end() && !isInterrupted()) {
+		if (itConn != _mapConnections.end() && Thread::running()) {
 
 			// Start connecting to the peer and create the media buffer for this stream
 			obj.mediaId = createMediaBuffer(obj.index, [&itConn, &obj](UInt16 mediaCount) {
@@ -230,7 +233,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		}
 
 		// To exit from the caller loop
-		if (!isInterrupted())
+		if (Thread::running())
 			obj.ready = true;
 		_waitSignal.set();
 	};
@@ -238,7 +241,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		lock_guard<mutex> lock(_mutexConnections);
 
 		auto itConn = _mapConnections.find(obj.index);
-		if (itConn != _mapConnections.end() && !isInterrupted()) {
+		if (itConn != _mapConnections.end() && Thread::running()) {
 
 			// Start connecting to the peer and create the media buffer for this stream
 			// TODO: do not create a media buffer for publishers
@@ -248,7 +251,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		}
 		
 		// To exit from the caller loop
-		if (!isInterrupted())
+		if (Thread::running())
 			obj.ready = true;
 		_waitSignal.set();
 	};
@@ -256,7 +259,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		lock_guard<mutex> lock(_mutexConnections);
 
 		auto itConn = _mapConnections.find(obj.index);
-		if (itConn != _mapConnections.end() && !isInterrupted()) {
+		if (itConn != _mapConnections.end() && Thread::running()) {
 			// Start connecting to the group and create the media buffer for this stream
 			obj.mediaId = createMediaBuffer(obj.index, [&itConn, &obj](UInt16 mediaCount) {
 				return itConn->second->connect2Group(obj.streamName, obj.groupParameters, obj.audioReliable, obj.videoReliable, obj.groupHex, obj.groupTxt, obj.groupName, mediaCount);
@@ -264,7 +267,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), _interruptCb(NULL), _in
 		}
 
 		// To exit from the caller loop
-		if (!isInterrupted())
+		if (Thread::running())
 			obj.ready = true;
 		_waitSignal.set();
 	};
@@ -311,14 +314,6 @@ Invoker::~Invoker() {
 	onConnect2Group = nullptr;
 	_onDecoded = nullptr;
 
-	// Release medias and events
-	{
-		lock_guard<mutex> lock(_mutexRead);
-		for (auto& it : _connection2Buffer)
-			for (auto& itMedia : it.second.mapMedias)
-				itMedia.second.readSignal.set();
-		_connection2Buffer.clear();
-	}
 	_waitSignal.set();
 }
 
@@ -354,24 +349,8 @@ void Invoker::manage() {
 	}
 
 	// Manage connections
-	auto it = _mapConnections.begin();
-	while(it != _mapConnections.end()) {
-		int idConn = it->first;
-		// unlock during manage to not lock the whole process
-		UNLOCK_RUN_LOCK(_mutexConnections, bool erase = !it->second->manage());
-
-		it = _mapConnections.lower_bound(idConn);
-		if (it == _mapConnections.end() || it->first != idConn)
-			continue; // connection deleted during manage()
-		else if (erase) {
-			// If there is a fallback running we ignore the request
-			auto itFallback = _waitingFallback.find(idConn);
-			if (itFallback == _waitingFallback.end() || !itFallback->second.running) {
-				removeConnection(it++, true);
-				continue;
-			}
-		}
-		++it;
+	for (auto& it : _mapConnections) {
+		UNLOCK_RUN_LOCK(_mutexConnections, it.second->manage()); // unlock during manage to not lock the whole process
 	}
 	_mutexConnections.unlock();
 }
@@ -408,6 +387,8 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 		FATAL("Invoker, unknown error");
 	}
 #endif
+	Logs::SetLevel(0); // /!\ To ensure that no possible static Logs variables will be used then (handle brutal program exit)
+
 	Thread::stop(); // to set running() to false (and not more allows to handler to queue Runner)
 	// Stop onManage (useless now)
 	_timer.set(onManage, 0);
@@ -430,14 +411,8 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	_handler.flush();
 
 	// release memory
-	INFO("Invoker memory release");
 	Buffer::SetAllocator();
 	//bufferPool.clear();
-	NOTE("Invoker stopped")
-	if (_logger) {
-		Logs::SetLogger(Logs::DefaultLogger()); // we must reset Logger to default to avoid crash if someone call Logs::Log() after Logger destruction
-		_logger.reset();
-	}
 	return true;
 }
 
@@ -451,22 +426,32 @@ void Invoker::setDumpCallback(void(*onDump)(const char*, const void*, unsigned i
 		_logger->setDumpCallback(onDump);
 }
 
-void Invoker::setInterruptCallback(int(*interruptCb)(void*), void* argument) {
-	_interruptCb = interruptCb;
-	_interruptArg = argument;
+int Invoker::isInterrupted(UInt32 RTMFPcontext) {
+	if (!Thread::running())
+		return ERROR_APP_INTERRUPT;
+
+	{
+		lock_guard<mutex> lock(_mutexConnections);
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it == _mapConnections.end())
+			return ERROR_CONN_INTERRUPT;
+		if (it->second->isInterrupted()) {
+			removeConnection(it, true);
+			return _mapConnections.empty()? ERROR_LAST_INTERRUPT : ERROR_CONN_INTERRUPT;
+		}
+	}
+	return 0;
 }
 
-bool Invoker::isInterrupted() {
-	return !Thread::running() || (_interruptCb && _interruptCb(_interruptArg) == 1);
-}
-
-bool Invoker::removeConnection(unsigned int index, bool blocking) {
+int Invoker::removeConnection(unsigned int index, bool blocking) {
 	{
 		lock_guard<mutex>	lock(_mutexConnections);
 		if (_mapConnections.find(index) == _mapConnections.end()) {
 			INFO("Connection at index ", index, " has already been removed")
-			return false;
+			return 0;
 		}
+		if (!blocking && _mapConnections.size() == 1)
+			return ERROR_LAST_INTERRUPT;
 	}
 
 	// Delete the session in the Handler thread and wait until operation is finished
@@ -474,10 +459,19 @@ bool Invoker::removeConnection(unsigned int index, bool blocking) {
 	_handler.queue(onRemoveConnection, index, ready, blocking);
 
 	if (blocking) {
-		while (!ready && !isInterrupted())
+		while (!ready) {
+			int code(0);
+			if ((code = isInterrupted(index)))
+				return code;
 			_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+		}
+		{
+			lock_guard<mutex>	lock(_mutexConnections);
+			if (_mapConnections.empty())
+				return ERROR_LAST_INTERRUPT;
+		}
 	}
-	return true;
+	return 1;
 }
 
 void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt, bool terminating) {
@@ -564,14 +558,14 @@ UInt16 Invoker::createMediaBuffer(UInt32 RTMFPcontext, function<bool(UInt16)> co
 	return connBuffer.mediaCount;
 }
 
-UInt16 Invoker::connect2Peer(UInt32 RTMFPcontext, const char* peerId, const char* streamName) {
+int Invoker::connect2Peer(UInt32 RTMFPcontext, const char* peerId, const char* streamName) {
 	{
 		lock_guard<mutex> lock(_mutexConnections);
 
 		auto it = _mapConnections.find(RTMFPcontext);
 		if (it == _mapConnections.end()) {
 			ERROR("Unable to find the connection ", RTMFPcontext)
-			return false;
+			return 0;
 		}
 	}
 
@@ -580,8 +574,12 @@ UInt16 Invoker::connect2Peer(UInt32 RTMFPcontext, const char* peerId, const char
 	_handler.queue(onConnect2Peer, RTMFPcontext, peerId, streamName, ready, mediaId);
 
 	// Wait for the connection to happen
-	while (!ready && !isInterrupted())
+	while (!ready) {
+		int code(0);
+		if ((code = isInterrupted(RTMFPcontext)))
+			return code;
 		_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+	}
 
 	return ready ? mediaId.load() : 0;
 }
@@ -617,7 +615,7 @@ void Invoker::startFallback(FallbackConnection& fallback) {
 		_mapConnections.emplace(fallback.idFallback, pConn); // Note: mutex is already locked here
 }
 
-UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const char* fallbackUrl) {
+int Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPConfig* parameters, RTMFPGroupConfig* groupParameters, bool audioReliable, bool videoReliable, const char* fallbackUrl) {
 
 	Exception ex;
 	GroupSpecReader groupReader;
@@ -643,7 +641,7 @@ UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFP
 		auto it = _mapConnections.find(RTMFPcontext);
 		if (it == _mapConnections.end()) {
 			ERROR("Unable to find the connection ", RTMFPcontext)
-			return false;
+			return 0;
 		}
 		it->second->onNetGroupException = [this](UInt32 idConn) {
 			lock_guard<mutex> lock(_mutexConnections);
@@ -659,8 +657,9 @@ UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFP
 
 	// Wait for the connection to happen
 	while (!ready) {
-		if (isInterrupted())
-			return 0;
+		int code(0);
+		if ((code = isInterrupted(RTMFPcontext)))
+			return code;
 		_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
 	}
 
@@ -688,7 +687,7 @@ UInt16 Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFP
 	return mediaId.load();
 }
 
-UInt16 Invoker::addStream(UInt32 RTMFPcontext, UInt8 mask, const char* streamName, bool audioReliable, bool videoReliable) {
+int Invoker::addStream(UInt32 RTMFPcontext, UInt8 mask, const char* streamName, bool audioReliable, bool videoReliable) {
 	atomic<UInt16> mediaId(0);
 	atomic<bool> ready(false);
 	{
@@ -697,37 +696,39 @@ UInt16 Invoker::addStream(UInt32 RTMFPcontext, UInt8 mask, const char* streamNam
 		auto it = _mapConnections.find(RTMFPcontext);
 		if (it == _mapConnections.end()) {
 			ERROR("Unable to find the connection ", RTMFPcontext)
-				return false;
+			return 0;
 		}
 	}
 
 	_handler.queue(onCreateStream, RTMFPcontext, mask, streamName, audioReliable, videoReliable, mediaId, ready);
 
 	// Wait for the stream to be created or the publication to be accepted
-	while (!ready && !isInterrupted())
+	while (!ready) {
+		int code(0);
+		if ((code = isInterrupted(RTMFPcontext)))
+			return code;
 		_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
+	}
 
 	return ready? mediaId.load() : 0;
 }
 
-bool Invoker::waitForEvent(UInt32 RTMFPcontext, UInt8 mask) {
-	bool handled(false);
+int Invoker::waitForEvent(UInt32 RTMFPcontext, UInt8 mask) {
+	int handled = 0;
 
-	_mutexConnections.lock();
-	auto it = _mapConnections.find(RTMFPcontext);
-	while (!isInterrupted() && it != _mapConnections.end()) {
-	
+	while (!handled) {
+		int code(0);
+		if ((code = isInterrupted(RTMFPcontext)))
+			return code;
+
 		// Event handled?
-		if (it->second->flags & mask) {
-			handled = true;
-			break;
-		}
-
-		UNLOCK_RUN_LOCK(_mutexConnections, _waitSignal.wait(DELAY_BLOCKING_SIGNALS));
-		it = _mapConnections.find(RTMFPcontext); // connection can be deleted during wait
+		_mutexConnections.lock();
+		auto it = _mapConnections.find(RTMFPcontext);
+		if (it->second->flags & mask)
+			handled = 1;
+		_mutexConnections.unlock();
 	}
 
-	_mutexConnections.unlock();
 	return handled;
 }
 
@@ -762,7 +763,7 @@ bool Invoker::closeStream(UInt32 RTMFPcontext, UInt16 streamId) {
 }
 
 
-bool Invoker::callFunction(unsigned int RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId) {
+bool Invoker::callFunction(UInt32 RTMFPcontext, const char* function, int nbArgs, const char** args, const char* peerId) {
 	{
 		lock_guard<mutex> lock(_mutexConnections);
 
@@ -851,6 +852,8 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 			_handler.queue(onPushAudio, RTMFPcontext, Packet(writeBuffer.buffer), writeBuffer.time, AMF::TYPE_AUDIO);
 		else if (writeBuffer.type == AMF::TYPE_VIDEO)
 			_handler.queue(onPushVideo, RTMFPcontext, Packet(writeBuffer.buffer), writeBuffer.time, AMF::TYPE_VIDEO);
+		else if (writeBuffer.type == AMF::TYPE_DATA)
+			_handler.queue(onPushData, RTMFPcontext, Packet(writeBuffer.buffer), writeBuffer.time, AMF::TYPE_DATA);
 		else
 			WARN("Invoker::write() - Unhandled packet type : ", writeBuffer.type)
 		
@@ -867,23 +870,28 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 
 int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) {
 
-	_mutexRead.lock();
 	int nbRead = 0;
 	Time noData;
-	while (!nbRead && !isInterrupted()) {
+	while (!nbRead) {
 
+		int code(0);
+		if ((code = isInterrupted(RTMFPcontext)))
+			return code;
+
+		_mutexRead.lock();
 		auto itBuffer = _connection2Buffer.find(RTMFPcontext);
 		if (itBuffer == _connection2Buffer.end()) {
 			WARN("Unable to find the buffer for connection ", RTMFPcontext, ", it can be closed")
-			nbRead = -1;
-			break;
+			_mutexRead.unlock();
+			return ERROR_CONN_INTERRUPT;
 		}
 
 		auto itMedia = itBuffer->second.mapMedias.find(mediaId);
 		if (itMedia == itBuffer->second.mapMedias.end()) {
 			WARN("Unable to find buffer media ", mediaId, " of connection ", RTMFPcontext)
 			nbRead = -1;
-			break;
+			_mutexRead.unlock();
+			return ERROR_CONN_INTERRUPT;
 		}
 
 		if (!itMedia->second.mediaPackets.empty()) {
@@ -915,6 +923,7 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) 
 				// If packet too big : save position and exit, else write footer
 				if (bufferSize > toRead) {
 					packet.pos += toRead;
+					_mutexRead.unlock();
 					break;
 				}
 				writer.write32(11 + packet.size()); // footer, size on 4 bytes
@@ -922,16 +931,17 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) 
 			}
 			// Finally update the nbRead & available
 			nbRead += writer.size();
+			_mutexRead.unlock();
 		}
 		else {
+			_mutexRead.unlock();
 			if (noData.isElapsed(1000)) {
 				DEBUG("Nothing available during last second...")
 				noData.update();
 			}
-			UNLOCK_RUN_LOCK(_mutexRead, itMedia->second.readSignal.wait(DELAY_SIGNAL_READ));
+			_waitSignal.wait(DELAY_SIGNAL_READ);
 		}
 	}
-	_mutexRead.unlock();
 	return nbRead;
 }
 
@@ -1020,7 +1030,7 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 		}
 
 		itMedia->second.mediaPackets.emplace_back(packet, time + itMedia->second.timeOffset, type);
-		itMedia->second.readSignal.set(); // signal that data is available
+		_waitSignal.set(); // signal that data is available
 	}
 }
 
