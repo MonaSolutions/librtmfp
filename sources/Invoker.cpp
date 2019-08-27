@@ -434,9 +434,10 @@ int Invoker::isInterrupted(UInt32 RTMFPcontext) {
 		lock_guard<mutex> lock(_mutexConnections);
 		auto it = _mapConnections.find(RTMFPcontext);
 		if (it == _mapConnections.end())
-			return ERROR_CONN_INTERRUPT;
-		if (it->second->isInterrupted()) {
-			removeConnection(it, true);
+			return ERROR_CONN_INTERRUPT; 
+		bool interrupted = it->second->isInterrupted();
+		if (interrupted || it->second->status >= RTMFP::NEAR_CLOSED) {
+			removeConnection(it, interrupted);
 			return _mapConnections.empty()? ERROR_LAST_INTERRUPT : ERROR_CONN_INTERRUPT;
 		}
 	}
@@ -717,16 +718,22 @@ int Invoker::waitForEvent(UInt32 RTMFPcontext, UInt8 mask) {
 	int handled = 0;
 
 	while (!handled) {
-		int code(0);
-		if ((code = isInterrupted(RTMFPcontext)))
-			return code;
+		if (!Thread::running())
+			return ERROR_APP_INTERRUPT;
 
-		// Event handled?
-		_mutexConnections.lock();
-		auto it = _mapConnections.find(RTMFPcontext);
-		if (it->second->flags & mask)
-			handled = 1;
-		_mutexConnections.unlock();
+		{
+			lock_guard<mutex> lock(_mutexConnections);
+			auto it = _mapConnections.find(RTMFPcontext);
+			if (it == _mapConnections.end())
+				return ERROR_CONN_INTERRUPT;
+			bool interrupted = it->second->isInterrupted();
+			if (interrupted || it->second->status >= RTMFP::NEAR_CLOSED) {
+				removeConnection(it, interrupted);
+				return _mapConnections.empty() ? ERROR_LAST_INTERRUPT : ERROR_CONN_INTERRUPT;
+			} else if (it->second->flags & mask) // Event handled?
+				handled = 1;
+		}
+		return 0;
 	}
 
 	return handled;
@@ -780,17 +787,9 @@ bool Invoker::callFunction(UInt32 RTMFPcontext, const char* function, int nbArgs
 
 int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 
-	{
-		lock_guard<mutex> lock(_mutexConnections);
-
-		auto it = _mapConnections.find(RTMFPcontext);
-		if (it == _mapConnections.end()) {
-			ERROR("Invoker::write() - Unable to find the connection ", RTMFPcontext)
-			return -1;
-		}
-		else if (it->second->status >= RTMFP::NEAR_CLOSED)
-			return -1; // to stop the caller loop
-	}
+	int code(0);
+	if ((code = isInterrupted(RTMFPcontext)))
+		return code;
 
 	// Find the writing buffer for current session
 	lock_guard<mutex> lock(_mutexWrite);
