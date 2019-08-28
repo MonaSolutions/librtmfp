@@ -243,7 +243,9 @@ LIBRTMFP_API char RTMFP_WaitForEvent(unsigned int RTMFPcontext, RTMFPMask mask) 
 	}
 
 	int res = GlobalInvoker->waitForEvent(RTMFPcontext, mask);
-	return (res <= 0) ? HandleError(res) : 1;
+	if (res < 0)
+		return HandleError(res);
+	return (char)res;
 }
 
 void RTMFP_LogSetCallback(void(* onLog)(unsigned int, const char*, long, const char*)) {

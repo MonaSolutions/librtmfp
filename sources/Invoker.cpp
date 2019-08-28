@@ -715,9 +715,7 @@ int Invoker::addStream(UInt32 RTMFPcontext, UInt8 mask, const char* streamName, 
 }
 
 int Invoker::waitForEvent(UInt32 RTMFPcontext, UInt8 mask) {
-	int handled = 0;
-
-	while (!handled) {
+	for (;;) {
 		if (!Thread::running())
 			return ERROR_APP_INTERRUPT;
 
@@ -730,13 +728,14 @@ int Invoker::waitForEvent(UInt32 RTMFPcontext, UInt8 mask) {
 			if (interrupted || it->second->status >= RTMFP::NEAR_CLOSED) {
 				removeConnection(it, interrupted);
 				return _mapConnections.empty() ? ERROR_LAST_INTERRUPT : ERROR_CONN_INTERRUPT;
-			} else if (it->second->flags & mask) // Event handled?
-				handled = 1;
+			}
+			else if (it->second->flags & mask) // Event handled?
+				break;
 		}
-		return 0;
+		_waitSignal.wait(DELAY_BLOCKING_SIGNALS);
 	}
 
-	return handled;
+	return 1;
 }
 
 bool Invoker::closePublication(UInt32 RTMFPcontext, const char* streamName) {
