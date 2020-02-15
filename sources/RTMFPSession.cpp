@@ -300,7 +300,7 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 }
 
 bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* parameters, bool audioReliable, bool videoReliable, const string& groupHex, const string& groupTxt, const string& groupName, UInt16 mediaCount) {
-	INFO("Connecting to group ", groupTxt, " (mediaId=", mediaCount, " ; audioReliable=", audioReliable, " ; videoReliable=", videoReliable, ")...")
+	INFO("Connecting to group ", groupTxt, "00 (mediaId=", mediaCount, " ; audioReliable=", audioReliable, " ; videoReliable=", videoReliable, ")...")
 
 	if (status != RTMFP::CONNECTED) {
 		ERROR("Cannot start a NetGroup connection before being connected to the server") 
