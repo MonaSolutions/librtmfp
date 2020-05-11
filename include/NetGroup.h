@@ -66,10 +66,7 @@ public:
 		FETCH_PERIOD = 7
 	};
 
-	struct NetGroupException : Base::Ex { struct P2PEstablishment; struct P2PRate; struct P2PPullTimeout; RTMFP::CLOSE_REASON code; };
-		struct NetGroupException::P2PEstablishment : NetGroupException { P2PEstablishment() { code = RTMFP::P2P_ESTABLISHMENT; } };
-		struct NetGroupException::P2PRate : NetGroupException { P2PRate() { code = RTMFP::P2P_RATE; } };
-		struct NetGroupException::P2PPullTimeout : NetGroupException { P2PPullTimeout() { code = RTMFP::P2P_PULL_TIMEOUT; } };
+	struct NetGroupException : Base::Ex { RTMFP::CLOSE_REASON code; };
 
 	NetGroup(const Base::Timer& timer, Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& groupName, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
 		bool audioReliable, bool videoReliable);
@@ -125,6 +122,10 @@ protected:
 private:
 	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PSession>>
 	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PSession>>::iterator
+
+	struct P2PEstablishment : NetGroupException { P2PEstablishment() { code = RTMFP::P2P_ESTABLISHMENT; } };
+	struct P2PRate : NetGroupException { P2PRate() { code = RTMFP::P2P_RATE; } };
+	struct P2PPullTimeout : NetGroupException { P2PPullTimeout() { code = RTMFP::P2P_PULL_TIMEOUT; } };
 
 	// Static function to read group config parameters sent in a Media Subscription message
 	static void					ReadGroupConfig(std::shared_ptr<RTMFPGroupConfig>& parameters, Base::BinaryReader& packet);

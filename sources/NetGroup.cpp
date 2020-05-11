@@ -431,7 +431,7 @@ bool NetGroup::manage(Exception& ex) {
 
 	// P2P unable, we reset the connection
 	if (!_pGroupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
-		ex.set<NetGroupException::P2PEstablishment>(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...");
+		ex.set<P2PEstablishment>(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...");
 		return false;
 	}
 	
@@ -439,7 +439,7 @@ bool NetGroup::manage(Exception& ex) {
 	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
 		// Count > 10 to be sure that we have sufficient tries
 		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
-			ex.set<NetGroupException::P2PRate>("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...");
+			ex.set<P2PRate>("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...");
 			return false;
 		}
 		_p2pRateTime.update();
@@ -447,7 +447,7 @@ bool NetGroup::manage(Exception& ex) {
 
 	// Pull Congestion timeout reached, we reset the connection
 	if (_pullTimeout) {
-		ex.set<NetGroupException::P2PPullTimeout>("Pull timeout reached, we close the session...");
+		ex.set<P2PPullTimeout>("Pull timeout reached, we close the session...");
 		return false;
 	}
 
