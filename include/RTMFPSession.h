@@ -161,9 +161,6 @@ struct RTMFPSession : public FlowManager {
 	// Called by a peer when a concurrent connection happen (to notify netgroup)
 	void							handleConcurrentSwitch();
 
-	// Called by NetGroup when an exception occurs, it notify the client and close the session
-	void							handleNetGroupException(RTMFP::CLOSE_REASON reason);
-
 	// Called by Handshaker when receiving an empty address from the server rendezvous service (peer not found)
 	void							handlePeerDisconnection(const std::string& peerId);
 

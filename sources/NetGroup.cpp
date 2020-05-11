@@ -427,30 +427,29 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 	_mapPeers.erase(itPeer);
 }
 
-void NetGroup::manage() {
+bool NetGroup::manage(Exception& ex) {
 
 	// P2P unable, we reset the connection
 	if (!_pGroupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
-		ERROR(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...")
-		_conn.handleNetGroupException(RTMFP::P2P_ESTABLISHMENT);
-		return;
+		ex.set<NetGroupException::P2PEstablishment>(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...");
+		return false;
 	}
 	
 	// P2P rate too low, we reset the connection
-	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
+	//if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
+	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(2000)) {
 		// Count > 10 to be sure that we have sufficient tries
-		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
-			ERROR("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...")
-			_conn.handleNetGroupException(RTMFP::P2P_RATE);
-			return;
-		}
+		//if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
+			ex.set<NetGroupException::P2PRate>("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...");
+			return false;
+		//}
 		_p2pRateTime.update();
 	}
 
 	// Pull Congestion timeout reached, we reset the connection
 	if (_pullTimeout) {
-		_conn.handleNetGroupException(RTMFP::P2P_PULL_TIMEOUT);
-		return;
+		ex.set<NetGroupException::P2PPullTimeout>("Pull timeout reached, we close the session...");
+		return false;
 	}
 
 	// Send the Group Report message (0A) to a random connected peer
@@ -492,6 +491,7 @@ void NetGroup::manage() {
 
 		_lastStats.update();
 	}
+	return true;
 }
 
 void NetGroup::updateBestList() {

@@ -393,8 +393,15 @@ bool RTMFPSession::manage() {
 		_handshaker.manage();
 
 	// Manage NetGroup
-	if (_group && status == RTMFP::CONNECTED)
-		_group->manage();
+	if (_group && status == RTMFP::CONNECTED) {
+		Exception ex;
+		if (!_group->manage(ex)) {
+			ERROR(ex);
+			close(true, ex.cast<NetGroup::NetGroupException>().code);
+			onNetGroupException(_id);
+			return false;
+		}
+	}
 
 	return !failed();
 }
@@ -724,11 +731,6 @@ void RTMFPSession::updatePeerAddress(const std::string& peerId, const Base::Sock
 void RTMFPSession::handleConcurrentSwitch() {
 	if (_group) 
 		_group->handleConcurrentSwitch();
-}
-
-void RTMFPSession::handleNetGroupException(RTMFP::CLOSE_REASON reason) {
-	close(true, reason);
-	onNetGroupException(_id);
 }
 
 void RTMFPSession::handlePeerDisconnection(const string& peerId) {
