@@ -436,13 +436,12 @@ bool NetGroup::manage(Exception& ex) {
 	}
 	
 	// P2P rate too low, we reset the connection
-	//if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
-	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(2000)) {
+	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
 		// Count > 10 to be sure that we have sufficient tries
-		//if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
+		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
 			ex.set<NetGroupException::P2PRate>("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...");
 			return false;
-		//}
+		}
 		_p2pRateTime.update();
 	}
 
