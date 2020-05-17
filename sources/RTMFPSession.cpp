@@ -397,7 +397,12 @@ bool RTMFPSession::manage() {
 		Exception ex;
 		if (!_group->manage(ex)) {
 			ERROR(ex);
-			close(true, ex.cast<NetGroup::NetGroupException>().code);
+			// /!\ Close the NetGroup, do not close the session to avoid closing the fallback (if exist) too
+			if (_group) {
+				_group->onMedia = nullptr;
+				_group->onStatus = nullptr;
+				_group.reset();
+			}
 			onNetGroupException(_id);
 			return false;
 		}
