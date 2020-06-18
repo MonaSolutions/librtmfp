@@ -3,6 +3,13 @@ Installing librtmfp
 
 ## Linux Installation
 
+### Prerequisites
+
+- [g++](https://gcc.gnu.org/) version >=5 (or compliant clang...)
+- [OpenSSL](https://www.openssl.org/) libraries with headers, usually dev-package named `libssl-dev` or `openssl-devel`
+
+### Installation steps
+
 - Clone librtmfp :
 
 	git clone https://github.com/MonaSolutions/librtmfp.git
