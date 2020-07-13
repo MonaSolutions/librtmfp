@@ -16,7 +16,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 
 #include "Base/Timer.h"
-#include "Base/Logs.h"
 
 
 using namespace std;
@@ -30,19 +29,22 @@ Timer::~Timer() {
 	}
 }
 
-void Timer::set(const OnTimer& onTimer,  UInt32 timeout) const {
+const Timer::OnTimer& Timer::set(const OnTimer& onTimer,  UInt32 timeout) const {
 	shared<std::set<const OnTimer*>> pMove;
-	if (!remove(onTimer, pMove))
-		return add(onTimer, timeout);
-	if (!timeout)
-		return;
-	// MOVE (more efficient!)
-	++_count;
-	const auto& it = _timers.emplace(onTimer._nextRaising = Time::Now() + timeout, move(pMove));
-	if (!it.second)
-		it.first->second->emplace(&onTimer);
-	 else if (!it.first->second)
-		it.first->second.reset(new std::set<const OnTimer*>({ &onTimer }));
+	if (!remove(onTimer, pMove)) {
+		add(onTimer, timeout);
+		return onTimer;
+	}
+	if (timeout) {
+		// MOVE (more efficient!)
+		++_count;
+		const auto& it = _timers.emplace(onTimer._nextRaising = Time::Now() + timeout, move(pMove));
+		if (!it.second)
+			it.first->second->emplace(&onTimer);
+		 else if (!it.first->second)
+			 it.first->second.set().emplace(&onTimer);
+	}
+	return onTimer;
 }
 
 void Timer::add(const OnTimer& onTimer,  UInt32 timeout) const {
@@ -51,7 +53,7 @@ void Timer::add(const OnTimer& onTimer,  UInt32 timeout) const {
 	++_count;
 	auto& it(_timers[(onTimer._nextRaising=Time::Now() + timeout)]);
 	if (!it)
-		it.reset(new std::set<const OnTimer*>());
+		it.set();
 	it->emplace(&onTimer);
 }
 
@@ -81,7 +83,7 @@ UInt32 Timer::raise() {
 		Int64 waiting(it->first-Time::Now());
 		if (waiting>0)
 			return UInt32(waiting); // > 0!
-		auto itTimers(it->second);
+		auto itTimers(move(it->second));
 		_timers.erase(it);
 		for (const OnTimer* pTimer : *itTimers) {
 			pTimer->_nextRaising = 0;

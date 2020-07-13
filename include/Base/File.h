@@ -18,11 +18,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 #include "Base/Mona.h"
 #include "Base/Path.h"
-#include "Base/ThreadQueue.h"
 #include "Base/Handler.h"
-#if !defined(_WIN32)
-#include <fcntl.h>
-#endif
 
 namespace Base {
 
@@ -33,7 +29,7 @@ struct File : virtual Object {
 	typedef Event<void(shared<Buffer>& pBuffer, bool end)>	OnReaden;
 	typedef Event<void(const Exception&)>					OnError;
 	typedef Event<void(bool deletion)>						OnFlush;
-	NULLABLE
+	NULLABLE(!_loaded)
 
 	/*!
 	Decoder offers to decode data in the reception thread when file is used with IOFile,
@@ -56,7 +52,6 @@ struct File : virtual Object {
 
 	const Mode  mode;
 
-	explicit operator bool() const { return _loaded; }
 	operator const Path&() const { return _path; }
 
 	// properties
@@ -98,24 +93,25 @@ struct File : virtual Object {
 	Create file or folder */
 	bool				create(Exception& ex) { return write(ex, NULL, 0); }
 
-	void				reset();
+	void				reset(UInt64 position = 0);
 
 private:
 	Path				_path;
 	volatile bool		_loaded;
-	long				_handle;
 	std::atomic<UInt64>	_readen;
 	std::atomic<UInt64>	_written;
-#if !defined(_WIN32)
-	struct flock		_lock;
+#if defined(_WIN32)
+	HANDLE				_handle;
+#else
+	long				_handle;
 #endif
 
 	//// Used by IOFile /////////////////////
-	Decoder*					pDecoder;
-	bool						externDecoder;
-	OnReaden					onReaden;
-	OnFlush						onFlush;
-	OnError						onError;
+	Decoder*					_pDecoder;
+	bool						_externDecoder;
+	OnReaden					_onReaden;
+	OnFlush						_onFlush;
+	OnError						_onError;
 
 	std::atomic<UInt64>			_queueing;
 	std::atomic<UInt32>			_flushing;

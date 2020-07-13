@@ -29,7 +29,7 @@ BandWriter class is used to write messages
 It is implemented by FlowManager & RTMFPHandshaker
 */
 struct BandWriter : virtual Base::Object {
-	BandWriter() :	_pEncoder(new RTMFP::Engine((const Base::UInt8*)RTMFP_DEFAULT_KEY)), _pDecoder(new RTMFP::Engine((const Base::UInt8*)RTMFP_DEFAULT_KEY)) {}
+	BandWriter() :	_pEncoder(SET, (const Base::UInt8*)RTMFP_DEFAULT_KEY), _pDecoder(SET, (const Base::UInt8*)RTMFP_DEFAULT_KEY) {}
 	virtual ~BandWriter() {}
 
 	// Return the name of the session
@@ -39,15 +39,15 @@ struct BandWriter : virtual Base::Object {
 	virtual bool							failed()=0;
 
 	// Return the socket object
-	virtual const std::shared_ptr<Base::Socket>&		socket(Base::IPAddress::Family family)=0;
+	virtual const Base::shared<Base::Socket>&		socket(Base::IPAddress::Family family)=0;
 
 	// Return the decoder to start the decoding process
-	std::shared_ptr<RTMFP::Engine>&			decoder() { return _pDecoder; }
+	Base::shared<RTMFP::Engine>&			decoder() { return _pDecoder; }
 
 protected:
 
 	// Encryption/Decryption
-	std::shared_ptr<RTMFP::Engine>			_pDecoder;
-	std::shared_ptr<RTMFP::Engine>			_pEncoder;
+	Base::shared<RTMFP::Engine>			_pDecoder;
+	Base::shared<RTMFP::Engine>			_pEncoder;
 	Base::SocketAddress						_address; // current address used for the session
 };

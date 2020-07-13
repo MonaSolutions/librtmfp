@@ -83,7 +83,7 @@ public:
 	void			handlePeerDisconnection(const std::string& peerId);
 
 	// Add a peer to the NetGroup map
-	bool			addPeer(const std::string& peerId, std::shared_ptr<P2PSession> pPeer);
+	bool			addPeer(const std::string& peerId, const Base::shared<P2PSession>& pPeer);
 
 	// Remove a peer from the NetGroup map
 	void			removePeer(const std::string& peerId);
@@ -120,15 +120,15 @@ protected:
 	virtual bool	messageHandler(const std::string& name, AMFReader& message, Base::UInt64 flowId, Base::UInt64 writerId, double callbackHandler);
 
 private:
-	#define MAP_PEERS_TYPE std::map<std::string, std::shared_ptr<P2PSession>>
-	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, std::shared_ptr<P2PSession>>::iterator
+	#define MAP_PEERS_TYPE std::map<std::string, Base::shared<P2PSession>>
+	#define MAP_PEERS_ITERATOR_TYPE std::map<std::string, Base::shared<P2PSession>>::iterator
 
 	struct P2PEstablishment : NetGroupException { P2PEstablishment() { code = RTMFP::P2P_ESTABLISHMENT; } };
 	struct P2PRate : NetGroupException { P2PRate() { code = RTMFP::P2P_RATE; } };
 	struct P2PPullTimeout : NetGroupException { P2PPullTimeout() { code = RTMFP::P2P_PULL_TIMEOUT; } };
 
 	// Static function to read group config parameters sent in a Media Subscription message
-	static void					ReadGroupConfig(std::shared_ptr<RTMFPGroupConfig>& parameters, Base::BinaryReader& packet);
+	static void					ReadGroupConfig(const Base::shared<RTMFPGroupConfig>& parameters, Base::BinaryReader& packet);
 
 	// Return the Group Address calculated from a Peer ID
 	static const std::string&	GetGroupAddressFromPeerId(const char* rawId, std::string& groupAddress);
@@ -174,7 +174,7 @@ private:
 	};
 
 	// Read the group report and return true if at least a new peer has been found
-	bool						readGroupReport(const std::map<std::string, std::shared_ptr<GroupNode>>::iterator& itNode, Base::BinaryReader& packet);
+	bool						readGroupReport(const std::map<std::string, Base::shared<GroupNode>>::iterator& itNode, Base::BinaryReader& packet);
 
 	P2PSession::OnPeerGroupReport							_onGroupReport; // called when receiving a Group Report message from the peer
 	P2PSession::OnNewMedia									_onNewMedia; // called when a new PeerMedia is called (new stream available for the peer)
@@ -191,8 +191,8 @@ private:
 	Base::Timer::OnTimer									_onBestList; // update the Best List
 	const Base::Timer&										_timer; // timer for all time events
 
-	std::unique_ptr<GroupBuffer>							_pGroupBuffer; // Group fragments buffer, order all fragment in a thread and forward them
-	std::unique_ptr<RTMFPGroupConfig>						_pGroupParameters; // NetGroup parameters
+	Base::unique<GroupBuffer>								_pGroupBuffer; // Group fragments buffer, order all fragment in a thread and forward them
+	Base::unique<RTMFPGroupConfig>							_pGroupParameters; // NetGroup parameters
 
 	std::string												_myGroupAddress; // Our Group Address (peer identifier into the NetGroup)
 	PEER_LIST_ADDRESS_TYPE									_myAddresses; // Our public ip addresses for Group Report
@@ -200,8 +200,8 @@ private:
 	bool													_audioReliable; // if False we do not send back audio packets
 	bool													_videoReliable; // if False we do not send back video packets
 
-	std::map<std::string, std::shared_ptr<GroupNode>>		_mapDiedPeers; // Map of peer ID to died Peers GroupNode
-	std::map<std::string, std::shared_ptr<GroupNode>>		_mapHeardList; // Map of peer ID to Group address and info from Group Report
+	std::map<std::string, Base::shared<GroupNode>>		_mapDiedPeers; // Map of peer ID to died Peers GroupNode
+	std::map<std::string, Base::shared<GroupNode>>		_mapHeardList; // Map of peer ID to Group address and info from Group Report
 	std::map<std::string,std::string>						_mapGroupAddress; // Map of Group Address to peer ID (same as heard list)
 	std::set<std::string>									_bestList; // Last best list calculated
 	MAP_PEERS_TYPE											_mapPeers; // Map of peers ID to p2p connections

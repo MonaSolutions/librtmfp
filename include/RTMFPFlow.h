@@ -34,8 +34,8 @@ It manages acknowledgments and lost count of messages received
 */
 class RTMFPFlow : public virtual Base::Object {
 public:
-	RTMFPFlow(Base::UInt64 id, FlowManager& band, const std::shared_ptr<FlashConnection>& pMainStream, Base::UInt64 idWriterRef);
-	RTMFPFlow(Base::UInt64 id, const std::shared_ptr<FlashStream>& pStream, FlowManager& band, Base::UInt64 idWriterRef);
+	RTMFPFlow(Base::UInt64 id, FlowManager& band, const Base::shared<FlashConnection>& pMainStream, Base::UInt64 idWriterRef);
+	RTMFPFlow(Base::UInt64 id, const Base::shared<FlashStream>& pStream, FlowManager& band, Base::UInt64 idWriterRef);
 	virtual ~RTMFPFlow();
 
 	const Base::UInt64		id;
@@ -66,9 +66,9 @@ private:
 	Base::Time							_completeTime; // Time before closing definetly the flow
 	FlowManager&						_band; // RTMFP session to send messages
 	Base::UInt64						_stage; // Current stage (index) of messages received
-	std::shared_ptr<FlashStream>		_pStream; // NetStream handler of the flow
+	Base::shared<FlashStream>		_pStream; // NetStream handler of the flow
 	Base::UInt64						_writerRef; // Id of the writer linked to (read into fullduplex header part)
-	std::shared_ptr<Base::Buffer>		_pBuffer;
+	Base::shared<Base::Buffer>		_pBuffer;
 	Base::UInt32						_lost;
 	std::map<Base::UInt64, Fragment>	_fragments; // map of all fragments received and not handled for now
 };

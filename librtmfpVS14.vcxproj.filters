@@ -81,9 +81,6 @@
     <ClCompile Include="sources\Base\IPAddress.cpp">
       <Filter>Base</Filter>
     </ClCompile>
-    <ClCompile Include="sources\Base\Logger.cpp">
-      <Filter>Base</Filter>
-    </ClCompile>
     <ClCompile Include="sources\Base\Logs.cpp">
       <Filter>Base</Filter>
     </ClCompile>
@@ -148,6 +145,15 @@
       <Filter>Base</Filter>
     </ClCompile>
     <ClCompile Include="sources\Base\File.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\ConsoleLogger.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\DataWriter.cpp">
+      <Filter>Util</Filter>
+    </ClCompile>
+    <ClCompile Include="sources\Base\URL.cpp">
       <Filter>Base</Filter>
     </ClCompile>
   </ItemGroup>
@@ -343,6 +349,24 @@
       <Filter>NetGroup</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\File.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\ConsoleLogger.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\SRT.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\ByteWriter.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\MIME.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Media.h">
+      <Filter>Util</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\URL.h">
       <Filter>Base</Filter>
     </ClInclude>
   </ItemGroup>

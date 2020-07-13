@@ -95,8 +95,8 @@ private:
 
 
 	RTMFP::Output&							_output;
-	std::shared_ptr<RTMFPSender>			_pSender;
-	std::shared_ptr<RTMFPSender::Queue>		_pQueue;
+	Base::shared<RTMFPSender>				_pSender;
+	Base::shared<RTMFPSender::Queue>		_pQueue;
 	Base::UInt64							_stageAck;
 	Base::UInt32							_lostCount;
 	Base::UInt32							_repeatDelay;

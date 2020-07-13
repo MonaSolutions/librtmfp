@@ -44,23 +44,19 @@ Finally allows too to return an argument (result, why multiple subscription is f
 /!\ For performance and design reason it's not thread-safe */
 template<typename Result, typename... Args>
 struct Event<Result(Args ...)> : virtual Object {
-	NULLABLE
+	NULLABLE(!_pFunction || !_pFunction->operator bool()) // 'true' if is subscribed
 
 	Event(std::nullptr_t) {} // Null Event, usefull just for (const Event& event=nullptr) default parameter
-	Event() : _pFunction(new std::function<Result(Args...)>()) {}
-	Event(const Event& event) : _pFunction(new std::function<Result(Args...)>()) { operator=(event); }
+	Event() : _pFunction(SET) {}
+	Event(const Event& event) : _pFunction(SET) { operator=(event); }
 	Event(const Event&& event) : _pFunction(event._pFunction) {}
 	/*!
 	Build an event subscriber from lambda function */
-	explicit Event(std::function<Result(Args...)>&& function) : _pFunction(new std::function<Result(Args...)>(std::move(function))) {}
+	explicit Event(std::function<Result(Args...)>&& function) : _pFunction(SET, std::move(function)) {}
 
 	/*!
 	Raise the event */
 	Result operator()(Args... args) const { return _pFunction && *_pFunction ? (*_pFunction)(std::forward<Args>(args)...) : Result();}
-
-	/*!
-	Return 'true' if is subscribed */
-	explicit operator bool() const { return _pFunction && _pFunction->operator bool(); }
 
 	/*!
 	Assign lambda function */
@@ -79,8 +75,7 @@ struct Event<Result(Args ...)> : virtual Object {
 			FATAL_ERROR(typeof(event), " try to subscribe to null event");
 		if (*_pFunction)
 			FATAL_ERROR("Event ", typeof(*this), " already subscribed, unsubscribe before with nullptr assignement");
-		weak<std::function<Result(Args...)>> weakFunction(event._pFunction);
-		*_pFunction = [weakFunction](Args... args) {
+		*_pFunction = [weakFunction = weak<std::function<Result(Args...)>>(event._pFunction)](Args... args) {
 			shared<std::function<Result(Args...)>> pFunction(weakFunction.lock());
 			return (pFunction && *pFunction) ? (*pFunction)(std::forward<Args>(args)...) : Result();
 		};

@@ -17,16 +17,28 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #pragma once
 
 #include "Base/Mona.h"
-#include "Base/Exceptions.h"
+#include "Base/Thread.h"
+#include "Base/Logs.h"
 
 namespace Base {
 
 
 struct Runner : virtual Object {
-	Runner(const char* name) : name(name) {}
+	Runner(const char* name) : name(name), noLog(Logs::Logging()), noDump(Logs::Dumping())  {}
 
 	const char* name;
+	bool noLog;
+	bool noDump;
 
+	template <typename ...Args>
+	void run(Args&&... args) {
+		Thread::ChangeName newName(std::forward<Args>(args)...);
+		Exception ex;
+		Logs::Disable logs(!noLog, !noDump);
+		AUTO_ERROR(run(ex), newName);
+	}
+
+private:
 	// If ex is raised, an error is displayed if the operation has returned false
 	// otherwise a warning is displayed
 	virtual bool run(Exception& ex) = 0;

@@ -21,118 +21,86 @@ using namespace std;
 namespace Base {
 
 Parameters& Parameters::setParams(const Parameters& other) {
-	if (!other.count()) {
-		clear();
-		return *this;
-	}
 	// clear self!
-	if (_pMap && !_pMap->empty()) {
-		_pMap->clear();
-		onParamClear();
-	}
+	clear();
 	// copy data
-	if (other._pMap && !other._pMap->empty()) {
-		if (!_pMap)
-			_pMap.reset(new map<string, string, String::IComparator>());
-		*_pMap = *other._pMap;
-	}
-	// onChange!
-	for (auto& it : *this)
-		onParamChange(it.first, &it.second);
-	return *this;
-}
-
-Parameters& Parameters::setParams(Parameters&& other) {
-	if (!other.count()) {
-		clear();
-		return *this;
-	}
-	// clear self!
-	if(_pMap && !_pMap->empty()) {
-		_pMap.reset();
-		onParamClear();
-	}
-	// move data
-	_pMap = std::move(other._pMap);
-	// clear other
-	if(_pMap && !_pMap->empty())
-		other.onParamClear();
+	if (other.count())
+		_pMap.set() = *other._pMap;
 	// onChange!
 	for (auto& it : self)
 		onParamChange(it.first, &it.second);
-	return *this;
+	return self;
+}
+
+Parameters& Parameters::setParams(Parameters&& other) {
+	// clear self!
+	clear();
+	// move data
+	if(other.count()) {
+		_pMap = std::move(other._pMap);
+		// clear other
+		other.onParamClear();
+	}	
+	// onChange!
+	for (auto& it : self)
+		onParamChange(it.first, &it.second);
+	return self;
 }
 
 Parameters::ForEach Parameters::range(const std::string& prefix) const {
-	if (!_pMap)
-		return ForEach();
+	if(prefix.empty())
+		return ForEach(begin(), end());
 	string end(prefix);
 	end.back() = prefix.back() + 1;
-	return ForEach(_pMap->lower_bound(prefix), _pMap->lower_bound(end));
+	return ForEach(lower_bound(prefix), lower_bound(end));
 }
 
 bool Parameters::getString(const string& key, std::string& value) const {
-	const char* temp = getParameter(key);
-	if (!temp)
+	const string* pValue = getParameter(key);
+	if (!pValue)
 		return false;
-	value.assign(temp);
+	value.assign(*pValue);
 	return true;
 }
 
 const char* Parameters::getString(const string& key, const char* defaultValue) const {
-	const char* temp = getParameter(key);
-	return temp ? temp : defaultValue;
+	const string* pValue = getParameter(key);
+	return pValue ? pValue->c_str() : defaultValue;
 }
 
 bool Parameters::getBoolean(const string& key, bool& value) const {
-	const char* temp = getParameter(key);
-	if (!temp)
+	const string* pValue = getParameter(key);
+	if (!pValue)
 		return false;
-	value = !String::IsFalse(temp); // otherwise considerate the value as true
+	value = !String::IsFalse(*pValue); // otherwise considerate the value as true
 	return true;
 }
 
-const char* Parameters::getParameter(const string& key) const {
-	if (_pMap) {
-		const auto& it = _pMap->find(key);
-		if (it != _pMap->end())
-			return it->second.c_str();
-	}
+const string* Parameters::getParameter(const string& key) const {
+	const auto& it = params().find(key);
+	if (it != params().end())
+		return &it->second;
 	return onParamUnfound(key);
 }
 
 Parameters& Parameters::clear(const string& prefix) {
-	if (!_pMap || _pMap->empty())
-		return *this;
-	if (!prefix.empty()) {
+	if (!count())
+		return self;
+	if (prefix.empty()) {
+		_pMap.reset();
+		onParamClear();
+	} else {
 		string end(prefix);
 		end.back() = prefix.back() + 1;
-		auto it = _pMap->lower_bound(prefix);
-		auto itEnd = _pMap->lower_bound(end);
-		if (it != _pMap->begin() || itEnd != _pMap->end()) {
-			// partial erase
-			while (it != itEnd) {
-				// move key because "key" parameter because must stay valid for onParamChange call!
-				string key(move(it->first));
-				it = _pMap->erase(it);
-				onParamChange(key, NULL);
-			}
-			return self;
-		}
+		erase(_pMap->lower_bound(prefix), _pMap->lower_bound(end));
 	}
-	_pMap->clear();
-	onParamClear();
 	return self;
 }
 
 bool Parameters::erase(const string& key) {
 	// erase
-	if (!_pMap)
-		return false;
-	const auto& it(_pMap->find(key));
-	if (it == _pMap->end())
-		return true;
-	{
+	const auto& it(params().find(key));
+	if (it != params().end()) {
 		// move key because "key" parameter can be a "it->first" too, and must stay valid for onParamChange call!
 		string key(move(it->first));
 		_pMap->erase(it);
@@ -140,8 +108,22 @@ bool Parameters::erase(const string& key) {
 			clear();
 		else
 			onParamChange(key, NULL);
+		return true;
 	}
-	return true;
+	return false;
+}
+Parameters::const_iterator Parameters::erase(const_iterator first, const_iterator last) {
+	if (first == begin() && last == end()) {
+		clear();
+		return end();
+	}
+	const_iterator it;
+	for (it = first; it != last;) {
+		string key(move(it->first));
+		it = _pMap->erase(it);
+		onParamChange(key, NULL);
+	}
+	return it;
 }
 
 

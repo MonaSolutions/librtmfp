@@ -53,8 +53,8 @@ struct Handshake : virtual Base::Object {
 	bool					rdvDelayed; // If true we wait 5s before starting requests to rendezvous service
 
 	// Coding keys
-	std::shared_ptr<Base::Buffer>		farKey; // Far public key
-	std::shared_ptr<Base::Buffer>		farNonce; // Far nonce
+	Base::shared<Base::Buffer>		farKey; // Far public key
+	Base::shared<Base::Buffer>		farNonce; // Far nonce
 };
 
 /**************************************************
@@ -74,8 +74,8 @@ struct RTMFPHandshaker : BandWriter  {
 	// Start a new Handshake if possible and add it to the map of tags
 	// param delayed: if True we first try to connect directly to addresses and after 5s we start to contact the rendezvous service, if False we connect to all addresses
 	// return True if the connection is created
-	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p, bool delay);
-	bool								startHandshake(std::shared_ptr<Handshake>& pHandshake, const Base::SocketAddress& address, FlowManager* pSession, bool p2p);
+	bool								startHandshake(Base::shared<Handshake>& pHandshake, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p, bool delay);
+	bool								startHandshake(Base::shared<Handshake>& pHandshake, const Base::SocketAddress& address, FlowManager* pSession, bool p2p);
 
 	// Create the handshake object if needed and send a handshake 70 to address
 	void								sendHandshake70(const std::string& tag, const Base::SocketAddress& address, const Base::SocketAddress& host);
@@ -87,13 +87,13 @@ struct RTMFPHandshaker : BandWriter  {
 	void								close();
 
 	// Return the socket object
-	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family);
+	virtual const Base::shared<Base::Socket>&	socket(Base::IPAddress::Family family);
 
 	// Return true if the session has failed
 	virtual bool						failed();
 
 	// Remove the handshake properly
-	void								removeHandshake(std::shared_ptr<Handshake> pHandshake);
+	void								removeHandshake(const Base::shared<Handshake>& pHandshake);
 
 	// Treat decoded message
 	virtual void						receive(const Base::SocketAddress& address, const Base::Packet& packet);
@@ -120,10 +120,10 @@ private:
 	void								handleHandshake70(Base::BinaryReader& reader);
 
 	// Send the 2nd handshake request
-	void								sendHandshake38(const std::shared_ptr<Handshake>& pHandshake, const std::string& cookie);
+	void								sendHandshake38(const Base::shared<Handshake>& pHandshake, const std::string& cookie);
 
 	// Send the first handshake response (only in P2P mode)
-	void								sendHandshake70(const std::string& tag, std::shared_ptr<Handshake>& pHandshake);
+	void								sendHandshake70(const std::string& tag, Base::shared<Handshake>& pHandshake);
 
 	// Compute the public key if not already done
 	bool								computePublicKey();
@@ -131,8 +131,8 @@ private:
 	// Process current handshakes & manage cookies
 	void								processManage();
 
-	std::map<std::string, std::shared_ptr<Handshake>>		_mapTags; // map of Tag to waiting handshake
-	std::map<std::string, std::shared_ptr<Handshake>>		_mapCookies; // map of Cookies to waiting handshake
+	std::map<std::string, Base::shared<Handshake>>		_mapTags; // map of Tag to waiting handshake
+	std::map<std::string, Base::shared<Handshake>>		_mapCookies; // map of Cookies to waiting handshake
 
 	RTMFPSession*						_pSession; // Pointer to the main RTMFP session for assocation with new connections
 	const std::string					_name; // name of the session (handshaker)

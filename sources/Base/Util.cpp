@@ -27,8 +27,6 @@ using namespace std;
 
 namespace Base {
 
-const char* Util::_URICharReserved("%<>{}|\\\"^`#?\x7F");
-
 const char Util::_B64Table[65] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 const char Util::_ReverseB64Table[128] = {
@@ -62,7 +60,7 @@ const UInt8 Util::UInt8Generators[] = {
 };
 
 const Parameters& Util::Environment() {
-	static struct Environment : Parameters, virtual Object {
+	static const struct Environment : Parameters, virtual Object {
 		Environment() {
 			const char* line(*environ);
 			for (UInt32 i = 0; (line = *(environ + i)); ++i) {
@@ -98,208 +96,6 @@ UInt64 Util::Random() {
 	x ^= x << 23; // a
 	B = x ^ y ^ (x >> 17) ^ (y >> 26); // b, c
 	return B + y; // cast gives modulo here!
-}
-
-size_t Util::UnpackUrl(const char* url, string& address, string& path, string& query) {
-	
-	path.clear();
-	query.clear();
-
-
-	const char* dot(strpbrk(url, ":/\\"));
-	if (!dot) {
-		path.assign("/").append(url);
-		return 1; // is file!
-	}
-
-	
-	if (*dot == ':') {
-		// protocol://address
-		++dot;
-		while (*dot && (*dot == '/' || *dot == '\\'))
-			++dot;
-		if (!*dot) // no address, no path, just "scheme://"
-			return string::npos;
-		const char* itEnd(dot);
-		while (*itEnd && *itEnd != '/' && *itEnd != '\\' && *itEnd != '?')
-			++itEnd;
-		address.assign(dot, itEnd);
-		url = itEnd; // on slash after address
-	}
-
-	// Decode PATH
-
-	vector<size_t> slashs;
-
-	// level = 0 => path => next char
-	// level = 1 => path => /
-	// level > 1 => path => . after /
-	UInt8 level(1); 
-
-	ForEachDecodedChar forEach([&level,&slashs,&path,&query](char c,bool wasEncoded){
-
-		if (c == '?')
-			return false;
-
-		// path
-
-		if (c == '/' || c == '\\') {
-
-			// level + 1 = . level
-			if (level > 2) {
-				// /../
-				if (!slashs.empty()) {
-					path.resize(slashs.back());
-					slashs.pop_back();
-				} else
-					path.clear();
-			}
-			level = 1;
-
-			return true;
-		}
-		
-		if (level) {
-			// level = 1 or 2
-			if (level<3 && c == '.') {
-				++level;
-				return true;
-			}
-			slashs.emplace_back(path.size());
-			path.append("/..",level);
-			level = 0;
-		}
-
-		// Add current character
-		path += c;
-
-		return true;
-	});
-
-	url += DecodeURI(url,forEach);
-
-	// get QUERY
-	if (*url)
-		query.assign(url);
-
-	if (level) {
-		if (level > 2) // /..
-			path.resize(slashs.empty() ? 0 : slashs.back());
-		return string::npos;
-	}
-	return slashs.back()+1; // can't be empty here!
-}
-
-Parameters& Util::UnpackQuery(const char* query, size_t count, Parameters& parameters) {
-	ForEachParameter forEach([&parameters](const string& key, const char* value) {
-		parameters.setString(key, value ? value : "");
-		return true;
-	});
-	UnpackQuery(query, count, forEach);
-	return parameters;
-}
-
-UInt32 Util::UnpackQuery(const char* query, size_t count, const ForEachParameter& forEach) {
-	Int32 countPairs(0);
-	string name,value;
-	bool isName(true);
-
-	ForEachDecodedChar forEachDecoded([&isName, &countPairs, &name, &value, &forEach](char c, bool wasEncoded) {
-
-		if (!wasEncoded) {
-			if (c == '&') {
-				++countPairs;
-				if (!forEach(name, isName ? NULL : value.c_str())) {
-					countPairs *= -1;
-					return false;
-				}
-				isName = true;
-				value.clear();
-				name.clear();
-				return true;
-			}
-			if (c == '=' && isName) {
-				isName = false;
-				return true;
-			}
-			// not considerate '+' char to replace by ' ', because it affects Base64 value in query which includes '+',
-			// a space must be in a legal %20 format!
-		}
-		if (isName) {
-			if(countPairs || c != '?') // ignore first '?'!
-				name += c;
-		} else
-			value += c; 
-		return true;
-	});
-
-	if (DecodeURI(query, count, forEachDecoded) && countPairs>=0) {
-		// for the last pairs just if there was some decoded bytes
-		++countPairs;
-		forEach(name, isName ? NULL : value.c_str());
-	}
-
-	return abs(countPairs);
-}
-
-UInt32 Util::DecodeURI(const char* value, std::size_t count, const ForEachDecodedChar& forEach) {
-
-	const char* begin(value);
-
-	while (count && (count!=string::npos || *value)) {
-
-		if (*value == '%') {
-			// %
-			++value;
-			if(count!=string::npos)
-				--count;
-			if (!count || (count==string::npos && !*value)) {
-				 // syntax error
-				if (!forEach('%', false))
-					--value;
-				return value-begin;
-			}
-			
-			char hi = toupper(*value);
-			++value;
-			if(count!=string::npos)
-				--count;
-			if (!count || (count==string::npos && !*value)) {
-				// syntax error
-				if (forEach('%', false)) {
-					if (!forEach(hi, false))
-						--value;
-				} else
-					value-=2;
-				return value-begin;
-			}
-			char lo = toupper(*value++);
-			if (count != string::npos)
-				--count;
-			if (!isxdigit(lo) || !isxdigit(hi)) {
-				// syntax error
-				if (forEach('%', false)) {
-					if (forEach(hi, false)) {
-						if (forEach(lo, false))
-							continue;
-					} else
-						--value;
-				} else
-					value -= 2;
-				return value - begin;
-			}
-			if (forEach(char((hi - (hi <= '9' ? '0' : '7')) << 4) | ((lo - (lo <= '9' ? '0' : '7')) & 0x0F), true))
-				continue;
-			return value - 3 - begin;
-		}
-		if (!forEach(*value, false))
-			break;
-		++value;
-		if (count != string::npos)
-			--count;
-	}
-
-	return value - begin;
 }
 
 void Util::Dump(const UInt8* data, UInt32 size, Buffer& buffer) {
@@ -406,25 +202,23 @@ bool Util::ReadIniFile(const string& path, Parameters& parameters) {
 		if (kSize) {
 			kSize = String::TrimRight(key, kSize);
 
-			if(kSize>1) {
-				if (*key == '[' && ((vSize && value[vSize - 1] == ']') || (!value && key[kSize - 1] == ']'))) {
-					// section
-					// remove [
+			if (*key == '[' && ((vSize && value[vSize - 1] == ']') || (!value && key[kSize - 1] == ']'))) {
+				// section
+				// remove [
+				--kSize;
+				++key;
+				// remove ]
+				if (value)
+					--vSize;
+				else
 					--kSize;
-					++key;
-					// remove ]
-					if (value)
-						--vSize;
-					else
-						--kSize;
-					isSection = true;
-				}
+				isSection = true;
+			}
 
-				// remove quote on key
-				if (key[0] == key[kSize - 1] && (key[0] == '"' || key[0] == '\'')) {
-					kSize -= 2;
-					++key;
-				}
+			// remove quote on key
+			if (kSize>1 && key[0] == key[kSize - 1] && (key[0] == '"' || key[0] == '\'')) {
+				kSize -= 2;
+				++key;
 			}
 		}
 

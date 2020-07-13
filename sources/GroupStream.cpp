@@ -168,7 +168,7 @@ bool GroupPostStream::process(const Base::Packet& packet, Base::UInt64 flowId, B
 		return true;
 	}
 
-	AMFReader reader(packet.data(), packet.size());
+	AMFReader reader(packet);
 
 	switch (reader.nextType()) {
 	case DataReader::NUMBER: {

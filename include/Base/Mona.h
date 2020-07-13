@@ -31,16 +31,20 @@ details (or else see http://mozilla.org/MPL/2.0/).
 /////  Usefull macros and patchs   //////
 
 #define self    (*this)
-#define NULLABLE explicit operator void() { static_assert(std::is_constructible<bool, decltype(*this)>::value || std::is_convertible<decltype(*this), bool>::value, "Missing nullable operator"); }
+#define NULLABLE(CONDITION) explicit operator bool() const { return CONDITION ? false : true; }
 
 #define BIN		(Base::UInt8*)
 #define STR		(char*)
 
+#define SET		std::piecewise_construct
+#define SET_T	std::piecewise_construct_t
 #define EXPAND(VALUE)	VALUE"",(sizeof(VALUE)-1) // "" concatenation is here to check that it's a valid const string is not a pointer of char*
 
-#define STRINGIZE(x) STRINGIZE2(x)
-#define STRINGIZE2(x) #x
-#define LINE_STRING STRINGIZE(__LINE__)
+#define STRINGIFY(x) STRINGIFY_(x)
+#define STRINGIFY_(x) #x
+#define LINE_STRING STRINGIFY(__LINE__)
+#define FOURCC(a,b,c,d) uint32_t( ((a)<<24) | ((b)<<16) | ((c)<<8) | (d) )
+
 
 #if defined(_WIN32)
 #define _WINSOCKAPI_    // stops windows.h including winsock.h
@@ -54,6 +58,12 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #define _BSD 1 // Detect BSD system
 #endif
 
+
+#if defined(_WIN64)
+#define OpenSSL(FILE) <openssl64/FILE>
+#else
+#define OpenSSL(FILE) <openssl/FILE>
+#endif
 
 //
 // Automatically link Base library.
@@ -84,16 +94,60 @@ void DetectMemoryLeak();
 void DetectMemoryLeak();
 #endif
 
-
-
 ///// TYPES /////
+/*!
+unique_ptr on the mode of shared and which forbid custom deleter (too complicated, use a event on object deletion rather) */
 template<typename Type>
-using shared = std::shared_ptr<Type>;
+struct unique : std::unique_ptr<Type> {
+	unique() : std::unique_ptr<Type>() {}
+	template<typename ArgType, typename = typename std::enable_if<std::is_constructible<std::unique_ptr<Type>, ArgType>::value>::type>
+	unique(ArgType&& arg) : std::unique_ptr<Type>(std::forward<ArgType>(arg)) {}
+	template<typename ...Args>
+	unique(SET_T, Args&&... args) : std::unique_ptr<Type>(new Type(std::forward<Args>(args)...)) {}
+
+	template<typename NewType = Type, typename ...Args>
+	NewType& set(Args&&... args) { std::unique_ptr<Type>::reset(new NewType(std::forward<Args>(args)...)); return (NewType&)*self; }
+	unique& reset() { std::unique_ptr<Type>::reset(); return self; }
+	template<typename ArgType>
+	unique& operator=(ArgType&& arg) { std::unique_ptr<Type>::operator=(std::forward<ArgType>(arg)); return self; };
+	template<typename NewType>
+	unique& operator=(NewType* pType) { std::unique_ptr<Type>::reset(pType); return self; };
+};
+/*!
+shared_ptr which forbid pointer/new construction (too slow) and custom deleter (too complicated, use a event on object deletion rather) */
+template<typename Type>
+struct shared : std::shared_ptr<Type> {
+	shared() : std::shared_ptr<Type>() {}
+	template<typename ArgType, typename = typename std::enable_if<!std::is_pointer<ArgType>::value && std::is_constructible<std::shared_ptr<Type>, ArgType>::value>::type>
+	shared(ArgType&& arg) : std::shared_ptr<Type>(std::forward<ArgType>(arg)) {}
+	template<typename ArgType>
+	shared(const ArgType& arg, Type* pObj) : std::shared_ptr<Type>(arg, pObj) {}
+	template<typename ...Args>
+	shared(SET_T, Args&&... args) : std::shared_ptr<Type>(std::make_shared<Type>(std::forward<Args>(args)...)) {}
+
+	template<typename NewType = Type, typename ...Args>
+	NewType& set(Args&&... args) { return *(NewType*)std::shared_ptr<Type>::operator=(std::make_shared<NewType>(std::forward<Args>(args)...)).get(); }
+	shared& reset() { std::shared_ptr<Type>::reset(); return self; }
+	template<typename ArgType>
+	shared& operator=(ArgType&& arg) { std::shared_ptr<Type>::operator=(std::forward<ArgType>(arg)); return self; };
+	template<typename NewType>
+	shared& operator=(NewType* pType) { std::shared_ptr<Type>::reset(pType); return self; };
+};
 template<typename Type>
 using weak = std::weak_ptr<Type>;
-template<typename Type>
-using unique = std::unique_ptr<Type>;
 
+template< typename T, typename U >
+shared<T> const_pointer_cast(const shared<U>& r) noexcept { return shared<T>(r, const_cast<T*>(r.get())); }
+template< typename T, typename U >
+shared<T> static_pointer_cast(const shared<U>& r) noexcept { return shared<T>(r, static_cast<T*>(r.get())); }
+template< typename T, typename U >
+shared<T> reinterpret_pointer_cast(const shared<U>& r) noexcept { return shared<T>(r, reinterpret_cast<T*>(r.get())); }
+template< typename T, typename U >
+shared<T> dynamic_pointer_cast(const shared<U>& r) noexcept {
+	if (auto p = dynamic_cast<T*>(r.get()))
+		return shared<T>(r, p);
+	return shared<T>();
+}
 
 typedef int8_t			Int8;
 typedef uint8_t			UInt8;
@@ -154,6 +208,42 @@ private:
 	static const UInt16 _CharacterTypes[128];
 };
 
+template <typename Type>
+class is_smart_pointer : virtual Static {
+	template<typename S> static char(&G(typename std::enable_if<
+		std::is_same<decltype(static_cast<typename S::element_type*(S::*)() const>(&S::get)), typename S::element_type*(S::*)() const>::value,
+		void
+	>::type*))[1];
+	template<typename S> static char(&G(...))[2];
+public:
+	static bool const value = sizeof(G<Type>(0)) == 1;
+};
+
+template<typename Type, typename = typename std::enable_if<std::is_pointer<Type>::value>::type>
+Type ToPointer(Type pType) { return pType; }
+template<typename Type, typename = typename std::enable_if<!std::is_pointer<Type>::value && !is_smart_pointer<Type>::value>::type>
+Type* ToPointer(Type& type) { return &type; }
+template<typename Type>
+Type* ToPointer(const std::shared_ptr<Type>& type) { return type.get(); }
+template<typename Type>
+Type* ToPointer(const std::unique_ptr<Type>& type) { return type.get(); }
+template<typename K, typename V>
+auto ToPointer(std::pair<K, V>& type) { return ToPointer(type.second); }
+
+struct PtrComparator {
+	template<typename Type>
+	bool operator() (Type&& ptr1, Type&& ptr2) const { return ToPointer(ptr1) < ToPointer(ptr2); }
+};
+
+template<typename ListType, typename FType, typename ...Args>
+inline auto Calls(ListType& objects, FType&& pF, Args&&... args) {
+	typedef typename ListType::value_type ObjType;
+	auto result = std::result_of<decltype(pF)(ObjType, Args...)>::type();
+	for (ObjType& obj : objects)
+		result += (ToPointer(obj)->*pF)(std::forward<Args>(args) ...);
+	return result;
+}
+
 inline UInt64 abs(double value) { return (UInt64)std::abs(value); }
 inline UInt64 abs(float value) { return (UInt64)std::abs(value); }
 inline UInt64 abs(Int64 value) { return (UInt64)std::abs(value); }
@@ -199,8 +289,14 @@ inline typename std::conditional<sizeof(Type1) >= sizeof(Type2), Type1, Type2>::
 				  max(Type1 value1, Type2 value2, Args&&... args) { return value1 > value2 ? max(value1, args ...) : max(value2, args ...); }
 
 template<typename RangeType, typename Type>
-inline RangeType range(Type value) { return value > std::numeric_limits<RangeType>::max() ? std::numeric_limits<RangeType>::max() : ((std::is_signed<Type>::value && value < std::numeric_limits<RangeType>::min()) ? std::numeric_limits<RangeType>::min() : (RangeType)value); }
-
+inline RangeType range(Type value) {
+	RangeType result = static_cast<RangeType>(value);
+	if (static_cast<Type>(result) != value)
+		return result;
+	if (result < 0)
+		return value > 0 ? std::numeric_limits<RangeType>::max() : result; // result signed and value unsigned => result max
+	return value < 0 ? 0 : result; // result unsigned and value signed => 0
+}
 const std::string& typeof(const std::type_info& info);
 template<typename ObjectType>
 inline const std::string& typeof(const ObjectType& object) { return typeof(typeid(object)); }
@@ -208,19 +304,19 @@ inline const std::string& typeof(const ObjectType& object) { return typeof(typei
 Try to prefer this template typeof version, because is the more faster*/
 template<typename ObjectType>
 inline const std::string& typeof() {
-	static struct Type : std::string { Type() : std::string(typeof(typeid(ObjectType))) {} } Type;
+	static const std::string& Type(typeof(typeid(ObjectType)));
 	return Type;
 }
 
 template<typename MapType, typename ValType, typename Comparator>
-inline typename MapType::const_iterator lower_bound(MapType& map, const ValType& value, Comparator& compare) {
+inline typename MapType::const_iterator lower_bound(MapType& map, ValType&& value, Comparator&& compare) {
 	typename MapType::const_iterator it, result(map.begin());
 	UInt32 count(map.size()), step;
 	while (count) {
 		it = result;
 		step = count / 2;
 		std::advance(it, step);
-		if (compare(it, value)) {
+		if (compare(it, std::forward<ValType>(value))) {
 			result = ++it;
 			count -= step + 1;
 		} else
@@ -251,6 +347,7 @@ class is_container : virtual Static {
 public:
 	static bool const value = sizeof(B<Type>(0)) == 1 && sizeof(E<Type>(0)) == 1 && sizeof(I<Type>(0)) == 1;
 };
+
 
 /*!
 enum mathematics constant (base and others) */

@@ -30,7 +30,7 @@ using namespace std;
 
 UInt32	GroupMedia::GroupMediaCounter = 0;
 
-GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _currentPushMask(0),
+GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const string& key, const Base::shared<RTMFPGroupConfig>& parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _currentPushMask(0),
 	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false), _fragmentsMapBuffer(MAX_FRAGMENT_MAP_SIZE*4),
 	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable), _timer(timer), 
 	_pullLimitReached(false) {
@@ -95,7 +95,7 @@ GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const strin
 
 			// Add the fragment to the map
 			UInt32 fragmentSize = ((splitCounter > 0) ? NETGROUP_MAX_PACKET_SIZE : reader.available());
-			shared<Buffer> pBuffer(new Buffer(NETGROUP_MAX_PACKET_SIZE));
+			Base::shared<Buffer> pBuffer(SET, NETGROUP_MAX_PACKET_SIZE);
 			pBuffer->resize(fragmentSize);
 			BinaryWriter writer(pBuffer->data(), pBuffer->size());
 			writer.write(reader.current(), fragmentSize);
@@ -238,7 +238,7 @@ void GroupMedia::closePublisher() {
 
 	UInt32 currentTime = (_fragments.empty()) ? 0 : _fragments.rbegin()->second->time; // get time from last fragment
 	string tmp;
-	shared_ptr<Buffer> pBuffer(new Buffer());
+	shared<Buffer> pBuffer(SET);
 	AMFWriter writer(*pBuffer);
 
 	// UnpublishNotify event
@@ -247,7 +247,7 @@ void GroupMedia::closePublisher() {
 	onMedia(true, AMF::TYPE_INVOCATION_AMF3, currentTime, Packet(pBuffer));
 
 	// closeStream event
-	pBuffer.reset(new Buffer());
+	pBuffer.set();
 	AMFWriter writerClose(*pBuffer);
 	RTMFP::WriteInvocation(writerClose, "closeStream", 0, true);
 	onMedia(true, AMF::TYPE_INVOCATION_AMF3, currentTime, Packet(pBuffer));
@@ -261,7 +261,7 @@ void GroupMedia::closePublisher() {
 }
 
 void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, UInt8 marker, UInt64 fragmentId, UInt8 splitedNumber, UInt8 mediaType, UInt32 time, const Packet& packet, bool flush) {
-	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(fragmentId), forward_as_tuple(new GroupFragment(packet, time, (AMF::Type)mediaType, fragmentId, marker, splitedNumber)));
+	itFragment = _fragments.emplace_hint(itFragment, piecewise_construct, forward_as_tuple(fragmentId), forward_as_tuple(SET, packet, time, (AMF::Type)mediaType, fragmentId, marker, splitedNumber));
 
 	if ((marker == GroupStream::GROUP_MEDIA_DATA || marker == GroupStream::GROUP_MEDIA_START) && (_mapTime2Fragment.empty() || fragmentId > _mapTime2Fragment.rbegin()->second))
 		_mapTime2Fragment[Time::Now()] = fragmentId;
@@ -288,7 +288,7 @@ bool GroupMedia::manage() {
 	return true;
 }
 
-void GroupMedia::addPeer(const string& peerId, shared_ptr<PeerMedia>& pPeer) {
+void GroupMedia::addPeer(const string& peerId, const shared<PeerMedia>& pPeer) {
 	auto itPeer = _mapPeers.lower_bound(peerId);
 	if (itPeer != _mapPeers.end() && itPeer->first == peerId)
 		return;
@@ -305,7 +305,7 @@ void GroupMedia::addPeer(const string& peerId, shared_ptr<PeerMedia>& pPeer) {
 	sendGroupMedia(pPeer);
 }
 
-void GroupMedia::sendGroupMedia(shared_ptr<PeerMedia>& pPeer) {
+void GroupMedia::sendGroupMedia(const shared<PeerMedia>& pPeer) {
 	if (pPeer->groupMediaSent)
 		return;
 
@@ -608,7 +608,7 @@ void GroupMedia::callFunction(const string& function, queue<string>& arguments) 
 	if (!groupParameters->isPublisher) // only publisher can create fragments
 		return;
 
-	shared_ptr<Buffer> pBuffer;
+	shared<Buffer> pBuffer(SET);
 	AMFWriter writer(*pBuffer);
 	writer.amf0 = true;
 	writer->write8(0);

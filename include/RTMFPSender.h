@@ -30,7 +30,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 struct RTMFPSender : Base::Runner, virtual Base::Object {
 	struct Packet : Base::Packet, virtual Base::Object {
-		Packet(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt32 fragments, bool reliable) : fragments(fragments), Base::Packet(pBuffer), reliable(reliable), _sizeSent(0) {}
+		Packet(Base::shared<Base::Buffer>& pBuffer, Base::UInt32 fragments, bool reliable) : fragments(fragments), Base::Packet(pBuffer), reliable(reliable), _sizeSent(0) {}
 		void setSent() {
 			if (_sizeSent)
 				return;
@@ -45,8 +45,8 @@ struct RTMFPSender : Base::Runner, virtual Base::Object {
 		Base::UInt32		_sizeSent;
 	};
 	struct Session : virtual Base::Object {
-		Session(Base::UInt32 farId, const std::shared_ptr<RTMFP::Engine>& pEncoder, const std::shared_ptr<Base::Socket>& pSocket, Base::Int64 time) :
-			sendable(RTMFP::SENDABLE_MAX), socket(*pSocket), pEncoder(new RTMFP::Engine(*pEncoder)), farId(farId), initiatorTime(time),
+		Session(Base::UInt32 farId, const Base::shared<RTMFP::Engine>& pEncoder, const Base::shared<Base::Socket>& pSocket, Base::Int64 time) :
+			sendable(RTMFP::SENDABLE_MAX), socket(*pSocket), pEncoder(SET, *pEncoder), farId(farId), initiatorTime(time),
 			queueing(0), sendingSize(0), _pSocket(pSocket), sendLostRate(sendByteRate), sendTime(0), congested(false) {}
 
 		bool isCongested() {
@@ -59,7 +59,7 @@ struct RTMFPSender : Base::Runner, virtual Base::Object {
 
 		Base::UInt32					farId;
 		std::atomic<Base::Int64>		initiatorTime;
-		std::shared_ptr<RTMFP::Engine>	pEncoder;
+		Base::shared<RTMFP::Engine>	pEncoder;
 		Base::Socket&					socket;
 		std::atomic<Base::Int64>		sendTime;
 		Base::ByteRate					sendByteRate;
@@ -69,10 +69,10 @@ struct RTMFPSender : Base::Runner, virtual Base::Object {
 		Base::UInt8						sendable;
 		std::atomic<bool>				congested;
 	private:
-		std::shared_ptr<Base::Socket>	_pSocket; // to keep the socket open
+		Base::shared<Base::Socket>	_pSocket; // to keep the socket open
 		Base::Congestion				_congestion;
 	};
-	struct Queue : virtual Base::Object, std::deque<std::shared_ptr<Packet>> {
+	struct Queue : virtual Base::Object, std::deque<Base::shared<Packet>> {
 		template<typename SignatureType>
 		Queue(Base::UInt64 id, Base::UInt64 flowId, const SignatureType& signature) : id(id), stage(0), stageSending(0), stageAck(0), signature(STR signature.data(), signature.size()), flowId(flowId) {}
 
@@ -84,20 +84,20 @@ struct RTMFPSender : Base::Runner, virtual Base::Object {
 		Base::UInt64						stage;
 		Base::UInt64						stageSending;
 		Base::UInt64						stageAck;
-		std::deque<std::shared_ptr<Packet>>	sending;
+		std::deque<Base::shared<Packet>>	sending;
 	};
 
 	// Flush usage!
-	RTMFPSender(Base::UInt8 marker, const std::shared_ptr<Queue>& pQueue) : Base::Runner("RTMFPSender"), _marker(marker), pQueue(pQueue) {}
+	RTMFPSender(Base::UInt8 marker, const Base::shared<Queue>& pQueue) : Base::Runner("RTMFPSender"), _marker(marker), pQueue(pQueue) {}
 
 	Base::SocketAddress	address; // can change!
-	std::shared_ptr<Session>	pSession;
+	Base::shared<Session>	pSession;
 
 protected:
-	RTMFPSender(const char* name, Base::UInt8 marker, const std::shared_ptr<Queue>& pQueue) : Base::Runner(name), _marker(marker), pQueue(pQueue) {}
+	RTMFPSender(const char* name, Base::UInt8 marker, const Base::shared<Queue>& pQueue) : Base::Runner(name), _marker(marker), pQueue(pQueue) {}
 	RTMFPSender(const char* name, Base::UInt8 marker) : Runner(name), _marker(marker) {}
 
-	std::shared_ptr<Queue>	pQueue;
+	Base::shared<Queue>	pQueue;
 	Base::UInt8				_marker;
 
 private:
@@ -114,7 +114,7 @@ private:
 };
 
 struct RTMFPAcquiter : RTMFPSender, virtual Base::Object {
-	RTMFPAcquiter(Base::UInt8 marker, const std::shared_ptr<RTMFPSender::Queue>& pQueue, Base::UInt64 stageAck) : RTMFPSender("RTMFPAcquiter", marker, pQueue), _stageAck(stageAck) {}
+	RTMFPAcquiter(Base::UInt8 marker, const Base::shared<RTMFPSender::Queue>& pQueue, Base::UInt64 stageAck) : RTMFPSender("RTMFPAcquiter", marker, pQueue), _stageAck(stageAck) {}
 private:
 	void	run();
 
@@ -122,7 +122,7 @@ private:
 };
 
 struct RTMFPRepeater : RTMFPSender, virtual Base::Object {
-	RTMFPRepeater(Base::UInt8 marker, const std::shared_ptr<RTMFPSender::Queue>& pQueue, Base::UInt8 fragments = 0) : RTMFPSender("RTMFPRepeater", marker, pQueue), _fragments(fragments) {}
+	RTMFPRepeater(Base::UInt8 marker, const Base::shared<RTMFPSender::Queue>& pQueue, Base::UInt8 fragments = 0) : RTMFPSender("RTMFPRepeater", marker, pQueue), _fragments(fragments) {}
 private:
 	void	run();
 	void	sendAbandon(Base::UInt64 stage);
@@ -132,19 +132,17 @@ private:
 
 
 struct RTMFPMessenger : RTMFPSender, virtual Base::Object {
-	RTMFPMessenger(Base::UInt8 marker, const std::shared_ptr<RTMFPSender::Queue>& pQueue) : RTMFPSender("RTMFPMessenger", marker, pQueue), _flags(0), _fragments(0) {} // _flags must be initialized to 0!
+	RTMFPMessenger(Base::UInt8 marker, const shared<RTMFPSender::Queue>& pQueue) : RTMFPSender("RTMFPMessenger", marker, pQueue), _flags(0), _fragments(0) {} // _flags must be initialized to 0!
 
 	AMFWriter&	newMessage(bool reliable, const Base::Packet& packet) { _messages.emplace_back(reliable, packet); return _messages.back().writer; }
 
 private:
-	struct Message : private std::shared_ptr<Base::Buffer>, virtual Base::Object {
-		NULLABLE
-
-		Message(bool reliable, const Base::Packet& packet) : reliable(reliable), packet(std::move(packet)), writer(*new Base::Buffer(RTMFP_MAX_PACKET_SIZE)) { reset(&writer->buffer()); }
+	struct Message : private Base::shared<Base::Buffer>, virtual Base::Object {
+		NULLABLE(!packet && !writer)
+		Message(bool reliable, const Base::Packet& packet) : Base::shared<Base::Buffer>(SET), reliable(reliable), packet(std::move(packet)), writer(*self) {}
 		bool				reliable;
 		AMFWriter			writer; // data
-		const Base::Packet	packet; // footer
-		explicit operator bool() const { return packet || writer ? true : false; }
+		Base::Packet		packet; // footer
 	};
 	Base::UInt32	headerSize();
 	void			run();
@@ -154,7 +152,7 @@ private:
 	std::deque<Message>	_messages;
 
 	// current buffer =>
-	std::shared_ptr<Base::Buffer>	_pBuffer;
+	Base::shared<Base::Buffer>	_pBuffer;
 	Base::UInt32					_fragments;
 	Base::UInt8						_flags;
 };

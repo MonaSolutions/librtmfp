@@ -85,7 +85,7 @@ struct GroupSpecReader : Parameters {
 // RTMFP Fallback connection wrapper from NetGroup to unicast
 struct Invoker::FallbackConnection : virtual Object {
 	FallbackConnection(UInt32 idConnection, UInt16 mediaId, const char* streamName, const RTMFPConfig* config, const char* url, 
-		string& host, SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, shared<Buffer>& rawUrl) : lastTime(0), mediaId(mediaId), idConnection(idConnection), idFallback(0),
+		string& host, SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, shared<Buffer>&& rawUrl) : lastTime(0), mediaId(mediaId), idConnection(idConnection), idFallback(0),
 		streamName(streamName), running(false), switched(false), url(url), host(host), rawUrl(move(rawUrl)), address(address), addresses(move(addresses)) {
 
 		memcpy(&parameters, config, sizeof(RTMFPConfig));
@@ -140,8 +140,8 @@ struct Invoker::WriteBuffer : virtual Object {
 	WriteBuffer() : started(false), type(0), size(0), time(0), total(0) {}
 	~WriteBuffer() {}
 
-	shared_ptr<Buffer>			buffer; // bufferize input data to wait for the end of a packet 
-	unique_ptr<BinaryWriter>	writer; // Input writer pointing to the current writing buffer
+	shared<Buffer>				buffer; // bufferize input data to wait for the end of a packet 
+	Base::unique<BinaryWriter>	writer; // Input writer pointing to the current writing buffer
 	bool						started; // True if we have already read the FLV header
 	UInt8						type; // current packet type
 	UInt32						size; // current packet size
@@ -151,7 +151,7 @@ struct Invoker::WriteBuffer : virtual Object {
 
 /** Invoker **/
 
-Invoker::Invoker(bool createLogger) : Thread("Invoker"), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp), _threadPush(0) {
+Invoker::Invoker(void(*onLog)(unsigned int, const char*, long, const char*), void(*onDump)(const char*, const void*, unsigned int)) : Thread("Invoker"), handler(_handler), timer(_timer), sockets(_handler, threadPool), _lastIndex(0), _handler(wakeUp), _threadPush(0) {
 	onPushAudio = [this](WritePacket& packet) {
 		lock_guard<mutex> lock(_mutexConnections);
 
@@ -283,10 +283,8 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), handler(_handler), time
 		_mutexConnections.unlock();
 	};
 
-	if (createLogger) {
-		_logger.reset(new RTMFPLogger());
-		Logs::SetLogger(*_logger);
-	}
+	if (onLog)
+		Logs::AddLogger<RTMFPLogger>("LIBRTMFP", onLog, onDump);
 	DEBUG("Socket receiving buffer size of ", Net::GetRecvBufferSize(), " bytes");
 	DEBUG("Socket sending buffer size of ", Net::GetSendBufferSize(), " bytes");
 	DEBUG(threadPool.threads(), " threads in server threadPool");
@@ -356,9 +354,8 @@ void Invoker::manage() {
 }
 
 bool Invoker::run(Exception& exc, const volatile bool& stopping) {
-	//BufferPool bufferPool(timer);
-	Allocator simpleAllocator;
-	Buffer::SetAllocator(simpleAllocator);
+	// TODO: Enable PoolBuffer to save CPU usage from buffer allocation/deallocation
+	Buffer::Allocator::Set<Buffer::Allocator>();
 
 	Timer::OnTimer onManage;
 
@@ -389,15 +386,17 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 #endif
 	Logs::SetLevel(0); // /!\ To ensure that no possible static Logs variables will be used then (handle brutal program exit)
 
-	Thread::stop(); // to set running() to false (and not more allows to handler to queue Runner)
 	// Stop onManage (useless now)
 	_timer.set(onManage, 0);
+
+	// do a handler flush here too because there could be few remaining tasks
+	_handler.flush();
+	Thread::stop(); // to set running() to false (and not more allows to handler to queue Runner)	
 
 	// Destroy the connections
 	{
 		lock_guard<mutex>	lock(_mutexConnections);
-		if (_logger)
-			Logs::SetDump(NULL); // we must set Dump to null because static dump object can be destroyed
+		//Logs::RemoveLogger("LIBRTMFP");
 
 		auto it = _mapConnections.begin();
 		while (it != _mapConnections.end())
@@ -407,23 +406,12 @@ bool Invoker::run(Exception& exc, const volatile bool& stopping) {
 	// stop socket sending (it waits the end of sending last session messages)
 	threadPool.join();
 
-	// empty handler!
-	_handler.flush();
+	// last handler!
+	_handler.flush(true);
 
 	// release memory
-	Buffer::SetAllocator();
-	//bufferPool.clear();
+	Buffer::Allocator::Set();
 	return true;
-}
-
-void Invoker::setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*)){
-	if (_logger)
-		_logger->setLogCallback(onLog);
-}
-
-void Invoker::setDumpCallback(void(*onDump)(const char*, const void*, unsigned int)) { 
-	if (_logger)
-		_logger->setDumpCallback(onDump);
 }
 
 int Invoker::isInterrupted(UInt32 RTMFPcontext) {
@@ -475,7 +463,7 @@ int Invoker::removeConnection(unsigned int index, bool blocking) {
 	return 1;
 }
 
-void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, bool abrupt, bool terminating) {
+void Invoker::removeConnection(map<int, shared<RTMFPSession>>::iterator it, bool abrupt, bool terminating) {
 
 	INFO("Deleting connection ", it->first, "...")
 
@@ -519,7 +507,7 @@ void Invoker::removeConnection(map<int, shared_ptr<RTMFPSession>>::iterator it, 
 UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 
 	string host;
-	shared<Buffer> rawUrl(new Buffer());
+	shared<Buffer> rawUrl(SET);
 	SocketAddress address;
 	PEER_LIST_ADDRESS_TYPE addresses;
 	if (!RTMFP::ReadUrl(url, host, address, addresses, rawUrl))
@@ -529,7 +517,7 @@ UInt32 Invoker::connect(const char* url, RTMFPConfig* parameters) {
 	UInt32 idConn(0);
 	{
 		lock_guard<mutex> lock(_mutexConnections);
-		shared_ptr<RTMFPSession> pConn(new RTMFPSession(idConn = ++_lastIndex, *this, *parameters));
+		shared<RTMFPSession> pConn(SET, idConn = ++_lastIndex, *this, *parameters);
 		pConn->setFlashProperties(parameters->swfUrl, parameters->app, parameters->pageUrl, parameters->flashVer);
 		pConn->onConnectionEvent = [this](UInt32 index, UInt8 mask) {
 			_waitSignal.set(); // release from waiting function
@@ -593,7 +581,7 @@ void Invoker::startFallback(FallbackConnection& fallback) {
 	}
 
 	// Create the session
-	shared_ptr<RTMFPSession> pConn(new RTMFPSession(fallback.idFallback = ++_lastIndex, *this, fallback.parameters));
+	shared<RTMFPSession> pConn(SET, fallback.idFallback = ++_lastIndex, *this, fallback.parameters);
 	pConn->setFlashProperties(fallback.parameters.swfUrl, fallback.parameters.app, fallback.parameters.pageUrl, fallback.parameters.flashVer);
 	pConn->onConnectionEvent = [this, &fallback](UInt32 index, UInt8 mask) {
 
@@ -672,7 +660,7 @@ int Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPCon
 			ERROR("A waiting fallback connection exist already for connection ", RTMFPcontext)
 		else {
 			string host;
-			shared<Buffer> rawUrl(new Buffer());
+			shared<Buffer> rawUrl(SET);
 			SocketAddress address;
 			PEER_LIST_ADDRESS_TYPE addresses;
 			char* streamName(NULL);
@@ -680,8 +668,8 @@ int Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPCon
 			// Extract name, host and addresses from url and create the fallback instance
 			RTMFP_GetPublicationAndUrlFromUri(fallbackUrl, &streamName);
 			if (RTMFP::ReadUrl(fallbackUrl, host, address, addresses, rawUrl))
-				_waitingFallback.emplace_hint(itFbConn, piecewise_construct, forward_as_tuple(RTMFPcontext), forward_as_tuple(RTMFPcontext, mediaId, streamName, 
-					parameters, fallbackUrl, host, address, addresses, rawUrl));
+				_waitingFallback.emplace_hint(itFbConn, piecewise_construct, forward_as_tuple(RTMFPcontext), 
+					forward_as_tuple(RTMFPcontext, mediaId, streamName, parameters, fallbackUrl, host, address, addresses, move(rawUrl)));
 		}
 	}
 
@@ -824,8 +812,8 @@ int Invoker::write(unsigned int RTMFPcontext, const UInt8* data, UInt32 size) {
 			writeBuffer.time = reader.read24() | (reader.read8() << 24);
 			reader.next(3); // ignored (Stream ID)
 
-			writeBuffer.buffer.reset(new Buffer(writeBuffer.size));
-			writeBuffer.writer.reset(new BinaryWriter(writeBuffer.buffer->data(), writeBuffer.buffer->size()));
+			writeBuffer.buffer.set(writeBuffer.size);
+			writeBuffer.writer.set(writeBuffer.buffer->data(), writeBuffer.buffer->size());
 		}
 
 		// Read current part
@@ -945,8 +933,7 @@ int Invoker::read(UInt32 RTMFPcontext, UInt16 mediaId, UInt8* buf, UInt32 size) 
 
 void Invoker::pushMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
 
-	shared_ptr<ReadPacket> pPacket(new ReadPacket(*this, RTMFPcontext, mediaId, time, packet, lostRate, type));
-	threadPool.queue(pPacket, _threadPush);
+	threadPool.queue<ReadPacket>(_threadPush, *this, RTMFPcontext, mediaId, time, packet, lostRate, type);
 }
 
 void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, const Packet& packet, double lostRate, AMF::Type type) {
@@ -1032,9 +1019,9 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 	}
 }
 
-void Invoker::decode(int idConnection, UInt32 idSession, const SocketAddress& address, const shared_ptr<RTMFP::Engine>& pEngine, shared_ptr<Buffer>& pBuffer, UInt16& threadRcv) {
+void Invoker::decode(int idConnection, UInt32 idSession, const SocketAddress& address, const shared<RTMFP::Engine>& pEngine, shared<Buffer>& pBuffer, UInt16& threadRcv) {
 
-	shared_ptr<RTMFPDecoder> pDecoder(new RTMFPDecoder(idConnection, idSession, address, pEngine, pBuffer, handler));
+	shared<RTMFPDecoder> pDecoder(SET, idConnection, idSession, address, pEngine, pBuffer, handler);
 	pDecoder->onDecoded = _onDecoded;
-	threadPool.queue(pDecoder, threadRcv);
+	threadPool.queue(threadRcv, move(pDecoder));
 }

@@ -67,38 +67,37 @@ size_t String::Split(const char* value, size_t size, const char* separators, con
 	return count;
 }
 
-int String::ICompare(const char* value1, const char* value2,  size_t size) {
-	if (value1 == value2)
+int String::ICompare(const char* data, size_t size, const char* value, size_t count) {
+	if (data == value)
 		return 0;
-	if (!value1)
+	if (!data)
 		return -1;
-	if (!value2)
+	if (!value)
 		return 1;
 
-	int f(0), l(0);
+	int d, v;
 	do {
-		if (size == 0)
-			return f - l;
-		if (((f = (unsigned char)(*(value1++))) >= 'A') && (f <= 'Z'))
-			f -= 'A' - 'a';
-		if (((l = (unsigned char)(*(value2++))) >= 'A') && (l <= 'Z'))
-			l -= 'A' - 'a';
-		if (size != std::string::npos)
-			--size;
-	} while (f && (f == l));
-
-	return(f - l);
+		if (!count--)
+			return 0; // no difference until here!
+		if (((v = (unsigned char)(*(value++))) >= 'A') && (v <= 'Z'))
+			v -= 'A' - 'a';
+		if (!size--)
+			return -v;
+		if (((d = (unsigned char)(*(data++))) >= 'A') && (d <= 'Z'))
+			d -= 'A' - 'a';
+	} while (d && (d == v));
+	return d - v;
 }
 
-const char*	String::TrimLeft(const char* value, size_t size) {
+size_t String::TrimLeft(const char*& value, size_t size) {
 	if (size == string::npos)
 		size = strlen(value);
-	while (size-- && isspace(*value))
+	while (size && isspace(*value)) {
 		++value;
-	return value;
+		--size;
+	}
+	return size;
 }
-
-
 size_t String::TrimRight(const char* value, size_t size) {
 	const char* begin(value);
 	if (size == string::npos)
@@ -117,7 +116,7 @@ bool String::ToNumber(const char* value, size_t size, Type& result, Math base)  
 
 template<typename Type>
 bool String::ToNumber(Exception& ex, const char* value, size_t size, Type& result, Math base) {
-	FATAL_ASSERT(is_arithmetic<Type>::value);
+	STATIC_ASSERT(is_arithmetic<Type>::value);
 	if (base > 36) {
 		ex.set<Ex::Format>(base, " is impossible to represent with ascii table, maximum base is 36");
 		return false;
@@ -127,10 +126,7 @@ bool String::ToNumber(Exception& ex, const char* value, size_t size, Type& resul
 	UInt64 comma(0);
 
 	const char* current(value);
-	if (size == string::npos)
-		size = strlen(value);
-
-	while(current && size-->0) {
+	while(*current && size-->0) {
 
 		if (iscntrl(*current) || *current==' ') {
 			if (beginning) {
@@ -208,6 +204,68 @@ bool String::ToNumber(Exception& ex, const char* value, size_t size, Type& resul
 	return true;
 }
 
+
+UInt32 String::FromURI(const char* value, std::size_t count, const ForEachDecodedChar& forEach) {
+
+	const char* begin(value);
+
+	while (count && (count != string::npos || *value)) {
+
+		if (*value == '%') {
+			// %
+			++value;
+			if (count != string::npos)
+				--count;
+			if (!count || (count == string::npos && !*value)) {
+				// syntax error
+				if (!forEach('%', false))
+					--value;
+				return value - begin;
+			}
+
+			char hi = toupper(*value);
+			++value;
+			if (count != string::npos)
+				--count;
+			if (!count || (count == string::npos && !*value)) {
+				// syntax error
+				if (forEach('%', false)) {
+					if (!forEach(hi, false))
+						--value;
+				} else
+					value -= 2;
+				return value - begin;
+			}
+			char lo = toupper(*value++);
+			if (count != string::npos)
+				--count;
+			if (!isxdigit(lo) || !isxdigit(hi)) {
+				// syntax error
+				if (forEach('%', false)) {
+					if (forEach(hi, false)) {
+						if (forEach(lo, false))
+							continue;
+					} else
+						--value;
+				} else
+					value -= 2;
+				return value - begin;
+			}
+			if (forEach(char((hi - (hi <= '9' ? '0' : '7')) << 4) | ((lo - (lo <= '9' ? '0' : '7')) & 0x0F), true))
+				continue;
+			return value - 3 - begin;
+		}
+		if (!forEach(*value, false))
+			break;
+		++value;
+		if (count != string::npos)
+			--count;
+	}
+
+	return value - begin;
+}
+
+
 #if defined(_WIN32)
 const char* String::ToUTF8(const wchar_t* value,char buffer[PATH_MAX]) {
 	WideCharToMultiByte(CP_UTF8, 0, value, -1, buffer, PATH_MAX, NULL, NULL);
@@ -241,6 +299,22 @@ void String::ToUTF8(const char* value, size_t size, const String::OnEncoded& onE
 
 	if (value > begin)
 		onEncoded(begin, value - begin);
+}
+
+const char* String::ShortPath(const string& path) {
+	const char* cur(path.c_str() + path.size());
+	const char* name = NULL;
+	while (cur-- > path.c_str()) {
+		if (*cur == '/' || *cur == '\\') {
+			if (name) // end!
+				break;
+			name = cur;
+		}
+	}
+	++cur;
+	if (name && (String::ICompare(cur, name - cur, "sources") == 0 || String::ICompare(cur, name - cur, "mona") == 0))
+		return name + 1;
+	return cur;
 }
 
 bool String::ToUTF8(char value, char (&buffer)[2]) {

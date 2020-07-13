@@ -30,10 +30,18 @@ namespace Base {
 
 Net Net::_Net;
 
+Net::Stats& Net::Stats::Null() {
+	static struct Null : Stats, virtual Object {
+		Time	recvTime() const { return 0; }
+		UInt64	recvByteRate() const { return 0; }
+		Time	sendTime() const { return 0; }
+		UInt64	sendByteRate() const { return 0; }
+		UInt64	queueing() const { return 0; }
+	} Null;
+	return Null;
+}
+
 const char* Net::ErrorToMessage(int error) {
-	// To fix target where NET_EAGAIN!=NET_EWOULDBLOCK
-	if (error == NET_EAGAIN)
-		error = NET_EWOULDBLOCK;
 	switch (error) {
 		case NET_ESYSNOTREADY: return "Net subsystem not ready";
 		case NET_ENOTINIT: return "Net subsystem not initialized";
@@ -120,6 +128,14 @@ Net::~Net() {
 #if defined(_WIN32)
 	WSACleanup();
 #endif
+}
+
+UInt16 Net::ResolvePort(Exception& ex, const char* service) {
+	struct servent* se = getservbyname(service, NULL);
+	if (se)
+		return ntohs(se->s_port);
+	ex.set<Ex::Net::Address::Port>(service, " port service undefined");
+	return 0;
 }
 
 UInt32 Net::GetInterfaceIndex(const SocketAddress& address) {

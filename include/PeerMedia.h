@@ -43,8 +43,8 @@ struct GroupFragment : RTMFP::MediaPacket {
 	Base::UInt64		id;
 	Base::UInt8			splittedId;
 };
-#define MAP_FRAGMENTS std::map<Base::UInt64, std::shared_ptr<GroupFragment>>
-#define MAP_FRAGMENTS_ITERATOR std::map<Base::UInt64, std::shared_ptr<GroupFragment>>::iterator
+#define MAP_FRAGMENTS std::map<Base::UInt64, Base::shared<GroupFragment>>
+#define MAP_FRAGMENTS_ITERATOR std::map<Base::UInt64, Base::shared<GroupFragment>>::iterator
 
 /***************************************************
 Class used to save group media infos for
@@ -57,7 +57,7 @@ struct PeerMedia : public virtual Base::Object {
 	typedef Base::Event<bool(Base::UInt64 id)>								ON(FragmentsMap); // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
 	typedef Base::Event<void(PeerMedia*, const std::string&, Base::UInt8, Base::UInt64, Base::UInt8, Base::UInt8, Base::UInt32, const Base::Packet&, double)> ON(Fragment); // called when receiving a fragment
 
-	PeerMedia(P2PSession* pSession, std::shared_ptr<RTMFPWriter>& pMediaReportWriter);
+	PeerMedia(P2PSession* pSession, const Base::shared<RTMFPWriter>& pMediaReportWriter);
 	virtual ~PeerMedia();
 
 	// Close the PeerMedia object
@@ -130,6 +130,6 @@ private:
 	Base::Buffer					_fragmentsMap; // Last Fragments Map received
 	Base::UInt64					_idFragmentsMapIn; // Last ID received from the Fragments Map
 	Base::UInt64					_idFragmentsMapOut; // Last ID sent in the Fragments map
-	std::shared_ptr<RTMFPWriter>	_pMediaReportWriter; // Media Report writer used to send report messages from the current media
-	std::shared_ptr<RTMFPWriter>	_pMediaWriter; // Writer for media packets
+	Base::shared<RTMFPWriter>	_pMediaReportWriter; // Media Report writer used to send report messages from the current media
+	Base::shared<RTMFPWriter>	_pMediaWriter; // Writer for media packets
 };

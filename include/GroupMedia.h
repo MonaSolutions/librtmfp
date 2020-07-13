@@ -32,12 +32,12 @@ GroupMedia is the class that manage a stream
 from a NetGroup connection
 */
 struct GroupMedia : virtual Base::Object {
-	typedef Base::Event<void(Base::UInt32 groupMediaId, const std::shared_ptr<GroupFragment>& pFragment)>	ON(NewFragment); // called on reception of a new fragment
+	typedef Base::Event<void(Base::UInt32 groupMediaId, const Base::shared<GroupFragment>& pFragment)>	ON(NewFragment); // called on reception of a new fragment
 	typedef Base::Event<void(Base::UInt32 groupMediaId, Base::UInt64 fragmentId)>							ON(RemovedFragments); // called when removing a group of fragments
 	typedef Base::Event<void(Base::UInt32 groupMediaId)>													ON(StartProcessing); // called when the first pull fragment is received, we can start processing fragments
 	typedef Base::Event<void(Base::UInt32 groupMediaId)>													ON(PullTimeout); // called when the pull congestion timeout is reached
 
-	GroupMedia(const Base::Timer& timer, const std::string& name, const std::string& key, std::shared_ptr<RTMFPGroupConfig> parameters, bool audioReliable, bool videoReliable);
+	GroupMedia(const Base::Timer& timer, const std::string& name, const std::string& key, const Base::shared<RTMFPGroupConfig>& parameters, bool audioReliable, bool videoReliable);
 	virtual ~GroupMedia();
 
 	void						printStats();
@@ -53,10 +53,10 @@ struct GroupMedia : virtual Base::Object {
 	bool						manage();
 
 	// Add the peer to map of peer, return false if the peer is already known
-	void						addPeer(const std::string& peerId, std::shared_ptr<PeerMedia>& pPeer);
+	void						addPeer(const std::string& peerId, const Base::shared<PeerMedia>& pPeer);
 	
 	// Send the Group Media infos to peer
-	void						sendGroupMedia(std::shared_ptr<PeerMedia>& pPeer);
+	void						sendGroupMedia(const Base::shared<PeerMedia>& pPeer);
 
 	// Return true if we have at least one fragment
 	bool						hasFragments() { return !_fragments.empty(); }
@@ -68,12 +68,12 @@ struct GroupMedia : virtual Base::Object {
 	GroupListener::OnFlush						onFlush; // Flush the listeners
 
 	const Base::UInt32							id; // id of the GroupMedia (incremental)
-	std::shared_ptr<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream
+	Base::shared<RTMFPGroupConfig>			groupParameters; // group parameters for this Group Media stream
 	
 private:
-	#define LIST_PEERS_INFO_TYPE std::list<std::shared_ptr<PeerMedia>>
-	#define MAP_PEERS_INFO_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>
-	#define MAP_PEERS_INFO_ITERATOR_TYPE std::map<std::string, std::shared_ptr<PeerMedia>>::iterator
+	#define LIST_PEERS_INFO_TYPE std::list<Base::shared<PeerMedia>>
+	#define MAP_PEERS_INFO_TYPE std::map<std::string, Base::shared<PeerMedia>>
+	#define MAP_PEERS_INFO_ITERATOR_TYPE std::map<std::string, Base::shared<PeerMedia>>::iterator
 
 	// Add a new fragment to the map _fragments
 	void						addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, PeerMedia* pPeer, Base::UInt8 marker, Base::UInt64 fragmentId, Base::UInt8 splitedNumber, Base::UInt8 mediaType, Base::UInt32 time, const Base::Packet& packet, bool flush);

@@ -29,7 +29,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-shared_ptr<Invoker> GlobalInvoker;
+shared<Invoker> GlobalInvoker;
 
 extern "C" {
 
@@ -44,7 +44,7 @@ int HandleError(int error) {
 	return 0;
 }
 
-void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLogger) {
+void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, void(*onLog)(unsigned int, const char*, long, const char*), void(*onDump)(const char*, const void*, unsigned int)) {
 	if (!config) {
 		ERROR("config parameter must be not null")
 		return;
@@ -52,8 +52,10 @@ void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLo
 
 	// Init global invoker (+logger)
 	if (!GlobalInvoker) {
-		GlobalInvoker.reset(new Invoker(createLogger>0));
+		GlobalInvoker.set(onLog, onDump);
 		GlobalInvoker->start();
+		if (onDump)
+			Logs::SetDump("LIBRTMFP");
 	}
 
 	memset(config, 0, sizeof(RTMFPConfig));
@@ -248,24 +250,6 @@ LIBRTMFP_API char RTMFP_WaitForEvent(unsigned int RTMFPcontext, RTMFPMask mask) 
 	return (char)res;
 }
 
-void RTMFP_LogSetCallback(void(* onLog)(unsigned int, const char*, long, const char*)) {
-	if (!GlobalInvoker) {
-		ERROR("RTMFP_Init() has not been called, please call it first")
-		return;
-	}
-
-	GlobalInvoker->setLogCallback(onLog);
-}
-
-void RTMFP_DumpSetCallback(void(*onDump)(const char*, const void*, unsigned int)) {
-	if (!GlobalInvoker) {
-		ERROR("RTMFP_Init() has not been called, please call it first")
-		return;
-	}
-
-	GlobalInvoker->setDumpCallback(onDump);
-}
-
 void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication) {
 	char* pos = (char*)strrchr(uri, '\\');
 	char* pos2 = (char*)strrchr(uri, '/');
@@ -282,10 +266,6 @@ void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication) {
 		*publication = (char*)pos2 + 1;
 		*pos2 = '\0';
 	}
-}
-
-void RTMFP_ActiveDump() {
-	Logs::SetDump("LIBRTMFP");
 }
 
 void RTMFP_SetIntParameter(const char* parameter, int value) {

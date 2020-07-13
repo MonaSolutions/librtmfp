@@ -33,7 +33,7 @@ GroupBuffer::~GroupBuffer() {
 	stop();
 }
 
-bool GroupBuffer::add(Exception& ex, UInt32 groupMediaId, const shared_ptr<GroupFragment>& pFragment) {
+bool GroupBuffer::add(Exception& ex, UInt32 groupMediaId, const shared<GroupFragment>& pFragment) {
 	std::lock_guard<std::mutex> lock(_mutex);
 	if (!running())
 		start();
@@ -243,7 +243,7 @@ bool GroupBuffer::processFragment(std::deque<RTMFP::MediaPacket>& result, UInt32
 		itFragment = itEnd;
 
 		// Buffer the fragments and forward the whole packet
-		shared_ptr<Buffer>	pBuffer(new Buffer(totalSize));
+		shared<Buffer> pBuffer(SET, totalSize);
 		BinaryWriter writer(pBuffer->data(), pBuffer->size());
 		auto itCurrent = itStart;
 		do {

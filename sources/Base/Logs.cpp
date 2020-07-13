@@ -14,9 +14,8 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 */
 
-#include "Base/Util.h"
-#include <iostream>
 #include "Base/Logs.h"
+#include "Base/Util.h"
 
 using namespace std;
 
@@ -25,42 +24,98 @@ namespace Base {
 
 mutex					Logs::_Mutex;
 
-volatile bool			Logs::_Dumping(false);
-string					Logs::_Dump;
+thread_local bool		Logs::_Dumping(false);
+thread_local bool		Logs::_Logging(false);
 
+volatile bool			Logs::_Dump;
+std::string				Logs::_DumpFilter;
 Int32					Logs::_DumpLimit(-1);
 volatile bool			Logs::_DumpRequest(true);
 volatile bool			Logs::_DumpResponse(true);
-atomic<LOG_LEVEL>		Logs::_Level(LOG_DEFAULT); // default log level
-Logger*					Logs::_PLogger(&DefaultLogger());
 
+atomic<LOG_LEVEL>		Logs::_Level(LOG_DEFAULT); // default log level
+
+std::string				Logs::_Critic;
+
+Logs::Disable::Disable(bool log, bool dump) : _logging(_Logging), _dumping(_Dumping) {
+	if (!log)
+		_Logging = true;
+	if (!dump)
+		_Dumping = true;
+}
+Logs::Disable::~Disable() {
+	_Logging = _logging;
+	_Dumping = _dumping;
+}
+
+bool Logs::LastCritic(string& critic) {
+	lock_guard<mutex> lock(_Mutex);
+	if (_Critic.empty())
+		return false;
+	critic.assign(_Critic);
+	return true;
+}
+
+const char* Logs::GetDump() {
+	if (!_Dump)
+		return NULL;
+	thread_local string DumpFilter;
+	lock_guard<mutex> lock(_Mutex);
+	return (DumpFilter = _DumpFilter).c_str();
+}
 
 void Logs::SetDump(const char* name) {
 	lock_guard<mutex> lock(_Mutex);
 	_DumpResponse = _DumpRequest = true;
 	if (!name) {
-		_Dumping = false;
-		_Dump.clear();
-		_Dump.shrink_to_fit();
+		_Dump = false;
+		_DumpFilter.clear();
+		_DumpFilter.shrink_to_fit();
 		return;
 	}
-	_Dumping = true;
-	_Dump = name;
-	if (_Dump.empty())
+	_Dump = true;
+	_DumpFilter = name;
+	if (_DumpFilter.empty())
 		return;
-	if (_Dump.back() == '>') {
+	if (_DumpFilter.back() == '>') {
 		_DumpRequest = false;
-		_Dump.pop_back();
-	} else if (_Dump.back() == '<') {
+		_DumpFilter.pop_back();
+	} else if (_DumpFilter.back() == '<') {
 		_DumpResponse = false;
-		_Dump.pop_back();
+		_DumpFilter.pop_back();
 	}
 }
 
 void Logs::Dump(const string& header, const UInt8* data, UInt32 size) {
 	Buffer out;
 	Util::Dump(data, (_DumpLimit<0 || size<UInt32(_DumpLimit)) ? size : _DumpLimit, out);
-	_PLogger->dump(header, out.data(), out.size());
+
+	Loggers& loggers = GetLoggers();
+	for (auto& it : loggers) {
+		if (*it.second && !it.second->dump(header, out.data(), out.size()))
+			loggers.fail(*it.second);
+	}
+	loggers.flush();
+}
+
+void Logs::Loggers::flush() {
+	while (!_failed.empty()) {
+		Logger& logger(*_failed.front());
+		String message(logger.name, " log has failed");
+		const char* fatal = logger.fatal;
+		if (fatal) {
+			if (*fatal)
+				String::Append(message, ", ", fatal);
+		}
+		_failed.pop_back();
+		erase(logger.name); // erase here to remove it from _Loggers before dispatching loop
+		for (auto& it : GetLoggers()) {
+			if (*it.second && !it.second->log(LOG_ERROR, __FILE__, __LINE__, message))
+				_failed.emplace_back(it.second.get());
+		}
+		if (fatal) // fatal is last to get logs on the other targets
+			FATAL_ERROR(message);
+	}
 }
 
 

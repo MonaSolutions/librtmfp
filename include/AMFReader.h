@@ -26,14 +26,17 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "ReferableReader.h"
 #include <vector>
 
-struct AMFReader : ReferableReader, virtual Base::Object {
-	AMFReader(const Base::UInt8* data, Base::UInt32 size);
+using namespace Base;
+
+
+struct AMFReader : ReferableReader, virtual Object {
+	AMFReader(const Packet& packet);
 
 	enum {
-		OBJECT = OTHER,
-		ARRAY = OTHER + 1,
-		MAP = OTHER + 2,
-		AMF0_REF = OTHER + 3
+		OBJECT =	OTHER,
+		ARRAY =		OTHER+1,
+		MAP =		OTHER+2,
+		AMF0_REF =	OTHER+3
 	};
 
 
@@ -44,19 +47,21 @@ struct AMFReader : ReferableReader, virtual Base::Object {
 
 private:
 
-	Base::UInt8		followingType();
+	UInt8			followingType();
 
-	bool			readOne(Base::UInt8 type, DataWriter& writer);
-	bool			writeOne(Base::UInt8 type, DataWriter& writer);
+	bool			readOne(UInt8 type, DataWriter& writer);
+	bool			writeOne(UInt8 type, DataWriter& writer);
 
-	const char*		readText(Base::UInt32& size);
+	const char*		readText(UInt32& size);
 
-	std::vector<Base::UInt32>		_stringReferences;
-	std::vector<Base::UInt32>		_classDefReferences;
-	std::vector<Base::UInt32>		_references;
-	std::vector<Base::UInt32>		_amf0References;
+	std::vector<UInt32>		_stringReferences;
+	std::vector<UInt32>		_classDefReferences;
+	std::vector<UInt32>		_references;
+	std::vector<UInt32>		_amf0References;
 
-	Base::UInt8				_amf3;
+	UInt8					_amf3;
 	bool					_referencing;
 	std::string				_buffer;
 };
+
+

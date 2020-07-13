@@ -31,7 +31,7 @@ using namespace Base;
 
 RTMFPWriter::RTMFPWriter(UInt8 marker, UInt64 id, UInt64 flowId, const Packet& signature, RTMFP::Output& output) :
 	_marker(marker), _repeatDelay(0), _output(output), _stageAck(0), _lostCount(0), id(id), flowId(flowId), signature(signature) {
-	_pQueue.reset(new RTMFPSender::Queue(id, flowId, signature));
+	_pQueue.set(id, flowId, signature);
 }
 
 void RTMFPWriter::close(Int32 error, const char* reason) {
@@ -112,7 +112,7 @@ void RTMFPWriter::flush() {
 		_repeatDelay = _output.rto();
 		_repeatTime.update();
 	}
-	_output.send(_pSender);
+	_output.send(move(_pSender));
 	_pSender.reset();
 }
 
@@ -120,7 +120,7 @@ AMFWriter& RTMFPWriter::newMessage(bool reliable, const Packet& packet) {
 	if (closed())
 		return AMFWriter::Null();
 	if (!_pSender)
-		_pSender.reset(new RTMFPMessenger(_marker, _pQueue));
+		_pSender.set<RTMFPMessenger>(_marker, _pQueue);
 	return ((RTMFPMessenger&)*_pSender).newMessage(reliable, packet);
 }
 

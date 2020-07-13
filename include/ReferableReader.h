@@ -25,42 +25,43 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Mona.h"
 #include "DataReader.h"
 
+using namespace Base;
+
 struct ReferableReader : DataReader {
-	Base::UInt32	read(DataWriter& writer, Base::UInt32 count = END);
-	bool	read(Base::UInt8 type, DataWriter& writer) { return DataReader::read(type, writer); }
+	UInt32	read(DataWriter& writer, UInt32 count = END);
+	bool	read(UInt8 type, DataWriter& writer) { return DataReader::read(type, writer); }
 	void	reset() { _references.clear(); DataReader::reset(); }
 
 protected:
 	struct Reference {
 		friend struct ReferableReader;
 	private:
-		Base::UInt64	value;
-		Base::UInt8		level;
+		UInt64		value;
+		UInt8		level;
 	};
 
-	ReferableReader(const Base::UInt8* data, Base::UInt32 size) : DataReader(data, size), _recursive(false) {}
-	ReferableReader() : DataReader() {}
+	ReferableReader(const Packet& packet = Packet::Null(), UInt8 type = END) : DataReader(packet, type), _recursive(false) {}
 
-	Reference*	beginObject(DataWriter& writer, Base::UInt64 reference, const char* type = NULL) { return beginRepeatable(reference, writer.beginObject(type)); }
-	Reference*	beginArray(DataWriter& writer, Base::UInt64 reference, Base::UInt32 size) { return beginRepeatable(reference, writer.beginArray(size)); }
-	Reference*	beginObjectArray(DataWriter& writer, Base::UInt64 reference, Base::UInt32 size);
-	Reference*	beginMap(DataWriter& writer, Base::UInt64 reference, Base::Exception& ex, Base::UInt32 size, bool weakKeys = false) { return beginRepeatable(reference, writer.beginMap(ex, size, weakKeys)); }
+	Reference*	beginObject(DataWriter& writer, UInt64 reference, const char* type = NULL) { return beginRepeatable(reference, writer.beginObject(type)); }
+	Reference*	beginArray(DataWriter& writer, UInt64 reference, UInt32 size) { return beginRepeatable(reference, writer.beginArray(size)); }
+	Reference*	beginObjectArray(DataWriter& writer, UInt64 reference, UInt32 size);
+	Reference*	beginMap(DataWriter& writer, UInt64 reference, Exception& ex, UInt32 size, bool weakKeys = false) { return beginRepeatable(reference, writer.beginMap(ex, size, weakKeys)); }
 
 	void		endObject(DataWriter& writer, Reference* pReference) { writer.endObject();  endRepeatable(pReference); }
 	void		endArray(DataWriter& writer, Reference* pReference) { writer.endArray();  endRepeatable(pReference); }
 	void		endMap(DataWriter& writer, Reference* pReference) { writer.endMap();  endRepeatable(pReference); }
 
-	void		writeDate(DataWriter& writer, Base::UInt64 reference, const Base::Date& date) { writeRepeatable(reference, writer.writeDate(date)); }
-	void		writeBytes(DataWriter& writer, Base::UInt64 reference, const Base::UInt8* data, Base::UInt32 size) { writeRepeatable(reference, writer.writeBytes(data, size)); }
+	void		writeDate(DataWriter& writer, UInt64 reference, const Date& date) { writeRepeatable(reference, writer.writeDate(date)); }
+	void		writeByte(DataWriter& writer, UInt64 reference, const Packet& bytes) { writeRepeatable(reference, writer.writeByte(bytes)); }
 
-	bool		writeReference(DataWriter& writer, Base::UInt64 reference);
-	bool		tryToRepeat(DataWriter& writer, Base::UInt64 reference);
+	bool		writeReference(DataWriter& writer, UInt64 reference);
+	bool		tryToRepeat(DataWriter& writer, UInt64 reference);
 
 private:
-	Reference*  beginRepeatable(Base::UInt64 readerRef, Base::UInt64 writerRef);
+	Reference*  beginRepeatable(UInt64 readerRef, UInt64 writerRef);
 	void		endRepeatable(Reference* pReference) { if (pReference) --pReference->level; }
-	void		writeRepeatable(Base::UInt64 readerRef, Base::UInt64 writerRef);
+	void		writeRepeatable(UInt64 readerRef, UInt64 writerRef);
 
-	std::map<Base::UInt64, Reference>	_references;
-	bool								_recursive;
+	std::map<UInt64, Reference> _references;
+	bool						_recursive;
 };

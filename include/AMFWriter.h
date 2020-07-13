@@ -23,34 +23,38 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "Base/Mona.h"
 #include "AMF.h"
-#include "DataWriter.h"
+#include "Media.h"
 
-struct AMFWriter : DataWriter, virtual Base::Object {
-	AMFWriter(Base::Buffer& buffer, bool amf0 = false);
+using namespace Base;
 
-	bool repeat(Base::UInt64 reference);
-	void clear();
+struct AMFWriter : DataWriter, virtual Object {
+	AMFWriter(Buffer& buffer, bool amf0 = false);
 
-	Base::UInt64 beginObject(const char* type = NULL);
+	bool repeat(UInt64 reference);
+	void reset();
+
+	UInt64 beginObject(const char* type = NULL);
 	void   writePropertyName(const char* value);
 	void   endObject() { endComplex(true); }
 
-	Base::UInt64 beginArray(Base::UInt32 size);
+	UInt64 beginArray(UInt32 size);
 	void   endArray() { endComplex(false); }
 
-	Base::UInt64 beginObjectArray(Base::UInt32 size);
+	UInt64 beginObjectArray(UInt32 size);
 
-	Base::UInt64 beginMap(Base::Exception& ex, Base::UInt32 size, bool weakKeys = false);
+	UInt64 beginMap(Exception& ex, UInt32 size, bool weakKeys = false);
 	void   endMap() { endComplex(false); }
 
 	void   writeNumber(double value);
-	void   writeString(const char* value, Base::UInt32 size);
+	void   writeString(const char* value, UInt32 size);
 	void   writeBoolean(bool value);
 	void   writeNull();
-	Base::UInt64 writeDate(const Base::Date& date);
-	Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size);
+	UInt64 writeDate(const Date& date);
+	UInt64 writeByte(const Packet& bytes);
 
-	bool				amf0;
+	bool   amf0;
+
+	Media::Data::Type  convert(Media::Data::Type type, Packet& packet);
 
 	static AMFWriter&    Null() { static AMFWriter Null; return Null; }
 
@@ -59,11 +63,11 @@ private:
 
 	AMFWriter() : _amf3(false), amf0(false) {} // null version
 
-	void writeText(const char* value, Base::UInt32 size);
+	void writeText(const char* value, UInt32 size);
 
-	std::map<std::string, Base::UInt32>	_stringReferences;
-	std::vector<Base::UInt8>			_references;
-	Base::UInt32						_amf0References;
-	bool								_amf3;
-	std::vector<bool>					_levels; // true if amf3
+	std::map<std::string, UInt32>	_stringReferences;
+	std::vector<UInt8>				_references;
+	UInt32							_amf0References;
+	bool							_amf3;
+	std::vector<bool>				_levels; // true if amf3
 };

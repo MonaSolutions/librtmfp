@@ -25,42 +25,77 @@ details (or else see http://mozilla.org/MPL/2.0/).
 namespace Base {
 
 struct Handler : virtual Object {
-	Handler(Signal& signal) : _signal(signal) {}
+	Handler(Signal& signal) : _pSignal(&signal) {}
+	Handler() : _pSignal(NULL) {}
 
-	template<typename RunnerType>
-	void queue(RunnerType&& pRunner) const {
-		FATAL_CHECK(pRunner); // more easy to debug that if it fails in the thread!
+	void	 reset(Signal& signal);
+	UInt32	 flush(bool last=false);
+
+	/*!
+	Try to queue a shared RunnerType, returns false if failed */
+	template<typename RunnerType, typename = typename std::enable_if<std::is_constructible<shared<Runner>, RunnerType>::value>::type>
+	bool tryQueue(RunnerType&& pRunner) const {
+		DEBUG_ASSERT(pRunner); // more easy to debug that if it fails in the thread!
 		std::lock_guard<std::mutex> lock(_mutex);
+		if (!_pSignal)
+			return false;
 		_runners.emplace_back(std::forward<RunnerType>(pRunner));
-		_signal.set();
+		_pSignal->set();
+		return true;
 	}
-
-	template<typename ResultType, typename BaseType, typename ...Args>
-	void queue(const Event<void(BaseType)>& onResult, Args&&... args) const {
+	/*!
+	Try to build and queue a RunnerType, returns false if failed */
+	template <typename RunnerType, typename ...Args>
+	bool tryQueue(Args&&... args) const { return tryQueue(std::make_shared<RunnerType>(std::forward<Args>(args)...)); }
+	/*!
+	Try to queue an event with arguments call, returns false if failed */
+	template<typename ResultType, typename ...Args>
+	bool tryQueue(const Event<void(ResultType)>& onResult, Args&&... args) const {
 		struct Result : Runner, virtual Object {
-			Result(const Event<void(BaseType)>& onResult, Args&&... args) : _result(std::forward<Args>(args)...), _onResult(std::move(onResult)), Runner(typeof<ResultType>().c_str()) {}
+			Result(const Event<void(ResultType)>& onResult, Args&&... args) : _result(std::forward<Args>(args)...), _onResult(std::move(onResult)), Runner(typeof<ResultType>().c_str()) {}
 			bool run(Exception& ex) { _onResult(_result); return true; }
 		private:
-			Event<void(BaseType)>								_onResult;
+			Event<void(ResultType)>								_onResult;
 			typename std::remove_reference<ResultType>::type	_result;
 		};
-		queue(new Result(onResult, std::forward<Args>(args)...));
+		return tryQueue(std::make_shared<Result>(onResult, std::forward<Args>(args)...));
 	}
+	/*!
+	Try to queue an event without argument, returns false if failed */
+	bool tryQueue(const Event<void()>& onResult) const;
+	/*!
+	Queue a shared RunnerType, returns false if failed */
+	template<typename RunnerType, typename = typename std::enable_if<std::is_constructible<shared<Runner>, RunnerType>::value>::type>
+	void queue(RunnerType&& pRunner) const {
+		if (!tryQueue(std::forward<RunnerType>(pRunner)))
+			FATAL_ERROR("Impossible to queue ", typeof<RunnerType>());
+	}
+	/*!
+	Build and queue a RunnerType, returns false if failed */
+	template <typename RunnerType, typename ...Args>
+	void queue(Args&&... args) const {
+		if(!tryQueue(std::make_shared<RunnerType>(std::forward<Args>(args)...)))
+			FATAL_ERROR("Impossible to queue ", typeof<RunnerType>());
+	}
+	/*!
+	Queue an event with arguments call, returns false if failed */
 	template<typename ResultType, typename ...Args>
 	void queue(const Event<void(ResultType)>& onResult, Args&&... args) const {
-		queue<ResultType, ResultType>(onResult, std::forward<Args>(args)...);
+		if(!tryQueue(onResult, std::forward<Args>(args)...))
+			FATAL_ERROR("Impossible to queue ", typeof(onResult));
 	}
-	void queue(const Event<void()>& onResult) const;
-	void queue(Event<void()>& onResult) const { queue((const Event<void()>&)onResult); }
-
-
-	UInt32 flush();
+	/*!
+	Queue an event without argument, returns false if failed */
+	void queue(const Event<void()>& onResult) const {
+		if(!tryQueue(onResult))
+			FATAL_ERROR("Impossible to queue ", typeof(onResult));
+	}
 
 private:
 
 	mutable std::mutex					_mutex;
 	mutable std::deque<shared<Runner>>	_runners;
-	Signal&								_signal;
+	Signal*								_pSignal;
 };
 
 

@@ -35,7 +35,7 @@ FlowManager::FlowManager(bool responder, Invoker& invoker, OnStatusEvent pOnStat
 	status(RTMFP::STOPPED), _tag(16, '\0'), _sessionId(0), _pListener(NULL), _mainFlowId(0), _initiatorTime(-1), _responder(responder), _nextRTMFPWriterId(2), _farId(0), _threadSend(0), _ping(0), _waitClose(false),
 	_rttvar(0), _rto(Net::RTO_INIT) {
 
-	_pMainStream.reset(new FlashConnection());
+	_pMainStream.set();
 	_pMainStream->onStatus = [this](const string& code, const string& description, UInt16 streamId, UInt64 flowId, double cbHandler) {
 		DEBUG("onStatus (stream: ", streamId, ") : ", code, " - ", description)
 		if (_pOnStatusEvent)
@@ -72,14 +72,14 @@ FlowManager::~FlowManager() {
 	}
 }
 
-shared_ptr<RTMFPWriter>& FlowManager::writer(UInt64 id, shared_ptr<RTMFPWriter>& pWriter) {
+shared<RTMFPWriter>& FlowManager::writer(UInt64 id, shared<RTMFPWriter>& pWriter) {
 	auto it = _flowWriters.find(id);
 	if (it != _flowWriters.end())
 		pWriter = it->second;
 	return pWriter;
 }
 
-const shared_ptr<RTMFPWriter>& FlowManager::createWriter(const Packet& signature, Base::UInt64 flowId) {
+const shared<RTMFPWriter>& FlowManager::createWriter(const Packet& signature, Base::UInt64 flowId) {
 
 	RTMFPWriter* pWriter = new RTMFPWriter(0x89 + _responder,_nextRTMFPWriterId, flowId, signature, *this);
 	auto itWriter = _flowWriters.emplace(piecewise_construct, forward_as_tuple(_nextRTMFPWriterId++), forward_as_tuple(pWriter)).first;
@@ -100,7 +100,7 @@ void FlowManager::flushWriters() {
 	// Raise RTMFPWriter
 	auto it = _flowWriters.begin();
 	while (it != _flowWriters.end()) {
-		shared_ptr<RTMFPWriter>& pWriter(it->second);
+		shared<RTMFPWriter>& pWriter(it->second);
 		pWriter->flush();
 		if (pWriter->consumed()) {
 			DEBUG("Writer ", pWriter->id, " of Session ", name(), " consumed")
@@ -217,7 +217,7 @@ void FlowManager::receive(const Packet& packet) {
 		case 0x5e : {
 			// RTMFPWriter exception!
 			UInt64 id = message.read7Bit<UInt64>();
-			shared_ptr<RTMFPWriter> pWriter;
+			shared<RTMFPWriter> pWriter;
 			if (writer(id, pWriter))
 				handleWriterException(pWriter);
 			else
@@ -237,7 +237,7 @@ void FlowManager::receive(const Packet& packet) {
 			/// Acknowledgment
 			UInt64 id = message.read7Bit<UInt64>();
 			UInt64 bufferSize = message.read7Bit<UInt64>();
-			shared_ptr<RTMFPWriter> pWriter;
+			shared<RTMFPWriter> pWriter;
 			if (writer(id, pWriter)) {
 				if (bufferSize) {
 					UInt64 ackStage(message.read7Bit<UInt64>());
@@ -380,7 +380,7 @@ void FlowManager::receive(const Packet& packet) {
 	}
 }
 
-void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
+void FlowManager::send(shared<RTMFPSender>&& pSender) {
 	if (!_pSendSession)
 		return;
 
@@ -394,7 +394,7 @@ void FlowManager::send(const shared_ptr<RTMFPSender>& pSender) {
 	// continue even on _killing to repeat writers messages to flush it (reliable)
 	pSender->address = _address;
 	pSender->pSession = _pSendSession;
-	_invoker.threadPool.queue(pSender, _threadSend);
+	_invoker.threadPool.queue(_threadSend, move(pSender));
 }
 
 Buffer& FlowManager::write(UInt8 type, UInt16 size) {
@@ -423,7 +423,7 @@ RTMFPFlow* FlowManager::createFlow(UInt64 id, const string& signature, UInt64 id
 	Exception ex;
 	RTMFPFlow* pFlow = createSpecialFlow(ex, id, signature, idWriterRef);
 	if (!pFlow && signature.size()>3 && signature.compare(0, 4, "\x00\x54\x43\x04", 4) == 0) { // NetStream (P2P or normal)
-		shared_ptr<FlashStream> pStream;
+		shared<FlashStream> pStream;
 		UInt32 idSession(BinaryReader((const UInt8*)signature.c_str() + 4, signature.length() - 4).read7Bit<UInt32>());
 		DEBUG("Creating new Flow (", id, ") for NetStream ", idSession)
 
@@ -500,7 +500,7 @@ void FlowManager::removeFlow(RTMFPFlow* pFlow) {
 bool FlowManager::computeKeys(UInt32 farId) {
 	// Compute Diffie-Hellman secret
 	Exception ex;
-	shared_ptr<Buffer> pSharedSecret(new Buffer(DiffieHellman::SIZE));
+	shared<Buffer> pSharedSecret(SET, DiffieHellman::SIZE);
 	UInt8 sizeSecret = diffieHellman().computeSecret(ex, _pHandshake->farKey->data(), _pHandshake->farKey->size(), pSharedSecret->data());
 	if (ex) {
 		WARN(ex)
@@ -513,12 +513,12 @@ bool FlowManager::computeKeys(UInt32 farId) {
 	// Compute Keys
 	UInt8 responseKey[Crypto::SHA256_SIZE];
 	UInt8 requestKey[Crypto::SHA256_SIZE];
-	shared_ptr<Buffer>& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
-	shared_ptr<Buffer>& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
+	shared<Buffer>& initiatorNonce = (_responder)? _pHandshake->farNonce : _nonce;
+	shared<Buffer>& responderNonce = (_responder)? _nonce : _pHandshake->farNonce;
 	RTMFP::ComputeAsymetricKeys(_sharedSecret, BIN initiatorNonce->data(), initiatorNonce->size(), BIN responderNonce->data(), responderNonce->size(), requestKey, responseKey);
-	_pDecoder.reset(new RTMFP::Engine(_responder ? requestKey : responseKey));
-	_pEncoder.reset(new RTMFP::Engine(_responder ? responseKey : requestKey));
-	_pSendSession.reset(new RTMFPSender::Session(farId, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0)); // important, initialize the sender session
+	_pDecoder.set(_responder ? requestKey : responseKey);
+	_pEncoder.set(_responder ? responseKey : requestKey);
+	_pSendSession.set(farId, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0); // important, initialize the sender session
 
 	// Save nonces just in case we are in a NetGroup connection
 	_farNonce = _pHandshake->farNonce;
@@ -541,7 +541,7 @@ void FlowManager::receive(const SocketAddress& address, const Packet& packet) {
 
 		// If address family change socket will change
 		if (address.family() != _address.family())
-			_pSendSession.reset(new RTMFPSender::Session(_farId, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0));
+			_pSendSession.set(_farId, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0);
 		_address.set(address);
 	}
 
@@ -665,13 +665,13 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 		return;
 	}
 
-	shared_ptr<Buffer> pFarNonce(new Buffer(nonceSize));
+	shared<Buffer> pFarNonce(SET, nonceSize);
 	reader.read(nonceSize, *pFarNonce);
 	if (memcmp(pFarNonce->data(), "\x03\x1A\x00\x00\x02\x1E\x00", 7) != 0) {
 		ERROR("Far nonce received is not well formated : ", String::Hex(pFarNonce->data(), nonceSize))
 		return;
 	}
-	_pHandshake->farNonce = pFarNonce;
+	_pHandshake->farNonce = move(pFarNonce);
 
 	UInt8 endByte = reader.read8();
 	if (endByte != 0x58) {
@@ -681,7 +681,7 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 
 	// If we are in client->server session far key = nonce+11
 	if (!_pHandshake->isP2P) {
-		_pHandshake->farKey.reset(new Buffer(nonceSize - 11));
+		_pHandshake->farKey.set(nonceSize - 11);
 		BinaryWriter writer(_pHandshake->farKey->data(), _pHandshake->farKey->size());
 		writer.write(_pHandshake->farNonce->data() + 11, nonceSize - 11);
 	}
@@ -691,7 +691,7 @@ void FlowManager::sendConnect(BinaryReader& reader) {
 		onConnection();
 }
 
-bool FlowManager::onPeerHandshake70(const SocketAddress& address, const shared_ptr<Buffer>& farKey, const string& cookie) {
+bool FlowManager::onPeerHandshake70(const SocketAddress& address, const shared<Buffer>& farKey, const string& cookie) {
 	if (status > RTMFP::HANDSHAKE30) {
 		DEBUG("Handshake 70 ignored for session ", name(), ", we are already in state ", status)
 		return false;
@@ -699,15 +699,15 @@ bool FlowManager::onPeerHandshake70(const SocketAddress& address, const shared_p
 
 	// update address & generate the session
 	_address.set(address);
-	_pSendSession.reset(new RTMFPSender::Session(0, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0));
+	_pSendSession.set(0, _pEncoder, socket(_address.family()), _pSendSession ? _pSendSession->initiatorTime.load() : 0);
 	return true;
 };
 
-const shared_ptr<Buffer>& FlowManager::getNonce() {
+const shared<Buffer>& FlowManager::getNonce() {
 	if (_nonce)
 		return _nonce; // already computed
 	
-	shared<Buffer> pBuffer(new Buffer());
+	shared<Buffer> pBuffer(SET);
 	BinaryWriter nonceWriter(*pBuffer);
 	if (_responder) {
 		

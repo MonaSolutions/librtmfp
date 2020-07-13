@@ -78,7 +78,7 @@ bool FlashWriter::writeMedia(MediaType type,UInt32 time, const Packet& packet) {
 			break;
 		case DATA: {
 			// Trick to forward Metadata
-			shared_ptr<Buffer>	pBuffer(new Buffer(packet.size()+16));
+			Base::shared<Buffer>	pBuffer(SET, packet.size()+16);
 			BinaryWriter writer(pBuffer->data(), pBuffer->size());
 			writer.write(EXPAND("\x2\x0\r@setDataFrame"));
 			writer.write(packet.data(), packet.size());

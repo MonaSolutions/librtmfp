@@ -1,4 +1,8 @@
 /*
+This code is in part based on code from the POCO C++ Libraries,
+licensed under the Boost software license :
+https://www.boost.org/LICENSE_1_0.txt
+
 This file is a part of MonaSolutions Copyright 2017
 mathieu.poux[a]gmail.com
 jammetthomas[a]gmail.com
@@ -57,7 +61,7 @@ bool DNS::HostByAddress(Exception& ex,const IPAddress& address, HostEntry& host)
 			return true;
 		}
 	}
-	SetAIError(ex, rc, " (address=",address,")");
+	SetAIError(ex, rc, " (address=", address,")");
 	return false;
 }
 

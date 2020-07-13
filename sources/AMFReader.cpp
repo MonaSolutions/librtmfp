@@ -27,7 +27,8 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Base;
 
-AMFReader::AMFReader(const UInt8* data, UInt32 size) : ReferableReader(data, size), _amf3(0), _referencing(true) {
+
+AMFReader::AMFReader(const Packet& packet) : ReferableReader(packet), _amf3(0), _referencing(true) {
 
 }
 
@@ -45,7 +46,7 @@ const char* AMFReader::readText(UInt32& size) {
 	UInt32 reset(0), reference(0);
 	if (_amf3) {
 		reference = reader.position();
-		size = reader.read7Bit<UInt32>();
+		size = reader.read7Bit<UInt32>(4);
 		bool isInline = size & 0x01;
 		size >>= 1;
 		if (!isInline) {
@@ -55,7 +56,7 @@ const char* AMFReader::readText(UInt32& size) {
 			}
 			reset = reader.position();
 			reader.reset(_stringReferences[size]);
-			size = (reader.read7Bit<UInt32>() >> 1);
+			size = (reader.read7Bit<UInt32>(4) >> 1);
 		}
 	}
 	else
@@ -101,7 +102,7 @@ UInt8 AMFReader::followingType() {
 		case AMF::AMF3_DATE:
 			return DATE;
 		case AMF::AMF3_BYTEARRAY:
-			return BYTES;
+			return BYTE;
 		case AMF::AMF3_ARRAY:
 			return ARRAY;
 		case AMF::AMF3_DICTIONARY:
@@ -225,7 +226,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 			return true;
 		}
 		// Forced in AMF3 here!
-		UInt32 value = reader.read7Bit<UInt32>();
+		UInt32 value = reader.read7Bit<UInt32>(4);
 		if (value>0xFFFFFFF)
 			value -= (1 << 29);
 		writer.writeNumber(value);
@@ -237,11 +238,11 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 		writer.writeNull();
 		return true;
 
-	case BYTES: {
+	case BYTE: {
 		reader.next();
 		// Forced in AMF3 here!
 		UInt32 pos = reader.position();
-		UInt32 size = reader.read7Bit<UInt32>();
+		UInt32 size = reader.read7Bit<UInt32>(4);
 		bool isInline = size & 0x01;
 		size >>= 1;
 
@@ -253,10 +254,10 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 		if (isInline) {
 			if (_referencing) {
 				_references.emplace_back(pos);
-				writeBytes(writer, (_references.size() << 1) | 0x01, reader.current(), size);
+				writeByte(writer, (_references.size() << 1) | 0x01, Packet(self, reader.current(), size));
 			}
 			else
-				writer.writeBytes(reader.current(), size);
+				writer.writeByte(Packet(self, reader.current(), size));
 			reader.next(size);
 			return true;
 		}
@@ -267,7 +268,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 			}
 			UInt32 reset = reader.position();
 			reader.reset(_references[size]);
-			writeBytes(writer, ((++size) << 1) | 0x01, reader.current(), reader.read7Bit<UInt32>() >> 1);
+			writeByte(writer, ((++size) << 1) | 0x01, Packet(self, reader.current(), reader.read7Bit<UInt32>(4) >> 1));
 			reader.reset(reset);
 		}
 		return true;
@@ -278,7 +279,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 		Date date;
 		if (_amf3) {
 			UInt32 pos = reader.position();
-			UInt32 flags = reader.read7Bit<UInt32>();
+			UInt32 flags = reader.read7Bit<UInt32>(4);
 			bool isInline = flags & 0x01;
 			if (isInline) {
 				if (_referencing) {
@@ -312,7 +313,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 		reader.next();
 		// AMF3
 		UInt32 reference = reader.position();
-		UInt32 size = reader.read7Bit<UInt32>();
+		UInt32 size = reader.read7Bit<UInt32>(4);
 		bool isInline = size & 0x01;
 		size >>= 1;
 
@@ -331,7 +332,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 			}
 			reset = reader.position();
 			reader.reset(_references[reference]);
-			size = reader.read7Bit<UInt32>() >> 1;
+			size = reader.read7Bit<UInt32>(4) >> 1;
 			pReference = beginMap(writer, ((++reference) << 1) | 0x01, ex, size, reader.read8() & 0x01);
 			_referencing = false;
 		}
@@ -348,7 +349,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 		while (size-- > 0) {
 			if (ex) {
 				_buffer.clear();
-				StringWriter stringWriter(_buffer);
+				StringWriter<string> stringWriter(_buffer);
 				if (!readNext(stringWriter))
 					continue;
 				writer.writePropertyName(_buffer.c_str());
@@ -453,7 +454,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 				while (size--) {
 					text = readText(sizeText);
 					if (text) {
-						String::ToNumber<UInt32>(text, sizeText, sizeText);
+						String::ToNumber(text, sizeText, sizeText);
 						while (sizeText > i++)
 							writer.writeNull();
 						if (readNext(writer))
@@ -480,7 +481,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 			reader.next();
 
 			UInt32 reference = reader.position();
-			size = reader.read7Bit<UInt32>();
+			size = reader.read7Bit<UInt32>(4);
 			bool isInline = size & 0x01;
 			size >>= 1;
 
@@ -495,7 +496,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 
 				reset = reader.position();
 				reader.reset(_references[size]);
-				size = reader.read7Bit<UInt32>() >> 1;
+				size = reader.read7Bit<UInt32>(4) >> 1;
 				_referencing = false;
 			}
 			else if (_referencing) {
@@ -582,7 +583,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 	///  AMF3
 	reader.next();
 
-	UInt32 flags = reader.read7Bit<UInt32>();
+	UInt32 flags = reader.read7Bit<UInt32>(4);
 	UInt32 pos(reader.position());
 	UInt32 resetObject(0);
 	bool isInline = flags & 0x01;
@@ -600,7 +601,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 
 		resetObject = reader.position();
 		reader.reset(_references[flags]);
-		flags = reader.read7Bit<UInt32>() >> 1;
+		flags = reader.read7Bit<UInt32>(4) >> 1;
 		_referencing = false;
 	}
 	else if (_referencing) {
@@ -623,7 +624,7 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 	else if (flags<_classDefReferences.size()) {
 		reset = reader.position();
 		reader.reset(_classDefReferences[flags]);
-		flags = reader.read7Bit<UInt32>() >> 2;
+		flags = reader.read7Bit<UInt32>(4) >> 2;
 		text = readText(size);
 		_referencing = false;
 	}
@@ -671,12 +672,12 @@ bool AMFReader::writeOne(UInt8 type, DataWriter& writer) {
 	// Read classdef properties
 	while (flags--) {
 		reset = reader.position(); // save value position
-									// Read property name in classdef
+								   // Read property name in classdef
 		reader.reset(pos); // reset on name
 		while (!(text = readText(size)));
 		writer.writePropertyName(_buffer.assign(text, size).c_str());
 		pos = reader.position(); // save new name position
-									// Read value
+								 // Read value
 		reader.reset(reset); // reset on value
 		if (!readNext(writer))
 			writer.writeNull();

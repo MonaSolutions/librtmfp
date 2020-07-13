@@ -35,11 +35,11 @@ Developer notes:
 
 namespace Base {
 
-#define MAKE_FOLDER(PATH)	FileSystem::MakeFolder(PATH)
-#define MAKE_FILE(PATH)		FileSystem::MakeFile(PATH)
-#define MAKE_ABSOLUTE(PATH) FileSystem::MakeAbsolute(PATH)
-#define MAKE_RELATIVE(PATH) FileSystem::MakeRelative(PATH)
-#define RESOLVE(PATH)		FileSystem::Resolve(PATH)
+#define MAKE_FOLDER(PATH)		FileSystem::MakeFolder(PATH)
+#define MAKE_FILE(PATH)			FileSystem::MakeFile(PATH)
+#define MAKE_ABSOLUTE(PATH)		FileSystem::MakeAbsolute(PATH)
+#define MAKE_RELATIVE(PATH)		FileSystem::MakeRelative(PATH)
+#define RESOLVE(PATH)			FileSystem::Resolve(PATH)
 
 struct FileSystem : virtual Static {
 	enum Type {
@@ -54,39 +54,44 @@ struct FileSystem : virtual Static {
 
 
 	struct Attributes : virtual Object {
-		NULLABLE
+		NULLABLE(!lastChange)
 		Attributes() : size(0), lastChange(0), lastAccess(0) {}
 		Time	lastChange;
 		Time	lastAccess;
 		UInt64	size;
-		operator bool() const { return lastChange ? true : false; }
 		Attributes& reset() { lastAccess = 0;  lastChange = 0; size = 0; return *this; }
 	};
 
-
-	typedef std::function<void(const std::string&, UInt16 level)> ForEach; /// FileSystem::ListDir function type handler
+	/*!
+	File iteration, level is the deep sub directory level (when mode = MODE_HEAVY)
+	If returns false it stops current directory iteration (but continue in sub directory if mode = MODE_HEAVY) */
+	typedef std::function<bool(const std::string& file, UInt16 level)> ForEach;
 
 	/// Iterate over files under directory path
-	static UInt32	ListFiles(Exception& ex, const std::string& path, const ForEach& forEach, Mode mode= MODE_LOW) { return ListFiles(ex, path.c_str(), forEach, mode); }
-	static UInt32	ListFiles(Exception& ex, const char* path, const ForEach& forEach, Mode mode= MODE_LOW);
+	static int		ListFiles(Exception& ex, const std::string& path, const ForEach& forEach, Mode mode= MODE_LOW) { return ListFiles(ex, path.c_str(), forEach, mode); }
+	static int		ListFiles(Exception& ex, const char* path, const ForEach& forEach, Mode mode= MODE_LOW);
 
 	/// In giving a path with /, it tests one folder existance, otherwise file existance
 	static bool			Exists(const std::string& path)  { return Exists(path.data(), path.size()); }
 	static bool			Exists(const char* path) { return Exists(path, strlen(path)); }
 	static bool			IsAbsolute(const std::string& path) { return IsAbsolute(path.c_str()); }
 	static bool			IsAbsolute(const char* path);
-	static bool			IsFolder(const std::string& path);
+	static bool			IsFolder(const std::string& path) { return IsFolder(path.c_str()); }
 	static bool			IsFolder(const char* path);
 	
+	/*!
+	End the path with a / if not already present */
 	static std::string  MakeFolder(const char* path) { std::string result(path); MakeFolder(result); return result; }
 	static std::string	MakeFolder(const std::string& path) { return MakeFolder(path.c_str()); }
 	static std::string&	MakeFolder(std::string& path);
+	/*!
+	Remove end / if present (not guarantee that isFolder returns false now, if is "." for example it's a folder)  */
 	static std::string	MakeFile(const char* path) { std::string result(path); MakeFile(result); return result; }
 	static std::string	MakeFile(const std::string& path) { return MakeFile(path.c_str()); }
 	static std::string&	MakeFile(std::string& path);
 	static std::string	MakeAbsolute(const char* path) { std::string result(path); MakeAbsolute(result); return result; }
 	static std::string	MakeAbsolute(const std::string& path) { return MakeAbsolute(path.c_str()); }
-	static std::string& MakeAbsolute(std::string& path) { if (!IsAbsolute(path)) path.insert(0, "/"); return path; }
+	static std::string& MakeAbsolute(std::string& path);
 	static std::string	MakeRelative(const char* path) { std::string result(path); MakeRelative(result); return result; }
 	static std::string	MakeRelative(const std::string& path) { return MakeRelative(path.c_str()); }
 	static std::string& MakeRelative(std::string& path);
@@ -97,14 +102,14 @@ struct FileSystem : virtual Static {
 
 	/// extPos = position of ".ext"
 	static Type		GetFile(const char* path, std::string& name) { std::size_t extPos; return GetFile(path,name,extPos); }
-	static Type		GetFile(const char* path, std::string& name, std::size_t& extPos) { return GetFile(path,name,extPos,(std::string&)String::Empty()); }
+	static Type		GetFile(const char* path, std::string& name, std::size_t& extPos) { return GetFile(path, strlen(path),name,extPos); }
 	static Type		GetFile(const char* path, std::string& name, std::string& parent) { std::size_t extPos; return GetFile(path,name,extPos,parent); }
-	static Type		GetFile(const char* path, std::string& name, std::size_t& extPos, std::string& parent) { return GetFile(path, strlen(path), name, extPos, parent); }
+	static Type		GetFile(const char* path, std::string& name, std::size_t& extPos, std::string& parent) { return GetFile(path, strlen(path), name, extPos, &parent); }
 	
 	static Type		GetFile(const std::string& path, std::string& name) { std::size_t extPos; return GetFile(path,name,extPos); }
-	static Type		GetFile(const std::string& path, std::string& name, std::size_t& extPos) { return GetFile(path,name,extPos,(std::string&)String::Empty()); }
+	static Type		GetFile(const std::string& path, std::string& name, std::size_t& extPos) { return GetFile(path.data(), path.size(), name,extPos); }
 	static Type		GetFile(const std::string& path, std::string& name, std::string& parent) { std::size_t extPos;  return GetFile(path,name, extPos, parent); }
-	static Type		GetFile(const std::string& path, std::string& name, std::size_t& extPos, std::string& parent) { return GetFile(path.data(), path.size() , name, extPos, parent); }
+	static Type		GetFile(const std::string& path, std::string& name, std::size_t& extPos, std::string& parent) { return GetFile(path.data(), path.size() , name, extPos, &parent); }
 	
 
 	static std::string& GetName(std::string& value) { return GetName(value,value); }
@@ -147,9 +152,8 @@ struct FileSystem : virtual Static {
 
 private:
 	struct Home : std::string, virtual Object {
-		NULLABLE
+		NULLABLE(empty())
 		Home();
-		operator bool() const { return !empty(); }
 	};
 
 	struct Directory : std::string, virtual Object {
@@ -165,9 +169,8 @@ private:
 	};
 
 	struct CurrentApp : std::string, virtual Object {
-		NULLABLE
+		NULLABLE(empty())
 		CurrentApp();
-		operator bool() const { return !empty(); }
 	};
 
 	static CurrentDirs& GetCurrentDirs() { static CurrentDirs Dirs; return Dirs; }
@@ -180,7 +183,7 @@ private:
 	static UInt64 GetSize(Exception& ex, const char* path, std::size_t size, UInt64 defaultValue);
 	static std::string& GetParent(const char* path, std::size_t size, std::string& value);
 	static const char*  GetFile(const char* path, std::size_t& size, std::size_t& extPos, Type& type, Int32& parentPos);
-	static Type			GetFile(const char* path, std::size_t size, std::string& name, std::size_t& extPos, std::string& parent);
+	static Type			GetFile(const char* path, std::size_t size, std::string& name, std::size_t& extPos, std::string* pParent = NULL);
 };
 
 

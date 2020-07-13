@@ -29,7 +29,7 @@ namespace Base {
 struct Socket : virtual Object, Net::Stats {
 	typedef Event<void(shared<Buffer>& pBuffer, const SocketAddress& address)>	  OnReceived;
 	typedef Event<void(const shared<Socket>& pSocket)>							  OnAccept;
-	typedef Event<void(const Exception&)>										  OnError;
+	typedef Event<void(const Exception&)>										  OnError; const OnError& onError;
 	typedef Event<void()>														  OnFlush;
 	typedef Event<void()>														  OnDisconnection;
 
@@ -44,7 +44,8 @@ struct Socket : virtual Object, Net::Stats {
 
 	enum Type {
 		TYPE_STREAM = SOCK_STREAM,
-		TYPE_DATAGRAM = SOCK_DGRAM
+		TYPE_DATAGRAM = SOCK_DGRAM,
+		TYPE_OTHER = 0x10
 	};
 
 	enum ShutdownType {
@@ -60,7 +61,6 @@ struct Socket : virtual Object, Net::Stats {
 	/*!
 	Creates a Socket which supports IPv4 and IPv6 */
 	Socket(Type type);
-
 	virtual ~Socket();
 
 	const	Type		type;
@@ -79,18 +79,19 @@ struct Socket : virtual Object, Net::Stats {
 	UInt32				sendBufferSize() const { return _sendBufferSize; }
 
 	virtual UInt32		available() const;
-	virtual UInt64		queueing() const { return _queueing; }
+	UInt64				queueing() const { return _queueing; }
 	
 	const SocketAddress& address() const;
 	const SocketAddress& peerAddress() const { return _peerAddress; }
+	bool				 listening() const { return _listening; }
 
-	bool processParams(Exception& ex, const Parameters& parameter, const char* prefix = "net");
+	virtual bool processParams(Exception& ex, const Parameters& parameter, const char* prefix = "net.");
 
-	bool setSendBufferSize(Exception& ex, int size);
-	bool getSendBufferSize(Exception& ex, int& size) const { return getOption(ex,SOL_SOCKET, SO_SNDBUF, size); }
+	virtual bool setSendBufferSize(Exception& ex, UInt32 size);
+	virtual bool getSendBufferSize(Exception& ex, UInt32& size) const { return getOption(ex,SOL_SOCKET, SO_SNDBUF, size); }
 	
-	bool setRecvBufferSize(Exception& ex, int size);
-	bool getRecvBufferSize(Exception& ex, int& size) const { return getOption(ex, SOL_SOCKET, SO_RCVBUF, size); }
+	virtual bool setRecvBufferSize(Exception& ex, UInt32 size);
+	virtual bool getRecvBufferSize(Exception& ex, UInt32& size) const { return getOption(ex, SOL_SOCKET, SO_RCVBUF, size); }
 
 	bool setNoDelay(Exception& ex, bool value) { return setOption(ex,IPPROTO_TCP, TCP_NODELAY, value ? 1 : 0); }
 	bool getNoDelay(Exception& ex, bool& value) const { return getOption(ex, IPPROTO_TCP, TCP_NODELAY, value); }
@@ -98,8 +99,8 @@ struct Socket : virtual Object, Net::Stats {
 	bool setKeepAlive(Exception& ex, bool value) { return setOption(ex, SOL_SOCKET, SO_KEEPALIVE, value ? 1 : 0); }
 	bool getKeepAlive(Exception& ex, bool& value) const { return getOption(ex,SOL_SOCKET, SO_KEEPALIVE, value); }
 
-	bool setReuseAddress(Exception& ex, bool value) { return setOption(ex, SOL_SOCKET, SO_REUSEADDR, value ? 1 : 0); }
-	bool getReuseAddress(Exception& ex, bool& value) const { return getOption(ex, SOL_SOCKET, SO_REUSEADDR, value); }
+	virtual bool setReuseAddress(Exception& ex, bool value) { return setOption(ex, SOL_SOCKET, SO_REUSEADDR, value ? 1 : 0); }
+	virtual bool getReuseAddress(Exception& ex, bool& value) const { return getOption(ex, SOL_SOCKET, SO_REUSEADDR, value); }
 
 	bool setOOBInline(Exception& ex, bool value) { return setOption(ex, SOL_SOCKET, SO_OOBINLINE, value ? 1 : 0); }
 	bool getOOBInline(Exception& ex, bool& value) const { return getOption(ex, SOL_SOCKET, SO_OOBINLINE, value); }
@@ -107,30 +108,30 @@ struct Socket : virtual Object, Net::Stats {
 	bool setBroadcast(Exception& ex, bool value) { return setOption(ex, SOL_SOCKET, SO_BROADCAST, value ? 1 : 0); }
 	bool getBroadcast(Exception& ex, bool& value) const { return getOption(ex, SOL_SOCKET, SO_BROADCAST, value); }
 
-	bool setLinger(Exception& ex, bool on, int seconds);
-	bool getLinger(Exception& ex, bool& on, int& seconds) const;
+	virtual bool setLinger(Exception& ex, bool on, int seconds);
+	virtual bool getLinger(Exception& ex, bool& on, int& seconds) const;
 	
 	void setReusePort(bool value);
 	bool getReusePort() const;
 
-	bool setNonBlockingMode(Exception& ex, bool value);
+	virtual bool setNonBlockingMode(Exception& ex, bool value);
 	bool getNonBlockingMode() const { return _nonBlockingMode; }
 
 	bool joinGroup(Exception& ex, const IPAddress& ip, UInt32 interfaceIndex=0);
 	void leaveGroup(const IPAddress& ip, UInt32 interfaceIndex = 0);
 
-	bool		 accept(Exception& ex, shared<Socket>& pSocket);
+	virtual bool accept(Exception& ex, shared<Socket>& pSocket);
 
 	/*!
 	Connect or disconnect (if address is Wildcard) to a peer address */
 	virtual bool connect(Exception& ex, const SocketAddress& address, UInt16 timeout=0);
 	/*!
 	Bind socket, if socket is datagram and the address passed is a multicast ip it join the multicast group related (call joinGroup) */
-	bool		 bind(Exception& ex, const SocketAddress& address);
+	virtual bool bind(Exception& ex, const SocketAddress& address);
 	/*!
 	Bind on any available port */
 	bool		 bind(Exception& ex, const IPAddress& ip=IPAddress::Wildcard()) { return bind(ex, SocketAddress(ip, 0)); }
-	bool		 listen(Exception& ex, int backlog = SOMAXCONN);
+	virtual bool listen(Exception& ex, int backlog = SOMAXCONN);
 	bool		 shutdown(ShutdownType type = SHUTDOWN_BOTH);
 	
 	int			 receive(Exception& ex, void* buffer, UInt32 size, int flags = 0) { return receive(ex, buffer, size, flags, NULL); }
@@ -148,15 +149,20 @@ struct Socket : virtual Object, Net::Stats {
 	bool		 flush(Exception& ex) { return flush(ex, false); }
 
 	template <typename ...Args>
-	static Exception& SetException(Exception& ex, int error, Args&&... args) {
+	static Exception& SetException(int error, Exception& ex, Args&&... args) {
+		if (!error)
+			error = Net::LastError();
 		ex.set<Ex::Net::Socket>(Net::ErrorToMessage(error), std::forward<Args>(args)...).code = error;
 		return ex;
 	}
+	template <typename ...Args>
+	static Exception& SetException(Exception& ex, Args&&... args) { return SetException(Net::LastError(), ex, std::forward<Args>(args)...); }
 
 protected:
-
+	void init();
+	
 	// Create a socket from Socket::accept
-	Socket(NET_SOCKET id, const sockaddr& addr);
+	Socket(NET_SOCKET id, const sockaddr& addr, Type type=TYPE_STREAM);
 	virtual Socket* newSocket(Exception& ex, NET_SOCKET sockfd, const sockaddr& addr) { return new Socket(sockfd, (sockaddr&)addr); }
 	virtual int		receive(Exception& ex, void* buffer, UInt32 size, int flags, SocketAddress* pAddress);
 
@@ -164,33 +170,58 @@ protected:
 	void			send(UInt32 count) { _sendTime = Time::Now(); _sendByteRate += count; }
 	void			receive(UInt32 count) { _recvTime = Time::Now(); _recvByteRate += count; }
 	virtual bool	flush(Exception& ex, bool deleting);
-	virtual bool	close(ShutdownType type = SHUTDOWN_BOTH);
+	virtual bool	close(ShutdownType type = SHUTDOWN_BOTH) { return ::shutdown(_id, type) == 0; }
+
+	template<typename Type, typename = typename std::enable_if<std::is_arithmetic<Type>::value && !std::is_same<Type, bool>::value>::type>
+	bool processParam(const Parameters& parameters, const char* name, Type& value, const char* prefix = NULL) {
+		return (prefix && parameters.getNumber(String(prefix, name), value)) || parameters.getNumber(name, value);
+	}
+	bool processParam(const Parameters& parameters, const char* name, std::string& value, const char* prefix = NULL) { return (prefix && parameters.getString(String(prefix, name), value)) || parameters.getString(name, value); }
+	bool processParam(const Parameters& parameters, const char* name, bool& value, const char* prefix = NULL) { return (prefix && parameters.getBoolean(String(prefix, name), value)) || parameters.getBoolean(name, value); }
+	
+
+	volatile bool			_listening;
+	volatile bool			_nonBlockingMode;
+	mutable SocketAddress	_address;
+	SocketAddress			_peerAddress;
+	NET_SOCKET				_id;
+
+	mutable std::atomic<int>	_recvBufferSize;
+	mutable std::atomic<int>	_sendBufferSize;
+
 private:
-	void init();
+	virtual bool setIPV6Only(Exception& ex, bool enable) { return setOption(ex, IPPROTO_IPV6, IPV6_V6ONLY, enable ? 1 : 0); }
+	virtual void computeAddress();
 
 	template<typename Type>
 	bool getOption(Exception& ex, int level, int option, Type& value) const {
 		if (_ex) {
-			ex = _ex;
+			if (_ex.cast<Ex::Intern>())
+				ex.set<Ex::Unsupported>("Option ", option," of type ", typeof<Type>()," not supported by ", typeof(self));
+			else
+				ex = _ex;
 			return false;
 		}
         NET_SOCKLEN length(sizeof(value));
 		if (::getsockopt(_id, level, option, reinterpret_cast<char*>(&value), &length) != -1)
 			return true;
-		SetException(ex, Net::LastError()," (level=",level,", option=",option,", length=",length,")");
+		SetException(ex, " (level=",level,", option=",option,", length=",length,")");
 		return false;
 	}
 
 	template<typename Type>
 	bool setOption(Exception& ex, int level, int option, Type value) {
 		if (_ex) {
-			ex = _ex;
+			if (_ex.cast<Ex::Intern>())
+				ex.set<Ex::Unsupported>("Option ", option, " of type ", typeof<Type>(), " not supported by ", typeof(self));
+			else
+				ex = _ex;
 			return false;
 		}
         NET_SOCKLEN length(sizeof(value));
 		if (::setsockopt(_id, level, option, reinterpret_cast<const char*>(&value), length) != -1)
 			return true;
-		SetException(ex, Net::LastError()," (level=",level,", option=",option,", length=",length,")");
+		SetException(ex, " (level=",level,", option=",option,", length=",length,")");
 		return false;
 	}
 
@@ -202,43 +233,34 @@ private:
 	};
 
 	Exception					_ex;
-	NET_SOCKET					_id;
-
-	volatile bool				_nonBlockingMode;
-
 	mutable std::mutex			_mutexSending;
 	std::deque<Sending>			_sendings;
 	std::atomic<UInt64>			_queueing;
-
-	SocketAddress				_peerAddress;
-	mutable SocketAddress		_address;
 
 	std::atomic<Int64>			_recvTime;
 	ByteRate					_recvByteRate;
 	std::atomic<Int64>			_sendTime;
 	ByteRate					_sendByteRate;
 
-	mutable std::atomic<int>	_recvBufferSize;
-	mutable std::atomic<int>	_sendBufferSize;
-
 //// Used by IOSocket /////////////////////
-	Decoder*					pDecoder;
-	bool						externDecoder;
-	OnReceived					onReceived;
-	OnAccept					onAccept;
-	OnError						onError;
-	OnFlush						onFlush;
-	OnDisconnection				onDisconnection;
+	Decoder*					_pDecoder;
+	bool						_externDecoder;
+	OnReceived					_onReceived;
+	OnAccept					_onAccept;
+	OnError						_onError;
+	OnFlush						_onFlush;
+	OnDisconnection				_onDisconnection;
 
 	UInt16						_threadReceive;
 	std::atomic<UInt32>			_receiving;
 	std::atomic<UInt8>			_reading;
+	std::atomic<bool>			_sending;
 	const Handler*				_pHandler; // to diminue size of Action+Handle
-	bool						_listening; // no need to protect this variable because listen() have to be called before IOSocket subscription!
+
+	bool						_opened;
 
 #if !defined(_WIN32)
 	weak<Socket>*				_pWeakThis;
-	bool						_firstWritable;
 #endif
 
 	friend struct IOSocket;

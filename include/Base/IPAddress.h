@@ -1,4 +1,8 @@
 /*
+This code is in part based on code from the POCO C++ Libraries,
+licensed under the Boost software license :
+https://www.boost.org/LICENSE_1_0.txt
+
 This file is a part of MonaSolutions Copyright 2017
 mathieu.poux[a]gmail.com
 jammetthomas[a]gmail.com
@@ -49,7 +53,7 @@ IPv6 addresses are supported only if the target platform
 supports IPv6. */
 struct IPAddress : virtual Object {
 	CONST_STRING(toString());
-	NULLABLE
+	NULLABLE(isWildcard())
 
 	enum Family {
 		IPv4=AF_INET,
@@ -62,6 +66,7 @@ struct IPAddress : virtual Object {
 	IPAddress(const IPAddress& other);
 	IPAddress& set(const IPAddress& other) { return set(other, port()); }
 	IPAddress& operator=(const IPAddress& other) { return set(other); }
+	IPAddress& operator=(std::nullptr_t) { return reset(); }
 
 	// Create/Set an IPAddress from a native internet address. A pointer to a in_addr or a in6_addr structure may be  passed. Additionally, for an IPv6 address, a scope ID may be specified.
 	IPAddress(const in_addr& addr);
@@ -172,8 +177,6 @@ struct IPAddress : virtual Object {
 	const void* data() const;
 	UInt8		size() const;
 
-	explicit operator bool() const { return !isWildcard(); }
-
 	// Returns a wildcard IPv4 or IPv6 address (0.0.0.0)
 	static const IPAddress& Wildcard(Family family = IPv4);
 	// Returns a loopback address, 127.0.0.1 for IPv4, ::1 for IPv6
@@ -215,7 +218,7 @@ private:
 	struct IPv4Impl;
 	struct IPv6Impl;
 
-	IPAddress(IPImpl* pAddress);
+	IPAddress(shared<IPImpl>&& pIPAddress);
 
 	template <typename ...Args>
 	bool setInternWithDNS(Exception& ex, const char* address, Args&&... args) {

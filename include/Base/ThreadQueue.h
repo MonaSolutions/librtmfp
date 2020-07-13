@@ -24,19 +24,21 @@ details (or else see http://mozilla.org/MPL/2.0/).
 namespace Base {
 
 struct ThreadQueue : Thread, virtual Object {
-	ThreadQueue(const char* name, Priority priority = PRIORITY_NORMAL) : Thread(name), _priority(priority) {}
+	ThreadQueue(Priority priority = PRIORITY_NORMAL) : Thread("ThreadQueue"), _priority(priority) {}
 	virtual ~ThreadQueue() { stop(); }
 
 	static ThreadQueue*	Current() { return _PCurrent; }
 
 	template<typename RunnerType>
 	void queue(RunnerType&& pRunner) {
-		FATAL_CHECK(pRunner); // more easy to debug that if it fails in the thread!
+		DEBUG_ASSERT(pRunner); // more easy to debug that if it fails in the thread!
 		std::lock_guard<std::mutex> lock(_mutex);
 		start(_priority);
 		_runners.emplace_back(std::forward<RunnerType>(pRunner));
 		wakeUp.set();
 	}
+	template <typename RunnerType, typename ...Args>
+	void queue(Args&&... args) { queue(std::make_shared<RunnerType>(std::forward<Args>(args)...)); }
 
 private:
 	bool run(Exception& ex, const volatile bool& requestStop);

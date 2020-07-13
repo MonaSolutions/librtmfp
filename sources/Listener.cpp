@@ -31,7 +31,7 @@ Listener::Listener(Publisher& publication, const string& identifier) : publicati
 
 }
 
-FlashListener::FlashListener(Publisher& publication, const string& identifier, shared_ptr<RTMFPWriter>& pDataWriter, shared_ptr<RTMFPWriter>& pAudioWriter, shared_ptr<RTMFPWriter>& pVideoWriter) : Listener(publication, identifier),
+FlashListener::FlashListener(Publisher& publication, const string& identifier, const shared<RTMFPWriter>& pDataWriter, const shared<RTMFPWriter>& pAudioWriter, const shared<RTMFPWriter>& pVideoWriter) : Listener(publication, identifier),
 	_pDataWriter(pDataWriter), _pAudioWriter(pAudioWriter), _pVideoWriter(pVideoWriter), receiveAudio(true), receiveVideo(true), _firstTime(true), _seekTime(0),
 	_dataInitialized(false), _startTime(0), _lastTime(0), _codecInfosSent(false) {
 
@@ -49,7 +49,9 @@ void FlashListener::closeWriters() {
 		_pAudioWriter->close(false);
 	if (_pVideoWriter)
 		_pVideoWriter->close(false);
-	_pDataWriter = _pVideoWriter = _pAudioWriter = NULL;
+	_pDataWriter.reset();
+	_pVideoWriter.reset();
+	_pAudioWriter.reset();
 	_dataInitialized = false;
 }
 

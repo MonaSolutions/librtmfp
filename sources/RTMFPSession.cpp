@@ -42,7 +42,7 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 	FlowManager(false, invoker, config.pOnStatusEvent), _pOnMedia(config.pOnMedia), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets),
 	_interruptCb(config.interruptCb), _interruptArg(config.interruptArg) {
 
-	socketIPV6.onPacket = socketIPV4.onPacket = [this](shared<Buffer>& pBuffer, const SocketAddress& address) {
+	socketIPV6.onPacket = socketIPV4.onPacket = [this](Base::shared<Buffer>& pBuffer, const SocketAddress& address) {
 		if (status > RTMFP::NEAR_CLOSED)
 			return;
 		if (pBuffer->size() < RTMFP_MIN_PACKET_SIZE) {
@@ -55,7 +55,7 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 		pBuffer->clip(reader.position());
 
 		Exception ex;
-		shared_ptr<RTMFP::Engine> pEngine;
+		shared<RTMFP::Engine> pEngine;
 		if (!idSession)
 			pEngine = _handshaker.decoder();
 		else {
@@ -94,9 +94,9 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 		}
 
 		// Stream created, now we create the writer before sending another request
-		shared_ptr<Buffer> pSignature(new Buffer(4, "\x00\x54\x43\x04"));
+		shared<Buffer> pSignature(SET, "\x00\x54\x43\x04", 4);
 		BinaryWriter(*pSignature).write7Bit<UInt32>(idStream);
-		shared_ptr<RTMFPWriter> pWriter = createWriter(Packet(pSignature), _mainFlowId);
+		shared<RTMFPWriter> pWriter = createWriter(Packet(pSignature), _mainFlowId);
 
 		// Send command and remove command type from waiting commands
 		if (command.publisher) {
@@ -104,7 +104,7 @@ RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
 			amfWriter.writeString(command.value.c_str(), command.value.size());
 			pWriter->flush();
 			// Create the publisher
-			_pPublisher.reset(new Publisher(command.value.c_str(), _invoker, command.audioReliable, command.videoReliable, false));
+			_pPublisher.set(command.value.c_str(), _invoker, command.audioReliable, command.videoReliable, false);
 		}
 		else {
 			AMFWriter& amfWriter = pWriter->writeInvocation("play", true);
@@ -239,7 +239,7 @@ RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const strin
 		return new RTMFPFlow(id, *this, _pMainStream, idWriterRef);
 	}
 	else if (signature.size() > 2 && signature.compare(0, 3, "\x00\x47\x43", 3) == 0) { // NetGroup
-		shared_ptr<FlashStream> pStream;
+		shared<FlashStream> pStream;
 		_pMainStream->addStream<GroupStream>(pStream); // TODO: see if it is really a GroupStream
 		return new RTMFPFlow(id,  pStream, *this, idWriterRef);
 	}
@@ -249,7 +249,7 @@ RTMFPFlow* RTMFPSession::createSpecialFlow(Exception& ex, UInt64 id, const strin
 	return NULL;
 }
 
-bool RTMFPSession::connect(const string& url, const string& host, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, shared_ptr<Buffer>& rawUrl) {
+bool RTMFPSession::connect(const string& url, const string& host, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, shared<Buffer>& rawUrl) {
 
 	if (_rawUrl) {
 		ERROR("You cannot call connect 2 times on the same session")
@@ -287,10 +287,10 @@ bool RTMFPSession::connect2Peer(const string& peerId, const string& streamName, 
 
 	DEBUG("Connecting to peer ", peerId, "...")
 	itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId), 
-		forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnStatusEvent, hostAddress, false, (bool)_group, mediaId)));
+		forward_as_tuple(SET, this, peerId.c_str(), _invoker, _pOnStatusEvent, hostAddress, false, (bool)_group, mediaId));
 	_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
-	shared_ptr<P2PSession> pPeer = itPeer->second;
+	shared<P2PSession> pPeer = itPeer->second;
 	// P2P unicast : add command play to send when connected
 	if (!streamName.empty()) 
 		pPeer->setStreamName(streamName);
@@ -312,10 +312,10 @@ bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* par
 			WARN("A publisher already exists (name : ", _pPublisher->name(), "), command ignored")
 			return false;
 		}
-		_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
+		_pPublisher.set(streamName, _invoker, audioReliable, videoReliable, true);
 	}
 
-	_group.reset(new NetGroup(_invoker.timer, mediaCount, groupHex.c_str(), groupTxt.c_str(), groupName.c_str(), streamName, *this, parameters, audioReliable, videoReliable));
+	_group.set(_invoker.timer, mediaCount, groupHex.c_str(), groupTxt.c_str(), groupName.c_str(), streamName, *this, parameters, audioReliable, videoReliable);
 	_group->onMedia = onMediaPlay;
 	//_group->onStatus = _pMainStream->onStatus; (Commented, onStatus is not thread safe)
 	sendGroupConnection(groupHex);
@@ -430,7 +430,7 @@ bool RTMFPSession::addStream(UInt8 mask, const string& streamName, bool audioRel
 
 	// If p2p publisher create directly the publisher
 	if (mask & RTMFP_P2P_PUBLISHED)
-		_pPublisher.reset(new Publisher(streamName, _invoker, audioReliable, videoReliable, true));
+		_pPublisher.set(streamName, _invoker, audioReliable, videoReliable, true);
 	// Otherwise create flash stream
 	else {
 		_pMainStream->createStream();
@@ -508,14 +508,14 @@ void RTMFPSession::onPublished(UInt16 streamId) {
 	Exception ex;
 	_pPublisher->start();
 
-	shared_ptr<Buffer> pSignature(new Buffer(4, "\x00\x54\x43\x04"));
+	shared<Buffer> pSignature(SET, "\x00\x54\x43\x04", 4);
 	BinaryWriter(*pSignature).write7Bit<UInt32>(streamId);
 	Packet signature(pSignature);
-	shared_ptr<RTMFPWriter> pDataWriter = createWriter(signature,_mainFlowId);
-	shared_ptr<RTMFPWriter> pAudioWriter = createWriter(signature, _mainFlowId);
-	shared_ptr<RTMFPWriter> pVideoWriter = createWriter(signature, _mainFlowId);
+	shared<RTMFPWriter> pDataWriter = createWriter(signature,_mainFlowId);
+	shared<RTMFPWriter> pAudioWriter = createWriter(signature, _mainFlowId);
+	shared<RTMFPWriter> pVideoWriter = createWriter(signature, _mainFlowId);
 
-	if (!(_pListener = _pPublisher->addListener<FlashListener, shared_ptr<RTMFPWriter>&>(ex, name(), pDataWriter, pAudioWriter, pVideoWriter)))
+	if (!(_pListener = _pPublisher->addListener<FlashListener, shared<RTMFPWriter>&>(ex, name(), pDataWriter, pAudioWriter, pVideoWriter)))
 		WARN(ex)
 
 	// Stream published : unlock the possible blocking function
@@ -543,7 +543,7 @@ void RTMFPSession::handleNewGroupPeer(const string& rawId, const string& peerId)
 	_group->newGroupPeer(peerId, rawId.c_str(), emptyAddresses, emptyHost);
 }
 
-void RTMFPSession::handleWriterException(shared_ptr<RTMFPWriter>& pWriter) {
+void RTMFPSession::handleWriterException(shared<RTMFPWriter>& pWriter) {
 
 	if (pWriter == _pGroupWriter)
 		_pGroupWriter.reset();
@@ -607,12 +607,12 @@ bool RTMFPSession::addPeer2Group(const string& peerId) {
 }
 
 const string& RTMFPSession::groupIdHex(){ 
-	FATAL_CHECK(_group)
+	DEBUG_ASSERT(_group)
 	return _group->idHex;
 }
 
 const string& RTMFPSession::groupIdTxt() { 
-	FATAL_CHECK(_group)
+	DEBUG_ASSERT(_group)
 	return _group->idTxt;
 }
 
@@ -628,14 +628,14 @@ void RTMFPSession::buildPeerID(const UInt8* data, UInt32 size) {
 	INFO("Peer ID : \n", _peerTxtId)
 }
 
-bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared_ptr<Handshake>& pHandshake, UInt32 farId, const string& peerId) {
+bool RTMFPSession::onNewPeerId(const SocketAddress& address, shared<Handshake>& pHandshake, UInt32 farId, const string& peerId) {
 
 	// If the peer session doesn't exists we create it
 	auto itPeer = _mapPeersById.lower_bound(peerId);
 	if (itPeer == _mapPeersById.end() || itPeer->first != peerId) {
 		SocketAddress emptyHost; // We don't know the peer's host address
 		itPeer = _mapPeersById.emplace_hint(itPeer, piecewise_construct, forward_as_tuple(peerId),
-			forward_as_tuple(new P2PSession(this, peerId.c_str(), _invoker, _pOnStatusEvent, emptyHost, true, (bool)_group)));
+			forward_as_tuple(SET, this, peerId.c_str(), _invoker, _pOnStatusEvent, emptyHost, true, (bool)_group));
 		_mapSessions.emplace(itPeer->second->sessionId(), itPeer->second.get());
 
 		// associate the handshake & session
@@ -681,7 +681,7 @@ void RTMFPSession::onConnection() {
 	_pMainWriter->flush();
 }
 
-void RTMFPSession::removeHandshake(shared_ptr<Handshake>& pHandshake) { 
+void RTMFPSession::removeHandshake(shared<Handshake>& pHandshake) { 
 
 	if (pHandshake->pSession) {
 		pHandshake->pSession = NULL;

@@ -77,7 +77,7 @@ LIBRTMFP_API typedef enum {
 // config : CANNOT be null, it is the main configuration parameter
 // groupConfig : can be null, it is used for netgroup configuration
 // createLogger : if 0 it will let the default log system (RTMFP_LogSetCallback will not work)
-LIBRTMFP_API void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, int createLogger);
+LIBRTMFP_API void RTMFP_Init(RTMFPConfig* config, RTMFPGroupConfig* groupConfig, void(*onLog)(unsigned int, const char*, long, const char*), void(*onDump)(const char*, const void*, unsigned int));
 
 // Terminate all the connections brutaly
 LIBRTMFP_API void RTMFP_Terminate();
@@ -151,15 +151,6 @@ LIBRTMFP_API unsigned int RTMFP_CallFunction(unsigned int RTMFPcontext, const ch
 // Wait for an event to happend on a specified connection
 // return: True if the event happened, False if an error occurs
 LIBRTMFP_API char RTMFP_WaitForEvent(unsigned int RTMFPcontext, RTMFPMask mask);
-
-// Set log callback
-LIBRTMFP_API void RTMFP_LogSetCallback(void (* onLog)(unsigned int, const char*, long, const char*));
-
-// Set dump callback
-LIBRTMFP_API void RTMFP_DumpSetCallback(void (*onDump)(const char*, const void*, unsigned int));
-
-// Active RTMFP Dump
-LIBRTMFP_API void RTMFP_ActiveDump();
 
 // Retrieve publication name and url from original uri
 LIBRTMFP_API void RTMFP_GetPublicationAndUrlFromUri(const char* uri, char** publication);

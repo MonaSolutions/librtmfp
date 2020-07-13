@@ -24,44 +24,50 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Mona.h"
 #include "DataWriter.h"
 
-class StringWriter : public DataWriter, public virtual Base::Object {
-public:
+namespace Base {
 
-	StringWriter(Base::Buffer& buffer) : _pString(NULL), DataWriter(buffer) {}
-	StringWriter(std::string& buffer) : _pString(&buffer) {}
+/*!
+Stringify data, can be build with a Buffer or whatever with append and clear methods (std::string, etc...)
+You can too build it with a Buffer::Null() and overloads reset/append/size/resize to custom writing */
+template<typename BufferType = Buffer>
+struct StringWriter : DataWriter, virtual Object {
 
-	Base::UInt64 beginObject(const char* type = NULL) { return 0; }
-	void   endObject() {}
+	StringWriter(BufferType& buffer, bool append = true) :
+		DataWriter(std::is_same<BufferType, Buffer>::value ? (Buffer&)buffer : Buffer::Null()), _buffer(buffer), _append(append), _initSize(append ? buffer.size() : 0) {}
 
-	void   writePropertyName(const char* name) { append(name); }
+	void   writePropertyName(const char* name) { append(name, std::strlen(name)); }
 
-	Base::UInt64 beginArray(Base::UInt32 size) { return 0; }
-	void   endArray() {}
+	void   writeNumber(double value) { String::Append(self, value); }
+	void   writeString(const char* value, UInt32 size) { append(value, size); }
+	void   writeBoolean(bool value) { String::Append(self, value); }
+	void   writeNull() { append(EXPAND("null")); }
+	UInt64 writeDate(const Date& date) { date.format(Date::FORMAT_SORTABLE, self); return 0; }
+	UInt64 writeByte(const Packet& bytes) { append(bytes.data(), bytes.size()); return 0; }
 
-	void   writeNumber(double value) { append(value); }
-	void   writeString(const char* value, Base::UInt32 size) { append(value, size); }
-	void   writeBoolean(bool value) { append(value ? "true" : "false"); }
-	void   writeNull() { writer.write("null", 4); }
-	Base::UInt64 writeDate(const Base::Date& date) { std::string buffer; append(Base::String::Date(date, Base::Date::FORMAT_SORTABLE)); return 0; }
-	Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size) { append(data, size); return 0; }
 
-	void   clear() { if (_pString) _pString->clear(); else writer.clear(); }
+	virtual void reset() {
+		DataWriter::reset();
+		if (_buffer.size()>_initSize)
+			_buffer.resize(_initSize);
+	}
+	virtual StringWriter& append(const void* value, UInt32 size) {
+		if (!_append) {
+			_append = true; // first time just, to clear default value!
+			reset();
+		}
+		if (!writer.append(value, size))
+			_buffer.append(STR value, size);
+		return self;
+	}
+protected:
+	/*!
+	Allow to inherit from StringWriter and stringify something with a custom target other than Buffer or string for example */
+	StringWriter() : _buffer(Buffer::Null()), _initSize(0), _append(true) {} // append=true to avoid a call to reset if append is not overloaded
+
 private:
-	void append(const void* value, Base::UInt32 size) {
-		if (_pString)
-			_pString->append(STR value, size);
-		else
-			writer.write(value, size);
-	}
-
-	template<typename ValueType>
-	void append(const ValueType& value) {
-		if (_pString)
-			Base::String::Append(*_pString, value);
-		else
-			Base::String::Append(writer, value);
-	}
-
-	std::string* _pString;
-
+	BufferType& _buffer;
+	bool		_append;
+	UInt32		_initSize;
 };
+
+} // namespace Base

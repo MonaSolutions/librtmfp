@@ -1,4 +1,8 @@
 /*
+This code is in part based on code from the POCO C++ Libraries,
+licensed under the Boost software license :
+https://www.boost.org/LICENSE_1_0.txt
+
 This file is a part of MonaSolutions Copyright 2017
 mathieu.poux[a]gmail.com
 jammetthomas[a]gmail.com
@@ -23,14 +27,10 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 namespace Base {
 
-	/// This class provides an interface to the
-	/// domain name service.
-	///
-	/// An internal DNS cache is used to speed up name lookups.
-
-class DNS : virtual Static {
-public:
-
+/*!
+This class provides an interface to the domain name service.
+An internal DNS cache is used to speed up name lookups. */
+struct DNS : virtual Static {
 	// Returns a HostEntry object containing the DNS information for the host with the given name
 	static bool HostByName(Exception& ex, const std::string& hostname, HostEntry& host) { return HostByName(ex, hostname.data(), host); }
 	static bool HostByName(Exception& ex, const char* hostname, HostEntry& host);

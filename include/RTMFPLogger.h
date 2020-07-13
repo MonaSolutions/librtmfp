@@ -19,33 +19,31 @@ You should have received a copy of the GNU Lesser General Public License
 along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "Base/Logger.h"
+#include "Base/ConsoleLogger.h"
 
-class RTMFPLogger: public Base::Logger {
+class RTMFPLogger: public Base::ConsoleLogger {
 public:
-	RTMFPLogger(): _onLog(NULL), _onDump(NULL) {}
+	RTMFPLogger(void(*onLog)(unsigned int, const char*, long, const char*), void(*onDump)(const char*, const void*, unsigned int)): _onLog(onLog), _onDump(onDump) {}
 
-	virtual void log(Base::LOG_LEVEL level, const Base::Path& file, long line, const std::string& message) {
+	virtual bool log(Base::LOG_LEVEL level, const Base::Path& file, long line, const std::string& message) {
 
 		if (_onLog)
 			_onLog(level, file.name().c_str(), line, message.c_str());
 		else
-			Logger::log(level, file, line, message);
+			ConsoleLogger::log(level, file, line, message);
+		return true;
 	}
 
-	virtual void dump(const std::string& header, const Base::UInt8* data, Base::UInt32 size) {
+	virtual bool dump(const std::string& header, const Base::UInt8* data, Base::UInt32 size) {
 
 		if (_onDump)
 			_onDump(header.c_str(), data, size);
 		else
-			Logger::dump(header, data, size);
+			ConsoleLogger::dump(header, data, size);
+		return true;
 	}
 
-	void setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*)) { _onLog = onLog; }
-
-	void setDumpCallback(void(*onDump)(const char*, const void*, unsigned int)) { _onDump = onDump; }
-
 private:
-	void (* _onLog)(unsigned int, const char*, long, const char*);
-	void (*_onDump)(const char*, const void*, unsigned int);
+	void(* _onLog)(unsigned int, const char*, long, const char*);
+	void(*_onDump)(const char*, const void*, unsigned int);
 };

@@ -354,7 +354,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	// First, init the RTMFP parameters
-	RTMFP_Init(&config, &groupConfig, 1);
+	RTMFP_Init(&config, &groupConfig, onLog, dump? onDump : NULL);
 	config.pOnStatusEvent = onStatusEvent;
 	config.isBlocking = groupConfig.isBlocking = 1;
 	config.swfUrl = swfUrl;
@@ -386,10 +386,6 @@ int main(int argc, char* argv[]) {
 		groupConfig.disablePullTimeout = 1;
 	if (availabilitySendToAll)
 		availabilitySendToAll = 1;
-	if (dump) {
-		RTMFP_ActiveDump();
-		RTMFP_DumpSetCallback(onDump);
-	}
 
 	// Catch signals
 	if (signal(SIGINT, ConsoleCtrlHandler) == SIG_ERR)
@@ -401,7 +397,6 @@ int main(int argc, char* argv[]) {
 	if (logFile)
 		openFile(&pLogFile, logFile, "w");
 
-	RTMFP_LogSetCallback(onLog);
 	RTMFP_GetPublicationAndUrlFromUri(url, &publication);
 
 	printf("Connection to url '%s' - mode : %s\n", url, ((_option == SYNC_READ) ? "Synchronous read" : ((_option == ASYNC_READ) ? "Asynchronous read" : "Write")));

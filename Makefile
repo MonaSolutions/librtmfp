@@ -25,13 +25,19 @@ CRYPTO_REQ=libssl,libcrypto
 PUBLIC_LIBS=
 PRIVATE_LIBS=
 
-OS := $(shell uname -s)
+# Constants
+OS = $(shell uname -s)
+ifeq ($(shell printf '\1' | od -dAn | xargs),1)
+	BIG_ENDIAN = 0
+else
+	BIG_ENDIAN = 1
+endif
 
 # Variables with default values
 GPP?=g++
 
 # Variables extendable
-CFLAGS+=-std=c++11 -Wall -Wno-reorder -Wno-terminate -Wno-unknown-pragmas -Wno-unknown-warning-option
+override CFLAGS+=-D_GLIBCXX_USE_C99 -std=c++14 -D__BIG_ENDIAN__=$(BIG_ENDIAN) -D_FILE_OFFSET_BITS=64 -Wall -Wno-reorder -Wno-terminate -Wunknown-pragmas -Wno-unknown-warning-option -Wno-exceptions 
 ifeq ($(OS),FreeBSD)
 	CFLAGS+=-D_GLIBCXX_USE_C99
 endif

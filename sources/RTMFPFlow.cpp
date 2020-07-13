@@ -25,13 +25,13 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace std;
 using namespace Base;
 
-RTMFPFlow::RTMFPFlow(UInt64 id, FlowManager& band, const shared_ptr<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
+RTMFPFlow::RTMFPFlow(UInt64 id, FlowManager& band, const shared<FlashConnection>& pMainStream, UInt64 idWriterRef) : _pStream(pMainStream),
 	_lost(0),id(id),_writerRef(idWriterRef),_stage(0),_stageEnd(0),_band(band), fragmentation(0) {
 
 	DEBUG("New main flow ", id, " on connection ", _band.name())
 }
 
-RTMFPFlow::RTMFPFlow(UInt64 id, const shared_ptr<FlashStream>& pStream, FlowManager& band, UInt64 idWriterRef) : _pStream(pStream),
+RTMFPFlow::RTMFPFlow(UInt64 id, const shared<FlashStream>& pStream, FlowManager& band, UInt64 idWriterRef) : _pStream(pStream),
 	_lost(0),id(id),_writerRef(idWriterRef),_stage(0), _stageEnd(0),_band(band), fragmentation(0) {
 
 	DEBUG("New flow ", id, " on connection ", _band.name())
@@ -160,7 +160,7 @@ void RTMFPFlow::onFragment(UInt64 stage, UInt8 flags, const Packet& packet, bool
 		return; // the beginning of this message is lost, ignore it!
 	}
 	if (flags&RTMFP::MESSAGE_WITH_AFTERPART) {
-		_pBuffer.reset(new Buffer(packet.size(), packet.data()));
+		_pBuffer.set(packet.data(), packet.size());
 		return;
 	}
 	if (packet)

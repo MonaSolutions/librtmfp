@@ -37,15 +37,15 @@ struct FlashConnection : FlashStream, virtual Base::Object {
 
 	// Add a new stream to the Main stream with an incremental id
 	template <typename StreamType>
-	void addStream(std::shared_ptr<FlashStream>& pStream) {
+	void addStream(Base::shared<FlashStream>& pStream) {
 		addStream<StreamType>((Base::UInt16)_streams.size(), pStream);
 	}
 
 	// Add a new stream to the Main stream
 	template <typename StreamType>
-	void addStream(Base::UInt16 id, std::shared_ptr<FlashStream>& pStream);
+	void addStream(Base::UInt16 id, Base::shared<FlashStream>& pStream);
 
-	FlashStream* getStream(Base::UInt16 id, std::shared_ptr<FlashStream>& pStream);
+	FlashStream* getStream(Base::UInt16 id, Base::shared<FlashStream>& pStream);
 
 	// Send the stream creation request (before play or publish)
 	void createStream(); // TODO: refactorize the stream creation
@@ -54,7 +54,7 @@ private:
 	virtual bool	messageHandler(const std::string& name, AMFReader& message, Base::UInt64 flowId, Base::UInt64 writerId, double callbackHandler);
 	virtual bool	rawHandler(Base::UInt16 type, const Base::Packet& packet);
 
-	std::map<Base::UInt16,std::shared_ptr<FlashStream>>	_streams;
+	std::map<Base::UInt16, Base::shared<FlashStream>>	_streams;
 
 	bool			_creatingStream; // If we are waiting for a stream to be created
 };

@@ -36,9 +36,9 @@ using namespace std;
 
 namespace Base {
 
-const UInt32					Thread::MainId(Thread::CurrentId());
-thread_local std::string		Thread::_Name("Main");
-thread_local Thread*			Thread::_Me(NULL);
+const UInt32			Thread::MainId(Thread::CurrentId());
+thread_local string		Thread::_Name("Main");
+thread_local Thread*	Thread::_Me(NULL);
 
 void Thread::SetDebugName(const string& name) {
 #if defined(_DEBUG)
@@ -174,13 +174,14 @@ void Thread::start(Priority priority) {
 
 void Thread::stop() {
 	_requestStop = true; // advise thread (intern)
-	wakeUp.set(); // wakeUp a sleeping thread
 	if (_Me == this) {
 		// In the unique case were the caller is the thread itself, set _stop to true to allow to an extern caller to restart it!
+		// Not set it before otherwise a deadlock is possible if one thread request a start after a list lock, one other is stopping on _thread.join(), and the process thread is waiting unlock list
 		_stop = true;
 		return;
 	}
 	std::lock_guard<std::mutex> lock(_mutex);
+	wakeUp.set(); // wakeUp a sleeping thread, mutex it to avoid a Signal::reset before on start call!
 	if (_thread.joinable())
 		_thread.join();
 }

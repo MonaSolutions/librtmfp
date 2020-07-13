@@ -20,7 +20,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "RTMFP.h"
-#include "Base/Util.h"
+#include "Base/URL.h"
 #include "AMF.h"
 #include "Base/DNS.h"
 
@@ -80,19 +80,19 @@ void RTMFP::Pack(Buffer& buffer,UInt32 farId) {
 }
 
 
-Buffer& RTMFP::InitBuffer(shared_ptr<Buffer>& pBuffer, UInt8 marker) {
-	pBuffer.reset(new Buffer(6));
+Buffer& RTMFP::InitBuffer(shared<Buffer>& pBuffer, UInt8 marker) {
+	pBuffer.set(6);
 	return BinaryWriter(*pBuffer).write8(marker).write16(RTMFP::TimeNow()).buffer();
 }
 
-Buffer& RTMFP::InitBuffer(shared_ptr<Buffer>& pBuffer, atomic<Int64>& initiatorTime, UInt8 marker) {
+Buffer& RTMFP::InitBuffer(shared<Buffer>& pBuffer, atomic<Int64>& initiatorTime, UInt8 marker) {
 	Int64 time = initiatorTime.exchange(0);
 	if (!time)
 		return InitBuffer(pBuffer, marker);
 	time = Time::Now() - time;
 	if ((time > 262140)) // because is not convertible in RTMFP timestamp on 2 bytes, 0xFFFF*RTMFP::TIMESTAMP_SCALE = 262140
 		return InitBuffer(pBuffer, marker);
-	pBuffer.reset(new Buffer(6));
+	pBuffer.set(6);
 	return BinaryWriter(*pBuffer).write8(marker + 4).write16(RTMFP::TimeNow()).write16(RTMFP::Time(time)).buffer();
 }
 
@@ -126,7 +126,7 @@ bool RTMFP::Engine::decode(Exception& ex, Buffer& buffer, const SocketAddress& a
 	return true;
 }
 
-shared<Buffer>& RTMFP::Engine::encode(shared_ptr<Buffer>& pBuffer, UInt32 farId, const SocketAddress& address) {
+shared<Buffer>& RTMFP::Engine::encode(shared<Buffer>& pBuffer, UInt32 farId, const SocketAddress& address) {
 	if (address)
 		DUMP_RESPONSE("LIBRTMFP", pBuffer->data() + 6, pBuffer->size() - 6, address);
 
@@ -201,11 +201,11 @@ bool RTMFP::ReadAddresses(BinaryReader& reader, PEER_LIST_ADDRESS_TYPE& addresse
 	return !addresses.empty() || hostAddress;
 }
 
-bool RTMFP::ReadUrl(const char* url, string& host, SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, shared<Buffer>& rawUrl) {
+bool RTMFP::ReadUrl(const char* url, string& host, SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, const shared<Buffer>& rawUrl) {
 
 	// Get hostname, port and publication name
-	string publication, query;
-	Util::UnpackUrl(url, host, publication, query);
+	size_t size(strlen(url));
+	url = URL::Parse(url, size, host);
 
 	// Generate the raw url
 	BinaryWriter urlWriter(*rawUrl);

@@ -17,30 +17,37 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #pragma once
 
 #include "Base/Mona.h"
-#include "Base/Allocator.h"
-#include "Base/Timer.h"
-#include <mutex>
+#include "Base/Buffer.h"
+#include "Base/Thread.h"
 
 namespace Base {
 
-struct BufferPool : Allocator, virtual Object {
+struct BufferPool : Buffer::Allocator, private Thread, virtual Object {
 
-	BufferPool(const Timer&	timer);
-	~BufferPool();
-
-	UInt32 available() const { return _buffers.size(); }
-	void   clear();
-
-	UInt8* allocate(UInt32& size) const;
-	void   deallocate(UInt8* buffer, UInt32 size) const;
+	BufferPool() : Thread("BufferPool") { start(Thread::PRIORITY_LOWEST); }
+	~BufferPool() { stop(); }
 
 private:
-	mutable std::multimap<UInt32,UInt8*>	_buffers;
-	mutable std::mutex						_mutex;
-	const Timer&							_timer;
-	Timer::OnTimer							_onTimer;
-	mutable UInt32							_minCount;
-	mutable UInt32							_maxSize;
+	UInt8* alloc(UInt32& capacity) {
+		UInt8* buffer = _buffers[computeIndex(capacity)].pop();
+		return buffer ? buffer : new UInt8[capacity];
+	}
+	void   free(UInt8* buffer, UInt32 capacity) { _buffers[computeIndex(capacity)].push(buffer); }
+
+	bool run(Exception& ex, const volatile bool& requestStop);
+	UInt8 computeIndex(UInt32 capacity);
+
+	struct Buffers : private std::vector<UInt8*>, virtual Object {
+		Buffers() : _minSize(0), _maxSize(0) {}
+		~Buffers() { for (UInt8* buffer : self) delete[] buffer; }
+		UInt8* pop();
+		void   push(UInt8* buffer);
+		void manage(std::vector<UInt8*>& gc);
+	private:
+		UInt32 _minSize;
+		UInt32 _maxSize;
+	};
+	Buffers			 _buffers[28];
 };
 
 

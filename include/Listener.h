@@ -46,7 +46,7 @@ public:
 
 class FlashListener : public Listener {
 public:
-	FlashListener(Publisher& publication, const std::string& identifier, std::shared_ptr<RTMFPWriter>& pDataWriter, std::shared_ptr<RTMFPWriter>& pAudioWriter, std::shared_ptr<RTMFPWriter>& pVideoWriter);
+	FlashListener(Publisher& publication, const std::string& identifier, const Base::shared<RTMFPWriter>& pDataWriter, const Base::shared<RTMFPWriter>& pAudioWriter, const Base::shared<RTMFPWriter>& pVideoWriter);
 	virtual ~FlashListener();
 
 	virtual void startPublishing();
@@ -78,8 +78,8 @@ private:
 	Base::UInt32					_seekTime;
 	bool							_codecInfosSent;
 
-	std::shared_ptr<RTMFPWriter>	_pDataWriter;
-	std::shared_ptr<RTMFPWriter>	_pAudioWriter;
-	std::shared_ptr<RTMFPWriter>	_pVideoWriter;
+	Base::shared<RTMFPWriter>	_pDataWriter;
+	Base::shared<RTMFPWriter>	_pAudioWriter;
+	Base::shared<RTMFPWriter>	_pVideoWriter;
 	bool							_dataInitialized;
 };

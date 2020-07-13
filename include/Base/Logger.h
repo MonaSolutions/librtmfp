@@ -23,7 +23,7 @@ namespace Base {
 
 typedef UInt8 LOG_LEVEL;
 
-enum {
+enum : UInt8 {
 	LOG_FATAL = 1,
 	LOG_CRITIC = 2,
 	LOG_ERROR = 3,
@@ -40,8 +40,18 @@ enum {
 };
 
 struct Logger : virtual Object {
-    virtual void log(LOG_LEVEL level, const Path& file, long line, const std::string& message);
-	virtual void dump(const std::string& header, const UInt8* data, UInt32 size);
+	NULLABLE(!enabled())
+
+	Logger() : fatal(NULL) {}
+	/*!
+	Test if always valid */
+	virtual bool enabled() const { return true; }
+
+	const char* name;
+	const char* fatal;
+
+	virtual bool log(LOG_LEVEL level, const Path& file, long line, const std::string& message) = 0;
+	virtual bool dump(const std::string& header, const UInt8* data, UInt32 size) = 0;
 };
 
 } // namespace Base

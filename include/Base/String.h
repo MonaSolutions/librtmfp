@@ -20,9 +20,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include "Base/Buffer.h"
 #include "Base/Date.h"
 #include <functional>
-#include <vector>
-#include <map>
-#include <set>
 
 #undef max
 
@@ -55,8 +52,8 @@ enum {
 
 
 /// Utility class for generation parse of strings
-struct String : std::string, virtual Object {
-	NULLABLE 
+struct String : std::string {
+	NULLABLE(empty())
 
 	/*!
 	Object formatable, must be iterable with key/value convertible in string */
@@ -64,14 +61,13 @@ struct String : std::string, virtual Object {
 	struct Object : virtual Base::Object {
 		operator const Type&() const { return (const Type&)self; }
 	protected:
-		Object() { return; for (const auto& it : (const Type&)self) String(it.first, it.second); }; // to detect string iterability on build
+		Object() { return; for (const auto& it : (const Type&)self) String(it.first, it.second); }; // trick to detect string iterability on build
 	};
 
 	template <typename ...Args>
 	String(Args&&... args) {
 		Assign<std::string>(*this, std::forward<Args>(args)...);
 	}
-	operator bool() const { return !empty(); }
 	std::string& clear() { std::string::clear(); return *this; }
 
 	static const std::string& Empty() { static std::string Empty; return Empty; }
@@ -91,11 +87,20 @@ struct String : std::string, virtual Object {
 	/!\ Can't work on a literal C++ declaration!
 	/!\ When using by "data+size" way, address must be in data capacity! ( */
 	struct Scoped {
-		Scoped(const char* end) : _c((char&)*end), _cValue(*end) { _c = 0; }
-		~Scoped() { _c = _cValue; }
+		Scoped(const char* end) : _end(end) {
+			if (end) {
+				_c = *end;
+				*(char*)end = 0;
+			}
+		}
+		~Scoped() {
+			if(_end)
+				*(char*)_end = _c;
+		}
+		operator char() const { return _end ? _c : 0; }
 	private:
-		char& _c;
-		char  _cValue;
+		const char* _end;
+		char		_c;
 	};
 
 	/*!
@@ -134,29 +139,22 @@ struct String : std::string, virtual Object {
 		return values;
 	}
 
-	template<typename Type>
-	static const char*	TrimLeft(const char* value, Type& size) { static_assert(std::is_arithmetic<Type>::value, "size must be a numeric value"); if (size == std::string::npos) size = (Type)strlen(value);  while (size && isspace(*value)) { ++value; --size; } return value; }
-	static const char*	TrimLeft(const char* value, std::size_t size = std::string::npos);
-	template<typename Type>
-	static char*		TrimRight(char* value, Type& size) { static_assert(std::is_arithmetic<Type>::value, "size must be a numeric value"); char* begin(value); if (size == std::string::npos) size = (Type)strlen(begin); value += size; while (value != begin && isspace(*--value)) --size; return begin; }
-	static char*		TrimRight(char* value) { std::size_t size(strlen(value)); return TrimRight<std::size_t>(value, size); }
-	static std::size_t	TrimRight(const char* value, std::size_t size = std::string::npos);
-	template<typename Type>
-	static char*		Trim(char* value, Type& size) { TrimLeft<Type>(value, size); return TrimRight<Type>(value, size); }
-	static char*		Trim(char* value) { TrimLeft(value); return TrimRight(value); }
-	static std::size_t	Trim(const char* value, std::size_t size = std::string::npos) { TrimLeft(value, size); return TrimRight(value, size); }
+	static std::size_t	TrimLeft(const char*& value, std::size_t size = std::string::npos);
+	static std::string&	TrimLeft(std::string& value) { const char* data(value.data()); return value.erase(0, value.size()-TrimLeft(data, value.size())); }
 
-	static std::string&	TrimLeft(std::string& value) { return value.erase(0, TrimLeft(value.data(), value.size()) - value.data()); }
-	static std::string&	TrimRight(std::string& value) { while (!value.empty() && isspace(value.back())) value.pop_back(); return value; }
-	static std::string&	Trim(std::string& value) { TrimLeft(value); return TrimRight(value); }
+	static std::size_t	TrimRight(const char* value, std::size_t size = std::string::npos);
+	static std::string&	TrimRight(std::string& value) { value.resize(TrimRight(value.data(), value.size())); return value; }
+
+	static std::size_t	Trim(const char*& value, std::size_t size = std::string::npos) { return TrimRight(value, TrimLeft(value, size)); }
+	static std::string&	Trim(std::string& value) { return TrimRight(TrimLeft(value)); }
 	
 	static std::string&	ToLower(std::string& value) { for (char& c : value) c = tolower(c); return value; }
 	static std::string&	ToUpper(std::string& value) { for (char& c : value) c = toupper(c); return value; }
 
-	static int ICompare(const char* value1, const char* value2,  std::size_t size = std::string::npos);
-	static int ICompare(const std::string& value1, const std::string& value2, std::size_t size = std::string::npos) { return ICompare(value1.empty() ? NULL : value1.c_str(), value2.empty() ? NULL : value2.c_str(), size); }
-	static int ICompare(const std::string& value1, const char* value2,  std::size_t size = std::string::npos) { return ICompare(value1.empty() ? NULL : value1.c_str(), value2, size); }
-	static int ICompare(const char* value1, const std::string& value2,  std::size_t size = std::string::npos) { return ICompare(value1, value2.empty() ? NULL : value2.c_str(), size); }
+	static int ICompare(const char* data, const char* value, std::size_t count = std::string::npos) { return ICompare(data, std::string::npos, value, count); }
+	static int ICompare(const char* data, std::size_t size, const char* value, std::size_t count = std::string::npos);
+	static int ICompare(const std::string& data, const char* value, std::size_t count = std::string::npos) { return ICompare(data.c_str(), data.size(), value, count); }
+	static int ICompare(const std::string& data, const std::string& value, std::size_t count = std::string::npos) { return ICompare(data.c_str(), data.size(), value.c_str(), count); }
 
 	template<typename Type>
 	static bool ToNumber(const std::string& value, Type& result, Math base = BASE_10) { return ToNumber(value.data(), value.size(), result, base); }
@@ -186,20 +184,41 @@ struct String : std::string, virtual Object {
 	
 
 	static bool IsTrue(const std::string& value) { return IsTrue(value.data(),value.size()); }
-	static bool IsTrue(const char* value,std::size_t size=std::string::npos) { return ICompare(value, "1", size) == 0 || String::ICompare(value, "true", size) == 0 || String::ICompare(value, "yes", size) == 0 || String::ICompare(value, "on", size) == 0; }
+	static bool IsTrue(const char* value, std::size_t size=std::string::npos) { return ICompare(value, size, "1") == 0 || String::ICompare(value, size, "true") == 0 || String::ICompare(value, size, "yes") == 0 || String::ICompare(value, size, "on") == 0; }
 	static bool IsFalse(const std::string& value) { return IsFalse(value.data(),value.size()); }
-	static bool IsFalse(const char* value, std::size_t size = std::string::npos) { return !value || ICompare(value, "0", size) == 0 || String::ICompare(value, "false", size) == 0 || String::ICompare(value, "no", size) == 0 || String::ICompare(value, "off", size) == 0 || String::ICompare(value, "null", size) == 0; }
+	static bool IsFalse(const char* value, std::size_t size = std::string::npos) { return ICompare(value, size, "0") == 0 || String::ICompare(value, size, "false") == 0 || String::ICompare(value, size, "no") == 0 || String::ICompare(value, size, "off") == 0 || String::ICompare(value, size, "null") == 0; }
+
+
+	typedef std::function<bool(char c, bool wasEncoded)> ForEachDecodedChar;
+	static UInt32 FromURI(const std::string& value, const ForEachDecodedChar& forEach) { return FromURI(value.data(), value.size(), forEach); }
+	static UInt32 FromURI(const char* value, const ForEachDecodedChar& forEach) { return FromURI(value, std::string::npos, forEach); }
+	static UInt32 FromURI(const char* value, std::size_t count, const ForEachDecodedChar& forEach);
 
 	template <typename BufferType>
-	static BufferType& ToHex(const std::string& value, BufferType& buffer) { return ToHex(value.c_str(), buffer); }
+	static BufferType& ToHex(BufferType& buffer, bool append = false) { return ToHex(buffer.data(), buffer.size(), buffer, append); }
 	template <typename BufferType>
-	static BufferType& ToHex(const char* value, BufferType& buffer) {
-		while (*value) {
-			char left = toupper(*value++);
-			char byte = *value ? toupper(*value++) : '0';
-			byte = ((left - (left <= '9' ? '0' : '7')) << 4) | ((byte - (byte <= '9' ? '0' : '7')) & 0x0F);
-			buffer.append(&byte, 1);
+	static BufferType& ToHex(const std::string& value, BufferType& buffer, bool append = false) { return ToHex(value.data(), value.size(), buffer, append); }
+	template <typename BufferType>
+	static BufferType& ToHex(const char* value, std::size_t size, BufferType& buffer, bool append = false) {
+		UInt8* out;
+		UInt32 count = size / 2;
+		if (size & 1)
+			++count;
+		if (append) {
+			buffer.resize(buffer.size() + count);
+			out = BIN buffer.data() + buffer.size() - count;
+		} else {
+			if (count>buffer.size())
+				buffer.resize(count);
+			out = BIN buffer.data();
 		}
+		while (size-->0) {
+			char left = toupper(*value++);
+			char right = size-- ? toupper(*value++) : '0';
+			*out++ = ((left - (left <= '9' ? '0' : '7')) << 4) | ((right - (right <= '9' ? '0' : '7')) & 0x0F);
+		}
+		if(!append)
+			buffer.resize(count);
 		return buffer;
 	}
 
@@ -209,7 +228,6 @@ struct String : std::string, virtual Object {
 		const ValueType&	value;
 		const char*			format;
 	};
-
 	template <typename OutType, typename ...Args>
 	static OutType& Assign(OutType& out, Args&&... args) {
 		out.clear();
@@ -222,10 +240,19 @@ struct String : std::string, virtual Object {
 		return Append<OutType>((OutType&)out.append(value.data(), value.size()), std::forward<Args>(args) ...);
 	}
 
-	/// \brief match "const char*" case
-	template <typename OutType, typename ...Args>
-	static OutType& Append(OutType& out, const char* value, Args&&... args) {
+	/*!
+	const char* */
+	template <typename OutType, typename STRType, typename ...Args>
+	static typename std::enable_if<std::is_convertible<STRType, const char*>::value, OutType>::type&
+	Append(OutType& out, STRType value, Args&&... args) {
 		return Append<OutType>((OutType&)out.append(value, strlen(value)), std::forward<Args>(args)...);
+	}
+	/*!
+	String litteral (very fast, without strlen call) */
+	template <typename OutType, typename CharType, std::size_t size, typename ...Args>
+	static typename std::enable_if<std::is_same<CharType, const char>::value, OutType>::type&
+	Append(OutType& out, CharType(&value)[size], Args&&... args) {
+		return Append<OutType>((OutType&)out.append(value, size -1), std::forward<Args>(args)...);
 	}
 
 	template <typename OutType, typename ...Args>
@@ -245,7 +272,6 @@ struct String : std::string, virtual Object {
 		const char*			data;
 		const std::size_t	size;
 	};
-	/// \brief match "const char*" case
 	template <typename OutType, typename ...Args>
 	static OutType& Append(OutType& out, const Lower& value, Args&&... args) {
 		for (std::size_t i = 0; i < value.size; ++i) {
@@ -390,6 +416,12 @@ struct String : std::string, virtual Object {
 		return Append<OutType>((OutType&)out.append(EXPAND("false")), std::forward<Args>(args)...);
 	}
 
+	/// \brief match "null" case
+	template <typename OutType, typename ...Args>
+	static OutType& Append(OutType& out, std::nullptr_t, Args&&... args) {
+		return Append<OutType>((OutType&)out.append(EXPAND("null")), std::forward<Args>(args)...);
+	}
+
 	/// \brief match pointer case
 	template <typename OutType, typename ...Args>
 	static OutType& Append(OutType& out, const void* value, Args&&... args)	{
@@ -397,6 +429,17 @@ struct String : std::string, virtual Object {
 		sprintf(buffer,"%p", value);
 		return Append<OutType>((OutType&)out.append(buffer,strlen(buffer)), std::forward<Args>(args)...);
 	}
+
+	template<typename OutType>
+	struct Writer : virtual Base::Object {
+		virtual bool write(OutType& out) = 0;
+	};
+	template <typename OutType, typename Type, typename ...Args>
+	static OutType& Append(OutType& out, const Writer<Type>& writer, Args&&... args) {
+		while (((Writer<Type>&)writer).write(out));
+		return Append<OutType>(out, std::forward<Args>(args)...);
+	}
+	
 
 	/// \brief A usefull form which use snprintf to format out
 	///
@@ -420,18 +463,32 @@ struct String : std::string, virtual Object {
 		Data(const char* value,        std::size_t size) : value(value), size(size==std::string::npos ? strlen(value) : size) {}
 		Data(const UInt8* value, UInt32 size) : value(STR value), size(size) {}
 		const char*	value;
-		UInt32 size;
+		const UInt32 size;
 	};
 	template <typename OutType, typename ...Args>
 	static OutType& Append(OutType& out, const Data& data, Args&&... args) {
 		return Append<OutType>((OutType&)out.append(data.value, data.size), std::forward<Args>(args)...);
+	}
+	template <typename OutType, typename ...Args>
+	static OutType& Append(OutType& out, const Binary& binary, Args&&... args) {
+		return Append<OutType>((OutType&)out.append(STR binary.data(), binary.size()), std::forward<Args>(args)...);
+	}
+
+	struct Repeat : virtual Base::Object {
+		Repeat(UInt32 count, char value) : value(value), count(count) {}
+		const char value;
+		const UInt32 count;
+	};
+	template <typename OutType, typename ...Args>
+	static OutType& Append(OutType& out, const Repeat& repeat, Args&&... args) {
+		return Append<OutType>((OutType&)out.append(repeat.count, repeat.value), std::forward<Args>(args)...);
 	}
 
 	struct Date : virtual Base::Object {
 		Date(const Base::Date& date, const char* format) : format(format), _pDate(&date) {}
 		Date(const char* format) : format(format), _pDate(NULL) {}
 		const Base::Date*	operator->() const { return _pDate; }
-		const char*			format;
+		const char*	const	format ;
 	private:
 		const Base::Date* _pDate;
 	};
@@ -443,6 +500,28 @@ struct String : std::string, virtual Object {
 		return Append<OutType>((OutType&)Base::Date().format(date.format, out), std::forward<Args>(args)...);
 	}
 
+	struct URI : virtual Base::Object {
+		URI(const char* value, std::size_t size = std::string::npos) : value(value), size(size) {}
+		URI(const std::string& value) : value(value.data()), size(value.size()) {}
+		const char* const value;
+		const std::size_t size;
+	};
+	template <typename OutType, typename ...Args>
+	static OutType& Append(OutType& out, const URI& uri, Args&&... args) {
+		std::size_t size = uri.size;
+		const char* value = uri.value;
+		while (size && (size != std::string::npos || *value)) {
+			char c = *value++;
+			// https://en.wikipedia.org/wiki/Percent-encoding#Types_of_URI_characters
+			if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')
+				out.append(&c, 1);
+			else
+				String::Append(out, '%', String::Format<UInt8>("%2X", (UInt8)c));
+			if (size != std::string::npos)
+				--size;
+		}
+		return Append<OutType>(out, std::forward<Args>(args)...);
+	}
 
 	struct Hex : virtual Base::Object {
 		Hex(const UInt8* data, UInt32 size, HEX_OPTIONS options = 0) : data(data), size(size), options(options) {}
@@ -496,12 +575,34 @@ struct String : std::string, virtual Object {
 		out.append(EXPAND("}"));
 		return Append<OutType>(out, std::forward<Args>(args)...);
 	}
+	struct Log : virtual Base::Object {
+		Log(const char* level, const std::string& file, long line, const std::string& message, UInt32 threadId = 0) : threadId(threadId), level(level), file(file), line(line), message(message) {}
+		const char*			level;
+		const std::string&	file;
+		const long			line;
+		const std::string&	message;
+		const UInt32		threadId;
+	};
+	template <typename OutType, typename ...Args>
+	static OutType& Append(OutType& out, const Log& log, Args&&... args) {
+		UInt32 size = Base::Date().format("%d/%m %H:%M:%S.%c  ", out).size();
+		out.append(7 - (Append<OutType>(out,log.level).size() - size), ' ');
+		if (log.threadId) {
+			Append<OutType>(out, log.threadId);
+			size += 5; // tab to 60 (data including), otherwise 55!
+		}
+		size = Append<OutType>(out, ' ', ShortPath(log.file), '[', log.line, "] ").size() - size;
+		if (size < 37)
+			out.append(37 - size, ' ');
+		return Append<OutType>(out, log.message, '\n', std::forward<Args>(args)...);
+	}
+
 
 	template <typename OutType>
 	static OutType& Append(OutType& out) { return out; }
 
 private:
-
+	static const char* ShortPath(const std::string& path);
 #if defined(_WIN32)
 	static const char* ToUTF8(const wchar_t* value, char buffer[PATH_MAX]);
 #endif

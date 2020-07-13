@@ -22,19 +22,17 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 namespace Base {
 
-	struct Ex : std::string, virtual Object {
-		NULLABLE
+	struct Ex : String, virtual Object {
+		NULLABLE(empty())
 		struct Application; struct Extern; struct Format; struct Intern; struct Net; struct Permission; struct Protocol; struct System; struct Unavailable; struct Unfound; struct Unsupported;
-		operator bool() const { return !empty(); }
 	};
 	/*!
 	Application exception, error from user side */
-	struct Ex::Application						: Ex { struct Argument; struct Config; struct Error; struct Invalid; struct Unfound; };
+	struct Ex::Application						: Ex { struct Argument; struct Config; struct Error; struct Invalid; };
 		struct Ex::Application::Argument			: Application {}; // Application argument given error
 		struct Ex::Application::Config				: Application {}; // Application configuration error
 		struct Ex::Application::Error				: Application {}; // error during application execution
 		struct Ex::Application::Invalid				: Application {}; // Invalid
-		struct Ex::Application::Unfound				: Application {}; // Application non existent
 	/*!
 	Extern exception, error from library dependency or from outside code like STD */
 	struct Ex::Extern							: Ex { struct Crypto; struct Math; struct Net; };
@@ -82,10 +80,10 @@ namespace Base {
 
 
 struct Exception : virtual Object {
-	NULLABLE
+	NULLABLE(!_pEx)
 	CONST_STRING(toString());
 
-	Exception() {}
+	Exception(std::nullptr_t = nullptr) {}
 	Exception(const Exception& other) : _pEx(other._pEx) {}
 	Exception(Exception&& other) : _pEx(std::move(other._pEx)) {}
 
@@ -99,15 +97,12 @@ struct Exception : virtual Object {
 	}
 	Exception& operator=(std::nullptr_t) { return reset(); }
 
-	explicit operator bool() const { return _pEx.operator bool(); } // explicit otherwise can be converted to a number, and confuse overload function name(ex) and name(number)
-
 	template<typename ExType, typename ...Args>
 	ExType& set(Args&&... args) {
-		ExType* pEx(new ExType());
-		_pEx.reset(pEx);
-		if (String::Assign<std::string>(*pEx, std::forward<Args>(args)...).empty())
-			String::Assign(*pEx, typeof<ExType>()," exception");
-		return *pEx;
+		ExType& ex = _pEx.set<ExType>();
+		if (String::Assign<std::string>(ex, std::forward<Args>(args)...).empty())
+			String::Assign(ex, typeof<ExType>()," exception");
+		return ex;
 	}
 	Exception& reset() { _pEx.reset();  return *this; }
 
@@ -123,15 +118,15 @@ private:
 };
 
 
-#define		FATAL_ASSERT(ASSERT)			static_assert(ASSERT, #ASSERT)
+#define		STATIC_ASSERT(...)				{ static_assert(__VA_ARGS__, #__VA_ARGS__); }
 
 #if defined(_DEBUG)
 
 #if defined(_WIN32)
-#define		FATAL_CHECK(ASSERT)				{ _ASSERTE(ASSERT); }
+#define		DEBUG_ASSERT(ASSERT)			{ _ASSERTE(ASSERT); }
 #define		FATAL_ERROR(...)				{ if (_CrtDbgReport(_CRT_ASSERT, __FILE__, __LINE__, NULL, Base::String(__VA_ARGS__).c_str()) == 1) _CrtDbgBreak(); }
 #else
-#define		FATAL_CHECK(ASSERT)				{ assert(ASSERT); }
+#define		DEBUG_ASSERT(ASSERT)			{ assert(ASSERT); }
 #if defined(__ANDROID__)
 #define		FATAL_ERROR(...)				{  __assert(__FILE__,__LINE__, Base::String(__VA_ARGS__).c_str()); }
 #elif defined(__APPLE__)
@@ -145,7 +140,7 @@ private:
 
 #else
 
-#define		FATAL_CHECK(ASSERT)			{ if(!(ASSERT)) {throw std::runtime_error( #ASSERT " assertion, " __FILE__ "[" LINE_STRING "]");} }
+#define		DEBUG_ASSERT(ASSERT)		{}
 #define		FATAL_ERROR(...)			{ throw std::runtime_error(Base::String(__VA_ARGS__,", " __FILE__ "[" LINE_STRING "]"));}
 
 #endif

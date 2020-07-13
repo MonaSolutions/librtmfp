@@ -188,6 +188,12 @@
       <TargetMachine>
       </TargetMachine>
     </Lib>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
@@ -213,6 +219,12 @@
       <MinimumRequiredVersion>
       </MinimumRequiredVersion>
     </Link>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Static Debug|Win32'">
     <ClCompile>
@@ -236,6 +248,12 @@
       <MinimumRequiredVersion>
       </MinimumRequiredVersion>
     </Link>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Static Debug|x64'">
     <ClCompile>
@@ -259,6 +277,12 @@
       <MinimumRequiredVersion>
       </MinimumRequiredVersion>
     </Link>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -281,6 +305,12 @@
       <AdditionalLibraryDirectories>../External/lib;../MonaBase/lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>MonaBase.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -313,6 +343,12 @@
       <AdditionalLibraryDirectories>../External/lib;../MonaBase/lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>MonaBase.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Static Release|Win32'">
     <ClCompile>
@@ -335,6 +371,12 @@
       <AdditionalLibraryDirectories>../External/lib;../MonaBase/lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>MonaBase.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Static Release|x64'">
     <ClCompile>
@@ -357,6 +399,12 @@
       <AdditionalLibraryDirectories>../External/lib;../MonaBase/lib</AdditionalLibraryDirectories>
       <AdditionalDependencies>MonaBase.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <PreBuildEvent>
+      <Command>if not exist "$(ProjectDir)External\include\srt\srt.h" (
+	mkdir "$(ProjectDir)External\include\srt\"
+	copy /Y "$(ProjectDir)External\SRT" "$(ProjectDir)External\include\srt\srt.h"
+)</Command>
+    </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="include\AMF.h" />
@@ -372,6 +420,7 @@
     <ClInclude Include="include\Base\Byte.h" />
     <ClInclude Include="include\Base\ByteRate.h" />
     <ClInclude Include="include\Base\Congestion.h" />
+    <ClInclude Include="include\Base\ConsoleLogger.h" />
     <ClInclude Include="include\Base\Crypto.h" />
     <ClInclude Include="include\Base\Date.h" />
     <ClInclude Include="include\Base\DiffieHellman.h" />
@@ -397,6 +446,7 @@
     <ClInclude Include="include\Base\Signal.h" />
     <ClInclude Include="include\Base\Socket.h" />
     <ClInclude Include="include\Base\SocketAddress.h" />
+    <ClInclude Include="include\Base\SRT.h" />
     <ClInclude Include="include\Base\String.h" />
     <ClInclude Include="include\Base\Thread.h" />
     <ClInclude Include="include\Base\ThreadPool.h" />
@@ -405,7 +455,9 @@
     <ClInclude Include="include\Base\Timer.h" />
     <ClInclude Include="include\Base\Timezone.h" />
     <ClInclude Include="include\Base\UDPSocket.h" />
+    <ClInclude Include="include\Base\URL.h" />
     <ClInclude Include="include\Base\Util.h" />
+    <ClInclude Include="include\ByteWriter.h" />
     <ClInclude Include="include\DataReader.h" />
     <ClInclude Include="include\DataWriter.h" />
     <ClInclude Include="include\FlashConnection.h" />
@@ -420,6 +472,8 @@
     <ClInclude Include="include\librtmfp.h" />
     <ClInclude Include="include\Listener.h" />
     <ClInclude Include="include\MapWriter.h" />
+    <ClInclude Include="include\Media.h" />
+    <ClInclude Include="include\MIME.h" />
     <ClInclude Include="include\NetGroup.h" />
     <ClInclude Include="include\P2PSession.h" />
     <ClInclude Include="include\PeerMedia.h" />
@@ -443,6 +497,7 @@
     <ClCompile Include="sources\Base\Buffer.cpp" />
     <ClCompile Include="sources\Base\BufferPool.cpp" />
     <ClCompile Include="sources\Base\Congestion.cpp" />
+    <ClCompile Include="sources\Base\ConsoleLogger.cpp" />
     <ClCompile Include="sources\Base\Crypto.cpp" />
     <ClCompile Include="sources\Base\Date.cpp" />
     <ClCompile Include="sources\Base\DiffieHellman.cpp" />
@@ -453,7 +508,6 @@
     <ClCompile Include="sources\Base\HostEntry.cpp" />
     <ClCompile Include="sources\Base\IOSocket.cpp" />
     <ClCompile Include="sources\Base\IPAddress.cpp" />
-    <ClCompile Include="sources\Base\Logger.cpp" />
     <ClCompile Include="sources\Base\Logs.cpp" />
     <ClCompile Include="sources\Base\Mona.cpp" />
     <ClCompile Include="sources\Base\Net.cpp" />
@@ -471,8 +525,10 @@
     <ClCompile Include="sources\Base\Timer.cpp" />
     <ClCompile Include="sources\Base\Timezone.cpp" />
     <ClCompile Include="sources\Base\UDPSocket.cpp" />
+    <ClCompile Include="sources\Base\URL.cpp" />
     <ClCompile Include="sources\Base\Util.cpp" />
     <ClCompile Include="sources\DataReader.cpp" />
+    <ClCompile Include="sources\DataWriter.cpp" />
     <ClCompile Include="sources\FlashConnection.cpp" />
     <ClCompile Include="sources\FlashStream.cpp" />
     <ClCompile Include="sources\FlashWriter.cpp" />

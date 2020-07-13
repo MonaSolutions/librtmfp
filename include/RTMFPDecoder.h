@@ -27,29 +27,31 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Packet.h"
 #include "RTMFP.h"
 
-struct RTMFPDecoder : Base::Runner, virtual Base::Object{
-	struct Decoded : Base::Packet {
-		Decoded(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, std::shared_ptr<Base::Buffer>& pBuffer) : address(address), Packet(pBuffer), idConnection(idConnection), idSession(idSession) {}
-		const Base::SocketAddress		address;
-		int								idConnection;
-		Base::UInt32					idSession;
-	};
-	typedef Base::Event<void(Decoded& decoded)> ON(Decoded);
+using namespace Base;
 
-	RTMFPDecoder(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pDecoder, std::shared_ptr<Base::Buffer>& pBuffer, const Base::Handler& handler) :
-		_handler(handler), _idConnection(idConnection), _idSession(idSession), _address(address), _pBuffer(std::move(pBuffer)), Base::Runner("RTMFPDecoder"), _pDecoder(pDecoder) {}
+struct RTMFPDecoder : Runner, virtual Object{
+	struct Decoded : Packet {
+		Decoded(int idConnection, UInt32 idSession, const SocketAddress& address, Base::shared<Buffer>& pBuffer) : address(address), Packet(pBuffer), idConnection(idConnection), idSession(idSession) {}
+		const SocketAddress		address;
+		int								idConnection;
+		UInt32					idSession;
+	};
+	typedef Event<void(Decoded& decoded)> ON(Decoded);
+
+	RTMFPDecoder(int idConnection, UInt32 idSession, const SocketAddress& address, const Base::shared<RTMFP::Engine>& pDecoder, Base::shared<Buffer>& pBuffer, const Handler& handler) :
+		_handler(handler), _idConnection(idConnection), _idSession(idSession), _address(address), _pBuffer(std::move(pBuffer)), Runner("RTMFPDecoder"), _pDecoder(pDecoder) {}
 
 private:
-	bool run(Base::Exception& ex) {
+	bool run(Exception& ex) {
 		bool decoded;
 		if ((decoded = _pDecoder->decode(ex, *_pBuffer, _address)))
 			_handler.queue(onDecoded, _idConnection, _idSession, _address, _pBuffer);
 		return decoded;
 	}
-	std::shared_ptr<RTMFP::Engine>	_pDecoder;
-	std::shared_ptr<Base::Buffer>	_pBuffer;
-	Base::SocketAddress				_address;
-	const Base::Handler&			_handler;
+	Base::shared<RTMFP::Engine>	_pDecoder;
+	Base::shared<Buffer>	_pBuffer;
+	SocketAddress				_address;
+	const Handler&			_handler;
 	int								_idConnection;
-	Base::UInt32					_idSession;
+	UInt32					_idSession;
 };

@@ -25,57 +25,66 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/BinaryWriter.h"
 #include "Base/Date.h"
 #include "Base/Exceptions.h"
+#include "Base/Packet.h"
 
-struct DataWriter : virtual Base::Object {
-	NULLABLE
+namespace Base {
 
-	////  TO DEFINE ////
-	virtual Base::UInt64 beginObject(const char* type = NULL) = 0;
+struct DataWriter : virtual Object {
+	NULLABLE(!writer) // something has been written
+
+////  TO DEFINE ////
 	virtual void   writePropertyName(const char* value) = 0;
-	virtual void   endObject() = 0;
-
-	virtual Base::UInt64 beginArray(Base::UInt32 size) = 0;
-	virtual void   endArray() = 0;
 
 	virtual void   writeNumber(double value) = 0;
-	virtual void   writeString(const char* value, Base::UInt32 size) = 0;
+	virtual void   writeString(const char* value, UInt32 size) = 0;
 	virtual void   writeBoolean(bool value) = 0;
 	virtual void   writeNull() = 0;
-	virtual Base::UInt64 writeDate(const Base::Date& date) = 0;
-	virtual Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size) = 0;
+	virtual UInt64 writeDate(const Date& date) = 0;
+	virtual UInt64 writeByte(const Packet& bytes) = 0;
 	////////////////////
 
 
 	////  OPTIONAL DEFINE ////
-	// if serializer don't support a mixed object, set the object as the first element of the array
-	virtual Base::UInt64 beginObjectArray(Base::UInt32 size) { Base::UInt64 ref(beginArray(size + 1)); beginObject(); return ref; }
+	virtual UInt64 beginObject(const char* type = NULL) { return 0; }
+	virtual void   endObject() {}
 
-	virtual Base::UInt64 beginMap(Base::Exception& ex, Base::UInt32 size, bool weakKeys = false) { ex.set<Base::Ex::Format>(typeof(*this), " doesn't support map type, a object will be written rather");  return beginObject(); }
+	virtual UInt64 beginArray(UInt32 size) { return 0; }
+	virtual void   endArray() {}
+
+	// if serializer don't support a mixed object, set the object as the first element of the array
+	virtual UInt64 beginObjectArray(UInt32 size) { UInt64 ref(beginArray(size + 1)); beginObject(); return ref; }
+
+	virtual UInt64 beginMap(Exception& ex, UInt32 size, bool weakKeys = false) { ex.set<Ex::Format>(typeof(*this), " doesn't support map type, a object will be written rather");  return beginObject(); }
 	virtual void   endMap() { endObject(); }
 
-	virtual void   clear() { writer.clear(); }
-	virtual bool   repeat(Base::UInt64 reference) { return false; }
+	virtual void   reset() { writer.clear(); }
+	virtual bool   repeat(UInt64 reference) { return false; }
 
 	////////////////////
+	void		   writeValue(const char* value, UInt32 size);
+	void		   writeValue(UInt8 type, const char* value, UInt32 size, double number);
+	void		   writeProperty(const char* name, const char* value, UInt32 size) { writePropertyName(name); writeValue(value, size); }
 
 	void		   writeNullProperty(const char* name) { writePropertyName(name); writeNull(); }
-	void		   writeDateProperty(const char* name, const Base::Date& date) { writePropertyName(name); writeDate(date); }
+	void		   writeDateProperty(const char* name, const Date& date) { writePropertyName(name); writeDate(date); }
 	void		   writeNumberProperty(const char* name, double value) { writePropertyName(name); writeNumber(value); }
 	void		   writeBooleanProperty(const char* name, bool value) { writePropertyName(name); writeBoolean(value); }
 	void		   writeStringProperty(const char* name, const char* value, std::size_t size = std::string::npos) { writePropertyName(name); writeString(value, size == std::string::npos ? strlen(value) : size); }
 	void		   writeStringProperty(const char* name, const std::string& value) { writePropertyName(name); writeString(value.data(), value.size()); }
 
-	operator bool() const { return writer.operator bool(); }
-
-	Base::BinaryWriter*		operator->() { return &writer; }
-	const Base::BinaryWriter*	operator->() const { return &writer; }
-	Base::BinaryWriter&		operator*() { return writer; }
-	const Base::BinaryWriter&	operator*() const { return writer; }
+	BinaryWriter*		operator->() { return &writer; }
+	const BinaryWriter*	operator->() const { return &writer; }
+	BinaryWriter&		operator*() { return writer; }
+	const BinaryWriter&	operator*() const { return writer; }
 
 	static DataWriter& Null();
 protected:
-	DataWriter(Base::Buffer& buffer) : writer(buffer, Base::Byte::ORDER_NETWORK) {}
-	DataWriter() : writer(Base::Buffer::Null()) {}
+	DataWriter(Buffer& buffer) : writer(buffer, Byte::ORDER_NETWORK) {}
+	DataWriter() : writer(Buffer::Null()) {}
 
-	Base::BinaryWriter   writer;
+
+
+	BinaryWriter   writer;
 };
+
+} // namespace Base

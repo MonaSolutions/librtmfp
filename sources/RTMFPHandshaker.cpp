@@ -77,16 +77,16 @@ void RTMFPHandshaker::receive(const SocketAddress& address, const Packet& packet
 	}
 }
 
-bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, FlowManager* pSession, bool p2p) {
+bool  RTMFPHandshaker::startHandshake(shared<Handshake>& pHandshake, const SocketAddress& address, FlowManager* pSession, bool p2p) {
 	PEER_LIST_ADDRESS_TYPE mapAddresses;
 	return startHandshake(pHandshake, address, mapAddresses, pSession, p2p, false); // direct P2P => no delay
 }
 
-bool  RTMFPHandshaker::startHandshake(shared_ptr<Handshake>& pHandshake, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p, bool delay) {
+bool  RTMFPHandshaker::startHandshake(shared<Handshake>& pHandshake, const SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, FlowManager* pSession, bool p2p, bool delay) {
 	const string& tag = pSession->tag();
 	auto itHandshake = _mapTags.lower_bound(tag);
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str(), tag.size()), forward_as_tuple(new Handshake(pSession, address, addresses, p2p, delay)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.c_str(), tag.size()), forward_as_tuple(SET, pSession, address, addresses, p2p, delay));
 		itHandshake->second->pTag = &itHandshake->first;
 		pHandshake = itHandshake->second;
 		return true;
@@ -101,7 +101,7 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 	if (itHandshake == _mapTags.end() || itHandshake->first != tag) {
 		PEER_LIST_ADDRESS_TYPE addresses;
 		addresses.emplace(address, RTMFP::ADDRESS_PUBLIC);
-		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.data(), tag.size()), forward_as_tuple(new Handshake(NULL, host, addresses, true, false)));
+		itHandshake = _mapTags.emplace_hint(itHandshake, piecewise_construct, forward_as_tuple(tag.data(), tag.size()), forward_as_tuple(SET, (FlowManager*)NULL, host, addresses, true, false));
 		itHandshake->second->pTag = &itHandshake->first;
 		TRACE("Creating handshake for tag ", String::Hex(BIN itHandshake->second->pTag->c_str(), itHandshake->second->pTag->size()))
 	}
@@ -128,7 +128,7 @@ void RTMFPHandshaker::processManage() {
 	// Ask server to send p2p (or host) addresses
 	auto itHandshake = _mapTags.begin();
 	while (itHandshake != _mapTags.end()) {
-		shared_ptr<Handshake> pHandshake = itHandshake->second;
+		shared<Handshake>& pHandshake = itHandshake->second;
 		if (pHandshake->pSession) {
 
 			switch (pHandshake->status) {
@@ -242,7 +242,7 @@ void RTMFPHandshaker::handleHandshake30(BinaryReader& reader) {
 	}
 }
 
-void RTMFPHandshaker::sendHandshake70(const string& tag, shared_ptr<Handshake>& pHandshake) {
+void RTMFPHandshaker::sendHandshake70(const string& tag, shared<Handshake>& pHandshake) {
 
 	if (!pHandshake->pCookie) {
 		string cookie(COOKIE_SIZE, '\0');
@@ -294,7 +294,7 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 		DEBUG(_address, " - Unexpected tag received from, possible old request")
 		return;
 	}
-	shared_ptr<Handshake> pHandshake = itHandshake->second;
+	shared<Handshake> pHandshake = itHandshake->second;
 	if (!pHandshake->pSession) {
 		WARN(_address, " - Unexpected handshake 70 received on responder session")
 		return;
@@ -324,7 +324,7 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 			ERROR(_address, " - Unexpected signature before responder key (expected 1D02)")
 			return;
 		}
-		pHandshake->farKey.reset(new Buffer(keySize));
+		pHandshake->farKey.set(keySize);
 		reader.read(keySize, *pHandshake->farKey);
 	}
 
@@ -343,7 +343,7 @@ void RTMFPHandshaker::handleHandshake70(BinaryReader& reader) {
 	}
 }
 
-void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, const string& cookie) {
+void RTMFPHandshaker::sendHandshake38(const shared<Handshake>& pHandshake, const string& cookie) {
 
 	DEBUG("Sending new handshake 38 to ", _address, " (target : ", pHandshake->pSession->name(), "; ", pHandshake->attempt, "/11)")
 	pHandshake->lastTry.update();
@@ -370,7 +370,7 @@ void RTMFPHandshaker::sendHandshake38(const shared_ptr<Handshake>& pHandshake, c
 	// Build and save Peer ID if it is RTMFPSession
 	pHandshake->pSession->buildPeerID(writer.data() + idPos, writer.size() - idPos);
 
-	const shared_ptr<Buffer>& nonce = pHandshake->pSession->getNonce();
+	const shared<Buffer>& nonce = pHandshake->pSession->getNonce();
 	writer.write7Bit<UInt64>(nonce->size());
 	writer.write(*nonce);
 	writer.write8(0x58);
@@ -395,7 +395,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 		DEBUG(_address, " - No cookie found for handshake 38, possible old request, ignored")
 		return;
 	}
-	shared_ptr<Handshake> pHandshake = itHandshake->second;
+	shared<Handshake> pHandshake = itHandshake->second;
 
 	UInt32 publicKeySize = reader.read7Bit<UInt32>();
 	if (publicKeySize != 0x84)
@@ -409,7 +409,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 		removeHandshake(pHandshake);
 		return;
 	}
-	pHandshake->farKey.reset(new Buffer(publicKeySize-2));
+	pHandshake->farKey.set(publicKeySize-2);
 	reader.read(publicKeySize - 2, *pHandshake->farKey);
 
 	UInt32 nonceSize = reader.read7Bit<UInt32>();
@@ -418,7 +418,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 		removeHandshake(pHandshake);
 		return;
 	}
-	pHandshake->farNonce.reset(new Buffer(nonceSize));
+	pHandshake->farNonce.set(nonceSize);
 	reader.read(nonceSize, *pHandshake->farNonce);
 
 	UInt8 endByte;
@@ -451,7 +451,7 @@ void RTMFPHandshaker::sendHandshake78(BinaryReader& reader) {
 	writer.write8(0x78).next(2); // header type and size
 	writer.write32(pSession->sessionId());
 	writer.write8(0x49); // nonce is 73 bytes long
-	const shared_ptr<Buffer>& nonce = pSession->getNonce();
+	const shared<Buffer>& nonce = pSession->getNonce();
 	writer.write(*nonce);
 	writer.write8(0x58);
 
@@ -482,7 +482,7 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		DEBUG(_address, " - Unexpected tag received, possible old request")
 		return;
 	}
-	shared_ptr<Handshake> pHandshake(itTag->second);
+	shared<Handshake> pHandshake(itTag->second);
 
 	if (!pHandshake->pSession) {
 		WARN(_address, " - Unable to find the session related to handshake 71")
@@ -518,7 +518,7 @@ void RTMFPHandshaker::handleRedirection(BinaryReader& reader) {
 		_pSession->handlePeerDisconnection(pHandshake->pSession->name());
 }
 
-const shared_ptr<Socket>& RTMFPHandshaker::socket(Base::IPAddress::Family family) { 
+const shared<Socket>& RTMFPHandshaker::socket(Base::IPAddress::Family family) {
 	return _pSession->socket(family); 
 }
 
@@ -528,7 +528,7 @@ bool RTMFPHandshaker::failed() {
 }
 
 // Remove the handshake properly
-void RTMFPHandshaker::removeHandshake(std::shared_ptr<Handshake> pHandshake) {
+void RTMFPHandshaker::removeHandshake(const shared<Handshake>& pHandshake) {
 	TRACE("Deleting ", pHandshake->isP2P ? "P2P" : "", " handshake to ", pHandshake->pSession ? pHandshake->pSession->name() : "unknown session")
 
 	// Close the session if needed
@@ -556,7 +556,7 @@ bool RTMFPHandshaker::computePublicKey() {
 		WARN(ex)
 		return false;
 	}
-	shared_ptr<Buffer> pPubKey(new Buffer(_pSession->diffieHellman().publicKeySize()));
+	shared<Buffer> pPubKey(SET, _pSession->diffieHellman().publicKeySize());
 	_pSession->diffieHellman().readPublicKey(pPubKey->data());
 	_publicKey.set(pPubKey);
 	return true;

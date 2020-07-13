@@ -83,7 +83,7 @@ bool FlashHandler::process(AMF::Type type, UInt32 time, const Packet& packet, UI
 		case AMF::TYPE_INVOCATION_AMF3:
 		case AMF::TYPE_INVOCATION: {
 			string name;
-			AMFReader amfReader(packet.data() + (type & 1), packet.size() - (type & 1));
+			AMFReader amfReader(Packet(packet.data() + (type & 1), packet.size() - (type & 1)));
 			amfReader.readString(name);
 			double number(0);
 			amfReader.readNumber(number);
@@ -140,7 +140,7 @@ bool FlashHandler::messageHandler(const string& name, AMFReader& message, UInt64
 
 bool FlashHandler::dataHandler(const Packet& packet, double lostRate) {
 	
-	AMFReader reader(packet.data(), packet.size());
+	AMFReader reader(packet);
 	string func, params, value;
 	UInt8 type = reader.nextType();
 	if (type == AMFReader::STRING) {

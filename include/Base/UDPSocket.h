@@ -26,38 +26,40 @@ struct UDPSocket : virtual Object {
 	typedef Socket::OnReceived	ON(Packet);
 	typedef Socket::OnFlush		ON(Flush);
 	typedef Socket::OnError		ON(Error);
-	NULLABLE
 
-	UDPSocket(IOSocket& io);
-	virtual ~UDPSocket();
+	UDPSocket(IOSocket& io) : io(io), _subscribed(false) {}
+	virtual ~UDPSocket() { close(); }
 
 	IOSocket&	io;
 
-	operator	bool() const { return _pSocket.operator bool(); }
-	operator	const shared<Socket>&() { return _pSocket; }
-	Socket&		operator*() { return *_pSocket; }
-	Socket*		operator->() { return _pSocket.get(); }
+	const shared<Socket>& socket();
+	Socket&			      operator*() { return *socket(); }
+	Socket*				  operator->() { return socket().get(); }
 
 	bool		connect(Exception& ex, const SocketAddress& address);
-	bool		connected() const { return _connected; }
+	bool		connected() const { return _pSocket && _pSocket->peerAddress().operator bool(); }
 
 	bool		bind(Exception& ex, const SocketAddress& address);
 	bool		bind(Exception& ex, const IPAddress& ip = IPAddress::Wildcard()) { return bind(ex, SocketAddress(ip, 0)); }
-	bool		bound() { return _bound;  }
+	bool		bound() { return _pSocket && _pSocket->address().operator bool();  }
 
 	void		disconnect();
 	void		close();
 
 	bool		send(Exception& ex, const Packet& packet, int flags = 0) { return send(ex, packet, SocketAddress::Wildcard(), flags); }
-	bool		send(Exception& ex, const Packet& packet, const SocketAddress& address, int flags = 0);
+	bool		send(Exception& ex, const Packet& packet, const SocketAddress& address, int flags = 0) { return socket()->write(ex, packet, address, flags) != -1; }
 
+	template<typename RunnerType>
+	void		send(const shared<RunnerType>& pRunner) { io.threadPool.queue(_sendingTrack, pRunner); }
+	template <typename RunnerType, typename ...Args>
+	void		send(Args&&... args) { io.threadPool.queue<RunnerType>(_sendingTrack, std::forward<Args>(args)...); }
 	/*!
 	Runner example to send data with custom process in parallel thread */
 	struct Sender : Runner {
 		Sender(const shared<Socket>& pSocket, const Packet& packet, int flags = 0) :
-			Runner("UDPSender"), _pSocket(pSocket), _flags(flags), _packet(std::move(packet)) { FATAL_CHECK(pSocket); }
+			Runner("UDPSender"), _pSocket(pSocket), _flags(flags), _packet(std::move(packet)) { DEBUG_ASSERT(pSocket); }
 		Sender(const shared<Socket>& pSocket, const Packet& packet, const SocketAddress& address, int flags = 0) :
-			Runner("UDPSender"), _pSocket(pSocket), _flags(flags), _packet(std::move(packet)), _address(address) { FATAL_CHECK(pSocket); }
+			Runner("UDPSender"), _pSocket(pSocket), _flags(flags), _packet(std::move(packet)), _address(address) { DEBUG_ASSERT(pSocket); }
 	private:
 		bool run(Exception& ex) { _pSocket->write(ex, _packet, _address, _flags);  return true; } // UDP socket error is a WARN
 		shared<Socket>	_pSocket;
@@ -69,8 +71,8 @@ private:
 	virtual Socket::Decoder* newDecoder() { return NULL; }
 
 	shared<Socket>		_pSocket;
-	bool				_connected;
-	bool				_bound;
+	bool				_subscribed;
+	UInt16				_sendingTrack;
 };
 
 

@@ -28,7 +28,7 @@ namespace Base {
 /// host address and a port number.
 struct SocketAddress : private IPAddress, virtual Object {
 	CONST_STRING(addrToString());
-	NULLABLE
+	NULLABLE(isWildcard() && !port())
 
 	/*!
 	Creates a wildcard (all zero) IPv4/IPv6 SocketAddress */
@@ -54,6 +54,7 @@ struct SocketAddress : private IPAddress, virtual Object {
 	/*!
 	Set a SocketAddress from other */
 	SocketAddress& operator=(const SocketAddress& other) { return set(other); }
+	SocketAddress& operator=(std::nullptr_t) { return reset(); }
 	/*!
 	set SocketAddress from a given IP and a given port */
 	SocketAddress& set(const IPAddress& host, UInt16 port) { IPAddress::set(host, port); return *this; }
@@ -87,9 +88,11 @@ struct SocketAddress : private IPAddress, virtual Object {
 	bool setWithDNS(Exception& ex, const std::string& hostAndPort) { return setIntern(ex, hostAndPort.c_str(), true); }
 	bool setWithDNS(Exception& ex, const char* hostAndPort) { return setIntern(ex, hostAndPort, true); }
 	
-	void setPort(UInt16 port) { IPAddress::setPort(port); }
+	SocketAddress&  setPort(UInt16 port) { IPAddress::setPort(port); return self; }
+	bool			setPort(Exception& ex, const char* port);
+	bool			setPort(Exception& ex, const std::string& port) { return setPort(ex, port.c_str()); }
 
-	IPAddress& reset() { IPAddress::reset(); return *this; }
+	SocketAddress& reset() { IPAddress::reset(); return self; }
 
 	IPAddress::Family		family() const { return IPAddress::family(); }
 	IPAddress&				host() { return *this; }
@@ -106,10 +109,8 @@ struct SocketAddress : private IPAddress, virtual Object {
 	bool operator <= (const SocketAddress& address) const { return operator==(address) || operator<(address); }
 	bool operator >  (const SocketAddress& address) const { return !operator<=(address); }
 	bool operator >= (const SocketAddress& address) const { return operator==(address) || operator>(address); }
-	
-	explicit operator bool() const { return port() || !isWildcard(); }
 
-	// Returns a wildcard IPv4 or IPv6 address (0.0.0.0)
+	// Returns a wildcard IPv4 or IPv6 address (0.0.0.0) with port to 0
 	static const SocketAddress& Wildcard(IPAddress::Family family = IPAddress::IPv4);
 
 	static UInt16 SplitLiteral(const char* value, std::string& host);
@@ -120,7 +121,7 @@ private:
 	bool setIntern(Exception& ex, const char* host, const char* port, bool resolveHost);
 	bool setIntern(Exception& ex, const char* host, UInt16 port, bool resolveHost) { return resolveHost ? IPAddress::setWithDNS(ex, host, port) : IPAddress::set(ex, host, port); }
 
-	UInt16 resolveService(Exception& ex, const char* service);
+	
 
 };
 

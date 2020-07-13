@@ -30,6 +30,10 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #define EPOLLRDHUP 0x2000 // looks be just a SDL include forget for Android, but the event is implemented in epoll of Android
 #endif  // !defined(EPOLLRDHUP) 
 #endif
+#include "Base/SRT.h"
+#if defined(SRT_API)
+	#include "Base/IOSRTSocket.h"
+#endif
 
 
 using namespace std;
@@ -39,12 +43,11 @@ namespace Base {
 struct IOSocket::Action : Runner, virtual Object {
 	Action(const char* name, int error, const shared<Socket>& pSocket) : Runner(name), _weakSocket(pSocket) {
 		if (error)
-			Socket::SetException(_ex, error);
+			Socket::SetException(error, _ex);
 	}
 
 protected:
 
-	
 	struct Handle : Runner, virtual Object {
 		Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex) : Runner(name), _ex(ex), _weakSocket(pSocket) {}
 	private:
@@ -54,7 +57,7 @@ protected:
 			if (!pSocket)
 				return true; // socket dies
 			if (_ex)
-				pSocket->onError(_ex); // call onError before handle (ex: onError, onDisconnection)
+				pSocket->_onError(_ex); // call onError before handle (ex: onError, onDisconnection)
 			handle(pSocket);
 			return true;
 		}
@@ -67,7 +70,7 @@ protected:
 	template<typename HandleType, typename ...Args>
 	void handle(const shared<Socket>& pSocket, Args&&... args) {
 		if(!pSocket.unique())
-			pSocket->_pHandler->queue(new HandleType(name, pSocket, _ex, std::forward<Args>(args)...));
+			pSocket->_pHandler->queue<HandleType>(name, pSocket, _ex, std::forward<Args>(args)...);
 		_ex = NULL;
 	}
 
@@ -108,7 +111,6 @@ IOSocket::~IOSocket() {
 	Thread::stop();
 }
 
-
 bool IOSocket::subscribe(Exception& ex, const shared<Socket>& pSocket,
 											const Socket::OnReceived& onReceived,
 											const Socket::OnFlush& onFlush,
@@ -123,100 +125,119 @@ bool IOSocket::subscribe(Exception& ex, const shared<Socket>& pSocket,
 		return false;
 	
 	// check duplication
-	pSocket->onError = onError;
-	pSocket->onAccept = onAccept;
-	pSocket->onDisconnection = onDisconnection;
-	pSocket->onReceived = onReceived;
-	pSocket->onFlush = onFlush;
+	pSocket->_onError = onError;
+	pSocket->_onAccept = onAccept;
+	pSocket->_onDisconnection = onDisconnection;
+	pSocket->_onReceived = onReceived;
+	pSocket->_onFlush = onFlush;
 	pSocket->_pHandler = &handler;
 
-
-	{
-		lock_guard<mutex> lock(_mutex); // must protect "start" + _system (to avoid a write operation on restarting) + _subscribers increment
-		if (!running()) {
-			_initSignal.reset();
-			start(); // only way to start IOSocket::run
-			_initSignal.wait(); // wait _system assignment
-		}
-
-		if (!_system) {
-			ex.set<Ex::Net::System>(name(), " hasn't been able to start, impossible to manage sockets");
-			goto FAIL;
-		}
-
-#if defined(_WIN32)
-		lock_guard<mutex> lockSockets(_mutexSockets); // must protected _sockets
-		if (WSAAsyncSelect(*pSocket, _system, 104, FD_CONNECT | FD_ACCEPT | FD_CLOSE | FD_READ | FD_WRITE) != 0) { // FD_CONNECT useless (FD_WRITE is sent on connection!)
-			ex.set<Ex::Net::System>(Net::LastErrorMessage(), ", ", name(), " can't manage socket ", *pSocket);
-			goto FAIL;
-		}
-		_sockets.emplace(*pSocket, pSocket);
-#else
-		pSocket->_pWeakThis = new weak<Socket>(pSocket);
-		int res;
-#if defined(_BSD)
-		struct kevent events[2];
-		EV_SET(&events[0], *pSocket, EVFILT_READ, EV_ADD | EV_CLEAR | EV_EOF, 0, 0, pSocket->_pWeakThis);
-		EV_SET(&events[1], *pSocket, EVFILT_WRITE, EV_ADD | EV_CLEAR | EV_EOF, 0, 0, pSocket->_pWeakThis);
-		res = kevent(_system, events, 2, NULL, 0, NULL);
-#else
-		epoll_event event;
-		memset(&event, 0, sizeof(event));
-		event.events = EPOLLIN  | EPOLLRDHUP | EPOLLOUT | EPOLLET;
-		event.data.fd = *pSocket;
-		event.data.ptr = pSocket->_pWeakThis;
-		res = epoll_ctl(_system, EPOLL_CTL_ADD,*pSocket, &event);
-#endif
-		if(res<0) {
-			delete pSocket->_pWeakThis;
-			pSocket->_pWeakThis = NULL;
-			ex.set<Ex::Net::System>(Net::LastErrorMessage(),", ",name()," can't manage sockets");
-			goto FAIL;
-		}
-#endif
-		++_subscribers;
+	if (pSocket->type < Socket::TYPE_OTHER) {
+		if (subscribe(ex, pSocket))
+			return true;
 	}
-	return true;
+#if defined(SRT_API)
+	else {
+		if (!_pIOSRTSocket)
+			_pIOSRTSocket.set(handler, threadPool);
+		if (_pIOSRTSocket->subscribe(ex, pSocket))
+			return true;
+	}
+#endif
 
-FAIL:
 	if (block)
 		pSocket->setNonBlockingMode(ex, false);
-	pSocket->onFlush = nullptr;
-	pSocket->onReceived = nullptr;
-	pSocket->onDisconnection = nullptr;
-	pSocket->onAccept = nullptr;
-	pSocket->onError = nullptr;
+	pSocket->_onFlush = nullptr;
+	pSocket->_onReceived = nullptr;
+	pSocket->_onDisconnection = nullptr;
+	pSocket->_onAccept = nullptr;
+	pSocket->_onError = nullptr;
 	return false;
 }
 
-void IOSocket::unsubscribe(shared<Socket>& pSocket) {
-	// don't touch to pDecoder because can be accessing by receiving thread (thread safety)
-	pSocket->onFlush = nullptr;
-	pSocket->onReceived = nullptr;
-	pSocket->onDisconnection = nullptr;
-	pSocket->onAccept = nullptr;
-	pSocket->onError = nullptr;
+bool IOSocket::subscribe(Exception& ex, const shared<Socket>& pSocket) {
+	lock_guard<mutex> lock(_mutex); // must protect "start" + _system (to avoid a write operation on restarting) + _subscribers increment
+	if (!running()) {
+		_initSignal.reset();
+		start(); // only way to start IOSocket::run
+		_initSignal.wait(); // wait _system assignment
+	}
 
+	if (!_system) {
+		ex.set<Ex::Net::System>(name(), " hasn't been able to start, impossible to manage sockets");
+		return false;
+	}
+
+#if defined(_WIN32)
+	lock_guard<mutex> lockSockets(_mutexSockets); // must protected _sockets
+	if (WSAAsyncSelect(*pSocket, _system, 104, FD_CONNECT | FD_ACCEPT | FD_CLOSE | FD_READ | FD_WRITE) != 0) { // FD_CONNECT useless (FD_WRITE is sent on connection!)
+		ex.set<Ex::Net::System>(Net::LastErrorMessage(), ", ", name(), " can't manage socket ", *pSocket);
+		return false;
+	}
+	_sockets.emplace(*pSocket, pSocket);
+#else
+	pSocket->_pWeakThis = new weak<Socket>(pSocket);
+	int res;
+#if defined(_BSD)
+	struct kevent events[2];
+	// no need to look EV_EOF, set automatically!
+	EV_SET(&events[0], *pSocket, EVFILT_READ, EV_ADD | EV_CLEAR, 0, 0, pSocket->_pWeakThis);
+	EV_SET(&events[1], *pSocket, EVFILT_WRITE, EV_ADD | EV_CLEAR, 0, 0, pSocket->_pWeakThis);
+	res = kevent(_system, events, 2, NULL, 0, NULL);
+#else
+	epoll_event event;
+	memset(&event, 0, sizeof(event));
+	event.events = EPOLLIN | EPOLLRDHUP | EPOLLOUT | EPOLLET;
+	event.data.fd = *pSocket;
+	event.data.ptr = pSocket->_pWeakThis;
+	res = epoll_ctl(_system, EPOLL_CTL_ADD, *pSocket, &event);
+#endif
+	if (res<0) {
+		delete pSocket->_pWeakThis;
+		pSocket->_pWeakThis = NULL;
+		ex.set<Ex::Net::System>(Net::LastErrorMessage(), ", ", name(), " can't manage sockets");
+		return false;
+	}
+#endif
+	++_subscribers;
+	
+	return true;
+}
+
+void IOSocket::unsubscribe(shared<Socket>& pSocket) {
+	// don't touch to pDecoder because can be accessed by receiving thread (thread safety)
+	pSocket->_onFlush = nullptr;
+	pSocket->_onReceived = nullptr;
+	pSocket->_onDisconnection = nullptr;
+	pSocket->_onAccept = nullptr;
+	pSocket->_onError = nullptr;
+
+	if (pSocket->type < Socket::TYPE_OTHER)
+		unsubscribe(pSocket.get());
+#if defined(SRT_API)
+	else if (_pIOSRTSocket)
+		_pIOSRTSocket->unsubscribe(pSocket.get());
+#endif
+	pSocket.reset();
+}
+
+void IOSocket::unsubscribe(Socket* pSocket) {
 #if defined(_WIN32)
 	{
 		// decrements _count before the PostMessage
 		lock_guard<mutex> lock(_mutexSockets);
-		if (!_sockets.erase(*pSocket)) {
-			pSocket.reset();
+		if (!_sockets.erase(*pSocket))
 			return;
-		}
 	}
 #else
-	if (!pSocket->_pWeakThis) {
-		pSocket.reset();
+	if (!pSocket->_pWeakThis)
 		return;
-	}
 #endif
 
 	lock_guard<mutex> lock(_mutex); // to avoid a restart during _system reading + protected _count decrement
 	--_subscribers;
-	
-	 // if running _initSignal is set, so _system is assigned
+
+	// if running _initSignal is set, so _system is assigned
 #if defined(_WIN32)
 	if (running() && _system) {
 		WSAAsyncSelect(*pSocket, _system, 0, 0); // ignore error
@@ -243,50 +264,16 @@ void IOSocket::unsubscribe(shared<Socket>& pSocket) {
 		pSocket->_pWeakThis = NULL;
 	}
 #endif
-	pSocket.reset();
-}
-
-
-struct IOSocket::Send : IOSocket::Action {
-	Send(int error, const shared<Socket>& pSocket) : Action("SocketSend", error, pSocket) {}
-
-	bool process(Exception& ex, const shared<Socket>& pSocket) {
-		if (!pSocket->flush(ex))
-			return false;
-		// handle if no more queueing data (and on first time allow to get connection info!)
-		if (!pSocket->queueing())
-			handle<Handle>(pSocket);
-		return true;
-	}
-
-private:
-	struct Handle : Action::Handle {
-		Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex) : Action::Handle(name, pSocket, ex) {}
-	private:
-		void handle(const shared<Socket>& pSocket) {
-			if (!pSocket->queueing()) // check again on handle, "queueing" can had changed
-				pSocket->onFlush();
-		}
-	};
-};
-
-
-void IOSocket::write(const shared<Socket>& pSocket, int error) {
-	// ::printf("WRITE(%d) socket %d\n", error, pSocket->id());
-#if !defined(_WIN32)
-	if (pSocket->_firstWritable)
-		pSocket->_firstWritable = false;
-#endif
-	threadPool.queue(new Send(error, pSocket));
 }
 
 void IOSocket::read(const shared<Socket>& pSocket, int error) {
-	// ::printf("READ(%d) socket %d\n", error, pSocket->id());
+	//::printf("READ(%d) socket %d\n", error, pSocket->id());
 	if(pSocket->_reading && !error)
 		return; // useless!
 	++pSocket->_reading;
+	//::printf("READING(%d) socket %d\n", error, pSocket->id());
 
-	if (pSocket->_listening) {
+	if (pSocket->listening()) {
 
 		struct Accept : Action {
 			Accept(int error, const shared<Socket>& pSocket) : Action("SocketAccept", error, pSocket) {}
@@ -302,12 +289,12 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 				}
 			private:
 				void handle(const shared<Socket>& pSocket) {
-					pSocket->onAccept(_pConnection);
+					pSocket->_onAccept(_pConnection);
 					UInt32 receiving = --pSocket->_receiving;
 					if (!_pThread)
 						return;
 					if (receiving < Socket::BACKLOG_MAX)
-						_pThread->queue(new Accept(0, pSocket)); // REARM
+						_pThread->queue<Accept>(0, pSocket); // REARM
 					else
 						--pSocket->_reading;
 				}
@@ -332,13 +319,12 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 			}
 		};
 
-		return threadPool.queue(new Accept(error, pSocket), pSocket->_threadReceive);
+		return threadPool.queue<Accept>(pSocket->_threadReceive, error, pSocket);
 	}
 
 
 	struct Receive : Action {
 		Receive(int error, const shared<Socket>& pSocket) : Action("SocketReceive", error, pSocket) {}
-
 	private:
 		struct Handle : Action::Handle {
 			Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex, shared<Buffer>& pBuffer, const SocketAddress& address, bool& stop) :
@@ -352,12 +338,12 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 		private:
 			void handle(const shared<Socket>& pSocket) {
 				UInt32 receiving = _pBuffer->size();
-				pSocket->onReceived(_pBuffer, _address);
+				pSocket->_onReceived(_pBuffer, _address);
 				receiving = pSocket->_receiving -= receiving;
 				if (!_pThread)
 					return;
 				if(receiving < pSocket->recvBufferSize())
-					_pThread->queue(new Receive(0, pSocket)); // REARM
+					_pThread->queue<Receive>(0, pSocket); // REARM
 				else
 					--pSocket->_reading;
 			}
@@ -369,14 +355,13 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 		bool process(Exception& ex, const shared<Socket>& pSocket) {
 			if (!pSocket->_reading--) // me and something else! useless!
 				return true;
-			UInt32 available = pSocket->available();
 			bool stop(false);
 			while (!stop) {
+				UInt32 available = pSocket->available();
 				if (!available) // always get something (maybe a new reception has been gotten since the last pSocket->available() call)
 					available = 2048; // in UDP allows to avoid a NET_EMSGSIZE error (where packet is lost!), and 2048 to be greater than max possible MTU (~1500 bytes)
-				shared<Buffer>	pBuffer(new Buffer(available));
+				shared<Buffer>	pBuffer(SET, available);
 				SocketAddress	address;
-				bool queueing(pSocket->queueing() ? true : false);
 				int received = pSocket->receive(ex, pBuffer->data(), available, 0, &address);
 				if (received < 0) {
 					if (ex.cast<Ex::Net::Socket>().code != NET_ESHUTDOWN) {
@@ -385,18 +370,9 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 						if (ex.cast<Ex::Net::Socket>().code != NET_EWOULDBLOCK)
 							return false; 
 						// ::printf("NET_EWOULDBLOCK %d\n", pSocket->id());
-						ex = nullptr;
-						// Should almost never happen, when happen it's usually a "would block" relating a writing request (SSL handshake for example)
-						if (queueing)
-							Send(0, pSocket).process(ex, pSocket);
-						available = pSocket->available();
-						if (available)
-							continue;
-						break;
-					}
-					// If "shutdown" error on receive it means that that the user has called a shutdown BOTH because waits nothing else however IOSocket has receveid the "recv=0", so it's not an error!
+					} else // If "shutdown" error on receive it means that that the user has called a shutdown BOTH because waits nothing else however IOSocket has receveid the "recv=0", so it's not an error!
+						pSocket->_reading = 0xFF; // block reception!
 					ex = nullptr;
-					pSocket->_reading = 0xFF; // block reception!
 					return true;
 				}
 
@@ -409,23 +385,56 @@ void IOSocket::read(const shared<Socket>& pSocket, int error) {
 				pBuffer->resize(received);
 
 				// decode can't happen BEFORE onDisconnection because this call decode + push to _handler in this call!
-				if (pSocket->pDecoder)
-					pSocket->pDecoder->decode(pBuffer, address, pSocket);
+				if (pSocket->_pDecoder)
+					pSocket->_pDecoder->decode(pBuffer, address, pSocket);
 				if(pBuffer)
 					handle<Handle>(pSocket, pBuffer, address, stop);
-				available = pSocket->available();
 			};
 			return true;
 		}
 	};
 
-	threadPool.queue(new Receive(error, pSocket), pSocket->_threadReceive);
+	threadPool.queue<Receive>(pSocket->_threadReceive, error, pSocket);
 }
 
+void IOSocket::write(const shared<Socket>& pSocket, int error) {
+	//::printf("WRITE(%d) socket %d\n", error, pSocket->id());
+	if (!pSocket->_opened) // send a first onFlush on connection!
+		pSocket->_opened = true;
+	else if (!error && !pSocket->_sending)
+		return; // /!\ On UNIX epoll a READ event can cause a false-WRITE event, if _sending=false there is nothing to send
+	//::printf("WRITING(%d) socket %d\n", error, pSocket->id());
+
+	struct Send : Action {
+		Send(int error, const shared<Socket>& pSocket) : Action("SocketSend", error, pSocket) {}
+	private:
+		bool process(Exception& ex, const shared<Socket>& pSocket) {
+			if (!pSocket->flush(ex))
+				return false;
+			// handle if no more queueing data (and on first time allow to get connection info!)
+			if (!pSocket->queueing())
+				handle<Handle>(pSocket);
+			return true;
+		}
+		struct Handle : Action::Handle {
+			Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex) : Action::Handle(name, pSocket, ex) {}
+		private:
+			void handle(const shared<Socket>& pSocket) {
+				if (!pSocket->queueing()) // check again on handle, "queueing" can had changed
+					pSocket->_onFlush();
+			}
+		};
+	};
+	threadPool.queue<Send>(0, error, pSocket);
+}
+
+
 void IOSocket::close(const shared<Socket>& pSocket, int error) {
-	// ::printf("CLOSE(%d) socket %d\n", error, pSocket->id());
-	if (pSocket->type != Socket::TYPE_STREAM)
+	//::printf("CLOSE(%d) socket %d\n", error, pSocket->id());
+	if (pSocket->type == Socket::TYPE_DATAGRAM)
 		return; // no Disconnection requirement!
+	//::printf("CLOSING(%d) socket %d\n", error, pSocket->id());
+
 	struct Close : Action {
 		Close(int error, const shared<Socket>& pSocket) : Action("SocketClose", error, pSocket) {}
 	private:
@@ -433,17 +442,19 @@ void IOSocket::close(const shared<Socket>& pSocket, int error) {
 			Handle(const char* name, const shared<Socket>& pSocket, const Exception& ex) : Action::Handle(name, pSocket, ex) {}
 		private:
 			void handle(const shared<Socket>& pSocket) {
-				pSocket->onDisconnection();
-				pSocket->onDisconnection = nullptr; // just one onDisconnection!
+				pSocket->_onDisconnection();
+				pSocket->_onDisconnection = nullptr; // just one onDisconnection!
 			}
 		};
 		bool process(Exception& ex, const shared<Socket>& pSocket) {
 			pSocket->_reading = 0xFF; // block reception!
+			if (!pSocket->_opened && !ex)
+				Socket::SetException(NET_ECONNREFUSED, ex);
 			handle<Handle>(pSocket);
 			return true;
 		}
 	};
-	threadPool.queue(new Close(error, pSocket), pSocket->_threadReceive);
+	threadPool.queue<Close>(pSocket->_threadReceive, error, pSocket);
 }
 
 
@@ -610,20 +621,23 @@ bool IOSocket::run(Exception& ex, const volatile bool& requestStop) {
 			if(!pSocket)
 				continue; // socket error
 			// EVFILT_READ | EVFILT_WRITE | EV_EOF
+			// printf("%d => 0x%08x(0x%08x)\n", pSocket->id(), event.filter, event.flags);
 			int error = 0;
 			if (event.flags&EV_ERROR) {
 				socklen_t len(sizeof(error));
 				if (getsockopt(pSocket->id(), SOL_SOCKET, SO_ERROR, (void *)&error, &len) == -1)
 					error = Net::LastError();
 			}
-			if (event.flags&EV_EOF) // if close or shutdown RD = read (recv) => disconnection
-				close(pSocket, error);
-			else if (event.filter==EVFILT_READ)
+			if (event.flags&EV_EOF) {
+				// if close or shutdown RD = read (recv) => disconnection
+				if (event.filter == EVFILT_READ) // necessary subscribed to EVFILT_READ (ignore the EVFILT_WRITE, causes two close otherwise!)
+					close(pSocket, error);
+			} else if (event.filter == EVFILT_READ)
 				read(pSocket, error);
 			else if (event.filter==EVFILT_WRITE)
 				write(pSocket, error);
 			else if (error) // on few unix system we can get an error without anything else
-				threadPool.queue(new Action("SocketError", error, pSocket), pSocket->_threadReceive);
+				threadPool.queue<Action>(pSocket->_threadReceive, "SocketError", error, pSocket);
 
 #else
 			epoll_event& event(events[i]);
@@ -644,7 +658,7 @@ bool IOSocket::run(Exception& ex, const volatile bool& requestStop) {
 			if(!pSocket)
 				continue; // socket error
 			// EPOLLIN | EPOLLOUT | EPOLLERR | EPOLLHUP | EPOLLRDHUP
-			// printf("%d => %u\n", pSocket->id(), event.events);
+			//printf("%d => 0x%08x\n", pSocket->id(), event.events);
 			int error = 0;
 			if(event.events&EPOLLERR) {
 				socklen_t len(sizeof(error));
@@ -657,20 +671,18 @@ bool IOSocket::run(Exception& ex, const volatile bool& requestStop) {
 				continue;
 			}
 			if (!(event.events&EPOLLHUP)) { // if socket unexpected close no more read or write!
-				if (event.events&EPOLLIN) {
-					/* even in EPOLLET we can miss the first WRITE event, for example with an UDP socket, its creation makes it writable quickly,
-					so the IOSocket subscribe happens after its WRITABLE state event and we miss its WRITE change state */
-					if (event.events&EPOLLOUT && !error && pSocket->_firstWritable) // for first Flush requirement!
-						write(pSocket, 0); // before read! Connection!
-					read(pSocket, error);
-					error = 0;
-				} else if (event.events&EPOLLOUT) { // else if because EPOLLET!
+				// EPOLLOUT in first to get the onFlush (onConnection for TCP) in first (before any reception)
+				if (event.events&EPOLLOUT) {
 					write(pSocket, error);
+					error = 0;
+				}
+				if (event.events&EPOLLIN) {
+					read(pSocket, error);
 					error = 0;
 				}
 			}
 			if (error) // on few unix system we can get an error without anything else
-				threadPool.queue(new Action("SocketError", error, pSocket), pSocket->_threadReceive);
+				threadPool.queue<Action>(pSocket->_threadReceive, "SocketError", error, pSocket);
 #endif
 		}
 
@@ -710,6 +722,12 @@ bool IOSocket::run(Exception& ex, const volatile bool& requestStop) {
 	return false;
 }
 	
-
+void IOSocket::stop() {
+#if defined(SRT_API)
+	if (_pIOSRTSocket)
+		_pIOSRTSocket->stop();
+#endif
+	Thread::stop();
+}
 
 } // namespace Base

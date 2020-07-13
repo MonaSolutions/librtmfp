@@ -25,41 +25,51 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "DataWriter.h"
 #include "Base/Logs.h"
 
+using namespace Base;
+
 template<typename MapType>
-struct MapWriter : DataWriter, virtual Base::Object {
+struct MapWriter : DataWriter, virtual Object {
+	/*!
+	Beware on DataWriter::reset map is fully-erased */
+	MapWriter(MapType& map) : _layers({{0,0}}), _map(map), _isProperty(false) {}
 
-	MapWriter(MapType& map) : _layers({ { 0,0 } }), _map(map), _isProperty(false) {}
-
-	Base::UInt64 beginObject(const char* type = NULL) { return beginComplex(); }
-	void   writePropertyName(const char* value) { _property.append(value); _isProperty = true; }
+	UInt64 beginObject(const char* type = NULL) { return beginComplex(); }
+	void   writePropertyName(const char* value) { _property = value; _isProperty = true; }
 	void   endObject() { endComplex(); }
 
-	void  clear() { _isProperty = false; _property.clear(); _key.clear(); _layers.assign({ { 0,0 } }); _map.clear(); }
+	UInt64 beginArray(UInt32 size) { return beginComplex(String(size)); }
+	void   endArray() { endComplex();  }
 
-	Base::UInt64 beginArray(Base::UInt32 size) { return beginComplex(); }
-	void   endArray() { endComplex(); }
+	UInt64 beginObjectArray(UInt32 size) { beginComplex(String(size)); _layers.emplace_back(_key.size(), 0); return 0; }
 
-	Base::UInt64 beginObjectArray(Base::UInt32 size) { beginComplex(); beginComplex(true); return 0; }
-
-	void writeString(const char* value, Base::UInt32 size) { set(value, size); }
-	void writeNumber(double value) { set(Base::String(value)); }
-	void writeBoolean(bool value) { set(value ? "true" : "false"); }
-	void writeNull() { set(EXPAND("null")); }
-	Base::UInt64 writeDate(const Base::Date& date) { set(Base::String(date)); return 0; }
-	Base::UInt64 writeBytes(const Base::UInt8* data, Base::UInt32 size) { set(STR data, size); return 0; }
-
+	virtual void writeString(const char* value, UInt32 size) { set(String::Data(value, size)); }
+	virtual void writeNumber(double value) { set(value); }
+	virtual void writeBoolean(bool value) { set(value);}
+	virtual void writeNull() { set(nullptr); }
+	virtual UInt64 writeDate(const Date& date) { set(date); return 0; }
+	virtual UInt64 writeByte(const Packet& packet) { set(packet); return 0; }
+	
+	void   reset() {
+		_isProperty = false;
+		_property.clear();
+		_key.clear();
+		_layers.assign({ { 0,0 } });
+		// Impossible to reset map as was on build, so erase it!
+		_map.clear();
+	}
 private:
-	Base::UInt64 beginComplex(bool ignore = false) {
+	UInt64 beginComplex(std::string&& count=std::string()) {
 		_layers.emplace_back(_key.size(), 0);
-		if (ignore || _layers.size()<3)
+		if (_layers.size()<3)
 			return 0;
 		if (_isProperty) {
-			Base::String::Append(_key, _property, '.');
+			_key.append(_property);
 			_isProperty = false;
-		}
-		else
-			Base::String::Append(_key, (++_layers.rbegin())->second++, '.');
-		_property = _key;
+		} else
+			String::Append(_key, (++_layers.rbegin())->second++);
+		if(!count.empty())
+			_map.emplace(_key, std::move(count)); // count of array!
+		_key += '.';
 		return 0;
 	}
 
@@ -69,22 +79,32 @@ private:
 			return;
 		}
 		_key.resize(_layers.back().first);
-		_property = _key;
 		_layers.pop_back();
 	}
-
-	template <typename ...Args>
-	void set(Args&&... args) {
-		if (!_isProperty)
-			Base::String::Append(_property, _layers.back().second++);
-		_map.emplace(std::piecewise_construct, std::forward_as_tuple(_property), std::forward_as_tuple(std::forward<Args>(args)...));
-		_isProperty = false;
-		_property = _key;
+	
+	template <typename Type>
+	void set(const Type& data) {
+		if (!_isProperty) {
+			if (_layers.size() < 2) {
+				String key(data);
+				if(setKey(key))
+					_map.emplace(std::move(key), std::string());
+				return;
+			}
+			String::Assign(_property, _layers.back().second++);
+		} else
+			_isProperty = false;
+		String key(_key, _property);
+		if (setKey(key))
+			_map.emplace(key, String(data));
+	}
+	virtual bool setKey(const std::string& key) {
+		return true;
 	}
 
-	MapType&											_map;
-	std::string											_property;
-	bool												_isProperty;
-	std::vector<std::pair<Base::UInt16, Base::UInt16>>	_layers; // keySize + index
-	std::string											_key;
+	MapType&							   _map;
+	std::string							   _property;
+	bool								   _isProperty;
+	std::vector<std::pair<UInt32, UInt32>> _layers; // keySize + index
+	std::string							   _key;
 };

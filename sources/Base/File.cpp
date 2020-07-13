@@ -17,14 +17,16 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include "Base/File.h"
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
 #if !defined(_WIN32)
+#include <fcntl.h>
+#include <sys/file.h>
+#define INVALID_HANDLE_VALUE -1
 #include <unistd.h>
-#if defined(_BSD)
+#if defined(_BSD) && !defined(lseek64) // not defined on 64 bit systems
 	#define lseek64 lseek
+	#define off64_t off_t
 #endif
 #endif
-#include "Base/ThreadQueue.h"
 
 
 
@@ -33,30 +35,22 @@ using namespace std;
 
 namespace Base {
 
-File::File(const Path& path, Mode mode) : _flushing(0), _loaded(false),
+File::File(const Path& path, Mode mode) : _flushing(0), _loaded(false), _pDecoder(NULL),
 	_written(0), _readen(0), _path(path), mode(mode), _decodingTrack(0),
-	_queueing(0), _ioTrack(0), _handle(-1), externDecoder(false) {
-#if !defined(_WIN32)
-	memset(&_lock, 0, sizeof(_lock));
-#endif
+	_queueing(0), _ioTrack(0), _handle(INVALID_HANDLE_VALUE), _externDecoder(false) {
 }
 
 File::~File() {
-	if (externDecoder) {
-		pDecoder->onRelease(self);
-		delete pDecoder;
+	if (_externDecoder) {
+		_pDecoder->onRelease(self);
+		delete _pDecoder;
 	}
 	// No CPU expensive
-	if (_handle == -1)
+	if (_handle == INVALID_HANDLE_VALUE)
 		return;
 #if defined(_WIN32)
 	CloseHandle((HANDLE)_handle);
 #else
-	if (_lock.l_type) {
-		// release lock
-		_lock.l_type = F_UNLCK;
-		fcntl(_handle, F_SETLKW, &_lock);
-	}
 	::close(_handle);
 #endif
 }
@@ -95,8 +89,8 @@ bool File::load(Exception& ex) {
 	} else
 		flags = OPEN_EXISTING;
 	
-	_handle = (long)CreateFileW(wFile, mode ? GENERIC_WRITE : GENERIC_READ, FILE_SHARE_READ, NULL, flags, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
-	if (_handle != -1) {
+	_handle = CreateFileW(wFile, mode ? GENERIC_WRITE : GENERIC_READ, mode ? FILE_SHARE_READ : (FILE_SHARE_READ | FILE_SHARE_WRITE), NULL, flags, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	if (_handle != INVALID_HANDLE_VALUE) {
 		if(mode==File::MODE_APPEND)
 			SetFilePointer((HANDLE)_handle, 0, NULL, FILE_END);
 		LARGE_INTEGER size;
@@ -128,19 +122,13 @@ bool File::load(Exception& ex) {
 	} else
 		flags = O_RDONLY;
 	_handle = ::open(_path.c_str(), flags, S_IRWXU);
-	while (_handle != -1) {
-		if (mode) {
-			// exclusive write!
-			_lock.l_type = F_WRLCK;
-			if (fcntl(_handle, F_SETLK, &_lock) != 0) {
-				// fail to lock!
-				_lock.l_type = 0;
-				::close(_handle);
-				_handle = -1;
-				break;
-			}
+	while (_handle != INVALID_HANDLE_VALUE) {
+		if (mode && flock(_handle, LOCK_EX | LOCK_NB) != 0) { // exclusive write!
+			// fail to lock!
+			::close(_handle);
+			_handle = INVALID_HANDLE_VALUE;
+			break;
 		}
-
 #if !defined(__APPLE__) && !defined(__ANDROID__)
 		posix_fadvise(_handle, 0, 0, 1);  // ADVICE_SEQUENTIAL
 #endif
@@ -194,16 +182,16 @@ UInt64 File::size(bool refresh) const {
 	return _path.size(refresh);
 }
 
-void File::reset() {
+void File::reset(UInt64 position) {
 	if(!_loaded)
 		return;
-	_readen = 0;
+	_readen = position;
 #if defined(_WIN32)
 	LARGE_INTEGER offset;
-	offset.QuadPart = -(LONGLONG)_written.exchange(0); // move relating APPEND possible mode!
+	offset.QuadPart = -(LONGLONG)_written.exchange(position) + position; // move relating APPEND possible mode!
 	SetFilePointerEx((HANDLE)_handle, offset, NULL, FILE_CURRENT);
 #else
-	lseek64(_handle, -(off64_t )_written.exchange(0), SEEK_CUR);
+	lseek64(_handle, -(off64_t )_written.exchange(position) + position, SEEK_CUR);
 #endif
 }
 

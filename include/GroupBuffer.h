@@ -40,7 +40,7 @@ struct GroupBuffer : private Base::Thread {
 	virtual ~GroupBuffer();
 
 	// Add a fragment to the waiting requests for processing
-	bool	add(Base::Exception& ex, Base::UInt32 groupMediaId, const std::shared_ptr<GroupFragment>& pFragment);
+	bool	add(Base::Exception& ex, Base::UInt32 groupMediaId, const Base::shared<GroupFragment>& pFragment);
 
 	// Remove the buffer of a deleted GroupMedia
 	bool	removeBuffer(Base::Exception& ex, Base::UInt32 groupMediaId);
@@ -62,10 +62,10 @@ private:
 			REMOVE_BUFFER
 		};
 
-		WaitRequest(Command command, Base::UInt32 groupMediaId, const std::shared_ptr<GroupFragment>& pFragment=nullptr, Base::UInt64 fragmentId=0) :
+		WaitRequest(Command command, Base::UInt32 groupMediaId, const Base::shared<GroupFragment>& pFragment=nullptr, Base::UInt64 fragmentId=0) :
 			pFragment(pFragment), fragmentId(fragmentId), groupMediaId(groupMediaId), command(command) {}
 
-		std::shared_ptr<GroupFragment>				pFragment; // current fragment
+		Base::shared<GroupFragment>					pFragment; // current fragment
 		Base::UInt64								fragmentId; // Current fragment Id of the current GroupMedia for deletion of old fragments
 		Base::UInt32								groupMediaId; // Current stream key
 		Command										command; // request command

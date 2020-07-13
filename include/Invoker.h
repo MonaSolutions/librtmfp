@@ -44,7 +44,7 @@ struct Invoker : private Base::Thread {
 
 	// Create the Invoker
 	// createLogger : if True it will associate a logger instance to the static log class, otherwise it will let the default logger
-	Invoker(bool createLogger=true);
+	Invoker(void(*onLog)(unsigned int, const char*, long, const char*), void(*onDump)(const char*, const void*, unsigned int));
 	virtual ~Invoker();
 
 	// Start the socket manager if not started
@@ -102,12 +102,7 @@ struct Invoker : private Base::Thread {
 	void			bufferizeMedia(Base::UInt32 RTMFPcontext, Base::UInt16 mediaId, Base::UInt32 time, const Base::Packet& packet, double lostRate, AMF::Type type);
 
 	// Called by a connection to start decoding a packet from target
-	void			decode(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, const std::shared_ptr<RTMFP::Engine>& pEngine, std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt16& threadRcv);
-
-	/*** Set callback functions (WARN: not thread-safe) ***/
-	void			setLogCallback(void(*onLog)(unsigned int, const char*, long, const char*));
-
-	void			setDumpCallback(void(*onDump)(const char*, const void*, unsigned int));
+	void			decode(int idConnection, Base::UInt32 idSession, const Base::SocketAddress& address, const Base::shared<RTMFP::Engine>& pEngine, Base::shared<Base::Buffer>& pBuffer, Base::UInt16& threadRcv);
 
 private:
 	Base::Handler						_handler; // keep in first (must be build before sockets)
@@ -169,10 +164,10 @@ private:
 
 	// Safe-Threaded structure to connect to a server
 	struct ConnectAction : virtual Base::Object {
-		ConnectAction(Base::UInt32 index, const char* url, const std::string& host, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, std::shared_ptr<Base::Buffer>& rawUrl) :
+		ConnectAction(Base::UInt32 index, const char* url, const std::string& host, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, Base::shared<Base::Buffer>& rawUrl) :
 			index(index), url(url), host(host), address(address), addresses(addresses), rawUrl(rawUrl) {}
 
-		std::shared_ptr<Base::Buffer>	rawUrl;
+		Base::shared<Base::Buffer>	rawUrl;
 		const std::string				url;
 		const std::string				host;
 		Base::SocketAddress				address;
@@ -254,7 +249,7 @@ private:
 
 	// Remove the session pointed by the iterator, if this session has a fallback, delete it too
 	// \param terminating : if true we are closing the Invoker so we do not delete the fallback recursively
-	void				removeConnection(std::map<int, std::shared_ptr<RTMFPSession>>::iterator it, bool abrupt, bool terminating = false);
+	void				removeConnection(std::map<int, Base::shared<RTMFPSession>>::iterator it, bool abrupt, bool terminating = false);
 
 	// return 0 the connexion is always running, -1 if the application is interrupted, -2 if the connexion is interrupted, -3 if it was the last connexion and has been interrupted
 	// if the connexion has just been interrupted it will close and delete it
@@ -271,8 +266,7 @@ private:
 	Base::Timer														_timer; // manage timer
 	Base::UInt32													_lastIndex; // last index of connection
 	std::mutex														_mutexConnections;
-	std::map<int, std::shared_ptr<RTMFPSession>>					_mapConnections;
-	std::unique_ptr<RTMFPLogger>									_logger; // global logger for librtmfp
+	std::map<int, Base::shared<RTMFPSession>>						_mapConnections;
 	Base::Signal													_waitSignal; // signal for blocking functions (TODO: make a signal for each connection)
 
 	RTMFPDecoder::OnDecoded											_onDecoded; // Decoded callback

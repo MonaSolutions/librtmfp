@@ -101,14 +101,14 @@ double NetGroup::estimatedPeersCount() {
 NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& groupId, const string& groupTxt, const string& groupName, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters,
 	bool audioReliable, bool videoReliable) : _p2pAble(false), idHex(groupId), idTxt(groupTxt), _groupName(groupName), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer), _pGroupParameters(new RTMFPGroupConfig()), _pullTimeout(false),
 	_groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0), _audioReliable(audioReliable), _videoReliable(videoReliable), FlashHandler(0, mediaId) {
-	_onNewMedia = [this](const string& peerId, shared_ptr<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
+	_onNewMedia = [this](const string& peerId, shared<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
 		if (streamName != stream) {
 			INFO("New stream available in the group but not registered : ", streamName, " (expected : ", stream, ")")
 			return false;
 		}
 
-		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
+		shared<RTMFPGroupConfig> pParameters(SET);
 		memcpy(pParameters.get(), _pGroupParameters.get(), sizeof(RTMFPGroupConfig)); // TODO: make a initializer
 		ReadGroupConfig(pParameters, packet);  // TODO: check groupParameters
 
@@ -236,20 +236,20 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		streamKey.resize(0x22);
 		Util::Random(BIN streamKey.data() + 2, 0x20); // random serie of 32 bytes
 
-		shared_ptr<RTMFPGroupConfig> pParameters(new RTMFPGroupConfig());
+		shared<RTMFPGroupConfig> pParameters(SET);
 		memcpy(pParameters.get(), _pGroupParameters.get(), sizeof(RTMFPGroupConfig)); // TODO: make a initializer
 		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_timer, stream, streamKey, pParameters, _audioReliable, _videoReliable)).first;
 	}
 	// Else it's a player, create the fragment controler
 	else {
-		_pGroupBuffer.reset(new GroupBuffer());
+		_pGroupBuffer.set();
 		_pGroupBuffer->onNextPacket = [this](GroupBuffer::Result& result) { // Executed in the GroupBuffer Thread
 			// Use Flash handler to process the packets
 			for (RTMFP::MediaPacket& mediaPacket : result)
 				FlashHandler::process(mediaPacket.type, mediaPacket.time, mediaPacket, 0, 0, 0, false);
 		};
 
-		_onNewFragment = [this](UInt32 groupMediaId, const shared_ptr<GroupFragment>& pFragment) {
+		_onNewFragment = [this](UInt32 groupMediaId, const shared<GroupFragment>& pFragment) {
 			Exception ex;
 			AUTO_ERROR(_pGroupBuffer->add(ex, groupMediaId, pFragment), "GroupBuffer ", groupMediaId, " add fragment")
 		};
@@ -343,7 +343,7 @@ void NetGroup::addPeer2HeardList(const string& peerId, const char* rawId, const 
 
 	string groupAddress;
 	_mapGroupAddress.emplace(piecewise_construct, forward_as_tuple(GetGroupAddressFromPeerId(rawId, groupAddress).c_str()), forward_as_tuple(peerId.c_str()));
-	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(new GroupNode(rawId, groupAddress, listAddresses, hostAddress, timeElapsed)));
+	it = _mapHeardList.emplace_hint(it, piecewise_construct, forward_as_tuple(peerId.c_str()), forward_as_tuple(SET, rawId, groupAddress, listAddresses, hostAddress, timeElapsed));
 	DEBUG("Peer ", it->first, " added to heard list")
 }
 
@@ -362,13 +362,13 @@ void NetGroup::handlePeerDisconnection(const string& peerId) {
 
 	// Delete peer from heard list
 	auto itGroupAddress = _mapGroupAddress.find(itHeardList->second->groupAddress);
-	FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
+	DEBUG_ASSERT(itGroupAddress != _mapGroupAddress.end()) // implementation error
 	_mapGroupAddress.erase(itGroupAddress);
 	_mapHeardList.erase(itHeardList);
 	--_countP2P; // this attempt was not a fail
 }
 
-bool NetGroup::addPeer(const string& peerId, shared_ptr<P2PSession> pPeer) {
+bool NetGroup::addPeer(const string& peerId, const shared<P2PSession>& pPeer) {
 
 	auto itHeardList = _mapHeardList.find(peerId);
 	if (itHeardList == _mapHeardList.end()) {
@@ -533,7 +533,7 @@ void NetGroup::buildBestList(const string& groupAddress, const string& peerId, s
 		}
 
 		// Find the 6 lowest latency
-		deque<shared_ptr<P2PSession>> queueLatency;
+		deque<shared<P2PSession>> queueLatency;
 		if (!_mapPeers.empty()) {
 			for (auto& it : _mapPeers) { // First, order the peers by latency (we know only latency from connected peers here)
 				UInt16 latency = it.second->latency();
@@ -596,7 +596,7 @@ void NetGroup::sendGroupReport(P2PSession* pPeer, bool initiator) {
 
 	Int64 timeNow(Time::Now());
 	const SocketAddress& hostAddress(_conn.address()), peerAddress(pPeer->address());
-	shared_ptr<Buffer> pBuffer(new Buffer());
+	shared<Buffer> pBuffer(SET);
 	BinaryWriter writer(*pBuffer);
 
 	// Group far address
@@ -688,7 +688,7 @@ void NetGroup::cleanHeardList() {
 
 			// Delete from the Heard List
 			auto itGroupAddress = _mapGroupAddress.find(itHeardList->second->groupAddress);
-			FATAL_CHECK(itGroupAddress != _mapGroupAddress.end()) // implementation error
+			DEBUG_ASSERT(itGroupAddress != _mapGroupAddress.end()) // implementation error
 			_mapGroupAddress.erase(itGroupAddress);
 			_mapHeardList.erase(itHeardList++);
 			continue;
@@ -748,7 +748,7 @@ void NetGroup::p2PAddressExchange(const std::string& tag) {
 	}
 }
 
-void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryReader& packet) {
+void NetGroup::ReadGroupConfig(const shared<RTMFPGroupConfig>& parameters, BinaryReader& packet) {
 
 	// Update the NetGroup stream properties
 	UInt8 size = 0, id = 0;
@@ -788,7 +788,7 @@ void NetGroup::ReadGroupConfig(shared_ptr<RTMFPGroupConfig>& parameters, BinaryR
 	}
 }
 
-bool NetGroup::readGroupReport(const map<string, shared_ptr<GroupNode>>::iterator& itNode, BinaryReader& packet) {
+bool NetGroup::readGroupReport(const map<string, shared<GroupNode>>::iterator& itNode, BinaryReader& packet) {
 	string tmp, newPeerId, rawId;
 	SocketAddress myAddress, serverAddress;
 	PEER_LIST_ADDRESS_TYPE listAddresses;

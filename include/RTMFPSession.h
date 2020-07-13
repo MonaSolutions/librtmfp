@@ -52,10 +52,10 @@ struct RTMFPSession : public FlowManager {
 	const Base::SocketAddress&					address() { return _address; }
 
 	// Return the socket object of the session
-	virtual const std::shared_ptr<Base::Socket>&	socket(Base::IPAddress::Family family) { return ((family == Base::IPAddress::IPv4) ? socketIPV4 : socketIPV6); }
+	virtual const Base::shared<Base::Socket>&	socket(Base::IPAddress::Family family) { return ((family == Base::IPAddress::IPv4) ? socketIPV4 : socketIPV6).socket(); }
 
 	// Connect to the specified url, return true if the command succeed
-	bool connect(const std::string& url, const std::string& host, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, std::shared_ptr<Base::Buffer>& rawUrl);
+	bool connect(const std::string& url, const std::string& host, const Base::SocketAddress& address, const PEER_LIST_ADDRESS_TYPE& addresses, Base::shared<Base::Buffer>& rawUrl);
 
 	// Connect to a peer with asking server for the addresses and start playing streamName
 	// return : True if the peer has been added
@@ -138,10 +138,10 @@ struct RTMFPSession : public FlowManager {
 	virtual void					buildPeerID(const Base::UInt8* data, Base::UInt32 size);
 
 	// Called when we have received the handshake 38 and read peer ID of the far peer
-	bool							onNewPeerId(const Base::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake, Base::UInt32 farId, const std::string& peerId);
+	bool							onNewPeerId(const Base::SocketAddress& address, Base::shared<Handshake>& pHandshake, Base::UInt32 farId, const std::string& peerId);
 
 	// Remove the handshake properly
-	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
+	virtual void					removeHandshake(Base::shared<Handshake>& pHandshake);
 
 	// Close the session properly or abruptly if parameter is true
 	virtual void					close(bool abrupt, RTMFP::CLOSE_REASON reason);
@@ -182,7 +182,7 @@ struct RTMFPSession : public FlowManager {
 protected:
 
 	// Handle a Writer close message (type 5E)
-	virtual void handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
+	virtual void handleWriterException(Base::shared<RTMFPWriter>& pWriter);
 
 	// Handle a P2P address exchange message 0x0f from server (a peer is about to contact us)
 	void handleP2PAddressExchange(Base::BinaryReader& reader);
@@ -213,7 +213,7 @@ private:
 	RTMFPHandshaker													_handshaker; // Handshake manager
 
 	std::string														_host; // server host name
-	std::map<std::string, std::shared_ptr<P2PSession>>				_mapPeersById; // P2P connections by Id
+	std::map<std::string, Base::shared<P2PSession>>				_mapPeersById; // P2P connections by Id
 
 	std::string														_swfUrl;
 	std::string														_app;
@@ -221,16 +221,16 @@ private:
 	std::string														_flashVer;
 
 	std::string														_url; // RTMFP url of the application (base handshake)
-	std::shared_ptr<Base::Buffer>									_rawUrl; // Header (size + 0A) + Url to be sent in handshake 30
+	Base::shared<Base::Buffer>											_rawUrl; // Header (size + 0A) + Url to be sent in handshake 30
 	std::string														_rawId; // my peer ID (computed with HMAC-SHA256) in binary format
 	std::string														_peerTxtId; // my peer ID in hex format
 
-	std::unique_ptr<Publisher>										_pPublisher; // Unique publisher used by connection & p2p
+	Base::unique<Publisher>											_pPublisher; // Unique publisher used by connection & p2p
 
-	std::shared_ptr<RTMFPWriter>									_pMainWriter; // Main writer for the connection
-	std::shared_ptr<RTMFPWriter>									_pGroupWriter; // Writer for the group requests
-	std::map<Base::UInt16, std::shared_ptr<RTMFPWriter>>			_mapStreamWriters; // Map of media ID to writer
-	std::shared_ptr<NetGroup>										_group;
+	Base::shared<RTMFPWriter>									_pMainWriter; // Main writer for the connection
+	Base::shared<RTMFPWriter>									_pGroupWriter; // Writer for the group requests
+	std::map<Base::UInt16, Base::shared<RTMFPWriter>>			_mapStreamWriters; // Map of media ID to writer
+	Base::shared<NetGroup>										_group;
 
 	std::map<Base::UInt32, FlowManager*>							_mapSessions; // map of session ID to Sessions
 

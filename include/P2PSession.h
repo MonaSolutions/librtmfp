@@ -34,7 +34,7 @@ with another peer
 */
 struct P2PSession : FlowManager, virtual Base::Object {
 	typedef Base::Event<void(P2PSession*, Base::BinaryReader&, bool)>																		ON(PeerGroupReport); // called when receiving a Group Report message from the peer
-	typedef Base::Event<bool(const std::string&, std::shared_ptr<PeerMedia>&, const std::string&, const std::string&, Base::BinaryReader&)> ON(NewMedia); // called when a new PeerMedia is called (new stream available for the peer)
+	typedef Base::Event<bool(const std::string&, Base::shared<PeerMedia>&, const std::string&, const std::string&, Base::BinaryReader&)> ON(NewMedia); // called when a new PeerMedia is called (new stream available for the peer)
 	typedef Base::Event<void(const std::string&, Base::UInt64)>																				ON(ClosedMedia); // called when the peer publisher close the GroupMedia
 	typedef Base::Event<void(P2PSession*)>																									ON(PeerGroupBegin); // called when receiving a Group Begin message from the peer
 	typedef Base::Event<void(const std::string&)>																							ON(PeerClose); // called when the peer is closing
@@ -71,19 +71,19 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	const PEER_LIST_ADDRESS_TYPE&	addresses() { return _knownAddresses; }
 	
 	// Return the socket object of the session
-	virtual const std::shared_ptr<Base::Socket>&		socket(Base::IPAddress::Family family);
+	virtual const Base::shared<Base::Socket>&	socket(Base::IPAddress::Family family);
 
-	std::shared_ptr<Handshake>&		handshake() { return _pHandshake; }
+	Base::shared<Handshake>&		handshake() { return _pHandshake; }
 
 	void							setAddress(const Base::SocketAddress& address) { _address = address; }
 
 	// Called when receiving handshake 38 to decide if answering
-	bool							onHandshake38(const Base::SocketAddress& address, std::shared_ptr<Handshake>& pHandshake);
+	bool							onHandshake38(const Base::SocketAddress& address, Base::shared<Handshake>& pHandshake);
 
 	/*** NetGroup functions ***/
 
 	// Write the Group publication infos
-	std::shared_ptr<PeerMedia>&		getPeerMedia(const std::string& streamKey);
+	Base::shared<PeerMedia>&		getPeerMedia(const std::string& streamKey);
 
 	// Send the group report (message 0A)
 	void							sendGroupReport(const Base::UInt8* data, Base::UInt32 size);
@@ -95,7 +95,7 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	void							sendGroupPeerConnect();
 
 	// called by a PeerMedia to create the media writer
-	bool							createMediaWriter(std::shared_ptr<RTMFPWriter>& pWriter, Base::UInt64 flowIdRef);
+	bool							createMediaWriter(Base::shared<RTMFPWriter>& pWriter, Base::UInt64 flowIdRef);
 
 	// Ask a peer from the group to disconnect
 	// return : True if the request has been sent
@@ -105,7 +105,7 @@ struct P2PSession : FlowManager, virtual Base::Object {
 	virtual bool					manage() { return FlowManager::manage(); }
 	
 	// Remove the handshake properly
-	virtual void					removeHandshake(std::shared_ptr<Handshake>& pHandshake);
+	virtual void					removeHandshake(Base::shared<Handshake>& pHandshake);
 
 	// Return the diffie hellman object (related to main session)
 	virtual Base::DiffieHellman&	diffieHellman();
@@ -130,7 +130,7 @@ protected:
 	virtual bool					handlePlay(const std::string& streamName, Base::UInt16 streamId, Base::UInt64 flowId, double cbHandler);
 
 	// Handle a Writer close message (type 5E)
-	virtual void					handleWriterException(std::shared_ptr<RTMFPWriter>& pWriter);
+	virtual void					handleWriterException(Base::shared<RTMFPWriter>& pWriter);
 
 	// Called when we are connected to the peer/server
 	virtual void					onConnection();
@@ -150,17 +150,17 @@ private:
 	Base::UInt16											_peerMediaId; // playing Id (if P2P direct player)
 
 	// Group members
-	std::shared_ptr<Base::Buffer>							_groupConnectKey; // Encrypted key used to connect to the peer
-	std::shared_ptr<Base::Buffer>							_groupExpectedKey; // Encrypted key expected from far peer
+	Base::shared<Base::Buffer>							_groupConnectKey; // Encrypted key used to connect to the peer
+	Base::shared<Base::Buffer>							_groupExpectedKey; // Encrypted key expected from far peer
 	bool													_groupConnectSent; // True if group connection request has been sent to peer
 	bool													_groupBeginSent; // True if the group messages 02 + 0E have been sent
 	bool													_isGroup; // True if this peer connection it part of a NetGroup
 	Base::Time												_lastTryDisconnect; // Last time we ask peer to disconnect
 
-	std::shared_ptr<RTMFPWriter>							_pReportWriter; // Writer for report messages
-	std::shared_ptr<RTMFPWriter>							_pNetStreamWriter; // Writer for NetStream P2P direct messages
+	Base::shared<RTMFPWriter>							_pReportWriter; // Writer for report messages
+	Base::shared<RTMFPWriter>							_pNetStreamWriter; // Writer for NetStream P2P direct messages
 
-	std::map<Base::UInt64, std::shared_ptr<PeerMedia>>		_mapWriter2PeerMedia; // map of writer id to peer media
-	std::map<std::string, std::shared_ptr<PeerMedia>>		_mapStream2PeerMedia; // map of stream key to peer media
-	std::map<Base::UInt64, std::shared_ptr<PeerMedia>>		_mapFlow2PeerMedia; // map of flow id to peer media
+	std::map<Base::UInt64, Base::shared<PeerMedia>>		_mapWriter2PeerMedia; // map of writer id to peer media
+	std::map<std::string, Base::shared<PeerMedia>>		_mapStream2PeerMedia; // map of stream key to peer media
+	std::map<Base::UInt64, Base::shared<PeerMedia>>		_mapFlow2PeerMedia; // map of flow id to peer media
 };

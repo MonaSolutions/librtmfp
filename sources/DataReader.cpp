@@ -1,63 +1,65 @@
 /*
-Copyright 2016 Thomas Jammet
+This file is a part of MonaSolutions Copyright 2017
 mathieu.poux[a]gmail.com
 jammetthomas[a]gmail.com
 
-This file is part of Librtmfp.
-
-Librtmfp is free software: you can redistribute it and/or modify
-it under the terms of the GNU Lesser General Public License as published by
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
-Librtmfp is distributed in the hope that it will be useful,
+This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU Lesser General Public License for more details.
+GNU General Public License received along this program for more
+details (or else see http://www.gnu.org/licenses/).
 
-You should have received a copy of the GNU Lesser General Public License
-along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 */
 
 #include "DataReader.h"
 #include "Base/Logs.h"
 
 using namespace std;
-using namespace Base;
 
-DataWriter& DataWriter::Null() {
-	static struct DataWriterNull : DataWriter, virtual Object {
-		DataWriterNull() {}
 
-		UInt64 beginObject(const char* type = NULL) { return 0; }
-		void writePropertyName(const char* value) {}
-		void endObject() {}
+namespace Base {
 
-		UInt64 beginArray(UInt32 size) { return 0; }
-		void endArray() {}
-
-		void   writeNumber(double value) {}
-		void   writeString(const char* value, UInt32 size) {}
-		void   writeBoolean(bool value) {}
-		void   writeNull() {}
-		UInt64 writeDate(const Date& date) { return 0; }
-		UInt64 writeBytes(const UInt8* data, UInt32 size) { return 0; }
+DataReader& DataReader::Null() {
+	static struct DataReaderNull : DataReader, virtual Object {
+		DataReaderNull() : DataReader(Packet::Null()) {}
+		bool	readOne(UInt8 type, DataWriter& writer) { return false; }
 	} Null;
 	return Null;
 }
 
-DataReader& DataReader::Null() {
-	static struct DataReaderNull : DataReader, virtual Object {
-		bool	readOne(UInt8 type, DataWriter& writer) { return false; }
-		UInt8	followingType() { return END; }
-	} Null;
-	return Null;
+UInt8 DataReader::ParseValue(const char* value, UInt32 size, double& number) {
+	if (String::ICompare(value, size, "null") == 0)
+		return NIL;
+	if (String::ICompare(value, size, "false") == 0) {
+		number = 0;
+		return BOOLEAN;
+	}
+	if (String::ICompare(value, size, "true") == 0) {
+		number = 1;
+		return BOOLEAN;
+	}
+	Exception ex;
+	thread_local Date date;
+	if (date.update(ex, value, size)) {
+		number = (double)date;
+		if (ex)
+			WARN("Parse date, ", ex);
+		return DATE;
+	}
+	if (String::ToNumber(value, number))
+		return NUMBER;
+	return STRING;
 }
 
 bool DataReader::readNext(DataWriter& writer) {
 	UInt8 type(nextType());
 	_nextType = END; // to prevent recursive readNext call (and refresh followingType call)
-	if (type != END)
+	if(type!=END)
 		return readOne(type, writer);
 	return false;
 }
@@ -76,8 +78,10 @@ bool DataReader::read(UInt8 type, DataWriter& writer) {
 		return false;
 	UInt32 count(read(writer, 1));
 	if (count>1) {
-		WARN(typeof(*this), " has written many object for just one reading of type ", type);
+		WARN(typeof(*this), " has written many object for just one reading of type ",type);
 		return true;
 	}
-	return count == 1;
+	return count==1;
 }
+
+} // namespace Mona

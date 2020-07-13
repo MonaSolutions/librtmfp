@@ -24,13 +24,14 @@ details (or else see http://mozilla.org/MPL/2.0/).
 namespace Base {
 
 struct Util : virtual Static {
-	template<typename Value>
+	template<typename Type>
 	struct Scoped {
-		Scoped(Value& value, const Value& tempValue) : _value(value), _oldValue(value) { value = tempValue; }
+		Scoped(Type& value, const Type& tempValue) : _value(value), _oldValue(value) { value = tempValue; }
 		~Scoped() { _value = _oldValue; }
+		operator const Type&() const { return _oldValue; }
 	private:
-		const Value _oldValue;
-		Value& _value;
+		const Type _oldValue;
+		Type& _value;
 	};
 
 	static void Dump(const UInt8* data, UInt32 size, Buffer& buffer);
@@ -44,85 +45,47 @@ struct Util : virtual Static {
 
 	static const UInt8 UInt8Generators[];
 
-	template<typename Type1, typename Type2, typename ResultType = typename std::make_signed<typename std::conditional<sizeof(Type1) >= sizeof(Type2), Type1, Type2>::type>::type>
-	static ResultType Distance(Type1 value1, Type2 value2) {
-		ResultType result(value2 - value1);
-		return abs(result) > std::ceil(std::numeric_limits<typename std::make_unsigned<ResultType>::type>::max() / 2.0) ? (value1 - value2) : result;
+	template<typename Type, typename ResultType = typename std::make_signed<Type>::type>
+	static ResultType Distance(Type pt1, Type pt2) {
+		ResultType result(pt2 - pt1);
+		return Base::abs(result) > std::ceil(std::numeric_limits<typename std::make_unsigned<ResultType>::type>::max() / 2.0) ? (pt1 - pt2) : result;
 	}
 
-	template<typename Type1, typename Type2, typename TypeM = typename std::conditional<sizeof(Type1) >= sizeof(Type2), Type1, Type2>::type, typename ResultType = typename std::make_signed<TypeM>::type>
-	static ResultType Distance(Type1 value1, Type2 value2, TypeM max, TypeM min = 0) {
-		ResultType result(value2 - value1);
-		max = TypeM(max - min + 1);
-		if (TypeM(Base::abs(result)) <= (max / 2))
+	template<typename Type, typename ResultType = typename std::make_signed<Type>::type>
+	static ResultType Distance(Type pt1, Type pt2, Type max, Type min = 0) {
+		DEBUG_ASSERT(min <= pt1 && pt1 <= max);
+		DEBUG_ASSERT(min <= pt2 && pt2 <= max);
+		ResultType result(pt2 - pt1);
+		max -= min;
+		if (Base::abs(result) <= std::ceil(max / 2.0))
 			return result;
-		return result>0 ? (result - max) : (max + result);
+		return result>0 ? (result - max - 1) : (result + max + 1);
 	}
-
-	template<typename Type1, typename Type2, typename TypeM = typename std::conditional<sizeof(Type1) >= sizeof(Type2), Type1, Type2>::type, typename ResultType = typename std::make_signed<TypeM>::type>
-	static ResultType AddDistance(Type1 pt, Type2 distance, TypeM max, TypeM min = 0) {
-		ResultType deltaMax(max - pt);
-		if (distance<=deltaMax) {
-			pt += distance; // distance can be negative
-			if ((TypeM)pt<(TypeM)min)
-				pt += max;
-		} else
-			pt = distance - deltaMax;
-		return pt;
+	
+	template<typename Type, typename TypeD>
+	static Type AddDistance(Type pt, TypeD distance, Type max, Type min = 0) {
+		DEBUG_ASSERT(min <= pt && pt <= max);
+		typename std::make_unsigned<Type>::type delta;
+		if (distance >= 0) { // move on the right
+			while (typename std::make_unsigned<TypeD>::type(distance) > (delta = (max - pt))) {
+				pt = min;
+				distance -= delta + 1;
+			}
+			return pt + distance;
+		}
+		// move on the left (distance<0), TypeD is necessary signed!
+		distance = -typename std::make_signed<TypeD>::type(distance);
+		while (typename std::make_unsigned<TypeD>::type(distance) > (delta = (pt - min))) {
+			pt = max;
+			distance -= delta + 1;
+		}
+		return pt - distance;
 	}
 
 	static bool ReadIniFile(const std::string& path, Parameters& parameters);
 
-	/// \brief Unpack url in path and query
-	/// \param url Url to unpack
-	/// \param path Part of the url between host address and '?'
-	/// \param query Part of the url after '?' (if present)
-	/// \return The position of the file in path (std::npos for a directory)
-	static std::size_t UnpackUrl(const std::string& url, std::string& path, std::string& query) {std::string address; return UnpackUrl(url, address, path, query);}
-	static std::size_t UnpackUrl(const char* url, std::string& path, std::string& query) {std::string address; return UnpackUrl(url, address, path, query);}
-	static std::size_t UnpackUrl(const std::string& url, std::string& address, std::string& path, std::string& query) { return UnpackUrl(url.c_str(), address, path, query); }
-	static std::size_t UnpackUrl(const char* url, std::string& address, std::string& path, std::string& query);
-	
-	typedef std::function<bool(const std::string&, const char*)> ForEachParameter;
-
-	static Parameters& UnpackQuery(const std::string& query, Parameters& parameters) { return UnpackQuery(query.data(), query.size(), parameters); }
-	static Parameters& UnpackQuery(const char* query, std::size_t count, Parameters& parameters);
-	static Parameters& UnpackQuery(const char* query, Parameters& parameters) { return UnpackQuery(query, std::string::npos, parameters); }
-
-	/// \return the number of key/value found
-	static UInt32 UnpackQuery(const std::string& query, const ForEachParameter& forEach) { return UnpackQuery(query.data(), query.size(), forEach); }
-	static UInt32 UnpackQuery(const char* query, std::size_t count, const ForEachParameter& forEach);
-	static UInt32 UnpackQuery(const char* query, const ForEachParameter& forEach) { return UnpackQuery(query, std::string::npos, forEach); }
-
-
-	typedef std::function<bool(char c,bool wasEncoded)> ForEachDecodedChar;
-
-	static UInt32 DecodeURI(const std::string& value, const ForEachDecodedChar& forEach) { return DecodeURI(value.data(),value.size(),forEach); }
-	static UInt32 DecodeURI(const char* value, const ForEachDecodedChar& forEach)  { return DecodeURI(value,std::string::npos,forEach); }
-	static UInt32 DecodeURI(const char* value, std::size_t count, const ForEachDecodedChar& forEach);
-	
-
 	template <typename BufferType>
-	static BufferType&	EncodeURI(const char* in, BufferType& buffer) { return EncodeURI(in, std::string::npos, buffer); }
-
-	template <typename BufferType>
-	static BufferType&	EncodeURI(const char* in, std::size_t count, BufferType& buffer) {
-		while (count && (count!=std::string::npos || *in)) {
-			char c = *in++;
-			if (isxml(c))
-				buffer.append(&c, 1);
-			else if (c <= 0x20 || c > 0x7E || strchr(_URICharReserved,c))
-				String::Append(buffer, '%', String::Format<UInt8>("%2X", (UInt8)c));
-			else
-				buffer.append(&c, 1);
-			if(count!=std::string::npos)
-				--count;
-		}
-		return buffer;
-	}
-	
-	template <typename BufferType>
-	static BufferType& ToBase64(const UInt8* data, UInt32 size, BufferType& buffer,bool append=false) {
+	static BufferType& ToBase64(const UInt8* data, UInt32 size, BufferType& buffer, bool append=false) {
 		UInt32 accumulator(buffer.size()),bits(0);
 
 		if (!append)
@@ -160,7 +123,7 @@ struct Util : virtual Static {
 	static bool FromBase64(BufferType& buffer) { return FromBase64(BIN buffer.data(), buffer.size(), buffer); }
 
 	template <typename BufferType>
-	static bool FromBase64(const UInt8* data, UInt32 size,BufferType& buffer,bool append=false) {
+	static bool FromBase64(const UInt8* data, UInt32 size,BufferType& buffer, bool append=false) {
 		if (!buffer.data())
 			return false; // to expect null writer 
 
@@ -199,7 +162,6 @@ struct Util : virtual Static {
 
 
 private:
-	static const char*						_URICharReserved;
 	static const char						_B64Table[65];
 	static const char						_ReverseB64Table[128];
 };

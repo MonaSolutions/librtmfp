@@ -68,7 +68,7 @@ FileSystem::Home::Home() {
 	}
 #endif
 	
-	MakeFolder(*this);
+	MakeFolder(self);
 }
 
 
@@ -266,6 +266,7 @@ bool FileSystem::Delete(Exception& ex, const char* path, size_t size, Mode mode)
 		if (mode==MODE_HEAVY) {
 			FileSystem::ForEach forEach([&ex](const string& path, UInt16 level) {
 				Delete(ex, path, MODE_HEAVY);
+				return true;
 			});
 			Exception ignore;
 			ListFiles(ignore, path, forEach);
@@ -301,11 +302,12 @@ bool FileSystem::Delete(Exception& ex, const char* path, size_t size, Mode mode)
 	return false;
 }
 
-UInt32 FileSystem::ListFiles(Exception& ex, const char* path, const ForEach& forEach, Mode mode) {
-	string directory(*path ? path : ".");
+int FileSystem::ListFiles(Exception& ex, const char* path, const ForEach& forEach, Mode mode) {
+	string directory(path);
 	MakeFolder(directory);
 	UInt32 count(0);
 	string file;
+	bool iterate = true;
 
 #if defined(_WIN32)
 	wchar_t wDirectory[PATH_MAX+2];
@@ -317,18 +319,19 @@ UInt32 FileSystem::ListFiles(Exception& ex, const char* path, const ForEach& for
 	if (fileHandle == INVALID_HANDLE_VALUE) {
 		if (GetLastError() != ERROR_NO_MORE_FILES)
 			ex.set<Ex::System::File>("Cannot list files of directory ", directory);
-		return 0;
+		return -1;
 	}
 	do {
 		if (wcscmp(fileData.cFileName, L".") != 0 && wcscmp(fileData.cFileName, L"..") != 0) {
 			++count;
-			String::Assign(file,directory, fileData.cFileName);
+			String::Assign(file, directory, fileData.cFileName);
 			if (fileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
 				file += '/';
 				if (mode)
 					count += ListFiles(ex, file, forEach, Mode(mode+1));
 			}
-			forEach(file,mode ? (UInt16(mode)-1) : 0);
+			if (iterate && !forEach(file, mode ? (UInt16(mode) - 1) : 0))
+				iterate = false;
 		}
 	} while (FindNextFileW(fileHandle, &fileData) != 0);
 	FindClose(fileHandle);
@@ -336,7 +339,7 @@ UInt32 FileSystem::ListFiles(Exception& ex, const char* path, const ForEach& for
 	DIR* pDirectory = opendir(directory.c_str());
 	if (!pDirectory) {
 		ex.set<Ex::System::File>("Cannot list files of directory ",directory);
-		return 0;
+		return -1;
 	}
 	struct dirent* pEntry(NULL);
 	while((pEntry = readdir(pDirectory))) {
@@ -358,7 +361,8 @@ UInt32 FileSystem::ListFiles(Exception& ex, const char* path, const ForEach& for
 				if (mode)
 					count += ListFiles(ex, file, forEach, Mode(mode+1));
 			}
-			forEach(file,mode ? (UInt16(mode)-1) : 0);
+			if (iterate && !forEach(file, mode ? (UInt16(mode) - 1) : 0))
+				iterate = false;
 		}
 	}
 	closedir(pDirectory);
@@ -454,32 +458,25 @@ const char* FileSystem::GetFile(const char* path, size_t& size, size_t& extPos, 
 }
 
 
-FileSystem::Type FileSystem::GetFile(const char* path, size_t size, string& name, size_t& extPos, string& parent) {
+FileSystem::Type FileSystem::GetFile(const char* path, size_t size, string& name, size_t& extPos, string* pParent) {
 	
 	Type type;
 	Int32 parentPos;
 	const char* file(GetFile(path, size, extPos, type, parentPos));
 	if (file)
-		name.assign(file,size);
+		name.assign(file, size);
 	else
 		name.clear();
 
-	if (parentPos <= 0) {
-		CurrentDirs& dirs(GetCurrentDirs());
+	if (pParent) {
 		// parent is -level!
-		parentPos += dirs.size()-1;
-		if (parentPos<0)
-			parentPos = 0;
-		if (&parent!=&String::Empty())
-			parent.assign(dirs[parentPos]);
-		if (UInt32(++parentPos)<dirs.size()) {
-			Directory& dir(dirs[parentPos]);
-			name.assign(dir.name);
-			extPos = dir.extPos;
-		}
-	} else if (&parent!=&String::Empty())
-		parent.assign(path, 0, parentPos);
-
+		if (parentPos <= 0) {
+			pParent->clear();
+			while (parentPos++ < 0)
+				pParent->append("../");
+		} else 
+			pParent->assign(path, 0, parentPos);
+	}
 	return type;
 }
 
@@ -514,8 +511,11 @@ string& FileSystem::GetParent(const char* path, size_t size, string& value) {
 	GetFile(path, size, extPos, type, parentPos);
 	if (parentPos > 0)
 		return value.assign(path, 0, parentPos);
-	parentPos += GetCurrentDirs().size()-1;
-	return value.assign(GetCurrentDirs()[parentPos<0 ? 0 : parentPos]);
+	// parent is -level!
+	value.clear();
+	while (parentPos++ < 0)
+		value.append("../");
+	return value;
 }
 
 string& FileSystem::Resolve(string& path) {
@@ -542,22 +542,27 @@ string& FileSystem::Resolve(string& path) {
 				if (type == TYPE_FILE)
 					MakeFile(newPath);
 			} else {
-				newPath.insert(0, file, size).insert(0, dirs[--parentPos]);
-				if (type == TYPE_FOLDER)
+				if (!newPath.empty())
+					++size; // file contains necessary a "/" in the end to add
+				else if (type == TYPE_FOLDER)
 					newPath += '/';
+				newPath.insert(0, file, size).insert(0, dirs[--parentPos]);
 			}
 			return path = move(newPath);
 		}
-		newPath.insert(0, "/").insert(0, file, size);
+		if (size) {
+			if(!newPath.empty())
+				newPath.insert(0, "/");
+			newPath.insert(0, file, size);
+		}
 		path.resize(parentPos);
 	} while (size);
-	if (type == TYPE_FILE) {
-		if (newPath.size()==1) // = '/'
-			newPath += '.';
-		else
-			newPath.pop_back();
-	}
-	path.pop_back(); // can not be empty here
+
+	if (!newPath.empty()) {
+		if (type == TYPE_FOLDER)
+			newPath += '/';
+	} else if(type == TYPE_FILE)
+		newPath += '.';
 	return path = move(newPath.insert(0, path));
 }
 
@@ -571,15 +576,26 @@ bool FileSystem::IsAbsolute(const char* path) {
 #endif
 }
 
+string& FileSystem::MakeAbsolute(string& path) {
+	if (IsAbsolute(path))
+		return path;
+	return path.insert(0, "/");
+}
 string& FileSystem::MakeRelative(string& path) {
 	UInt32 count(0);
-#if defined(_WIN32)
-	if (isalpha(path[0]) && path[1] == ':' && (path[2] == '/' || path[2] == '\\'))
-		count += 3;
-#endif
 	while (path[count] == '/' || path[count] == '\\')
 		++count;
-	return path.erase(0, count);
+	path.erase(0, count);
+#if defined(_WIN32)
+	// /c: => ./c:
+	// /c:/path => ./c:/path
+	// c:/path => ./c:/path
+	if (isalpha(path[0]) && path[1] == ':') {
+		if(count || path[2] == '/' || path[2] == '\\')
+			path.insert(0, "./");
+	}
+#endif
+	return path;
 }
 
 bool FileSystem::Find(string& path) {
@@ -610,48 +626,48 @@ bool FileSystem::Find(string& path) {
 #endif
 }
 
-bool FileSystem::IsFolder(const string& path) {
-	return path.empty() || path.back()=='/' || path.back()=='\\';
-}
-
 bool FileSystem::IsFolder(const char* path) {
-	size_t size(strlen(path)); 
+	size_t size = strlen(path);
+	if (!size--)
+		return true; // empty is folder
+	if (path[size] == '/' || path[size] == '\\')
+		return true; // end with '/' is folder
+	// can be folder here just if end with dot '.'
+	if (path[size] != '.') {
+#if defined(_WIN32)
+		// C: is a folder!
+		if (size == 1 && path[1] == ':' && isalpha(path[0]))
+			return true;
+#endif
+		return false;
+	}
 	if (!size)
-		return true;
-	char c(path[size - 1]);
-	return c == '/' || c == '\\';
+		return true; // '.' is folder
+	if (path[size-1] == '/' || path[size-1] == '\\')
+		return true; // '/.' is folder
+	if (!--size || path[size-1] == '/' || path[size-1] == '\\')
+		return path[size] == '.'; // '..' or '/..' is folder
+	return false;
 }
 	
 
 string& FileSystem::MakeFolder(string& path) {
-	// must allow a name concatenation
-	if (!IsFolder(path)) {
 #if defined(_WIN32)
-		if (path.size() == 2 && path.back()==':' && isalpha(path.front()))
-			path.insert(0, "./"); // to avoid to transform relative file "c:" in absolute file "c:/", use instead of the form "./c:/
+	// C: can stay identical => concatenation with a file will give a relative file!
+	if (path.size() == 2 && isalpha(path[0]) && path[1] == ':')
+		return path;
 #endif
+	if (!path.empty() && path.back() != '/' && path.back() != '\\')
 		path += '/';
-	}
 	return path;
 }
 
 string& FileSystem::MakeFile(string& path) {
-	if (!IsFolder(path))
-		return path;
-
 	if (path.empty())
-		return path = '.';
-
-	do {
-		if (path.empty()) // was absolute
-			return path.assign("/.");
-		path.pop_back();
-	} while (IsFolder(path));
-	
-#if defined(_WIN32)
-	if (path.size() == 2 && path.back() == ':' && isalpha(path.front()))
-		return path.append("/.");
-#endif
+		return path.assign("."); // the concatenation with a file rest "relative" to current folder!
+	UInt32 size = path.size();
+	while (size-- && (path[size] == '/' || path[size] == '\\'));
+	path.resize(size+1);
 	return path;
 }
 

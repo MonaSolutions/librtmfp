@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x020E0005	// (2.14.5)
+#define RTMFP_LIB_VERSION	0x020F0005	// (2.15.0)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -135,10 +135,10 @@ struct RTMFP : virtual Base::Static {
 		}
 
 		bool							decode(Base::Exception& ex, Base::Buffer& buffer, const Base::SocketAddress& address);
-		std::shared_ptr<Base::Buffer>&	encode(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt32 farId, const Base::SocketAddress& address);
+		Base::shared<Base::Buffer>&	encode(shared<Base::Buffer>& pBuffer, Base::UInt32 farId, const Base::SocketAddress& address);
 
 		static bool				Decode(Base::Exception& ex, Base::Buffer& buffer, const Base::SocketAddress& address) { return Default().decode(ex, buffer, address); }
-		static std::shared_ptr<Base::Buffer>&	Encode(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt32 farId, const Base::SocketAddress& address) { return Default().encode(pBuffer, farId, address); }
+		static Base::shared<Base::Buffer>&	Encode(shared<Base::Buffer>& pBuffer, Base::UInt32 farId, const Base::SocketAddress& address) { return Default().encode(pBuffer, farId, address); }
 
 	private:
 		static Engine& Default() { thread_local Engine Engine(BIN "Adobe Systems 02"); return Engine; }
@@ -165,7 +165,7 @@ struct RTMFP : virtual Base::Static {
 	struct Output : virtual Base::Object {
 
 		virtual Base::UInt32	rto() const = 0;
-		virtual void			send(const std::shared_ptr<RTMFPSender>& pSender) = 0;
+		virtual void			send(Base::shared<RTMFPSender>&& pSender) = 0;
 		virtual Base::UInt64	queueing() const = 0;
 	};
 
@@ -176,8 +176,8 @@ struct RTMFP : virtual Base::Static {
 	static void						Pack(Base::Buffer& buffer,Base::UInt32 farId);
 
 	static bool						Send(Base::Socket& socket, const Base::Packet& packet, const Base::SocketAddress& address);
-	static Base::Buffer&			InitBuffer(std::shared_ptr<Base::Buffer>& pBuffer, Base::UInt8 marker);
-	static Base::Buffer&			InitBuffer(std::shared_ptr<Base::Buffer>& pBuffer, std::atomic<Base::Int64>& initiatorTime, Base::UInt8 marker);
+	static Base::Buffer&			InitBuffer(Base::shared<Base::Buffer>& pBuffer, Base::UInt8 marker);
+	static Base::Buffer&			InitBuffer(Base::shared<Base::Buffer>& pBuffer, std::atomic<Base::Int64>& initiatorTime, Base::UInt8 marker);
 	static void						ComputeAsymetricKeys(const Base::Binary& sharedSecret, const Base::UInt8* initiatorNonce,Base::UInt32 initNonceSize, const Base::UInt8* responderNonce,Base::UInt32 respNonceSize, Base::UInt8* requestKey, Base::UInt8* responseKey);
 
 	static Base::UInt16				TimeNow() { return Time(Base::Time::Now()); }
@@ -195,7 +195,7 @@ struct RTMFP : virtual Base::Static {
 
 	// Extract host name, raw url and addresses of the given RTMFP url
 	// return: True if the operation succeed, False otherwise
-	static bool ReadUrl(const char* url, std::string& host, Base::SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, Base::shared<Base::Buffer>& rawUrl);
+	static bool ReadUrl(const char* url, std::string& host, Base::SocketAddress& address, PEER_LIST_ADDRESS_TYPE& addresses, const Base::shared<Base::Buffer>& rawUrl);
 
 	/* AMF Utility functions */
 	static void WriteInvocation(AMFWriter& writer, const char* name, double callback, bool amf3);

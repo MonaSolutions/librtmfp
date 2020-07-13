@@ -26,7 +26,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-PeerMedia::PeerMedia(P2PSession* pSession, shared_ptr<RTMFPWriter>& pMediaReportWriter) : _pMediaReportWriter(pMediaReportWriter), _pParent(pSession), _idFragmentsMapIn(0), _idFragmentsMapOut(0), 
+PeerMedia::PeerMedia(P2PSession* pSession, const shared<RTMFPWriter>& pMediaReportWriter) : _pMediaReportWriter(pMediaReportWriter), _pParent(pSession), _idFragmentsMapIn(0), _idFragmentsMapOut(0), 
 	idFlow(0), idFlowMedia(0), pStreamKey(NULL), _pushOutMode(0), pushInMode(0), groupMediaSent(false), _fragmentsMap(MAX_FRAGMENT_MAP_SIZE*4), id(pMediaReportWriter->id), _closed(false) {
 	TRACE("Creation of PeerMedia ", id, " from ", _pParent->name())
 }

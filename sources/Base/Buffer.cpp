@@ -21,47 +21,67 @@ using namespace std;
 
 namespace Base {
 
-atomic<Allocator*>	Buffer::_Allocator(&Allocator::Default());
+atomic_flag Buffer::Allocator::_Mutex = ATOMIC_FLAG_INIT;
+unique<Buffer::Allocator>	Buffer::Allocator::_PAllocator(SET);
 
-
-Buffer::Buffer(UInt32 size, const void* data) : _offset(0), _size(size) {
-	if (!size) {
-		static UInt8 BufferEmpty;
-		_capacity = 0;
-		_data = _buffer = &BufferEmpty;
-		return;
-	}
-	computeCapacity(size);
-	_data = _buffer = _Allocator.load()->allocate(_capacity);
-	if (data)
-		memcpy(_data,data,size);
+UInt32 Buffer::Allocator::ComputeCapacity(UInt32 size) {
+	if (size <= 16) // at minimum allocate 16 bytes!
+		return 16;
+	// fast compute the closer upper power of two for new capacity
+	UInt32 capacity = size - 1; // at minimum allocate 16 bytes!
+	capacity |= capacity >> 1;
+	capacity |= capacity >> 2;
+	capacity |= capacity >> 4;
+	capacity |= capacity >> 8;
+	capacity |= capacity >> 16;
+	return ++capacity ? capacity : size;  // if =0 exceeds UInt32
+}
+UInt8* Buffer::Allocator::Alloc(UInt32& size) {
+	size = ComputeCapacity(size);
+	if (size>0x80000000 || !TryLock())
+		return new UInt8[size];
+	UInt8* buffer = GetAllocator().alloc(size);
+	Unlock();
+	return buffer;
+}
+void Buffer::Allocator::Free(UInt8* buffer, UInt32 size) {
+	if ((!size || (size & (size - 1))) || !TryLock())  // check than we have a size create with Alloc (capacity log2) + TryLock working!
+		return delete[] buffer;
+	GetAllocator().free(buffer, size);
+	Unlock();
 }
 
-Buffer::Buffer(void* buffer, UInt32 size) : _offset(0), _data(BIN buffer), _size(size),_capacity(size),_buffer(NULL) {}
+static UInt8 _Empty;
+
+Buffer::Buffer(UInt32 size) : _offset(0), _size(size), _capacity(size) {
+	_data = _buffer = (size ? Allocator::Alloc(_capacity) : &_Empty);
+}
+Buffer::Buffer(const void* data, UInt32 size) : _offset(0), _size(size), _capacity(size) {
+	memcpy(_data = _buffer = (size ? Allocator::Alloc(_capacity) : &_Empty), data, size);
+}
+
+Buffer::Buffer(UInt32 size, void* buffer) : _offset(0), _data(BIN buffer), _size(size),_capacity(size), _buffer(NULL) {}
 
 Buffer::~Buffer() {
 	if (_buffer && (_capacity+=_offset))
-		_Allocator.load()->deallocate(_buffer, _capacity);
-}
-
-void Buffer::computeCapacity(UInt32 size) {
-	_capacity = size - 1;
-	_capacity |= _capacity >> 1;
-	_capacity |= _capacity >> 2;
-	_capacity |= _capacity >> 4;
-	_capacity |= _capacity >> 8;
-	_capacity |= _capacity >> 16;
-	if (!++_capacity)
-		_capacity = size; // to expect the case where size*2 > 0xFFFFFFFF (exceeds maximum size)
+		Allocator::Free(_buffer, _capacity);
 }
 
 Buffer& Buffer::append(const void* data, UInt32 size) {
 	if (!_data) // to expect null Buffer 
-		return *this;
+		return self;
 	UInt32 oldSize(_size);
 	resize(_size + size);
 	memcpy(_data + oldSize, data, size);
-	return *this;
+	return self;
+}
+Buffer& Buffer::append(UInt32 count, UInt8 value) {
+	if (!_data) // to expect null Buffer 
+		return self;
+	UInt32 oldSize(_size);
+	resize(_size + count);
+	memset(_data + oldSize, value, count);
+	return self;
 }
 
 Buffer& Buffer::clip(UInt32 offset) {
@@ -99,7 +119,7 @@ Buffer& Buffer::resize(UInt32 size, bool preserveData) {
 		_offset = 0;
 		if (size <= _capacity) {
 			if (preserveData)
-				memmove(_data,oldData,_size);
+				memmove(_data, oldData, _size);
 			_size = size;
 			return *this;
 		}
@@ -108,12 +128,9 @@ Buffer& Buffer::resize(UInt32 size, bool preserveData) {
 	if (!_buffer)
 		FATAL_ERROR("Static buffer exceeds maximum ",_capacity," bytes capacity");
 
-	// fast compute the closer upper power of two for new capacity
-	UInt32 oldCapacity(_capacity);
-	computeCapacity(size);
-
 	// allocate
-	_data = _Allocator.load()->allocate(_capacity);
+	UInt32 oldCapacity(_capacity);
+	_data = Allocator::Alloc(_capacity=size);
 
 	 // copy data
 	if (preserveData)
@@ -122,7 +139,7 @@ Buffer& Buffer::resize(UInt32 size, bool preserveData) {
 
 	// deallocate if was allocated
 	if (oldCapacity)
-		_Allocator.load()->deallocate(_buffer, oldCapacity);
+		Allocator::Free(_buffer, oldCapacity);
 
 	_size = size;
 	_buffer=_data;

@@ -18,23 +18,25 @@ details (or else see http://mozilla.org/MPL/2.0/).
 
 #include "Base/Mona.h"
 #include "Base/Binary.h"
-#include "Base/Allocator.h"
+#include <thread>
 #include <atomic>
 
 namespace Base {
 
-#define BUFFER_RESET(BUFFER,SIZE) (BUFFER ? BUFFER->resize(SIZE, false) : (BUFFER.reset(new Buffer(SIZE)), *BUFFER))
+#define BUFFER_RESET(BUFFER,SIZE) (BUFFER ? BUFFER->resize(SIZE, false) : BUFFER.set(SIZE))
 
+/*!
+Buffer dynamic with clear/resize/data/size method (like std) */
 struct Buffer : Binary, virtual Object {
-	/*!
-	Buffer dynamic with clear/resize/data/size method (like std) */
-	Buffer(UInt32 size = 0, const void* data = NULL);
+	Buffer(UInt32 size = 0);
+	Buffer(const void* data, UInt32 size);
 
 	virtual ~Buffer();
 
 
 	Buffer&			clip(UInt32 offset);
 	Buffer&			append(const void* data, UInt32 size);
+	Buffer&			append(UInt32 count, UInt8 value);
 	Buffer&			resize(UInt32 size, bool preserveContent = true);
 	Buffer&			clear() { resize(0, false); return *this; }
 
@@ -46,16 +48,37 @@ struct Buffer : Binary, virtual Object {
 
 	UInt32			capacity() const { return _capacity; }
 
-	template<typename AllocatorType=Allocator>
-	static void SetAllocator(AllocatorType& allocator=Allocator::Default()) {
-		_Allocator = &allocator;
-	}
+	static Buffer&   Null() { static Buffer Null(0, nullptr); return Null; } // usefull for Writer Serializer for example (and can't be encapsulate in a shared<Buffer>)
 
-	static Buffer&   Null() { static Buffer Null(nullptr, 0); return Null; } // usefull for Writer Serializer for example (and can't be encapsulate in a shared<Buffer>)
 
+	struct Allocator : virtual Object {
+		template<typename AllocatorType=Allocator, typename ...Args>
+		static void   Set(Args&&... args) { Lock(); _PAllocator.set<AllocatorType>(std::forward<Args>(args)...); Unlock(); }
+		static UInt8* Alloc(UInt32& size);
+		static void	  Free(UInt8* buffer, UInt32 size);
+		static UInt32 ComputeCapacity(UInt32 size);
+	protected:
+		virtual UInt8* alloc(UInt32& capacity) { return new UInt8[capacity]; }
+		virtual void   free(UInt8* buffer, UInt32 capacity) { delete[] buffer; }
+
+		static void Lock() { while (!TryLock()) std::this_thread::yield(); }
+		static void Unlock() { _Mutex.clear(std::memory_order_release); }
+	private:
+		static bool TryLock() { return !_Mutex.test_and_set(std::memory_order_acquire); }
+
+		static std::atomic_flag  _Mutex;
+		static Allocator& GetAllocator() { 
+			if (_PAllocator) 
+				return *_PAllocator; 
+			else {
+				static Allocator allocator;
+				return allocator;
+			}
+		}
+		static unique<Allocator> _PAllocator;
+	};
 private:
-	Buffer(void* buffer, UInt32 size);
-	void computeCapacity(UInt32 size);
+	Buffer(UInt32 size, void* buffer);
 
 	UInt32				_offset;
 	UInt8*				_data;
@@ -63,7 +86,6 @@ private:
 	UInt32				_capacity;
 	UInt8*				_buffer;
 
-	static std::atomic<Allocator*>	_Allocator;
 
 	friend struct BinaryWriter;
 };

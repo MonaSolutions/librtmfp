@@ -19,7 +19,7 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #include "Base/Mona.h"
 #include "Base/Exceptions.h"
 #include "Base/Time.h"
-#include <mutex>
+#include <atomic>
 
 #if defined(_WIN32)
 #include <ws2tcpip.h>
@@ -34,7 +34,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #define NET_EFAULT          WSAEFAULT
 #define NET_EINVAL          WSAEINVAL
 #define NET_EMFILE          WSAEMFILE
-#define NET_EAGAIN          WSAEWOULDBLOCK
 #define NET_EWOULDBLOCK     WSAEWOULDBLOCK
 #define NET_EINPROGRESS     WSAEINPROGRESS
 #define NET_EALREADY        WSAEALREADY
@@ -102,7 +101,6 @@ details (or else see http://mozilla.org/MPL/2.0/).
 #define NET_EFAULT          EFAULT
 #define NET_EINVAL          EINVAL
 #define NET_EMFILE          EMFILE
-#define NET_EAGAIN          EAGAIN
 #define NET_EWOULDBLOCK     EWOULDBLOCK
 #define NET_EINPROGRESS     EINPROGRESS
 #define NET_EALREADY        EALREADY
@@ -193,11 +191,9 @@ struct Net : virtual Object {
 	enum {
 		RTO_MIN = 1000u, // see https://tools.ietf.org/html/rfc2988
 		RTO_INIT = 3000u,
-		RTO_MAX = 10000u
-	};
-
-	enum {
-		MTU_RELIABLE_SIZE = 1280u
+		RTO_MAX = 10000u,
+		MTU_RELIABLE_SIZE = 1200u, // 1280 - ~30 for DTLS - 40 for IPv6 - 8 for UDP
+		SCTP_HEADER_SIZE = 28u
 	};
 
 
@@ -210,10 +206,13 @@ struct Net : virtual Object {
 
 	static UInt32 GetInterfaceIndex(const SocketAddress& address);
 
+	static UInt16 ResolvePort(Exception& ex, const char* service);
+	static UInt16 ResolvePort(Exception& ex, const std::string& service) { return ResolvePort(ex, service.c_str()); }
+
 #if defined(_WIN32)
 	static int  LastError() { return WSAGetLastError(); }
 #else
-	static int  LastError() { return errno; }
+	static int  LastError() { int error = errno;  return error == EAGAIN ? NET_EWOULDBLOCK : error; }
 #endif
 
 	static const char* ErrorToMessage(int error);
@@ -229,6 +228,8 @@ struct Net : virtual Object {
 		virtual double	sendLostRate() const { return 0; }
 
 		virtual UInt64	queueing() const = 0;
+
+		static Stats& Null();
 	};
 
 private:

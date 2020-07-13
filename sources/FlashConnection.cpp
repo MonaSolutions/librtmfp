@@ -52,7 +52,7 @@ FlashConnection::~FlashConnection() {
 	}
 }
 
-FlashStream* FlashConnection::getStream(UInt16 id,shared_ptr<FlashStream>& pStream) {
+FlashStream* FlashConnection::getStream(UInt16 id,shared<FlashStream>& pStream) {
 	const auto& it = _streams.find(id);
 	if (it == _streams.end()) {
 		pStream.reset();
@@ -62,9 +62,9 @@ FlashStream* FlashConnection::getStream(UInt16 id,shared_ptr<FlashStream>& pStre
 }
 
 template <>
-void FlashConnection::addStream<FlashStream>(UInt16 id, shared_ptr<FlashStream>& pStream) {
+void FlashConnection::addStream<FlashStream>(UInt16 id, shared<FlashStream>& pStream) {
 
-	pStream.reset(new FlashStream(id));
+	pStream.set(id);
 	_streams[id] = pStream;
 	pStream->onStatus = onStatus;
 	pStream->onMedia = onMedia;
@@ -73,9 +73,9 @@ void FlashConnection::addStream<FlashStream>(UInt16 id, shared_ptr<FlashStream>&
 }
 
 template <>
-void FlashConnection::addStream<GroupStream>(UInt16 id, shared_ptr<FlashStream>& pStream) {
+void FlashConnection::addStream<GroupStream>(UInt16 id, shared<FlashStream>& pStream) {
 
-	pStream.reset(new GroupStream(id));
+	pStream.set<GroupStream>(id);
 	_streams[id] = pStream;
 	pStream->onStatus = onStatus;
 	pStream->onMedia = onMedia;
@@ -94,8 +94,8 @@ void FlashConnection::addStream<GroupStream>(UInt16 id, shared_ptr<FlashStream>&
 }
 
 template <>
-void FlashConnection::addStream<GroupPostStream>(UInt16 id, shared_ptr<FlashStream>& pStream) {
-	pStream.reset(new GroupPostStream(id));
+void FlashConnection::addStream<GroupPostStream>(UInt16 id, shared<FlashStream>& pStream) {
+	pStream.set<GroupPostStream>(id);
 	_streams[id] = pStream;
 	pStream->onGroupPost = onGroupPost;
 	pStream->onGroupPostKey = onGroupPostKey;
@@ -130,7 +130,7 @@ bool FlashConnection::messageHandler(const string& name, AMFReader& message, UIn
 					return false;
 				}
 				_creatingStream = false;
-				shared_ptr<FlashStream> pStream;
+				shared<FlashStream> pStream;
 				addStream<FlashStream>((UInt16)idStream, pStream);
 				if (onStreamCreated((UInt16)idStream, idMedia)) {
 					pStream->setIdMedia(idMedia); // set the media Id to retrieve the player/publisher in onMedia
