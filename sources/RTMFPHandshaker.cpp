@@ -528,7 +528,7 @@ bool RTMFPHandshaker::failed() {
 }
 
 // Remove the handshake properly
-void RTMFPHandshaker::removeHandshake(const shared<Handshake>& pHandshake) {
+void RTMFPHandshaker::removeHandshake(const shared<Handshake> pHandshake) {
 	TRACE("Deleting ", pHandshake->isP2P ? "P2P" : "", " handshake to ", pHandshake->pSession ? pHandshake->pSession->name() : "unknown session")
 
 	// Close the session if needed

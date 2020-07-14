@@ -283,8 +283,10 @@ Invoker::Invoker(void(*onLog)(unsigned int, const char*, long, const char*), voi
 		_mutexConnections.unlock();
 	};
 
-	if (onLog)
+	if (onLog) {
+		Logs::RemoveLogger("console"); // remove default logger
 		Logs::AddLogger<RTMFPLogger>("LIBRTMFP", onLog, onDump);
+	}
 	DEBUG("Socket receiving buffer size of ", Net::GetRecvBufferSize(), " bytes");
 	DEBUG("Socket sending buffer size of ", Net::GetSendBufferSize(), " bytes");
 	DEBUG(threadPool.threads(), " threads in server threadPool");
@@ -354,8 +356,7 @@ void Invoker::manage() {
 }
 
 bool Invoker::run(Exception& exc, const volatile bool& stopping) {
-	// TODO: Enable PoolBuffer to save CPU usage from buffer allocation/deallocation
-	Buffer::Allocator::Set<Buffer::Allocator>();
+	Buffer::Allocator::Set<BufferPool>();
 
 	Timer::OnTimer onManage;
 
