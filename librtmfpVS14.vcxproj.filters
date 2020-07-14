@@ -354,9 +354,6 @@
     <ClInclude Include="include\Base\ConsoleLogger.h">
       <Filter>Base</Filter>
     </ClInclude>
-    <ClInclude Include="include\Base\SRT.h">
-      <Filter>Base</Filter>
-    </ClInclude>
     <ClInclude Include="include\ByteWriter.h">
       <Filter>Util</Filter>
     </ClInclude>
@@ -367,6 +364,9 @@
       <Filter>Util</Filter>
     </ClInclude>
     <ClInclude Include="include\Base\URL.h">
+      <Filter>Base</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Base\SRT.h">
       <Filter>Base</Filter>
     </ClInclude>
   </ItemGroup>
