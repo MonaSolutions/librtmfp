@@ -25,6 +25,8 @@ class RTMFPLogger: public Base::ConsoleLogger {
 public:
 	RTMFPLogger(void(*onLog)(unsigned int, const char*, long, const char*), void(*onDump)(const char*, const void*, unsigned int)): _onLog(onLog), _onDump(onDump) {}
 
+	virtual bool enabled() const { return true; }
+
 	virtual bool log(Base::LOG_LEVEL level, const Base::Path& file, long line, const std::string& message) {
 
 		if (_onLog)
