@@ -68,7 +68,7 @@ public:
 
 	struct NetGroupException : Base::Ex { RTMFP::CLOSE_REASON code; };
 
-	NetGroup(const Base::Timer& timer, Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& groupName, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
+	NetGroup(Base::UInt16 mediaId, const std::string& groupId, const std::string& groupTxt, const std::string& groupName, const std::string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters, 
 		bool audioReliable, bool videoReliable);
 	virtual ~NetGroup();
 
@@ -89,7 +89,7 @@ public:
 	void			removePeer(const std::string& peerId);
 
 	// Manage the netgroup peers and send the recurrent requests
-	bool			manage(Base::Exception& ex);
+	bool			manage(Base::Exception& ex, Base::Int64 now);
 
 	// Call a function on the peer side
 	// return 0 if it fails, 1 otherwise
@@ -187,9 +187,9 @@ private:
 	GroupMedia::OnStartProcessing							_onStartProcessing; // called when receiving the first pull fragment, processing can start
 	GroupMedia::OnPullTimeout								_onPullTimeout; // called when a pull congestion is detected
 	
-	Base::Timer::OnTimer									_onCleanHeardList; // clean the Heard List from old peers
-	Base::Timer::OnTimer									_onBestList; // update the Best List
-	const Base::Timer&										_timer; // timer for all time events
+	Base::Time												_lastCleanHeardList; // clean the Heard List from old peers
+	Base::Time												_lastBestListUpdate; // update the Best List
+	bool													_startedBestList; // True if the Best List update has been started
 
 	std::unique_ptr<GroupBuffer>							_pGroupBuffer; // Group fragments buffer, order all fragment in a thread and forward them
 	std::unique_ptr<RTMFPGroupConfig>						_pGroupParameters; // NetGroup parameters

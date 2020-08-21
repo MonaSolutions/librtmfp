@@ -88,7 +88,7 @@ struct RTMFPSession : public FlowManager {
 
 	// Called by Invoker every 50ms to manage connections (flush and ping)
 	// return: False if the connection has failed, true otherwise
-	bool manage();
+	bool manage(Base::Int64 now);
 		
 	// Return listener if started successfully, otherwise NULL (only for RTMFP connection)
 	template <typename ListenerType, typename... Args>

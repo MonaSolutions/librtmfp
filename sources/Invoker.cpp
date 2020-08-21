@@ -328,8 +328,8 @@ void Invoker::start() {
 }
 
 void Invoker::manage() {
-	
-	_mutexConnections.lock();
+
+	lock_guard<mutex>	lock(_mutexConnections);
 
 	if (!_waitingFallback.empty()) {
 
@@ -349,10 +349,9 @@ void Invoker::manage() {
 	}
 
 	// Manage connections
-	for (auto& it : _mapConnections) {
-		UNLOCK_RUN_LOCK(_mutexConnections, it.second->manage()); // unlock during manage to not lock the whole process
-	}
-	_mutexConnections.unlock();
+	for (auto& it : _mapConnections)
+		it.second->manage(Time::Now());
+	
 }
 
 bool Invoker::run(Exception& exc, const volatile bool& stopping) {
@@ -645,7 +644,6 @@ int Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPCon
 			return 0;
 		}
 		it->second->onNetGroupException = [this](UInt32 idConn) {
-			lock_guard<mutex> lock(_mutexConnections);
 			auto itFallback = _waitingFallback.find(idConn);
 			if (itFallback != _waitingFallback.end() && !itFallback->second.running) {
 				INFO("Session ", idConn, " has been closed, starting fallback connection")
