@@ -276,7 +276,7 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), handler(_handler), time
 
 		auto itConn = _mapConnections.find(decoded.idConnection);
 		if (itConn != _mapConnections.end()) {
-			UNLOCK_RUN_LOCK(_mutexConnections, itConn->second->receive(decoded));
+			itConn->second->receive(decoded);
 		} else
 			DEBUG("RTMFPDecoder callback without connection, possibly deleted")
 
