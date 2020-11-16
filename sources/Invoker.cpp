@@ -598,7 +598,6 @@ void Invoker::startFallback(FallbackConnection& fallback) {
 
 		// When fallback connection is connected we start playing
 		if (mask & RTMFP_CONNECTED) {
-			lock_guard<mutex> lock(_mutexConnections);
 			auto itFb = _mapConnections.find(index);
 			if (itFb == _mapConnections.end()) {
 				WARN("Unable to start playing fallback connection, it is already closed")
