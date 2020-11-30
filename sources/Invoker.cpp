@@ -26,9 +26,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/DNS.h"
 #include "librtmfp.h"
 
-// Method used to unlock a mutex during an instruction which can take time
-#define UNLOCK_RUN_LOCK(MUTEX, INSTRUCTION)	MUTEX.unlock(); INSTRUCTION; MUTEX.lock()
-
 using namespace Base;
 using namespace std;
 
@@ -272,15 +269,13 @@ Invoker::Invoker(bool createLogger) : Thread("Invoker"), handler(_handler), time
 		_waitSignal.set();
 	};
 	_onDecoded = [this](RTMFPDecoder::Decoded& decoded) {
-		_mutexConnections.lock();
+		lock_guard<mutex> lock(_mutexConnections);
 
 		auto itConn = _mapConnections.find(decoded.idConnection);
 		if (itConn != _mapConnections.end()) {
 			itConn->second->receive(decoded);
 		} else
 			DEBUG("RTMFPDecoder callback without connection, possibly deleted")
-
-		_mutexConnections.unlock();
 	};
 
 	if (createLogger) {
@@ -978,7 +973,11 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 			}
 			// Stop fallback if started
 			if (itFallback->second.idFallback) {
-				UNLOCK_RUN_LOCK(_mutexConnections, removeConnection(itFallback->second.idFallback, false));
+				auto itConnection = _mapConnections.find(itFallback->second.idFallback);
+				if (itConnection == _mapConnections.end())
+					INFO("Fallback connection ", itFallback->second.idFallback, " has already been removed")
+				else
+					removeConnection(itConnection, false);
 				itFallback->second.idFallback = 0;
 			}
 			itFallback->second.switched = true; // no more fallback timeout
