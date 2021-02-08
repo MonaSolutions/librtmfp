@@ -30,10 +30,10 @@ using namespace std;
 
 UInt32	GroupMedia::GroupMediaCounter = 0;
 
-GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const string& key, const Base::shared<RTMFPGroupConfig>& parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _currentPushMask(0),
+GroupMedia::GroupMedia(const string& name, const string& key, const Base::shared<RTMFPGroupConfig>& parameters, bool audioReliable, bool videoReliable) : _fragmentCounter(0), _currentPushMask(0),
 	_currentPullFragment(0), _itPullPeer(_mapPeers.end()), _itPushPeer(_mapPeers.end()), _itFragmentsPeer(_mapPeers.end()), _lastFragmentMapId(0), _firstPullReceived(false), _fragmentsMapBuffer(MAX_FRAGMENT_MAP_SIZE*4),
-	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable), _timer(timer), 
-	_pullLimitReached(false) {
+	_stream(name), _streamKey(key), groupParameters(parameters), id(++GroupMediaCounter), _endFragment(0), _pullPaused(false), _audioReliable(audioReliable), _videoReliable(videoReliable), 
+	_pullLimitReached(false), _startedPushRequests(false) {
 
 	_onPeerClose = [this](const string& peerId, UInt8 mask) {
 		// unset push masks
@@ -75,9 +75,9 @@ GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const strin
 		}
 
 		// Start push mode (Note: we never start the push requests if we don't receive any fragments map)
-		if (!_currentPushMask && !groupParameters->isPublisher && _onPushRequests) {
+		if (!_currentPushMask && !groupParameters->isPublisher && !_startedPushRequests) {
 			sendPushRequests();
-			_timer.set(_onPushRequests, NETGROUP_PUSH_DELAY);
+			_startedPushRequests = true;
 		}
 		return true;
 	};
@@ -177,45 +177,9 @@ GroupMedia::GroupMedia(const Base::Timer& timer, const string& name, const strin
 		if (startProcess)
 			onStartProcessing(id);
 	};
-	_onPullRequests = [this](UInt32 count) {
-		sendPullRequests();
-		return NETGROUP_PULL_DELAY;
-	};
-	_onPushRequests = [this](UInt32 count) {
-		sendPushRequests();
-		return NETGROUP_PUSH_DELAY;
-	};
-	_onSendFragmentsMap = [this](UInt32 count) {
-		UInt64 lastFragment(0);
-		if ((lastFragment = updateFragmentMap())) {
-
-			// Send to all neighbors
-			if (groupParameters->availabilitySendToAll) {
-				for (auto& it : _mapPeers)
-					it.second->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
-			} // Or just one peer at random
-			else {
-				if ((_itFragmentsPeer == _mapPeers.end() && RTMFP::GetRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itFragmentsPeer, [](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return true; }))
-					|| getNextPeer(_itFragmentsPeer, false, 0, 0))
-					_itFragmentsPeer->second->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
-			}
-		}
-		return groupParameters->availabilityUpdatePeriod;
-	};
-
-	_timer.set(_onSendFragmentsMap, groupParameters->availabilityUpdatePeriod);
-	if (!groupParameters->isPublisher)
-		_timer.set(_onPullRequests, NETGROUP_PULL_DELAY);
 }
 
 GroupMedia::~GroupMedia() {
-
-	_timer.set(_onSendFragmentsMap, 0);
-	_timer.set(_onPullRequests, 0);
-	_timer.set(_onPushRequests, 0);
-	_onSendFragmentsMap = nullptr;
-	_onPullRequests = nullptr;
-	_onPushRequests = nullptr;
 
 	DEBUG("Destruction of the GroupMedia ", id)
 	MAP_PEERS_INFO_ITERATOR_TYPE itPeer = _mapPeers.begin();
@@ -279,12 +243,32 @@ void GroupMedia::addFragment(MAP_FRAGMENTS_ITERATOR& itFragment, bool reliable, 
 	onNewFragment(id, itFragment->second);
 }
 
-bool GroupMedia::manage() {
+bool GroupMedia::manage(Int64 now) {
 
-	// We delete the GroupMedia after 5min without reception
-	if (!groupParameters->isPublisher && _lastFragment.isElapsed(NETGROUP_MEDIA_TIMEOUT))
-		return false;
+	// Send the fragments Map
+	if (RTMFP::IsElapsed(_lastSendFragmentsMap, now, groupParameters->availabilityUpdatePeriod)) {
+		sendFragmentsMap();
+		_lastSendFragmentsMap = now;
+	}
 
+	if (!groupParameters->isPublisher) {
+
+		// We delete the GroupMedia after 5min without reception
+		if (RTMFP::IsElapsed(_lastFragment, now, NETGROUP_MEDIA_TIMEOUT))
+			return false;
+
+		// Send pull requests
+		if (RTMFP::IsElapsed(_lastPullRequests, now, NETGROUP_PULL_DELAY)) {
+			sendPullRequests();
+			_lastPullRequests = now;
+		}
+
+		// Send push requests
+		if (_startedPushRequests && RTMFP::IsElapsed(_lastPushRequests, now, NETGROUP_PUSH_DELAY)) {
+			sendPushRequests();
+			_lastPushRequests = now;
+		}
+	}
 	return true;
 }
 
@@ -523,7 +507,7 @@ void GroupMedia::sendPullRequests() {
 				DEBUG("GroupMedia ", id, " - sendPullRequests - ", groupParameters->fetchPeriod, "ms without receiving fragment ", itPull->first, " retrying...")
 				
 				if (sendPullToNextPeer(itPull->first))
-					itPull->second.update();
+					itPull->second = timeNow;
 			}
 		}
 	}
@@ -545,10 +529,10 @@ void GroupMedia::sendPullRequests() {
 
 			if (!_pullLimitReached) {
 				_pullLimitReached = true;
-				_pullTimeout.update();
+				_pullTimeout = timeNow;
 				INFO("GroupMedia ", id, " - There is more than ", NETGROUP_PULL_LIMIT," pull requests, pull timeout started")
 			}
-			else if (_pullTimeout.isElapsed(NETGROUP_PULL_TIMEOUT))
+			else if (RTMFP::IsElapsed(_pullTimeout, timeNow, NETGROUP_PULL_TIMEOUT))
 				onPullTimeout(id); // close the session
 		}
 		else if (_pullLimitReached)
@@ -556,6 +540,23 @@ void GroupMedia::sendPullRequests() {
 	}
 
 	DEBUG("GroupMedia ", id, " - sendPullRequests - Pull requests done : ", _mapWaitingFragments.size(), " waiting fragments (current : ", _currentPullFragment, "; last Fragment : ", lastFragment, ")")
+}
+
+void GroupMedia::sendFragmentsMap() {
+	UInt64 lastFragment(0);
+	if ((lastFragment = updateFragmentMap())) {
+
+		// Send to all neighbors
+		if (groupParameters->availabilitySendToAll) {
+			for (auto& it : _mapPeers)
+				it.second->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
+		} // Or just one peer at random
+		else {
+			if ((_itFragmentsPeer == _mapPeers.end() && RTMFP::GetRandomIt<MAP_PEERS_INFO_TYPE, MAP_PEERS_INFO_ITERATOR_TYPE>(_mapPeers, _itFragmentsPeer, [](const MAP_PEERS_INFO_ITERATOR_TYPE& it) { return true; }))
+				|| getNextPeer(_itFragmentsPeer, false, 0, 0))
+				_itFragmentsPeer->second->sendFragmentsMap(lastFragment, _fragmentsMapBuffer.data(), _fragmentsMapBuffer.size());
+		}
+	}
 }
 
 bool GroupMedia::sendPullToNextPeer(UInt64 idFragment) {

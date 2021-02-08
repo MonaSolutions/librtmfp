@@ -373,7 +373,6 @@ void FlowManager::receive(const Packet& packet) {
 			if (_pBuffer) {
 				TRACE("Sending ack ", stage)
 				RTMFP::Send(*socket(_address.family()), Packet(_pEncoder->encode(_pBuffer, _farId, _address)), _address);
-				_pBuffer.reset();
 			}
 			stage = 0;
 		}

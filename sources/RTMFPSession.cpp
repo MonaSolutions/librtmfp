@@ -38,7 +38,7 @@ using namespace std;
 UInt32 RTMFPSession::RTMFPSessionCounter = 0x02000000;
 
 RTMFPSession::RTMFPSession(UInt32 id, Invoker& invoker, RTMFPConfig config) :
-	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(invoker.timer, this), _threadRcv(0), flags(0),
+	_id(id), _rawId(PEER_ID_SIZE + 2, '\0'), _flashVer(EXPAND("WIN 20,0,0,286")), _app("live"), _handshaker(this), _threadRcv(0), flags(0),
 	FlowManager(false, invoker, config.pOnStatusEvent), _pOnMedia(config.pOnMedia), socketIPV4(_invoker.sockets), socketIPV6(_invoker.sockets),
 	_interruptCb(config.interruptCb), _interruptArg(config.interruptArg) {
 
@@ -315,7 +315,7 @@ bool RTMFPSession::connect2Group(const string& streamName, RTMFPGroupConfig* par
 		_pPublisher.set(streamName, _invoker, audioReliable, videoReliable, true);
 	}
 
-	_group.set(_invoker.timer, mediaCount, groupHex.c_str(), groupTxt.c_str(), groupName.c_str(), streamName, *this, parameters, audioReliable, videoReliable);
+	_group.set(mediaCount, groupHex.c_str(), groupTxt.c_str(), groupName.c_str(), streamName, *this, parameters, audioReliable, videoReliable);
 	_group->onMedia = onMediaPlay;
 	//_group->onStatus = _pMainStream->onStatus; (Commented, onStatus is not thread safe)
 	sendGroupConnection(groupHex);
@@ -367,7 +367,7 @@ void RTMFPSession::writeFlush() {
 		_pPublisher->flush();
 }
 
-bool RTMFPSession::manage() {
+bool RTMFPSession::manage(Int64 now) {
 	if (isInterrupted())
 		return false;
 
@@ -390,12 +390,12 @@ bool RTMFPSession::manage() {
 
 	// Send waiting handshake requests
 	if (status <= RTMFP::CONNECTED)
-		_handshaker.manage();
+		_handshaker.manage(now);
 
 	// Manage NetGroup
 	if (_group && status == RTMFP::CONNECTED) {
 		Exception ex;
-		if (!_group->manage(ex)) {
+		if (!_group->manage(ex, now)) {
 			ERROR(ex);
 			// /!\ Close the NetGroup, do not close the session to avoid closing the fallback (if exist) too
 			if (_group) {

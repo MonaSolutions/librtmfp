@@ -27,11 +27,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 using namespace Base;
 using namespace std;
 
-RTMFPHandshaker::RTMFPHandshaker(const Timer& timer, RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _first(true), _timer(timer) {
-	_onManage = [this](UInt32 count) {
-		processManage();
-		return DELAY_MANAGE;
-	};
+RTMFPHandshaker::RTMFPHandshaker(RTMFPSession* pSession) : _pSession(pSession), _name("handshaker"), _lastManage(0) {
 }
 
 RTMFPHandshaker::~RTMFPHandshaker() {
@@ -40,7 +36,6 @@ RTMFPHandshaker::~RTMFPHandshaker() {
 
 void RTMFPHandshaker::close() {
 
-	_timer.set(_onManage, 0);
 	_mapTags.clear();
 	_mapCookies.clear();
 }
@@ -114,12 +109,11 @@ void RTMFPHandshaker::sendHandshake70(const string& tag, const SocketAddress& ad
 	sendHandshake70(tag, itHandshake->second);
 }
 
-void RTMFPHandshaker::manage() {
+void RTMFPHandshaker::manage(Int64 now) {
 
-	if (_first) {
+	if (RTMFP::IsElapsed(_lastManage, now, DELAY_MANAGE)) {
 		processManage();
-		_timer.set(_onManage, DELAY_MANAGE);
-		_first = false;
+		_lastManage.update();
 	}
 }
 

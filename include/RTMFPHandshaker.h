@@ -64,7 +64,7 @@ It is the entry point for all IO
 */
 struct RTMFPHandshaker : BandWriter  {
 
-	RTMFPHandshaker(const Base::Timer& timer, RTMFPSession* pSession);
+	RTMFPHandshaker(RTMFPSession* pSession);
 
 	virtual ~RTMFPHandshaker();
 
@@ -81,7 +81,7 @@ struct RTMFPHandshaker : BandWriter  {
 	void								sendHandshake70(const std::string& tag, const Base::SocketAddress& address, const Base::SocketAddress& host);
 
 	// Called by Invoker every second to manage connection (flush and ping)
-	void								manage();
+	void								manage(Base::Int64 now);
 
 	// Close the socket all connections
 	void								close();
@@ -137,8 +137,5 @@ private:
 	RTMFPSession*						_pSession; // Pointer to the main RTMFP session for assocation with new connections
 	const std::string					_name; // name of the session (handshaker)
 	Base::Packet						_publicKey; // Our public key (fixed for the session) TODO: see if we move it into RTMFPSession
-
-	bool								_first; // is first manage run?
-	Base::Timer::OnTimer				_onManage; // time event to send handshakes and manage cookies
-	const Base::Timer&					_timer; // timer for manage() events
+	Base::Time							_lastManage; // timer for manage() events
 };

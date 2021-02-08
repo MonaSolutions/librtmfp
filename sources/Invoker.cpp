@@ -26,9 +26,6 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/DNS.h"
 #include "librtmfp.h"
 
-// Method used to unlock a mutex during an instruction which can take time
-#define UNLOCK_RUN_LOCK(MUTEX, INSTRUCTION)	MUTEX.unlock(); INSTRUCTION; MUTEX.lock()
-
 using namespace Base;
 using namespace std;
 
@@ -272,15 +269,13 @@ Invoker::Invoker(void(*onLog)(unsigned int, const char*, long, const char*), voi
 		_waitSignal.set();
 	};
 	_onDecoded = [this](RTMFPDecoder::Decoded& decoded) {
-		_mutexConnections.lock();
+		lock_guard<mutex> lock(_mutexConnections);
 
 		auto itConn = _mapConnections.find(decoded.idConnection);
 		if (itConn != _mapConnections.end()) {
-			UNLOCK_RUN_LOCK(_mutexConnections, itConn->second->receive(decoded));
+			itConn->second->receive(decoded);
 		} else
 			DEBUG("RTMFPDecoder callback without connection, possibly deleted")
-
-		_mutexConnections.unlock();
 	};
 
 	if (onLog) {
@@ -328,8 +323,8 @@ void Invoker::start() {
 }
 
 void Invoker::manage() {
-	
-	_mutexConnections.lock();
+
+	lock_guard<mutex>	lock(_mutexConnections);
 
 	if (!_waitingFallback.empty()) {
 
@@ -349,10 +344,9 @@ void Invoker::manage() {
 	}
 
 	// Manage connections
-	for (auto& it : _mapConnections) {
-		UNLOCK_RUN_LOCK(_mutexConnections, it.second->manage()); // unlock during manage to not lock the whole process
-	}
-	_mutexConnections.unlock();
+	for (auto& it : _mapConnections)
+		it.second->manage(Time::Now());
+	
 }
 
 bool Invoker::run(Exception& exc, const volatile bool& stopping) {
@@ -588,7 +582,6 @@ void Invoker::startFallback(FallbackConnection& fallback) {
 
 		// When fallback connection is connected we start playing
 		if (mask & RTMFP_CONNECTED) {
-			lock_guard<mutex> lock(_mutexConnections);
 			auto itFb = _mapConnections.find(index);
 			if (itFb == _mapConnections.end()) {
 				WARN("Unable to start playing fallback connection, it is already closed")
@@ -634,7 +627,6 @@ int Invoker::connect2Group(UInt32 RTMFPcontext, const char* streamName, RTMFPCon
 			return 0;
 		}
 		it->second->onNetGroupException = [this](UInt32 idConn) {
-			lock_guard<mutex> lock(_mutexConnections);
 			auto itFallback = _waitingFallback.find(idConn);
 			if (itFallback != _waitingFallback.end() && !itFallback->second.running) {
 				INFO("Session ", idConn, " has been closed, starting fallback connection")
@@ -969,7 +961,11 @@ void Invoker::bufferizeMedia(UInt32 RTMFPcontext, UInt16 mediaId, UInt32 time, c
 			}
 			// Stop fallback if started
 			if (itFallback->second.idFallback) {
-				UNLOCK_RUN_LOCK(_mutexConnections, removeConnection(itFallback->second.idFallback, false));
+				auto itConnection = _mapConnections.find(itFallback->second.idFallback);
+				if (itConnection == _mapConnections.end())
+					INFO("Fallback connection ", itFallback->second.idFallback, " has already been removed")
+				else
+					removeConnection(itConnection, false);
 				itFallback->second.idFallback = 0;
 			}
 			itFallback->second.switched = true; // no more fallback timeout

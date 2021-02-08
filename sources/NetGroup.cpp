@@ -98,8 +98,8 @@ double NetGroup::estimatedPeersCount() {
 		return (MAX_PEER_COUNT / (double(valLast - valFirst + MAX_PEER_COUNT) / 4)) + 1;
 }
 
-NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& groupId, const string& groupTxt, const string& groupName, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters,
-	bool audioReliable, bool videoReliable) : _p2pAble(false), idHex(groupId), idTxt(groupTxt), _groupName(groupName), stream(streamName), _conn(conn), _pListener(NULL), _timer(timer), _pGroupParameters(new RTMFPGroupConfig()), _pullTimeout(false),
+NetGroup::NetGroup(UInt16 mediaId, const string& groupId, const string& groupTxt, const string& groupName, const string& streamName, RTMFPSession& conn, RTMFPGroupConfig* parameters,
+	bool audioReliable, bool videoReliable) : _p2pAble(false), idHex(groupId), idTxt(groupTxt), _groupName(groupName), stream(streamName), _conn(conn), _pListener(NULL), _pGroupParameters(new RTMFPGroupConfig()), _pullTimeout(false),
 	_groupMediaPublisher(_mapGroupMedias.end()), _countP2P(0), _countP2PSuccess(0), _audioReliable(audioReliable), _videoReliable(videoReliable), FlashHandler(0, mediaId) {
 	_onNewMedia = [this](const string& peerId, shared<PeerMedia>& pPeerMedia, const string& streamName, const string& streamKey, BinaryReader& packet) {
 
@@ -119,7 +119,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 				DEBUG("New GroupMedia ignored, we are the publisher")
 				return false;
 			}
-			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_timer, stream, streamKey, pParameters, _audioReliable, _videoReliable));
+			itGroupMedia = _mapGroupMedias.emplace_hint(itGroupMedia, piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable));
 			itGroupMedia->second.onNewFragment = _onNewFragment;
 			itGroupMedia->second.onRemovedFragments = _onRemovedFragments;
 			itGroupMedia->second.onStartProcessing = _onStartProcessing;
@@ -156,9 +156,9 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		}
 
 		// Read the Group Report & try to update the Best List if new peers are found
-		if (readGroupReport(itNode, packet) && !_bestList.size() && _onBestList) {
+		if (readGroupReport(itNode, packet) && !_bestList.size() && !_startedBestList) {
 			updateBestList(); // Note: if we don't receive any group report we don't update the best list
-			_timer.set(_onBestList, NETGROUP_BEST_LIST_DELAY);
+			_startedBestList = true;
 		}
 
 		// First Viewer = > create listener
@@ -212,15 +212,6 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 		// We refuse all disconnection until reaching the best list size, then only disconnect peers not in the best list
 		return !_bestList.empty() && (_mapPeers.size() > _bestList.size()) && (_bestList.find(peerId) == _bestList.end());
 	};
-	_onCleanHeardList = [this](UInt32 count) {
-		cleanHeardList();
-		return NETGROUP_CLEAN_DELAY;
-	};
-	_onBestList = [this](UInt32 count) {
-		updateBestList();
-		return NETGROUP_BEST_LIST_DELAY;
-	};
-	_timer.set(_onCleanHeardList, NETGROUP_CLEAN_DELAY);
 
 	// Generate our Group Address
 	GetGroupAddressFromPeerId(_conn.rawId().c_str(), _myGroupAddress);
@@ -238,7 +229,7 @@ NetGroup::NetGroup(const Base::Timer& timer, UInt16 mediaId, const string& group
 
 		shared<RTMFPGroupConfig> pParameters(SET);
 		memcpy(pParameters.get(), _pGroupParameters.get(), sizeof(RTMFPGroupConfig)); // TODO: make a initializer
-		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(_timer, stream, streamKey, pParameters, _audioReliable, _videoReliable)).first;
+		_groupMediaPublisher = _mapGroupMedias.emplace(piecewise_construct, forward_as_tuple(streamKey), forward_as_tuple(stream, streamKey, pParameters, _audioReliable, _videoReliable)).first;
 	}
 	// Else it's a player, create the fragment controler
 	else {
@@ -301,11 +292,6 @@ void NetGroup::stopListener() {
 void NetGroup::close() {
 
 	DEBUG("Closing group ", idTxt, "...")
-
-	_timer.set(_onCleanHeardList, 0);
-	_timer.set(_onBestList, 0);
-	_onCleanHeardList = nullptr;
-	_onBestList = nullptr;
 
 	stopListener();
 
@@ -427,22 +413,22 @@ void NetGroup::removePeer(MAP_PEERS_ITERATOR_TYPE itPeer) {
 	_mapPeers.erase(itPeer);
 }
 
-bool NetGroup::manage(Exception& ex) {
+bool NetGroup::manage(Exception& ex, Int64 now) {
 
 	// P2P unable, we reset the connection
-	if (!_pGroupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && _p2pAbleTime.isElapsed(NETGROUP_TIMEOUT_P2PABLE)) {
+	if (!_pGroupParameters->isPublisher && !_p2pAble && _p2pEntities.size() >= NETGROUP_MIN_PEERS_TIMEOUT && RTMFP::IsElapsed(_p2pAbleTime, now, NETGROUP_TIMEOUT_P2PABLE)) {
 		ex.set<P2PEstablishment>(NETGROUP_TIMEOUT_P2PABLE, "ms without p2p establishment, we close the session...");
 		return false;
 	}
 	
 	// P2P rate too low, we reset the connection
-	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && _p2pRateTime.isElapsed(NETGROUP_TIMEOUT_P2PRATE)) {
+	if (!_pGroupParameters->isPublisher && !_pGroupParameters->disableRateControl && RTMFP::IsElapsed(_p2pRateTime, now, NETGROUP_TIMEOUT_P2PRATE)) {
 		// Count > 10 to be sure that we have sufficient tries
 		if (_countP2P > 10 && ((_countP2PSuccess*100) / _countP2P) < NETGROUP_RATE_MIN) {
 			ex.set<P2PRate>("P2p connection rate is inferior to ", NETGROUP_RATE_MIN, ", we close the session...");
 			return false;
 		}
-		_p2pRateTime.update();
+		_p2pRateTime = now;
 	}
 
 	// Pull Congestion timeout reached, we reset the connection
@@ -452,7 +438,7 @@ bool NetGroup::manage(Exception& ex) {
 	}
 
 	// Send the Group Report message (0A) to a random connected peer
-	if (_lastReport.isElapsed(NETGROUP_REPORT_DELAY)) {
+	if (RTMFP::IsElapsed(_lastReport, now, NETGROUP_REPORT_DELAY)) {
 
 		// Send the Group Report
 		auto itRandom = _mapPeers.begin();
@@ -460,13 +446,13 @@ bool NetGroup::manage(Exception& ex) {
 			return it->second->status == RTMFP::CONNECTED && !it->second->groupReportInitiator; })) // Important to check that we are not already the group report initiator
 			sendGroupReport(itRandom->second.get(), true);
 
-		_lastReport.update();
+		_lastReport = now;
 	}
 
 	// Manage all group medias
 	auto itGroupMedia = _mapGroupMedias.begin();
 	while (itGroupMedia != _mapGroupMedias.end()) {
-		if (!itGroupMedia->second.manage()) {
+		if (!itGroupMedia->second.manage(now)) {
 			INFO("Deletion of GroupMedia ", itGroupMedia->second.id, " for the group ", _groupName)
 			if (_groupMediaPublisher == itGroupMedia)
 				_groupMediaPublisher = _mapGroupMedias.end();
@@ -480,15 +466,27 @@ bool NetGroup::manage(Exception& ex) {
 			++itGroupMedia;
 	}
 
+	// Clean peers heard list
+	if (RTMFP::IsElapsed(_lastCleanHeardList, now, NETGROUP_CLEAN_DELAY)) {
+		cleanHeardList();
+		_lastCleanHeardList = now;
+	};
+
+	// Update Best List
+	if (_startedBestList && RTMFP::IsElapsed(_lastBestListUpdate, now, NETGROUP_BEST_LIST_DELAY)) {
+		updateBestList();
+		_lastBestListUpdate = now;
+	};
+
 	// Print statistics
-	if (_lastStats.isElapsed(NETGROUP_STATS_DELAY)) {
+	if (RTMFP::IsElapsed(_lastStats, now, NETGROUP_STATS_DELAY)) {
 		double peersCount = estimatedPeersCount();
 		INFO("Peers connected to group ", _groupName, " : ", _mapPeers.size(), "/", _mapGroupAddress.size(), " ; target count : ", _bestList.size(), "/", TargetNeighborsCount(peersCount), "/", (UInt64)peersCount,
 			" ; P2P success : ", _countP2PSuccess, "/", _countP2P, " ; GroupMedia count : ", _mapGroupMedias.size())
 			for (auto& itGroup : _mapGroupMedias)
 				itGroup.second.printStats();
 
-		_lastStats.update();
+		_lastStats = now;
 	}
 	return true;
 }

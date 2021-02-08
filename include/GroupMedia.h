@@ -37,7 +37,7 @@ struct GroupMedia : virtual Base::Object {
 	typedef Base::Event<void(Base::UInt32 groupMediaId)>													ON(StartProcessing); // called when the first pull fragment is received, we can start processing fragments
 	typedef Base::Event<void(Base::UInt32 groupMediaId)>													ON(PullTimeout); // called when the pull congestion timeout is reached
 
-	GroupMedia(const Base::Timer& timer, const std::string& name, const std::string& key, const Base::shared<RTMFPGroupConfig>& parameters, bool audioReliable, bool videoReliable);
+	GroupMedia(const std::string& name, const std::string& key, const Base::shared<RTMFPGroupConfig>& parameters, bool audioReliable, bool videoReliable);
 	virtual ~GroupMedia();
 
 	void						printStats();
@@ -50,7 +50,7 @@ struct GroupMedia : virtual Base::Object {
 
 	// Regularly called to send the fragments maps, the pull requests and the push requests
 	// return : False if the GroupMedia must be deleted (no activity since 5min), True otherwise
-	bool						manage();
+	bool						manage(Base::Int64 now);
 
 	// Add the peer to map of peer, return false if the peer is already known
 	void						addPeer(const std::string& peerId, const Base::shared<PeerMedia>& pPeer);
@@ -91,6 +91,9 @@ private:
 	// Send the Pull requests if needed
 	void						sendPullRequests();
 
+	// Send the fragments Map to one random peer or all peers
+	void						sendFragmentsMap();
+
 	// Go to the next peer for pull or push
 	// idFragment : if > 0 it will test the availability of the fragment
 	// ascending : order of the research
@@ -110,10 +113,10 @@ private:
 	PeerMedia::OnFragmentsMap									_onFragmentsMap; // called when we receive a fragments map, must return false if we want to ignore the request (if publisher)
 	PeerMedia::OnFragment										_onFragment;
 
-	Base::Timer::OnTimer										_onPullRequests;
-	Base::Timer::OnTimer										_onPushRequests;
-	Base::Timer::OnTimer										_onSendFragmentsMap;
-	const Base::Timer&											_timer; // timer for pull & push events
+	Base::Time													_lastPullRequests;
+	Base::Time													_lastPushRequests;
+	Base::Time													_lastSendFragmentsMap;
+	bool														_startedPushRequests;
 
 	const std::string&											_stream; // stream name
 	const std::string											_streamKey; // stream key

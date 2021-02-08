@@ -35,7 +35,7 @@ along with Librtmfp.  If not, see <http://www.gnu.org/licenses/>.
 #include "Base/Logs.h"
 #include <map>
 
-#define RTMFP_LIB_VERSION	0x020F0002	// (2.15.2)
+#define RTMFP_LIB_VERSION	0x020F0003	// (2.15.3)
 
 #define RTMFP_DEFAULT_KEY	(Base::UInt8*)"Adobe Systems 02"
 #define RTMFP_KEY_SIZE		0x10
@@ -109,6 +109,10 @@ struct RTMFP : virtual Base::Static {
 		OTHER_EXCEPTION, // Exception occurs
 		P2P_PULL_TIMEOUT, // P2P Pull congestion timeout
 	};
+
+	static bool IsElapsed(Base::Int64 time, Base::Int64 now, Base::Int64 duration) {
+		return (now - time) > duration;
+	}
 
 	static const char* Reason2String(Base::UInt8 reason);
 
