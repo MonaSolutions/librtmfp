@@ -9,6 +9,8 @@ Both MonaServer and AMS server are supported.
 
 **librtmfp** can be integrated with [our fork of FFmpeg](https://github.com/thomasjammet/FFmpeg/) to get a reliable streaming experience.
 
+See [rtmfp-cpp library](https://github.com/zenomt/rtmfp-cpp) for another and more recent implementation of RTMFP (in beta version for now).
+
 ## Installation
 
 You will find the Installation instructions for **librtmfp** and FFmpeg in the INSTALL.md file (in this directory).
